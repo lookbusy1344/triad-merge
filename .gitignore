@@ -1,0 +1,10 @@
+target/
+mutants.out/
+mutants.out.old/
+*.bak
+*.exe
+.DS_Store
+copilotDiffState.xml
+copilot.data.*.xml
+**/.claude/settings.local.json
+.idea/
