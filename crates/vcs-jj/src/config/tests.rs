@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use jj_lib::git::get_git_backend;
-use jj_lib::gitignore::GitIgnoreError;
 use jj_lib::repo_path::RepoPath;
 use jj_lib::secure_config::{SecureConfig, SecureConfigError};
 use rand::SeedableRng as _;
@@ -282,6 +281,7 @@ fn a_config_id_that_is_not_hex_is_refused() {
 #[cfg(unix)]
 #[test]
 fn an_exclude_file_that_cannot_be_read_is_refused_with_its_path() {
+    use jj_lib::gitignore::GitIgnoreError;
     use std::os::unix::fs::PermissionsExt as _;
     const NO_ACCESS: u32 = 0o000;
 
