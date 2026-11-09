@@ -1,0 +1,38 @@
+[profile.default]
+slow-timeout = { period = "10s", terminate-after = 3 }
+
+# These compare against gpui-component's highlighter, which drops a macro body's styles when its
+# parse takes over 20 ms of wall-clock time. Other tests' load trips it (docs/gpui-kit-issues.md).
+[[profile.default.overrides]]
+filter = '''
+package(merge-app) & (
+    test(/^editor_syntax::tests::(a_cut_of_an_older_text_is_dropped_and_the_text_cuts_again|an_edit_keeps_the_old_colours_until_its_chunk_parses_again|an_edit_that_opens_a_comment_recolours_the_lines_after_it|rows_that_do_not_match_the_text_cut_afresh|the_styles_match_the_editors_highlighter_over_two_chunks)$/)
+    | test(/^syntax::tests::the_spans_draw_what_the_editors_highlighter_draws$/)
+)
+'''
+threads-required = "num-test-threads"
+
+# pre-commit's run: the default profile without the tests that build jj repositories
+# or simulate seconds of scrolling. pre-push and CI run them all.
+[profile.quick]
+default-filter = """
+not (
+    test(/^conformance::(jj_colocated|jj_internal)::/)
+    | package(vcs-jj)
+    | test(/^native::jj::/)
+    | test(/^tool_integration::jj::/)
+    | (package(merge-session) & test(/^(origin|resolve|discovery)::jj::/))
+    | (package(merge-app) & test(/^scroll::/))
+)
+"""
+
+[profile.ci]
+fail-fast = false
+
+[profile.ci.junit]
+path = "junit.xml"
+
+# script/linux: x64 under Rosetta. Rosetta's posix_spawn reports success for a missing file and
+# the child exits with 127, so this one test sees no spawn error. Native CI runs it.
+[profile.linux-emulated]
+default-filter = "not (package(triad-merge) & test(=forward::a_missing_gui_binary_is_an_error))"

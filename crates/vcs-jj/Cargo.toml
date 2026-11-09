@@ -1,0 +1,42 @@
+[package]
+name = "vcs-jj"
+description = "jj backend for triad, through jj-lib."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# Repositories built through jj-lib, for tests here and in other crates.
+testing = ["dep:tempfile", "vcs/testing"]
+
+[dependencies]
+camino.workspace = true
+jiff.workspace = true
+dunce.workspace = true
+etcetera.workspace = true
+futures.workspace = true
+# The git config's `core.excludesFile`, and the hash kind when the fixture creates a repository.
+gix.workspace = true
+jj-lib.workspace = true
+pollster.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+# The type of a jj config value read through `StackedConfig::get`.
+serde.workspace = true
+tempfile = { workspace = true, optional = true }
+thiserror.workspace = true
+tracing.workspace = true
+vcs.workspace = true
+whoami.workspace = true
+
+[dev-dependencies]
+# The jj oracle generator, examples/gen_jj_oracle.rs.
+serde_json.workspace = true
+tempfile.workspace = true
+vcs-git = { workspace = true, features = ["testing"] }
+vcs-jj = { path = ".", features = ["testing"] }

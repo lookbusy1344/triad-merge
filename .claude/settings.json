@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(jj --ignore-working-copy root 2>/dev/null || git rev-parse --show-toplevel)\"/script/agent-pre-push-hook",
+            "timeout": 600
+          }
+        ]
+      }
+    ]
+  }
+}

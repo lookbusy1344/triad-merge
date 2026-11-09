@@ -1,0 +1,45 @@
+[package]
+name = "merge-core"
+description = "Text loading, diffing, three-way alignment, resolution, edits, undo and output for triad."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+# One integration-test binary: tests/main.rs declares each file as a module.
+autotests = false
+
+[lints]
+workspace = true
+
+[features]
+# Seeded fixture generator for benchmarks and other crates' tests.
+testing = []
+
+[dependencies]
+imara-diff.workspace = true
+jj-core.workspace = true
+rayon.workspace = true
+ropey.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+# Turns on `testing` for the benches.
+merge-core = { path = ".", features = ["testing"] }
+proptest.workspace = true
+
+[[bench]]
+name = "merge"
+harness = false
+
+[[example]]
+name = "generate"
+required-features = ["testing"]
+
+[[test]]
+name = "integration"
+path = "tests/main.rs"

@@ -1,0 +1,4 @@
+//! A small warehouse crate: stock levels and settings.
+
+pub mod config;
+pub mod inventory;

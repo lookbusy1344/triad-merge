@@ -1,0 +1,47 @@
+[package]
+name = "triad-merge"
+description = "The triad merge and diff tool binaries."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+# One integration-test binary: tests/main.rs declares each file as a module.
+autotests = false
+default-run = "triad-merge"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "triad-merge"
+path = "src/main.rs"
+
+# The Windows GUI-subsystem binary (spec §6.1). Built on every OS so the code stays checked.
+[[bin]]
+name = "triad-merge-gui"
+path = "src/gui.rs"
+
+[dependencies]
+merge-cli.workspace = true
+merge-app.workspace = true
+# The settings file's path.
+merge-config.workspace = true
+merge-session.workspace = true
+
+[dev-dependencies]
+# The working directory a child process sees, for messages that name it.
+camino.workspace = true
+dunce.workspace = true
+# Reads the git entries `install` writes.
+gix.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+toml.workspace = true
+vcs = { workspace = true, features = ["testing"] }
+vcs-git = { workspace = true, features = ["testing"] }
+vcs-jj = { workspace = true, features = ["testing"] }
+
+[[test]]
+name = "integration"
+path = "tests/main.rs"

@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# Measure the running merge window against the spec §9 targets (PLAN.md §A6.7). Builds a release
+# binary, generates 100k- and 1M-line triples, runs every TRIAD_MEASURE mode on each under
+# /usr/bin/time -l, prints a table and fails when a target is missed. macOS only.
+# Usage: script/measure-app [refresh-hz] [output-extension]   (defaults 60, txt)
+# The output's extension picks the panes' language: rs highlights the generated lines as Rust.
+# The syntax mode ends once the chunks on screen and their neighbours have parsed; "parsed" is
+# the time from the command to the last of them.
+# A window opens for each run. Keep it frontmost and leave the machine alone until the run
+# ends: macOS slows a background app's frames and work, which shows as 41.7 ms intervals.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+SIZES=(100000 1000000)
+MODES=(open scroll-rows scroll-result type pick syntax)
+DEFAULT_REFRESH_HZ=60
+DEFAULT_EXTENSION=txt
+MS_PER_S=1000
+BYTES_PER_MB=1048576
+# A frame interval of 1.5 periods or more means at least one dropped frame.
+DROPPED_FRAME_PERIODS=1.5
+
+# lines load-ms first-frame-ms memory-mb
+targets=(
+  "100000 100 300 300"
+  "1000000 1000 1500 2048"
+)
+PICK_MS=16
+KEYSTROKE_MS=8
+
+refresh_hz=${1:-$DEFAULT_REFRESH_HZ}
+extension=${2:-$DEFAULT_EXTENSION}
+frame_limit=$(awk -v hz="$refresh_hz" -v p="$DROPPED_FRAME_PERIODS" -v s="$MS_PER_S" 'BEGIN { printf "%.1f", s / hz * p }')
+
+cargo build --release -p triad-merge
+for lines in "${SIZES[@]}"; do
+  [[ -f target/measure/$lines/base.txt ]] ||
+    cargo run -q --release -p merge-core --features testing --example generate -- "$lines" "target/measure/$lines"
+done
+
+log=target/measure/measure-app.log
+: >"$log"
+status=0
+fail() {
+  echo "FAIL $*"
+  status=1
+}
+# The milliseconds after "$2" on the report line that starts with "$1".
+field() {
+  awk -v line="$1" -v key="$2" 'index($0, line) { split(substr($0, index($0, key) + length(key)), v, " "); print v[1]; exit }'
+}
+above() { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a >= b) }'; }
+
+printf '%-8s %-14s %-10s %-12s %-10s %-10s %-10s %-10s\n' lines mode load first-frame frame-p95 work-max rss-mb parsed
+for entry in "${targets[@]}"; do
+  read -r lines load_ms frame_ms memory_mb <<<"$entry"
+  dir=target/measure/$lines
+  for mode in "${MODES[@]}"; do
+    out=$(TRIAD_MEASURE=$mode /usr/bin/time -l target/release/triad-merge \
+      "$dir/base.txt" "$dir/left.txt" "$dir/right.txt" "$dir/out.$extension" 2>&1 || true)
+    printf '== %s %s\n%s\n' "$lines" "$mode" "$out" >>"$log"
+    load=$(field "load and merge" "load and merge " <<<"$out")
+    first=$(field "first frame" "first frame " <<<"$out")
+    p95=$(field "$mode: frames" "p95 " <<<"$out")
+    work=$(field "$mode: work" "max " <<<"$out")
+    parsed=$(field "chunks on screen parsed" "chunks on screen parsed " <<<"$out")
+    rss=$(awk -v mb="$BYTES_PER_MB" '/maximum resident set size/ { printf "%d", $1 / mb }' <<<"$out")
+    printf '%-8s %-14s %-10s %-12s %-10s %-10s %-10s %-10s\n' "$lines" "$mode" "$load" "$first" "$p95" "$work" "$rss" "${parsed:--}"
+    if [[ -z $load || -z $first || -z $p95 || -z $rss ]]; then
+      fail "$lines $mode: no report; see $log"
+      continue
+    fi
+    above "$load" "$load_ms" && fail "$lines $mode: load and merge $load ms, target < $load_ms ms"
+    above "$first" "$frame_ms" && fail "$lines $mode: first frame $first ms, target < $frame_ms ms"
+    above "$rss" "$memory_mb" && fail "$lines $mode: peak RSS $rss MB, target < $memory_mb MB"
+    case $mode in
+      scroll-*) above "$p95" "$frame_limit" && fail "$lines $mode: frame p95 $p95 ms at $refresh_hz Hz, limit < $frame_limit ms" ;;
+      pick) above "$work" "$PICK_MS" && fail "$lines pick: max $work ms, target < $PICK_MS ms" ;;
+      type) above "$work" "$KEYSTROKE_MS" && fail "$lines type: max $work ms, target < $KEYSTROKE_MS ms" ;;
+    esac
+  done
+done
+echo "refresh rate $refresh_hz Hz; output .$extension; full reports in $log"
+exit "$status"

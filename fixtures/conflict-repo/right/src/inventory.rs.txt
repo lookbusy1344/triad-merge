@@ -1,0 +1,159 @@
+//! Stock levels for a small warehouse.
+
+use std::collections::HashMap;
+use std::fmt;
+
+/// A stock-keeping unit code.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Sku(String);
+
+impl Sku {
+    pub fn new(code: &str) -> Option<Self> {
+        let valid = code.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-');
+        if code.is_empty() || code.len() > 12 || !valid {
+            return None;
+        }
+        Some(Self(code.to_uppercase()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for Sku {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum StockError {
+    Unknown(Sku),
+    Insufficient { sku: Sku, wanted: u32, held: u32 },
+}
+
+impl fmt::Display for StockError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unknown(sku) => write!(f, "unknown item {sku}"),
+            Self::Insufficient { sku, wanted, held } => {
+                write!(f, "cannot take {wanted} of {sku}: {held} in stock")
+            }
+        }
+    }
+}
+
+impl std::error::Error for StockError {}
+
+#[derive(Debug, Default)]
+pub struct Inventory {
+    levels: HashMap<Sku, u32>,
+    reorder_threshold: u32,
+}
+
+impl Inventory {
+    pub fn new(reorder_threshold: u32) -> Self {
+        Self {
+            levels: HashMap::new(),
+            reorder_threshold,
+        }
+    }
+
+    pub fn receive(&mut self, sku: Sku, count: u32) {
+        *self.levels.entry(sku).or_default() += count;
+    }
+
+    pub fn take(&mut self, sku: &Sku, count: u32) -> Result<u32, StockError> {
+        let held = self
+            .levels
+            .get_mut(sku)
+            .ok_or_else(|| StockError::Unknown(sku.clone()))?;
+        if *held < count {
+            return Err(StockError::Insufficient {
+                sku: sku.clone(),
+                wanted: count,
+                held: *held,
+            });
+        }
+        *held -= count;
+        Ok(*held)
+    }
+
+    pub fn level(&self, sku: &Sku) -> u32 {
+        self.levels.get(sku).copied().unwrap_or(0)
+    }
+
+    /// Drops an item from the books and returns the units it held.
+    pub fn remove(&mut self, sku: &Sku) -> Option<u32> {
+        self.levels.remove(sku)
+    }
+
+    pub fn to_reorder(&self) -> Vec<&Sku> {
+        let mut low: Vec<&Sku> = self
+            .levels
+            .iter()
+            .filter(|(_, n)| **n <= self.reorder_threshold)
+            .map(|(sku, _)| sku)
+            .collect();
+        low.sort_by(|a, b| a.0.cmp(&b.0));
+        low
+    }
+
+    pub fn total_units(&self) -> u64 {
+        self.levels.values().map(|&n| u64::from(n)).sum()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sku(code: &str) -> Sku {
+        Sku::new(code).unwrap()
+    }
+
+    #[test]
+    fn take_reduces_level() {
+        let mut inv = Inventory::new(2);
+        inv.receive(sku("bolt"), 10);
+        assert_eq!(inv.take(&sku("bolt"), 4), Ok(6));
+        assert_eq!(inv.level(&sku("bolt")), 6);
+    }
+
+    #[test]
+    fn take_more_than_held_fails() {
+        let mut inv = Inventory::new(2);
+        inv.receive(sku("nut"), 1);
+        assert_eq!(
+            inv.take(&sku("nut"), 3),
+            Err(StockError::Insufficient {
+                sku: sku("nut"),
+                wanted: 3,
+                held: 1
+            })
+        );
+    }
+
+    #[test]
+    fn low_items_are_listed_in_order() {
+        let mut inv = Inventory::new(5);
+        inv.receive(sku("washer"), 3);
+        inv.receive(sku("bolt"), 40);
+        inv.receive(sku("anchor"), 5);
+        assert_eq!(inv.to_reorder(), vec![&sku("anchor"), &sku("washer")]);
+        assert_eq!(inv.total_units(), 48);
+    }
+
+    #[test]
+    fn removed_items_are_unknown() {
+        let mut inv = Inventory::new(2);
+        inv.receive(sku("m6-nut"), 7);
+        assert_eq!(inv.remove(&sku("m6-nut")), Some(7));
+        assert_eq!(
+            inv.take(&sku("m6-nut"), 1),
+            Err(StockError::Unknown(sku("m6-nut")))
+        );
+        assert_eq!(Sku::new("m6 nut"), None);
+    }
+}

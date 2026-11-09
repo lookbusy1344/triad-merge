@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Workspace rules that cargo and cargo-deny don't check (spec §2.3, PLAN.md §A3).
+# - Every workspace crate inherits the workspace lints.
+# - The build holds one copy of gix, the one jj-lib uses.
+# - merge-config reaches no repository: of the workspace crates it depends on merge-core and
+#   vcs alone (PLAN.md §A13.12).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+metadata=$(cargo metadata --format-version 1 --locked)
+status=0
+
+for manifest in $(jq -r '.workspace_members as $m | .packages[] | select(.id as $id | $m | index($id)) | .manifest_path' <<<"$metadata"); do
+  if ! grep -Eq '^\[lints\]' "$manifest" || ! sed -n '/^\[lints\]/,/^\[/p' "$manifest" | grep -Eq '^workspace = true'; then
+    echo "error: $manifest lacks [lints] workspace = true" >&2
+    status=1
+  fi
+done
+
+gix_versions=$(jq -r '[.packages[] | select(.name == "gix") | .version] | unique | join(", ")' <<<"$metadata")
+if [[ "$gix_versions" == *,* ]]; then
+  echo "error: more than one gix version: $gix_versions" >&2
+  status=1
+fi
+
+config_allowed='merge-core vcs'
+config_deps=$(jq -r --arg root "$PWD/crates" '.packages[] | select(.name == "merge-config")
+  | .dependencies[] | select(.path != null and (.path | startswith($root))) | .name' <<<"$metadata" | sort -u)
+for dep in $config_deps; do
+  if [[ " $config_allowed " != *" $dep "* ]]; then
+    echo "error: merge-config depends on $dep; it may depend on $config_allowed" >&2
+    status=1
+  fi
+done
+
+exit "$status"

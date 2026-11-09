@@ -1,0 +1,410 @@
+//! `triad-merge resolve --headless` on git and jj repositories (`PLAN.md`
+//! §D5.4): what reaches the working-tree file, what stays in the repository, and what jj
+//! reads back.
+
+use std::process::{Command, Output};
+
+use camino::Utf8Path;
+use vcs::testing::Entry;
+use vcs::{Repository, TermContent};
+use vcs_jj::testing::{Held, Op, ToolOutcome};
+
+const BINARY: &str = env!("CARGO_BIN_EXE_triad-merge");
+const RESOLVED: i32 = 0;
+const CONFLICTS: i32 = 1;
+const ERROR: i32 = 3;
+/// git shortens commit IDs to this many characters in a small repository.
+const GIT_SHORT: usize = 7;
+/// jj's conflict labels show change and commit IDs to this many characters.
+const JJ_SHORT: usize = 8;
+const UTF8_BOM: &[u8] = b"\xEF\xBB\xBF";
+
+/// The binary in `dir`, logging into a directory that outlives the process but not the test
+/// run, and reading no settings file, no user or system git config and no user jj config.
+fn triad(dir: &Utf8Path, args: &[&str]) -> Output {
+    triad_with_jj_config(dir, &LOGS.path().join("no-jjconfig.toml"), args)
+}
+
+static LOGS: std::sync::LazyLock<tempfile::TempDir> =
+    std::sync::LazyLock::new(|| tempfile::tempdir().expect("log dir"));
+
+/// As [`triad`], with `jj_config` as the user's jj config.
+fn triad_with_jj_config(dir: &Utf8Path, jj_config: &std::path::Path, args: &[&str]) -> Output {
+    Command::new(BINARY)
+        .env("TRIAD_LOG_DIR", LOGS.path())
+        .env("TRIAD_CONFIG", LOGS.path().join("no-config.triad"))
+        .env("GIT_CONFIG_GLOBAL", LOGS.path().join("no-gitconfig"))
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("JJ_CONFIG", jj_config)
+        .env_remove("TRIAD_LOG")
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .expect("binary runs")
+}
+
+fn outcome(output: &Output) -> (Option<i32>, String, String) {
+    let text = |b: &[u8]| String::from_utf8_lossy(b).into_owned();
+    (output.status.code(), text(&output.stdout), text(&output.stderr))
+}
+
+fn read(root: &Utf8Path, path: &str) -> Vec<u8> {
+    std::fs::read(root.join(path)).expect("the file reads")
+}
+
+/// A git merge of `left` and `right` over `base` stopped on `paths`, with `MERGE_HEAD` set.
+/// Returns the short IDs of the base and theirs.
+fn git_stopped(
+    paths: &[&str],
+    [base, left, right]: [&'static [u8]; 3],
+) -> (vcs_git::testing::Fixture, [String; 2]) {
+    let fixture = vcs_git::testing::Fixture::new();
+    let one = fixture.commit("one", &[("a.txt", base)]);
+    fixture.commit("left", &[("a.txt", left)]);
+    let theirs = fixture.commit_on(&[one], "right", &[("a.txt", right)]);
+    let conflicts: Vec<(&str, [Option<Entry>; 3])> = paths
+        .iter()
+        .map(|&path| (path, [base, left, right].map(|t| Some(Entry::File(t)))))
+        .collect();
+    fixture.stage_conflicts(&[], &conflicts);
+    fixture.write_pseudo_ref("MERGE_HEAD", theirs);
+    let short = |id: gix::ObjectId| id.to_string()[..GIT_SHORT].to_owned();
+    (fixture, [short(one), short(theirs)])
+}
+
+fn terms(repo: &dyn Repository, path: &str) -> Vec<TermContent> {
+    let conflict = repo
+        .read_conflict(Utf8Path::new(path))
+        .expect("the conflict reads")
+        .expect("still conflicted");
+    conflict.sides.into_iter().chain(conflict.bases).map(|term| term.content).collect()
+}
+
+fn file(bytes: &[u8]) -> TermContent {
+    TermContent::File { bytes: bytes.to_vec(), executable: false }
+}
+
+#[test]
+fn a_git_conflict_is_written_with_markers_and_its_stages_stay() {
+    let (fixture, [one, theirs]) = git_stopped(&["a.txt"], [b"a\n", b"left\n", b"right\n"]);
+    let result = triad(fixture.root(), &["resolve", "--headless", "a.txt"]);
+    assert_eq!(outcome(&result), (Some(CONFLICTS), String::new(), String::new()));
+    assert_eq!(
+        String::from_utf8(read(fixture.root(), "a.txt")).expect("UTF-8"),
+        format!(
+            "<<<<<<< main\nleft\n||||||| {one} one\na\n=======\nright\n>>>>>>> {theirs} right\n"
+        )
+    );
+    assert_eq!(terms(&fixture.open(), "a.txt"), [file(b"left\n"), file(b"right\n"), file(b"a\n")]);
+}
+
+#[test]
+fn a_git_conflict_is_written_in_gits_conflict_style() {
+    let (fixture, [_, theirs]) = git_stopped(&["a.txt"], [b"a\n", b"left\n", b"right\n"]);
+    fixture.append_config("[merge]\n\tconflictStyle = merge\n");
+    let result = triad(fixture.root(), &["resolve", "--headless", "a.txt"]);
+    assert_eq!(outcome(&result), (Some(CONFLICTS), String::new(), String::new()));
+    assert_eq!(
+        String::from_utf8(read(fixture.root(), "a.txt")).expect("UTF-8"),
+        format!("<<<<<<< main\nleft\n=======\nright\n>>>>>>> {theirs} right\n")
+    );
+}
+
+#[test]
+fn commands_resolve_a_git_conflict_in_the_inputs_encoding() {
+    let (fixture, _) = git_stopped(
+        &["a.txt"],
+        [b"\xEF\xBB\xBFa\n", b"\xEF\xBB\xBFleft\n", b"\xEF\xBB\xBFright\n"],
+    );
+    let commands =
+        fixture.write("commands.jsonl", br#"{"Pick":{"region":0,"sources":[{"Side":1}]}}"#);
+    let result =
+        triad(fixture.root(), &["resolve", "--headless", "a.txt", "--commands", commands.as_str()]);
+    assert_eq!(outcome(&result), (Some(RESOLVED), String::new(), String::new()));
+    assert_eq!(read(fixture.root(), "a.txt"), [UTF8_BOM, b"right\n"].concat());
+    // The resolution replaces the stages, as `git add` does.
+    assert_eq!(fixture.open().conflicts().expect("listed"), Vec::<camino::Utf8PathBuf>::new());
+    assert_eq!(staged(&fixture, "a.txt"), [UTF8_BOM, b"right\n"].concat());
+}
+
+#[test]
+fn a_save_the_index_refuses_is_written_and_named_as_unrecorded() {
+    let (fixture, _) = git_stopped(&["a.txt"], [b"a\n", b"left\n", b"right\n"]);
+    let commands =
+        fixture.write("commands.jsonl", br#"{"Pick":{"region":0,"sources":[{"Side":1}]}}"#);
+    // Another git command holds the index.
+    fixture.write(".git/index.lock", b"");
+    let result =
+        triad(fixture.root(), &["resolve", "--headless", "a.txt", "--commands", commands.as_str()]);
+    let (code, stdout, stderr) = outcome(&result);
+    assert_eq!((code, stdout.as_str()), (Some(ERROR), ""));
+    assert!(
+        stderr.starts_with(
+            "triad-merge: a.txt is written, but the repository did not record the save: "
+        ),
+        "{stderr}"
+    );
+    assert_eq!(read(fixture.root(), "a.txt"), b"right\n");
+    assert_eq!(terms(&fixture.open(), "a.txt"), [file(b"left\n"), file(b"right\n"), file(b"a\n")]);
+}
+
+/// The blob at stage 0 for `path` in the fixture's index.
+fn staged(fixture: &vcs_git::testing::Fixture, path: &str) -> Vec<u8> {
+    let repo = gix::open(fixture.root()).expect("the repository opens");
+    let index = repo.open_index().expect("the index is read");
+    let entry = index
+        .entry_by_path_and_stage(path.into(), gix::index::entry::Stage::Unconflicted)
+        .expect("a stage-0 entry");
+    repo.find_object(entry.id).expect("the blob").detach().data
+}
+
+#[test]
+fn without_a_path_every_conflicted_file_is_written() {
+    let (fixture, _) = git_stopped(&["a.txt", "src/b.txt"], [b"a\n", b"left\n", b"right\n"]);
+    std::fs::create_dir_all(fixture.root().join("src")).expect("the directory is made");
+    let result = triad(fixture.root(), &["resolve", "--headless"]);
+    assert_eq!(outcome(&result), (Some(CONFLICTS), "a.txt\nsrc/b.txt\n".to_owned(), String::new()));
+    for path in ["a.txt", "src/b.txt"] {
+        assert!(read(fixture.root(), path).starts_with(b"<<<<<<< main\nleft\n"), "{path}");
+    }
+}
+
+#[test]
+fn without_a_path_a_refused_file_is_skipped_with_its_reason() {
+    let fixture = vcs_git::testing::Fixture::new();
+    fixture.commit("one", &[("x.txt", b"x\n")]);
+    // b.txt merges cleanly: only the right side changes it.
+    let terms = |t: [Option<&'static [u8]>; 3]| t.map(|t| t.map(Entry::File));
+    fixture.stage_conflicts(
+        &[],
+        &[
+            ("a.txt", terms([Some(b"a\n"), None, None])),
+            ("b.txt", terms([Some(b"a\n"), Some(b"a\n"), Some(b"b\n")])),
+        ],
+    );
+    let result = triad(fixture.root(), &["resolve", "--headless"]);
+    assert_eq!(
+        outcome(&result),
+        (
+            Some(CONFLICTS),
+            "a.txt\nb.txt\n".to_owned(),
+            "triad-merge: a.txt is deleted on every side; nothing to merge\n".to_owned()
+        )
+    );
+    assert!(!fixture.root().join("a.txt").exists(), "a.txt stays deleted");
+    assert_eq!(read(fixture.root(), "b.txt"), b"b\n");
+}
+
+#[test]
+fn without_a_path_a_file_resolved_by_hand_is_skipped_and_kept() {
+    let (fixture, _) = git_stopped(&["a.txt", "b.txt"], [b"a\n", b"left\n", b"right\n"]);
+    fixture.write("a.txt", b"resolved by hand\n");
+    let result = triad(fixture.root(), &["resolve", "--headless"]);
+    assert_eq!(
+        outcome(&result),
+        (
+            Some(CONFLICTS),
+            "a.txt\nb.txt\n".to_owned(),
+            "triad-merge: a.txt has no conflict markers left in the working tree, so it looks \
+             resolved; mark it resolved, or put its markers back to merge it again\n"
+                .to_owned()
+        )
+    );
+    assert_eq!(read(fixture.root(), "a.txt"), b"resolved by hand\n");
+    assert!(read(fixture.root(), "b.txt").starts_with(b"<<<<<<< main\nleft\n"));
+}
+
+#[test]
+fn a_conflict_resolved_by_hand_beside_another_keeps_the_hand_resolution() {
+    let (fixture, _) =
+        git_stopped(&["a.txt"], [b"a\nb\nc\nd\ne\n", b"a\nL1\nc\nL2\ne\n", b"a\nR1\nc\nR2\ne\n"]);
+    fixture.write(
+        "a.txt",
+        b"a\nL1\nc\n<<<<<<< ours\nL2\n||||||| base\nd\n=======\nR2\n>>>>>>> theirs\ne\n",
+    );
+    let result = triad(fixture.root(), &["resolve", "--headless", "a.txt"]);
+    assert_eq!(outcome(&result), (Some(CONFLICTS), String::new(), String::new()));
+    // jj's default `base` counts as no label (`PLAN.md` §D5.7), so its marker has none.
+    assert_eq!(
+        String::from_utf8(read(fixture.root(), "a.txt")).expect("UTF-8"),
+        "a\nL1\nc\n<<<<<<< ours\nL2\n|||||||\nd\n=======\nR2\n>>>>>>> theirs\ne\n"
+    );
+}
+
+#[test]
+fn with_a_path_a_file_resolved_by_hand_is_an_error_and_kept() {
+    let (fixture, _) = git_stopped(&["a.txt"], [b"a\n", b"left\n", b"right\n"]);
+    fixture.write("a.txt", b"resolved by hand\n");
+    let result = triad(fixture.root(), &["resolve", "--headless", "a.txt"]);
+    assert_eq!(outcome(&result).0, Some(ERROR));
+    assert_eq!(read(fixture.root(), "a.txt"), b"resolved by hand\n");
+}
+
+#[test]
+fn with_a_path_a_refused_file_is_an_error() {
+    let fixture = vcs_git::testing::Fixture::new();
+    fixture.commit("one", &[("x.txt", b"x\n")]);
+    fixture.stage_conflicts(&[], &[("a.txt", [Some(Entry::File(b"a\n")), None, None])]);
+    let result = triad(fixture.root(), &["resolve", "--headless", "a.txt"]);
+    assert_eq!(
+        outcome(&result),
+        (
+            Some(ERROR),
+            String::new(),
+            "triad-merge: a.txt is deleted on every side; nothing to merge\n".to_owned()
+        )
+    );
+    assert!(!fixture.root().join("a.txt").exists());
+}
+
+#[test]
+fn commands_need_a_path() {
+    let (fixture, _) = git_stopped(&["a.txt"], [b"a\n", b"left\n", b"right\n"]);
+    let result = triad(fixture.root(), &["resolve", "--headless", "--commands", "c.jsonl"]);
+    assert_eq!(
+        outcome(&result),
+        (
+            Some(ERROR),
+            String::new(),
+            "triad-merge: --commands applies to one file: give resolve a PATH\n".to_owned()
+        )
+    );
+}
+
+/// A jj conflict in `a.txt` between `left` and `right` over `a\n`, checked out to disk.
+/// Returns jj's labels for the base, left and right.
+fn jj_on_disk(left: &[u8], right: &[u8]) -> (vcs_jj::testing::Fixture, [String; 3]) {
+    let fixture = vcs_jj::testing::Fixture::new();
+    let base = fixture.commit_on(&[], "base", &[("a.txt", b"a\n")]);
+    let l = fixture.commit_on(&[&base], "left", &[("a.txt", left)]);
+    let r = fixture.commit_on(&[&base], "right", &[("a.txt", right)]);
+    fixture.check_out(&[&l, &r]);
+    fixture.check_out_to_disk();
+    let label = |c: &vcs_jj::testing::Committed, summary: &str| {
+        format!("{} {} \"{summary}\"", &c.change_id[..JJ_SHORT], &c.commit[..JJ_SHORT])
+    };
+    let labels = [label(&base, "base"), label(&l, "left"), label(&r, "right")];
+    (fixture, labels)
+}
+
+#[test]
+fn without_a_path_each_jj_file_loads_after_the_save_before_it() {
+    let fixture = vcs_jj::testing::Fixture::new();
+    let files = |text: &'static [u8]| [("a.txt", text), ("b.txt", text)];
+    let base = fixture.commit_on(&[], "base", &files(b"a\n"));
+    let l = fixture.commit_on(&[&base], "left", &files(b"left\n"));
+    let r = fixture.commit_on(&[&base], "right", &files(b"right\n"));
+    fixture.check_out(&[&l, &r]);
+    fixture.check_out_to_disk();
+    let operations = fixture.operations();
+    let result = triad(fixture.root(), &["resolve", "--headless"]);
+    assert_eq!(outcome(&result), (Some(CONFLICTS), "a.txt\nb.txt\n".to_owned(), String::new()));
+    let conflicted = ToolOutcome::Conflicted {
+        sides: vec![b"left\n".to_vec(), b"right\n".to_vec()],
+        bases: vec![b"a\n".to_vec()],
+    };
+    for path in ["a.txt", "b.txt"] {
+        assert_eq!(fixture.snapshot_reads(path), conflicted, "{path}");
+        assert_eq!(fixture.held_at(0, path), Held::Conflict, "{path}");
+    }
+    // Markers jj reads back as its conflict leave the tree as it was: no operation.
+    assert_eq!(fixture.operations(), operations);
+}
+
+#[test]
+fn jj_reads_saved_markers_back_as_the_same_conflict() {
+    // A marker-like run of 7 makes jj's markers 11 long. triad's own rule would give 8,
+    // which jj would not read as markers.
+    let (fixture, [base, left, right]) = jj_on_disk(b"<<<<<<< left\n", b"right\n");
+    let operations = fixture.operations();
+    let result = triad(fixture.root(), &["resolve", "--headless", "a.txt"]);
+    assert_eq!(outcome(&result), (Some(CONFLICTS), String::new(), String::new()));
+    let long = |c: char| c.to_string().repeat(11);
+    assert_eq!(
+        String::from_utf8(read(fixture.root(), "a.txt")).expect("UTF-8"),
+        format!(
+            "{} {left}\n<<<<<<< left\n{} {base}\na\n{}\nright\n{} {right}\n",
+            long('<'),
+            long('|'),
+            long('='),
+            long('>')
+        )
+    );
+    assert_eq!(
+        fixture.snapshot_reads("a.txt"),
+        ToolOutcome::Conflicted {
+            sides: vec![b"<<<<<<< left\n".to_vec(), b"right\n".to_vec()],
+            bases: vec![b"a\n".to_vec()],
+        }
+    );
+    // The markers read back as the conflict jj holds: its tree is unchanged, so no
+    // operation is written.
+    assert_eq!(fixture.operations(), operations);
+    assert_eq!(fixture.held_at(0, "a.txt"), Held::Conflict);
+}
+
+/// The operation that records a save of `path`.
+fn save_op(path: &str) -> Op {
+    Op { description: format!("save {path} in triad"), is_snapshot: false }
+}
+
+#[test]
+fn jj_reads_a_resolved_save_as_resolved() {
+    let (fixture, _) = jj_on_disk(b"left\n", b"right\n");
+    let commands = fixture
+        .write("commands.jsonl", br#"{"Pick":{"region":0,"sources":[{"Side":0},{"Side":1}]}}"#);
+    let result =
+        triad(fixture.root(), &["resolve", "--headless", "a.txt", "--commands", commands.as_str()]);
+    assert_eq!(outcome(&result), (Some(RESOLVED), String::new(), String::new()));
+    assert_eq!(fixture.snapshot_reads("a.txt"), ToolOutcome::Resolved(b"left\nright\n".to_vec()));
+    // The save is its own operation; `jj undo` brings the conflict back.
+    assert_eq!(fixture.operations()[0], save_op("a.txt"));
+    assert_eq!(fixture.held_at(0, "a.txt"), Held::File(b"left\nright\n".to_vec()));
+    assert_eq!(fixture.held_at(1, "a.txt"), Held::Conflict);
+}
+
+#[test]
+fn a_jj_file_resolved_by_hand_is_taken_in_and_left_alone() {
+    let (fixture, _) = jj_on_disk(b"left\n", b"right\n");
+    let edited: &[u8] = b"resolved by hand\n";
+    fixture.write("a.txt", edited);
+    let result = triad(fixture.root(), &["resolve", "--headless", "a.txt"]);
+    assert_eq!(
+        outcome(&result),
+        (Some(ERROR), String::new(), "triad-merge: a.txt is not conflicted\n".to_owned())
+    );
+    assert_eq!(read(fixture.root(), "a.txt"), edited);
+    assert_eq!(fixture.held_at(0, "a.txt"), Held::File(edited.to_vec()));
+}
+
+#[test]
+fn jjs_snapshot_follows_the_users_jj_config() {
+    let (fixture, _) = jj_on_disk(b"left\n", b"right\n");
+    fixture.write("new.txt", b"n\n");
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let config = dir.path().join("config.toml");
+    std::fs::write(&config, "snapshot.auto-track = \"none()\"\n").expect("the config is written");
+    let result = triad_with_jj_config(fixture.root(), &config, &["resolve", "--headless", "a.txt"]);
+    assert_eq!(outcome(&result), (Some(CONFLICTS), String::new(), String::new()));
+    assert_eq!(fixture.held_at(0, "new.txt"), Held::Absent);
+    // jj's default tracks the new file.
+    let result = triad(fixture.root(), &["resolve", "--headless", "a.txt"]);
+    assert_eq!(result.status.code(), Some(CONFLICTS));
+    assert_eq!(fixture.held_at(0, "new.txt"), Held::File(b"n\n".to_vec()));
+}
+
+#[test]
+fn a_file_outside_any_repository_resolves_from_its_markers() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let root = Utf8Path::from_path(dir.path()).expect("UTF-8");
+    std::fs::write(
+        root.join("m.txt"),
+        "<<<<<<< ours\nL\n||||||| anc\nB\n=======\nR\n>>>>>>> theirs\n",
+    )
+    .expect("written");
+    let commands = root.join("c.jsonl");
+    std::fs::write(&commands, r#"{"Pick":{"region":0,"sources":[{"Side":0}]}}"#).expect("written");
+    let result = triad(root, &["resolve", "--headless", "m.txt", "--commands", commands.as_str()]);
+    assert_eq!(outcome(&result), (Some(RESOLVED), String::new(), String::new()));
+    assert_eq!(read(root, "m.txt"), b"L\n");
+}

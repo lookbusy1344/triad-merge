@@ -1,0 +1,124 @@
+#!/usr/bin/env -S python3 -I
+"""gen-demo — write fixtures/demo/{base,left,right}.txt for trying triad by hand.
+
+Base is a snapshot of a triad source file. Left and right edit it in hunks separated by at
+least one unchanged line, so each hunk aligns on its own. Each hunk is left-only, right-only,
+the same on both sides, or a conflict; each side changes about 30% of base's lines. Edits
+rename identifiers, reword comments, change numbers, insert lines and delete lines. The
+generator is seeded, so a rerun gives the same files. The files end in .txt: the sides need not
+parse as Rust, and formatters leave .txt files alone.
+
+Usage: script/gen-demo [source]   (default crates/merge-core/src/merge3.rs)
+"""
+
+import difflib
+import random
+import re
+import shutil
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+OUT = ROOT / "fixtures" / "demo"
+DEFAULT_SOURCE = ROOT / "crates" / "merge-core" / "src" / "merge3.rs"
+SEED = 0xDE32
+
+MIN_HUNK, MAX_HUNK = 1, 7
+MIN_GAP, MAX_GAP = 1, 5
+# Hunk kinds and their weights. Each side changes left-only or right-only hunks, plus the
+# shared ones: with hunks over half the lines, each side changes about 30%.
+KINDS = [("left", 4), ("right", 4), ("both", 1), ("conflict", 1)]
+# Edit kinds and their weights.
+EDITS = [("modify", 6), ("insert", 2), ("delete", 1)]
+
+RENAMES = {
+    "left": [("region", "span"), ("inputs", "sources"), ("range", "lines"), ("base", "origin")],
+    "right": [("region", "chunk"), ("inputs", "texts"), ("kind", "class"), ("side", "branch")],
+}
+NOTES = {
+    "left": ["// Checked against git merge-file.", "debug_assert!(true, \"left invariant\");"],
+    "right": ["// See spec §4.3.", "tracing::trace!(\"right path\");"],
+}
+
+
+def pick(rng, weighted):
+    names, weights = zip(*weighted)
+    return rng.choices(names, weights)[0]
+
+
+def modify(rng, line, side):
+    """One line as `side` would change it. Always returns a different line."""
+    if not line.strip():
+        return line[:-1] + f"// {side} spacing\n"
+    stripped = line.strip()
+    if stripped.startswith("//"):
+        return line[:-1] + f" ({side})\n"
+    for old, new in rng.sample(RENAMES[side], len(RENAMES[side])):
+        changed = re.sub(rf"\b{old}\b", new, line)
+        if changed != line:
+            return changed
+    number = re.search(r"\b\d+\b", line)
+    if number:
+        value = int(number.group()) + (1 if side == "left" else 2)
+        return line[: number.start()] + str(value) + line[number.end() :]
+    return line[:-1] + f" // {side}\n"
+
+
+def edit(rng, lines, side):
+    """A hunk's lines as `side` changes them."""
+    kind = pick(rng, EDITS)
+    if kind == "modify":
+        return [modify(rng, line, side) for line in lines]
+    if kind == "insert":
+        indent = re.match(r"\s*", lines[0]).group()
+        return lines + [indent + rng.choice(NOTES[side]) + "\n"]
+    return []
+
+
+def generate(base):
+    rng = random.Random(SEED)
+    left, right = [], []
+    at = 0
+    while at < len(base):
+        gap = rng.randint(MIN_GAP, MAX_GAP)
+        left += base[at : at + gap]
+        right += base[at : at + gap]
+        at += gap
+        if at >= len(base):
+            break
+        hunk = base[at : at + rng.randint(MIN_HUNK, MAX_HUNK)]
+        at += len(hunk)
+        kind = pick(rng, KINDS)
+        if kind == "both":
+            same = edit(rng, hunk, "left")
+            left += same
+            right += same
+        else:
+            left += edit(rng, hunk, "left") if kind in ("left", "conflict") else hunk
+            right += edit(rng, hunk, "right") if kind in ("right", "conflict") else hunk
+    return left, right
+
+
+def changed_share(base, other):
+    """The share of base's lines that a diff to `other` removes or replaces."""
+    matcher = difflib.SequenceMatcher(None, base, other, autojunk=False)
+    kept = sum(block.size for block in matcher.get_matching_blocks())
+    return 1 - kept / len(base)
+
+
+def main():
+    source = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_SOURCE
+    OUT.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, OUT / "base.txt")
+    base = (OUT / "base.txt").read_text().splitlines(keepends=True)
+    left, right = generate(base)
+    (OUT / "left.txt").write_text("".join(left))
+    (OUT / "right.txt").write_text("".join(right))
+    print(
+        f"base {len(base)} lines; left changes {changed_share(base, left):.0%}, "
+        f"right {changed_share(base, right):.0%}"
+    )
+
+
+if __name__ == "__main__":
+    main()

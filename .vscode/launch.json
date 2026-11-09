@@ -1,0 +1,34 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Merge demo",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["build", "--workspace"],
+        "filter": { "name": "triad-merge", "kind": "bin" }
+      },
+      "args": [
+        "fixtures/demo/base.txt",
+        "fixtures/demo/left.txt",
+        "fixtures/demo/right.txt",
+        "target/demo-merged.txt"
+      ],
+      "cwd": "${workspaceFolder}",
+      "sourceLanguages": ["rust"]
+    },
+    {
+      "name": "Diff demo",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["build", "--workspace"],
+        "filter": { "name": "triad-merge", "kind": "bin" }
+      },
+      "args": ["diff", "fixtures/demo/base.txt", "fixtures/demo/left.txt"],
+      "cwd": "${workspaceFolder}",
+      "sourceLanguages": ["rust"]
+    }
+  ]
+}

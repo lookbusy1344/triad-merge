@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+# Drives the real window in the Linux test machine. Run through script/linux/run, on a build of
+# triad-merge. Each session starts sway without a display, opens a one-conflict merge, takes a
+# screenshot to /out, picks the left side, saves and checks the exit code and the output.
+#
+#   script/linux/run script/linux/smoke wayland|x11
+#
+# TRIAD_APP names another program, such as a packaged AppImage.
+set -euo pipefail
+
+readonly session=$1
+readonly app=${TRIAD_APP:-/target/debug/triad-merge}
+[[ -x $app ]] || { echo "FAIL $session: no program at $app" >&2; exit 1; }
+readonly wait_seconds=30
+readonly resolved=0
+readonly x_display=:0
+# The merge and diff windows' title without a --title: the app's name.
+readonly window_title=triad
+# The title bar's menus, by the x position of each label after the logo, and an item by the
+# Down keys that reach it: About, Settings, then Save & Exit in the app's menu.
+readonly menu_row=17 menu_triad=81 menu_merge=189 menu_go=236
+readonly first_item=1 save_and_exit_item=3
+export XDG_RUNTIME_DIR=/tmp/xdg
+mkdir -p -m 700 "$XDG_RUNTIME_DIR"
+
+work=$(mktemp -d)
+printf 'a\nb\nc\n' > "$work/base"
+printf 'a\nL\nc\n' > "$work/left"
+printf 'a\nR\nc\n' > "$work/right"
+readonly expected=$'a\nL\nc'
+
+printf 'output HEADLESS-1 resolution 1600x1000\ndefault_border none\nxwayland force\n' > "$work/sway"
+WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman \
+    sway -c "$work/sway" > /out/sway.log 2>&1 &
+trap 'kill $(jobs -p) 2> /dev/null || true' EXIT
+
+until compgen -G "$XDG_RUNTIME_DIR/wayland-*.lock" > /dev/null; do :; done
+socket=$(compgen -G "$XDG_RUNTIME_DIR/wayland-*.lock")
+export WAYLAND_DISPLAY=$(basename "${socket%.lock}")
+until swaymsg -q -t get_version 2> /dev/null; do
+    export SWAYSOCK=$(compgen -G "$XDG_RUNTIME_DIR/sway-ipc.*" || true)
+done
+
+# A virtual keyboard held open from before the app starts: the seat has no other, and a client
+# must see the keyboard before the first key.
+wtype -s 600000 &
+keyboard=$!
+
+window_up() { swaymsg -t get_tree | grep -q "\"name\": \"$window_title\""; }
+press() { # modifier key
+    if [[ $session == wayland ]]; then
+        wtype -M "$1" -k "$2" -m "$1"
+    else
+        DISPLAY=$x_display xdotool key "$1+$2"
+    fi
+}
+
+screen_hash() { grim - | md5sum; }
+# Waits until the screen differs from the hash in $1.
+await_change() {
+    until [[ $(screen_hash) != "$1" ]]; do
+        ((SECONDS < deadline)) || { echo "FAIL $session: the screen did not change" >&2; exit 1; }
+    done
+}
+pick() { # menu x, Down keys to the item
+    local before
+    before=$(screen_hash)
+    DISPLAY=$x_display xdotool mousemove "$1" "$menu_row" click 1
+    await_change "$before"
+    for ((i = 0; i < $2; i++)); do
+        before=$(screen_hash)
+        DISPLAY=$x_display xdotool key Down
+        await_change "$before"
+    done
+    DISPLAY=$x_display xdotool key Return
+}
+
+case $session in
+    wayland) launch=(env -u DISPLAY) ;;
+    # Mesa 23's software Vulkan shows nothing in a 32-bit X11 window, so X11 runs on GL here.
+    # Mesa 25 (Ubuntu 24.04) draws the same window through Vulkan.
+    x11) launch=(env -u WAYLAND_DISPLAY "DISPLAY=$x_display" VK_ICD_FILENAMES=/nonexistent) ;;
+    *) echo "unknown session: $session" >&2; exit 2 ;;
+esac
+
+"${launch[@]}" "$app" "$work/base" "$work/left" "$work/right" "$work/out" \
+    > "/out/app-$session.log" 2>&1 &
+pid=$!
+
+deadline=$((SECONDS + wait_seconds))
+until window_up; do
+    ((SECONDS < deadline)) || {
+        swaymsg -t get_tree > "/out/$session-tree.json"
+        echo "FAIL $session: no window" >&2
+        exit 1
+    }
+done
+
+# The first frame comes after the window: until then the screen has one or two colours.
+frame=$work/frame.png
+until grim "$frame" && (($(identify -format '%k' "$frame") > 2)); do
+    ((SECONDS < deadline)) || { echo "FAIL $session: no first frame" >&2; cp "$frame" "/out/$session.png"; exit 1; }
+done
+cp "$frame" "/out/$session.png"
+
+if [[ $session == wayland ]]; then
+    # The unresolved prompt, left with Escape. The window takes the next keys only if it closed.
+    deadline=$((SECONDS + wait_seconds))
+    before=$(screen_hash)
+    press ctrl s
+    await_change "$before"
+    grim "/out/$session-prompt.png"
+    wtype -k Escape
+    press ctrl Down
+    press ctrl 1
+    press ctrl s
+else
+    pick "$menu_go" "$first_item"
+    pick "$menu_merge" "$first_item"
+    pick "$menu_triad" "$save_and_exit_item"
+fi
+deadline=$((SECONDS + wait_seconds))
+while kill -0 "$pid" 2> /dev/null; do
+    ((SECONDS < deadline)) || {
+        grim "/out/$session-stuck.png"
+        echo "FAIL $session: still running after the save key" >&2
+        exit 1
+    }
+done
+wait "$pid" && code=0 || code=$?
+[[ $code == "$resolved" ]] || { echo "FAIL $session: exit code $code" >&2; exit 1; }
+actual=$(cat "$work/out")
+[[ $actual == "$expected" ]] || { echo "FAIL $session: output: $actual" >&2; exit 1; }
+
+# The diff window reloads a file an editor replaces by rename, named by a relative path.
+# It takes no keys. A new client on a keyboard without a keymap panics in GPUI
+# (docs/gpui-kit-issues.md).
+kill "$keyboard"
+cd "$work"
+printf 'one\ntwo\n' > x
+printf 'one\nTWO\n' > y
+log=/out/diff-$session.log
+rm -f "$log"
+"${launch[@]}" TRIAD_LOG=info "$app" diff x y > "$log" 2>&1 &
+pid=$!
+deadline=$((SECONDS + wait_seconds))
+until window_up; do
+    ((SECONDS < deadline)) || { echo "FAIL $session: no diff window" >&2; exit 1; }
+done
+until grep -q 'reloaded path=x' "$log"; do
+    printf 'one\nrenamed %s\n' "$SECONDS" > x.new
+    mv x.new x
+    ((SECONDS < deadline)) || { echo "FAIL $session: the diff window did not reload" >&2; exit 1; }
+done
+kill "$pid"
+echo "PASS $session"

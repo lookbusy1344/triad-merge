@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=triad
+Comment=Three-way merge and two-way diff
+Exec=triad-merge
+Icon=triad-merge
+Terminal=false
+Categories=Development;RevisionControl;

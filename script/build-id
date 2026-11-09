@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Prints the exports that name the source of a release build: TRIAD_COMMIT, and TRIAD_CHANGE in
+# a jj repository. The About window shows them. Release scripts run
+#
+#   eval "$(script/build-id)"
+#
+# jj names the newest non-empty revision in ::@, so an empty @ after `jj commit` names its
+# parent. git names HEAD, with -dirty when the working tree has changes. Outside a repository it
+# prints nothing, and the build has no build line.
+set -euo pipefail
+
+readonly ID_LENGTH=12
+readonly JJ_TIP='latest(::@ ~ empty())'
+
+if jj --ignore-working-copy root > /dev/null 2>&1; then
+    jj log --no-graph -r "$JJ_TIP" -T '
+        "export TRIAD_COMMIT=" ++ commit_id.short('"$ID_LENGTH"') ++ "\n" ++
+        "export TRIAD_CHANGE=" ++ change_id.short('"$ID_LENGTH"') ++ "\n"'
+elif commit=$(git rev-parse --short="$ID_LENGTH" HEAD 2> /dev/null); then
+    [[ -z $(git status --porcelain) ]] || commit+=-dirty
+    echo "export TRIAD_COMMIT=$commit"
+fi

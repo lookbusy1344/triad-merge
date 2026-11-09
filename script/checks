@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# checks — the AGENTS.md pre-commit checklist, run in the current directory.
+#
+# Shared by script/pre-commit and script/pre-push. Runs against whatever tree
+# the caller has checked out, so pre-push can call it from temporary checkouts.
+# Call it from the workspace root.
+#
+#   script/checks                          everything CI runs
+#   script/checks --quick [PATH...]        pre-commit's run
+#
+# --quick runs the tests of nextest's `quick` profile, which leaves out the slow
+# repository and scrolling tests, and skips `cargo build`: nextest builds what the
+# tests need and clippy checks every target. Given the changed PATHs, relative to
+# the workspace root, it also runs only the tests of the changed crates and the crates that
+# depend on them, `cargo deny` only when a manifest or the lock file changed, and
+# the vendored crate's tests only when vendor/ changed, and script/test-pre-push only
+# when script/pre-push or that test changed. A vendor/ change also runs
+# the tests of the crates that depend on gpui-kit, through which the vendored crate
+# reaches the workspace, and of their dependents. A docs/ change runs no tests. Any
+# other changed path outside crates/ runs every test. Build and clippy always cover the workspace, so the
+# feature set, and with it the build cache, stays the same for every run.
+
+set -euo pipefail
+
+readonly TEST_TIMEOUT_SECONDS=120
+
+quick=false
+if [[ "${1:-}" == --quick ]]; then
+    quick=true
+    shift
+elif [[ $# -gt 0 ]]; then
+    echo "usage: script/checks [--quick [PATH...]]" >&2
+    exit 2
+fi
+changed=("$@")
+
+run() {
+    echo "==> $*"
+    "$@"
+}
+
+# gtimeout on macOS (coreutils), timeout on Linux.
+timeout_cmd="$(command -v gtimeout || command -v timeout || true)"
+if [[ -n "${timeout_cmd}" ]]; then
+    test_prefix=("${timeout_cmd}" "${TEST_TIMEOUT_SECONDS}")
+else
+    test_prefix=()
+fi
+
+# Every check runs unless the changed paths say otherwise.
+all_tests=true
+deny=true
+vendor=true
+pre_push=true
+crate_dirs=()
+if [[ "${quick}" == true && ${#changed[@]} -gt 0 ]]; then
+    all_tests=false
+    deny=false
+    vendor=false
+    pre_push=false
+    for path in "${changed[@]}"; do
+        case "${path}" in
+            crates/*/Cargo.toml)
+                deny=true
+                crate_dirs+=("${path%/Cargo.toml}")
+                ;;
+            crates/*/*) crate_dirs+=("$(cut -d/ -f1-2 <<< "${path}")") ;;
+            vendor/*) vendor=true ;;
+            docs/*) ;;
+            script/pre-push | script/test-pre-push)
+                pre_push=true
+                all_tests=true
+                ;;
+            Cargo.toml | Cargo.lock | deny.toml)
+                deny=true
+                all_tests=true
+                ;;
+            *) all_tests=true ;;
+        esac
+    done
+fi
+
+# The vendored crate's only way into the workspace.
+readonly VENDOR_ENTRY=gpui-kit
+
+# The nextest filter for the changed crates and every workspace crate that depends on
+# them, directly or not. With vendor=true, the crates that depend on VENDOR_ENTRY count
+# as changed.
+affected_filter() {
+    local metadata
+    metadata="$(cargo metadata --format-version 1 --no-deps --locked)"
+    local root
+    root="$(pwd -P)"
+    local names=()
+    local dir
+    for dir in "$@"; do
+        names+=("$(jq -r --arg m "${root}/${dir}/Cargo.toml" \
+            '.packages[] | select(.manifest_path == $m) | .name' <<< "${metadata}")")
+    done
+    if [[ "${vendor}" == true ]]; then
+        while IFS= read -r name; do names+=("${name}"); done < <(jq -r --arg e "${VENDOR_ENTRY}" \
+            '.packages[] | select(any(.dependencies[]; .name == $e)) | .name' <<< "${metadata}")
+    fi
+    jq -r --args '
+        [.packages[] | {name, deps: [.dependencies[].name]}] as $graph
+        | def dependents($set):
+            ($set + [$graph[] | select(any(.deps[]; IN($set[]))) | .name] | unique) as $next
+            | if $next == $set then $set else dependents($next) end;
+        dependents($ARGS.positional | map(select(. != "")) | unique)
+        | map("package(\(.))") | join(" | ")
+    ' ${names[@]+"${names[@]}"} <<< "${metadata}"
+}
+
+profile=default
+[[ "${quick}" == true ]] && profile=quick
+test_args=(--workspace --profile "${profile}")
+run_tests=true
+if [[ "${all_tests}" != true ]]; then
+    filter="$(affected_filter ${crate_dirs[@]+"${crate_dirs[@]}"})"
+    if [[ -n "${filter}" ]]; then
+        test_args+=(-E "${filter}")
+    else
+        run_tests=false
+    fi
+fi
+
+run cargo fmt --all --check
+run script/check-workspace
+[[ "${quick}" == true ]] || run cargo build --workspace --all-targets
+run cargo clippy --workspace --all-targets -- -D warnings
+# Built outside the timeout, which is for hung tests: a cold build takes minutes.
+if [[ "${run_tests}" == true ]]; then
+    run cargo nextest run --workspace --no-run
+    run ${test_prefix[@]+"${test_prefix[@]}"} cargo nextest run "${test_args[@]}"
+fi
+# nextest cannot run doctests. They pin the newtypes; a swap needs a signature change, which the
+# full run before each push catches.
+[[ "${quick}" == true ]] || run ${test_prefix[@]+"${test_prefix[@]}"} cargo test --doc --workspace
+[[ "${deny}" == true ]] && run cargo deny check
+[[ "${pre_push}" == true ]] && run script/test-pre-push
+# The vendored crate sits outside the workspace; its own unit tests cover the patch.
+if [[ "${vendor}" == true ]]; then
+    run ${test_prefix[@]+"${test_prefix[@]}"} env CARGO_TARGET_DIR=target/vendor \
+        cargo nextest run --manifest-path vendor/gpui-base/Cargo.toml --features test-support --lib
+fi

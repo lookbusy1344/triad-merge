@@ -1,0 +1,41 @@
+<!-- A sample that exercises the HTML grammar's highlight captures. -->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Sample &amp; test</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body { color: #333; margin: 0 auto; }
+  </style>
+</head>
+
+<body class="page" data-mode='dark'>
+  <!-- A comment
+       across lines. -->
+  <header id="top">
+    <h1>Heading &lt;one&gt;</h1>
+    <nav>
+      <a href="#top" title="Back to the top">Top</a>
+      <a href="https://example.com/?q=1&amp;r=2">Example</a>
+    </nav>
+  </header>
+  <main>
+    <p>Some <em>emphasis</em>, <strong>strong</strong> text and a<br>break.</p>
+    <img src="a.png" alt="" width=10 height=10>
+    <form action="/send" method="post">
+      <input type="text" name="q" required disabled>
+      <button type="submit">Send</button>
+    </form>
+    <table>
+      <tr><th>Key</th><td>Value</td></tr>
+    </table>
+  </main>
+  <script>
+    const total = [1, 2, 3].reduce((a, b) => a + b, 0);
+    console.log(`total ${total}`);
+  </script>
+</body>
+
+</html>

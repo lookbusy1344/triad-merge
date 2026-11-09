@@ -1,0 +1,133 @@
+name: triad
+
+permissions:
+  contents: read
+
+# Manual only, to save runner minutes: gh workflow run triad.yml
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: triad-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  checks:
+    name: format, workspace rules, dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain from rust-toolchain.toml
+        # GitHub's runners carry rustup; act's images do not, so it is installed there first.
+        run: |
+          if ! command -v rustup >/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup show active-toolchain || rustup toolchain install
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - run: cargo fmt --all --check
+      - run: script/check-workspace
+      - run: cargo deny check
+
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest ]
+    runs-on: ${{ matrix.os }}
+    env:
+      # Full debug info for the GPUI tree fills the Linux runner's disk. Line tables keep
+      # file and line numbers in panics and backtraces.
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+    steps:
+      - uses: actions/checkout@v5
+      - name: Free disk space
+        if: runner.os == 'Linux'
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+      - name: Install Linux system packages
+        if: runner.os == 'Linux'
+        run: >
+          sudo apt-get update && sudo apt-get install -y
+          pkg-config libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libx11-xcb-dev
+          libxcb1-dev libvulkan-dev libfontconfig-dev libfreetype-dev libasound2-dev libzstd-dev
+      - name: Install toolchain from rust-toolchain.toml
+        # GitHub's runners carry rustup; act's images do not, so it is installed there first.
+        run: |
+          if ! command -v rustup >/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo nextest run --workspace --profile ci --locked
+      - run: cargo test --doc --workspace --locked
+
+  package:
+    name: Linux packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Let the Linux test machine write its results
+        run: mkdir -p target/linux && chmod a+w target/linux
+      - run: script/linux/run image
+      - name: Headless and tool-integration tests on the release build
+        run: >
+          script/linux/run cargo nextest run --locked --cargo-profile release -p triad-merge
+          -E 'test(/^(headless|tool_integration)::/)'
+      - run: script/linux/run script/package x86_64-unknown-linux-gnu
+      - name: Name the AppImage as script/package does
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+          echo "APPIMAGE=/out/dist/triad-merge-$version-x86_64-unknown-linux-gnu.AppImage" >> "$GITHUB_ENV"
+      - name: Smoke test the AppImage on Wayland
+        run: script/linux/run env APPIMAGE_EXTRACT_AND_RUN=1 "TRIAD_APP=$APPIMAGE" script/linux/smoke wayland
+      - name: Smoke test the AppImage on X11
+        run: script/linux/run env APPIMAGE_EXTRACT_AND_RUN=1 "TRIAD_APP=$APPIMAGE" script/linux/smoke x11
+      - uses: actions/upload-artifact@v4
+        with:
+          name: triad-linux
+          path: target/linux/dist/
+
+  bench:
+    name: performance targets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain from rust-toolchain.toml
+        # GitHub's runners carry rustup; act's images do not, so it is installed there first.
+        run: |
+          if ! command -v rustup >/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo bench -p merge-core --bench merge --locked -- 'load|toggle|keystroke'
+      - run: cargo bench -p merge-syntax --bench boundaries --locked -- bounded
+      - run: cargo bench -p merge-cli --bench memory --locked
+      # Shared runners vary 834-1401 ms on load/1M for unchanged code (450 ms on a reference
+      # machine). The word-level and bounded benches merge on rayon's pool and lose more on the
+      # runner's 4 vCPUs: load-word-small-rust-bounded/1M takes 3117 ms there, 515 ms on the
+      # reference machine, 3.1 times its target. CI allows five times the target, which keeps
+      # that worst case inside the runner's spread. Memory peaks are exact and stay strict.
+      - run: script/check-bench
+        env:
+          TRIAD_BENCH_TOLERANCE_PERCENT: 500

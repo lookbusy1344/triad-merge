@@ -1,0 +1,120 @@
+//! Reads `key = value` settings files.
+
+use std::collections::BTreeMap;
+use std::fmt;
+use std::str::FromStr;
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ParseError {
+    pub line: usize,
+    pub kind: ParseErrorKind,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ParseErrorKind {
+    MissingEquals,
+    EmptyKey,
+    Duplicate(String),
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.kind {
+            ParseErrorKind::MissingEquals => write!(f, "line {}: expected `=`", self.line),
+            ParseErrorKind::EmptyKey => write!(f, "line {}: empty key", self.line),
+            ParseErrorKind::Duplicate(key) => {
+                write!(f, "line {}: `{key}` set twice", self.line)
+            }
+        }
+    }
+}
+
+impl std::error::Error for ParseError {}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Config {
+    values: BTreeMap<String, String>,
+}
+
+impl Config {
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.values.get(key).map(String::as_str)
+    }
+
+    pub fn get_or<'a>(&'a self, key: &str, default: &'a str) -> &'a str {
+        self.get(key).unwrap_or(default)
+    }
+
+    pub fn parse_as<T: FromStr>(&self, key: &str) -> Option<T> {
+        self.get(key)?.parse().ok()
+    }
+
+    pub fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+}
+
+impl FromStr for Config {
+    type Err = ParseError;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        let mut values = BTreeMap::new();
+        for (index, raw) in text.lines().enumerate() {
+            let line = raw.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let error = |kind| ParseError {
+                line: index + 1,
+                kind,
+            };
+            let (key, value) = line
+                .split_once('=')
+                .ok_or_else(|| error(ParseErrorKind::MissingEquals))?;
+            let key = key.trim();
+            if key.is_empty() {
+                return Err(error(ParseErrorKind::EmptyKey));
+            }
+            let value = value.trim().to_owned();
+            if values.insert(key.to_owned(), value).is_some() {
+                return Err(error(ParseErrorKind::Duplicate(key.to_owned())));
+            }
+        }
+        Ok(Self { values })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_pairs_and_skips_comments() {
+        let config: Config = "# server\nhost = example.org\nport=8080\n".parse().unwrap();
+        assert_eq!(config.get("host"), Some("example.org"));
+        assert_eq!(config.parse_as::<u16>("port"), Some(8080));
+        assert_eq!(config.len(), 2);
+    }
+
+    #[test]
+    fn missing_equals_names_the_line() {
+        let err = "a = 1\nbroken\n".parse::<Config>().unwrap_err();
+        assert_eq!(
+            err,
+            ParseError {
+                line: 2,
+                kind: ParseErrorKind::MissingEquals
+            }
+        );
+    }
+
+    #[test]
+    fn duplicate_key_is_an_error() {
+        let err = "a = 1\na = 2\n".parse::<Config>().unwrap_err();
+        assert_eq!(err.kind, ParseErrorKind::Duplicate("a".to_owned()));
+    }
+}

@@ -1,0 +1,19 @@
+[package]
+name = "vcs"
+description = "Repository trait and shared VCS types for triad."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# Fixture inputs shared by the backends' `testing` modules.
+testing = []
+
+[dependencies]
+camino.workspace = true
+thiserror.workspace = true

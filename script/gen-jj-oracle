@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# gen-jj-oracle — generate fixtures/oracle/jj-corpus.jsonl from jj-lib's file merge
+# (PLAN.md §B5.2). Dev-time only. It reads the git corpus's triples, so run
+# script/gen-oracle first when that changes.
+# Usage: script/gen-jj-oracle
+set -euo pipefail
+cd "$(dirname "$0")/.."
+cargo run --quiet --release -p vcs-jj --example gen_jj_oracle
+wc -l fixtures/oracle/jj-corpus.jsonl

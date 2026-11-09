@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# test-pre-push — check that script/pre-push removes its throwaway git clone on every exit:
+# a passing check, a failing check, Ctrl-C (SIGINT to the process group), SIGHUP and SIGTERM.
+#
+# Each case builds a plain git repository in a temporary directory, with script/pre-push
+# copied from this checkout and a stub script/checks. An untracked file makes the tree
+# dirty, so pre-push checks HEAD in a clone under its own TMPDIR, which must be empty after.
+#
+# Usage: script/test-pre-push
+set -euo pipefail
+# Job control gives each background pre-push its own process group, as a terminal does.
+set -m
+
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+readonly PRE_PUSH="$ROOT/script/pre-push"
+# How long a case waits for pre-push to reach the stub before it fails.
+readonly WAIT_SECONDS=30
+readonly SIGNAL_EXIT_BASE=128
+readonly SIGHUP_NUMBER=1
+readonly SIGINT_NUMBER=2
+readonly SIGTERM_NUMBER=15
+readonly FAILED_CHECK=1
+
+work=$(mktemp -d "${TMPDIR:-/tmp}/triad-test-pre-push.XXXXXX")
+trap 'rm -rf "$work"' EXIT
+
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+export GIT_AUTHOR_NAME=Fixture GIT_AUTHOR_EMAIL=fixture@example.invalid
+export GIT_COMMITTER_NAME=Fixture GIT_COMMITTER_EMAIL=fixture@example.invalid
+
+failures=0
+
+# A repository at $1 whose checks stub does what STUB_MODE says: pass, fail or block.
+make_repo() {
+  local repo=$1
+  mkdir -p "$repo/script"
+  cp "$PRE_PUSH" "$repo/script/pre-push"
+  cat >"$repo/script/checks" <<'EOF'
+#!/usr/bin/env bash
+case "$STUB_MODE" in
+  pass) exit 0 ;;
+  fail) exit 1 ;;
+  # Say so, then wait for a signal: nothing writes to the release pipe.
+  block) echo ready >"$STUB_READY"; read -r <"$STUB_RELEASE" ;;
+esac
+EOF
+  chmod +x "$repo/script/checks"
+  git -C "$repo" init --quiet
+  git -C "$repo" add .
+  git -C "$repo" commit --quiet -m base
+  echo dirty >"$repo/untracked.txt"
+}
+
+# Run case $1: stub mode $2, then signal $3 (or "none"); expect exit status $4.
+run_case() {
+  local name=$1 mode=$2 signal=$3 expected=$4
+  local dir="$work/$name"
+  mkdir -p "$dir/tmp"
+  make_repo "$dir/repo"
+  mkfifo "$dir/ready" "$dir/release"
+  # Read-write, so opening does not block and the read can time out.
+  exec 3<>"$dir/ready"
+  # exec, so $! is pre-push itself and `wait` sees its trap finish.
+  (cd "$dir/repo" && TMPDIR="$dir/tmp" STUB_MODE=$mode STUB_READY="$dir/ready" \
+    STUB_RELEASE="$dir/release" exec script/pre-push >"$dir/log" 2>&1) &
+  local pid=$!
+  if [[ $signal != none ]]; then
+    if ! read -r -t "$WAIT_SECONDS" <&3; then
+      echo "FAIL $name: pre-push did not reach the checks within ${WAIT_SECONDS}s" >&2
+      kill -KILL -- "-$pid" 2>/dev/null || true
+    else
+      kill "-$signal" -- "-$pid"
+    fi
+  fi
+  exec 3<&-
+  local status=0
+  wait "$pid" || status=$?
+  local left
+  left=$(ls -A "$dir/tmp")
+  if [[ $status -ne $expected ]]; then
+    echo "FAIL $name: exit status $status, expected $expected" >&2
+    sed 's/^/    /' "$dir/log" >&2
+    failures=$((failures + 1))
+  elif [[ -n $left ]]; then
+    echo "FAIL $name: left in TMPDIR: $left" >&2
+    failures=$((failures + 1))
+  else
+    echo "ok   $name"
+  fi
+}
+
+run_case passing pass none 0
+run_case failing fail none "$FAILED_CHECK"
+run_case interrupted block INT $((SIGNAL_EXIT_BASE + SIGINT_NUMBER))
+run_case hung_up block HUP $((SIGNAL_EXIT_BASE + SIGHUP_NUMBER))
+run_case terminated block TERM $((SIGNAL_EXIT_BASE + SIGTERM_NUMBER))
+
+if [[ $failures -gt 0 ]]; then
+  echo "$failures case(s) failed" >&2
+  exit 1
+fi

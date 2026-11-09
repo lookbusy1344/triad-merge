@@ -1,0 +1,122 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+# Vendored third-party code keeps its own lints and formatting.
+exclude = ["vendor/gpui-base"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+license = "MIT"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Restriction lints, picked one by one. `clippy.toml` lets tests unwrap and panic.
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+clone_on_ref_ptr = "warn"
+dbg_macro = "warn"
+panic = "warn"
+todo = "warn"
+unimplemented = "warn"
+unwrap_used = "warn"
+
+[workspace.dependencies]
+merge-core = { path = "crates/merge-core" }
+merge-config = { path = "crates/merge-config" }
+merge-view = { path = "crates/merge-view" }
+merge-syntax = { path = "crates/merge-syntax" }
+merge-cli = { path = "crates/merge-cli" }
+merge-session = { path = "crates/merge-session" }
+merge-app = { path = "crates/merge-app" }
+vcs = { path = "crates/vcs" }
+vcs-git = { path = "crates/vcs-git" }
+vcs-jj = { path = "crates/vcs-jj" }
+
+# Already in the tree through gpui-base, whose editor search uses it; the top panes' search
+# matches the same way.
+aho-corasick = "1.1"
+anyhow = "1"
+# Already in the tree through gpui; carries file-watch events to the diff window.
+async-channel = "2"
+camino = "1.2"
+# Already in the tree through gpui-base; the local time of a line origin.
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+clap = { version = "4.6", features = ["derive"] }
+# A counting allocator for the memory bench: safe code cannot implement `GlobalAlloc`.
+cap = { version = "0.1.2", features = ["stats"] }
+directories = "6"
+# Already in the tree through jj-lib; streams and readers from its async APIs.
+futures = { version = "0.3", default-features = false, features = ["std"] }
+# jj-cli 0.47's choice of the user's config and home directories, so triad reads jj's config where jj does.
+etcetera = "0.11"
+# Canonical paths without Windows' verbatim `\\?\` prefix, which repository roots lack.
+dunce = "1.0.5"
+# Revision and index reading only. Exact pin: the version jj-lib uses, so the build holds one gix.
+gix = { version = "=0.90.0", default-features = false, features = ["revision", "sha1"] }
+gpui-kit = "=0.8.1"
+imara-diff = "0.2"
+# Already in the tree through jj-lib; the current time for jj revset date patterns.
+jiff = "0.2"
+# Exact pin, bumped with gix (PLAN.md §A3). The git backend only: no watchman.
+jj-lib = { version = "=0.47.1", default-features = false, features = ["git"] }
+# Exact pin with jj-lib. jj's line and word diff for jj-mode merges (PLAN.md §B5.1).
+jj-core = "=0.47.1"
+# Already in the tree through gpui-component; the diff window watches its files with it.
+notify = "8"
+# Already in the tree through jj-lib; runs its async APIs to completion.
+pollster = "1"
+proptest = "1"
+# Already in the tree through jj-lib; the generator jj-lib's secure config takes, for a new config ID.
+rand = "0.10"
+rand_chacha = "0.10"
+# Already in the tree through gpui; word-merges conflicts in parallel (PLAN.md §B6).
+rayon = "1.12"
+smallvec = "1.16"
+# Names the values of the settings, key bindings and flags, and lists them, without tying
+# `merge-session` to the argument parser. Already in the tree through gpui.
+strum = { version = "0.28", features = ["derive"] }
+criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
+# Only `\n` ends a line, as in the result editor: no `cr_lines` or `unicode_lines`.
+ropey = { version = "1.6", default-features = false, features = ["simd"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Already in the tree through gix; the journal hashes its inputs with it.
+sha2 = "0.11"
+# Exact pins: the versions gpui-component builds, so the build holds one tree-sitter. The top
+# panes parse with it directly, in chunks (docs/PLAN.md §F6.3); the grammars test that.
+tree-sitter = "=0.26.13"
+tree-sitter-rust = "=0.24.2"
+tree-sitter-c-sharp = "=0.23.5"
+tree-sitter-swift = "=0.7.4"
+# The versions gpui-component 0.8.1 links, so each grammar builds once.
+tree-sitter-go = "=0.23.4"
+tree-sitter-html = "=0.23.2"
+tree-sitter-javascript = "=0.23.1"
+tree-sitter-python = "=0.23.6"
+tree-sitter-typescript = "=0.23.2"
+tempfile = "3.27"
+thiserror = "2"
+# Already in the tree through other crates; reads the settings file.
+toml = "1"
+tracing = "0.1"
+tracing-appender = "0.2"
+# No `ansi`: stderr goes to git and jj, which show it raw.
+# jj-cli 0.47's source of the host and user names jj's operations record.
+whoami = "2.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "std"] }
+
+# gpui-base 0.8.1 with triad's editor patch (PLAN.md §A6.1, vendor/gpui-base/PATCHES.md).
+[patch.crates-io]
+gpui-base = { path = "vendor/gpui-base" }
+
+# rustc on macOS keeps the object files of a build with debug info, and nothing removes them.
+# Every rustc run lists target/debug/deps: 1.26 million objects cost 10 s a listing. Panics
+# keep their locations. CARGO_PROFILE_DEV_DEBUG=line-tables-only turns debug info on.
+[profile.dev]
+debug = false

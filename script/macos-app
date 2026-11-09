@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Builds target/release/triad.app, whose bundle gives the Dock its icon: a bare binary shows the
+# generic one. Tools run the binary inside: triad.app/Contents/MacOS/triad-merge.
+set -euo pipefail
+
+readonly bin=triad-merge
+readonly identifier=dev.triad.merge
+readonly icon=images/triad.icns
+readonly min_macos=27.0
+
+[[ $(uname -s) == Darwin ]] || { echo "script/macos-app: macOS only" >&2; exit 2; }
+
+version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+readonly app=${CARGO_TARGET_DIR:-target}/release/triad.app
+
+eval "$(script/build-id)"
+cargo build --release --locked -p "$bin"
+rm -rf "$app"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+install -m 755 "${CARGO_TARGET_DIR:-target}/release/$bin" "$app/Contents/MacOS/$bin"
+cp "$icon" "$app/Contents/Resources/triad.icns"
+cat > "$app/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key><string>$bin</string>
+  <key>CFBundleIconFile</key><string>triad</string>
+  <key>CFBundleIdentifier</key><string>$identifier</string>
+  <key>CFBundleName</key><string>triad</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>$version</string>
+  <key>CFBundleVersion</key><string>$version</string>
+  <key>LSMinimumSystemVersion</key><string>$min_macos</string>
+  <key>NSHighResolutionCapable</key><true/>
+</dict>
+</plist>
+PLIST
+codesign --force --sign - "$app"
+echo "$app"

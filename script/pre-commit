@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# pre-commit — run triad's checks before committing.
+#
+# jj: run before `jj commit`, `jj describe` (finalising) and `jj squash`.
+#     Inspects the changes in @.
+# git: install once as a hook, or run directly. Inspects changes against HEAD.
+#   ln -sf ../../script/pre-commit .git/hooks/pre-commit
+#
+# Skips the checks when no file that affects the build changed. Runs the
+# quick test set (script/checks --quick) on the changed paths: the tests of the changed
+# crates and their dependents. pre-push runs the full suite.
+
+set -euo pipefail
+
+affects_build() {
+    case "$1" in
+        *.rs | Cargo.toml | */Cargo.toml | Cargo.lock | deny.toml | rust-toolchain.toml | rustfmt.toml \
+            | .config/nextest.toml | script/* | fixtures/*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+changed_paths() {
+    if jj --ignore-working-copy root > /dev/null 2>&1; then
+        jj diff --name-only -r @
+    else
+        git diff HEAD --name-only -z | tr '\0' '\n'
+    fi
+}
+
+# Run from the repo root; works when invoked via the .git/hooks symlink.
+root="$(jj --ignore-working-copy root 2> /dev/null || git rev-parse --show-toplevel)"
+cd "${root}"
+
+should_run=false
+paths=()
+while IFS= read -r path; do
+    if affects_build "${path}"; then
+        should_run=true
+    fi
+    paths+=("${path}")
+done < <(changed_paths)
+
+if [[ "${should_run}" != true ]]; then
+    echo "==> No triad build files changed, skipping."
+    exit 0
+fi
+
+echo "==> Running triad pre-commit checks..."
+script/checks --quick "${paths[@]}"
+echo "==> All checks passed. pre-push runs the full test suite."

@@ -1,0 +1,62 @@
+[package]
+name = "merge-cli"
+description = "Argument parsing, headless merge, JSON inspection, install and exit codes for triad."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+# One integration-test binary: tests/main.rs declares each file as a module.
+autotests = false
+
+[lints]
+workspace = true
+
+[dependencies]
+clap.workspace = true
+directories.workspace = true
+dunce.workspace = true
+merge-config.workspace = true
+merge-core.workspace = true
+merge-session.workspace = true
+# The language a merge's file names give.
+merge-syntax.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-appender.workspace = true
+tracing-subscriber.workspace = true
+vcs.workspace = true
+
+[dev-dependencies]
+# Object IDs of the fixture commits, and the git config `install` writes.
+gix.workspace = true
+# jj's marker oracle in `tests/markers.rs`.
+jj-lib.workspace = true
+camino.workspace = true
+cap.workspace = true
+criterion.workspace = true
+# Turns on `testing` for the memory bench.
+merge-core = { workspace = true, features = ["testing"] }
+tempfile.workspace = true
+# Reads the jj config `install` writes.
+toml.workspace = true
+vcs-git = { workspace = true, features = ["testing"] }
+vcs-jj = { workspace = true, features = ["testing"] }
+
+[[bench]]
+name = "memory"
+harness = false
+
+[[bench]]
+name = "annotate"
+harness = false
+
+[[bench]]
+name = "resolve"
+harness = false
+
+[[test]]
+name = "integration"
+path = "tests/main.rs"

@@ -1,0 +1,28 @@
+[package]
+name = "merge-view"
+description = "View model for triad: rows, navigation, scroll mapping and commands."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# The top panes' search, matching as the editors' search does.
+aho-corasick.workspace = true
+# Hover dates of line origins.
+chrono.workspace = true
+merge-core.workspace = true
+smallvec.workspace = true
+thiserror.workspace = true
+# The top panes' syntax spans.
+merge-syntax.workspace = true
+tracing.workspace = true
+# The line origin types; no VCS code.
+vcs.workspace = true
+
+[dev-dependencies]
+merge-syntax = { workspace = true, features = ["testing"] }

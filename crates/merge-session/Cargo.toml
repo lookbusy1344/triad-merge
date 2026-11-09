@@ -1,0 +1,42 @@
+[package]
+name = "merge-session"
+description = "Session layer for triad: merge semantics, repository discovery, conflict loading, line origins, the recovery journal, and a merge's file reads and writes."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+# One integration-test binary: tests/main.rs declares each file as a module.
+autotests = false
+
+[lints]
+workspace = true
+
+[dependencies]
+camino.workspace = true
+directories.workspace = true
+dunce.workspace = true
+merge-config.workspace = true
+merge-core.workspace = true
+# Syntax-aware merging: languages and their boundaries.
+merge-syntax.workspace = true
+serde_json.workspace = true
+# Atomic writes: a temporary file beside the target, renamed over it.
+tempfile.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+vcs.workspace = true
+vcs-git.workspace = true
+vcs-jj.workspace = true
+
+[dev-dependencies]
+# Reads the jj config `install` writes.
+toml.workspace = true
+# Object IDs of the fixture commits.
+gix.workspace = true
+vcs-git = { workspace = true, features = ["testing"] }
+vcs-jj = { workspace = true, features = ["testing"] }
+
+[[test]]
+name = "integration"
+path = "tests/main.rs"

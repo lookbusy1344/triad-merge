@@ -1,0 +1,56 @@
+[package]
+name = "merge-app"
+description = "GPUI shell for triad."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+# One integration-test binary: tests/main.rs declares each file as a module.
+autotests = false
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+async-channel.workspace = true
+# The grammars of the languages `merge_syntax::language` names.
+gpui-kit = { workspace = true, features = [
+    "tree-sitter-rust",
+    "tree-sitter-go",
+    "tree-sitter-csharp",
+    "tree-sitter-python",
+    "tree-sitter-swift",
+    "tree-sitter-html",
+    "tree-sitter-javascript",
+    "tree-sitter-typescript",
+    "tree-sitter-tsx",
+] }
+merge-config.workspace = true
+merge-session.workspace = true
+merge-core.workspace = true
+merge-syntax.workspace = true
+merge-view.workspace = true
+notify.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+# C#'s and Swift's highlight queries, which gpui-component registers empty.
+tree-sitter-c-sharp.workspace = true
+tree-sitter-swift.workspace = true
+tracing.workspace = true
+# The line origin types.
+vcs.workspace = true
+
+[dev-dependencies]
+dunce.workspace = true
+tempfile.workspace = true
+gpui-kit = { workspace = true, features = ["test-support"] }
+merge-core.workspace = true
+vcs = { workspace = true, features = ["testing"] }
+vcs-git = { workspace = true, features = ["testing"] }
+vcs-jj = { workspace = true, features = ["testing"] }
+
+[[test]]
+name = "integration"
+path = "tests/main.rs"

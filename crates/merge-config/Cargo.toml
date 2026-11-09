@@ -1,0 +1,26 @@
+[package]
+name = "merge-config"
+description = "Configuration for triad: the config file's format, the settings, key bindings and the names of their values."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# The home directory the config file's paths start from.
+directories.workspace = true
+# Canonical include paths without Windows' verbatim prefix.
+dunce.workspace = true
+merge-core.workspace = true
+serde.workspace = true
+strum.workspace = true
+thiserror.workspace = true
+# The revision ID kind a setting picks.
+vcs.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

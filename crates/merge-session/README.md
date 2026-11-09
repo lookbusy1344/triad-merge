@@ -1,0 +1,5 @@
+# merge-session
+
+The layer under both front ends. No GUI and no argument parsing.
+
+Public API: `load`, `save` and `read_text` for a merge's files; `io::{write_atomic, write_private}` (spec §6.2); `journal_dir`; `ExitCode`, `WindowForm` and `invocation::Window`, the forms that open a window; `settings` and `keybind`, the config file (spec §6.4); `repository::RunRepository`, the repository a run finds once and opens on first read, and `repository::Handoff`, which carries it to a window's origin lookup; `semantics` and `choose_semantics`, `choose_marker_style`, which pick git's or jj's merge semantics in the run's repository; `jj_config::merge_config`, which reads `merge.same-change` and `merge.hunk-level` from jj's config files without writing them; `env::Env`, where config files live; `native::{load, discover}` for `diff PATH`; `resolve`, conflicts read from the repository; `replay::{apply, apply_file}` for `--commands` files; and `origin::{find_merge, find_diff, find_diff_tool, carry}`, which pick the commit each input's line origins come from (spec §7.3).

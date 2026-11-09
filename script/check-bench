@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# Compare the merge benchmarks with the spec §9 targets (PLAN.md §A4.12, §A6.7). Fails when a mean
+# is above 120% of its target, a peak is above its target, or a benchmark with a target has no
+# result. TRIAD_BENCH_TOLERANCE_PERCENT replaces the 120% (CI sets it; its runners are noisy).
+# Usage: script/check-bench [criterion-dir] [memory-json]
+#   (defaults target/criterion and target/tmp/memory.json)
+# Run `cargo bench -p merge-core --bench merge -- 'load|toggle|keystroke'`,
+# `cargo bench -p merge-syntax --bench boundaries -- bounded` and
+# `cargo bench -p merge-cli --bench memory` first.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+results=${1:-target/criterion}
+memory=${2:-target/tmp/memory.json}
+
+NS_PER_MS=1000000
+BYTES_PER_MB=1048576
+TOLERANCE_PERCENT=${TRIAD_BENCH_TOLERANCE_PERCENT:-120}
+
+# benchmark/lines target-in-ms. Spec §9's targets, then regression ceilings for cases spec §9
+# exempts: a word-level merge of one conflict as large as the file, at about its measured cost.
+targets=(
+  "load/100000 100"
+  "load/1000000 1000"
+  "load-jj/100000 100"
+  "load-jj/1000000 1000"
+  "load-word-small/100000 100"
+  "load-word-small/1000000 1000"
+  "load-word-large/100000 2000"
+  "load-word-large/1000000 20000"
+  "load-word-small-rust-bounded/100000 100"
+  "load-word-small-rust-bounded/1000000 1000"
+  "load-deep-rust-bounded/100000 100"
+  "load-deep-rust-bounded/1000000 1000"
+  "toggle/100000 16"
+  "toggle/1000000 16"
+  "keystroke/100000 8"
+  "keystroke/1000000 8"
+)
+
+status=0
+for entry in "${targets[@]}"; do
+  read -r bench target_ms <<<"$entry"
+  file="$results/merge/$bench/new/estimates.json"
+  if [[ ! -f "$file" ]]; then
+    echo "error: no result for $bench ($file)" >&2
+    status=1
+    continue
+  fi
+  mean_ns=$(jq -r '.mean.point_estimate' "$file")
+  limit_ns=$((target_ms * NS_PER_MS * TOLERANCE_PERCENT / 100))
+  verdict=$(jq -rn --argjson mean "$mean_ns" --argjson limit "$limit_ns" 'if $mean > $limit then "over" else "ok" end')
+  mean_ms=$(jq -rn --argjson mean "$mean_ns" --argjson per "$NS_PER_MS" '$mean / $per * 1000 | round / 1000')
+  printf '%-26s %10s ms  target %5s ms  %s\n' "$bench" "$mean_ms" "$target_ms" "$verdict"
+  if [[ "$verdict" == over ]]; then
+    status=1
+  fi
+done
+# phase/lines limit-in-MB: the whole session's heap must stay below spec §9's memory row.
+memory_targets=(
+  "session/100000 300"
+  "session/1000000 2048"
+  "session-jj/100000 300"
+  "session-jj/1000000 2048"
+)
+
+for entry in "${memory_targets[@]}"; do
+  read -r bench target_mb <<<"$entry"
+  peak=$(jq -r --arg k "$bench" '.[$k] // empty' "$memory" 2>/dev/null || true)
+  if [[ -z "$peak" ]]; then
+    echo "error: no result for memory/$bench ($memory)" >&2
+    status=1
+    continue
+  fi
+  peak_mb=$((peak / BYTES_PER_MB))
+  verdict=ok
+  if ((peak >= target_mb * BYTES_PER_MB)); then
+    verdict=over
+    status=1
+  fi
+  printf '%-26s %10s MB  target %5s MB  %s\n' "memory/$bench" "$peak_mb" "$target_mb" "$verdict"
+done
+exit "$status"

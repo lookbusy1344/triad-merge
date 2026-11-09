@@ -1,0 +1,35 @@
+[package]
+name = "vcs-git"
+description = "git backend for triad, through gix."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+# One integration-test binary: tests/main.rs declares each file as a module.
+autotests = false
+
+[lints]
+workspace = true
+
+[features]
+# Repositories built through gix, for tests here and in other crates.
+testing = ["dep:tempfile", "vcs/testing"]
+
+[dependencies]
+camino.workspace = true
+# `blame` annotates lines (spec §7.3). `attributes` runs git's clean filters on a staged
+# resolution (spec §7.4); jj-lib enables it already, so the build gains no crate.
+gix = { workspace = true, features = ["attributes", "blame"] }
+tempfile = { workspace = true, optional = true }
+thiserror.workspace = true
+vcs.workspace = true
+
+[dev-dependencies]
+# `merge` stops a merge as git does, for the conflict tests (`PLAN.md` §D5.2).
+gix = { workspace = true, features = ["merge"] }
+vcs-git = { path = ".", features = ["testing"] }
+
+[[test]]
+name = "integration"
+path = "tests/main.rs"

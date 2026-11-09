@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Runs a command in the Linux test machine, on a copy of this checkout. OrbStack or Docker
+# provides it. The copy and the build sit on volumes: a Mac bind mount is slow, and file
+# watchers get no events through it.
+#
+#   script/linux/run image                 build the image
+#   script/linux/run cargo nextest run ... any command, in the copy
+set -euo pipefail
+
+readonly IMAGE=triad-linux
+readonly PLATFORM=linux/amd64
+root=$(cd "$(dirname "$0")/../.." && pwd)
+readonly root
+mkdir -p "$root/target/linux"
+
+if [[ ${1:-} == image ]]; then
+    exec docker build --platform "$PLATFORM" -t "$IMAGE" "$root/script/linux"
+fi
+
+# The copy has no .jj or .git, so the host names the commit of a package build.
+if [[ ${1:-} == script/package ]]; then
+    eval "$(cd "$root" && script/build-id)"
+fi
+
+exec docker run --rm --init --platform "$PLATFORM" \
+    -e TRIAD_COMMIT \
+    -e TRIAD_CHANGE \
+    -v "$root:/host:ro" \
+    -v "$root/target/linux:/out" \
+    -v triad-linux-src:/work \
+    -v triad-linux-target:/target \
+    -v triad-linux-registry:/opt/cargo/registry \
+    -e CARGO_TARGET_DIR=/target \
+    -e CARGO_TERM_COLOR=never \
+    -w /work \
+    "$IMAGE" bash -c '
+        rsync -a --delete --exclude /target --exclude /.jj --exclude /.git /host/ /work/
+        exec "$@"' bash "$@"

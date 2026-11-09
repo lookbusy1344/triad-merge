@@ -1,0 +1,281 @@
+#!/usr/bin/env -S python3 -I
+"""gen-oracle — generate fixtures/oracle/corpus.jsonl from `git merge-file` (plan §4.8).
+
+Dev-time only; the product never runs git. Each line of the corpus is one case: base, left
+and right, the conflict-marker size, and git's output and exit code for --diff3 (refinement
+off), --zdiff3 (refinement on) and the default merge style (two-way markers). git's exit code
+is the number of conflicts. Each mode also holds the output with every conflict resolved to
+the left side (--ours) and to the right (--theirs): the texts a marker parse must give.
+
+Cases come from three sources, all deterministic:
+  seed      hand-written triples for edge cases
+  mutation  random edits of seed files, from a fixed RNG seed
+  history   triad's own docs and code at pinned commits
+
+Run from anywhere: script/gen-oracle
+"""
+
+import json
+import pathlib
+import random
+import re
+import subprocess
+import sys
+import tempfile
+
+RNG_SEED = 0x7121AD
+MUTATION_CASES = 1900
+# 2.54 re-diffs histogram change groups that slider compaction moved, which moves
+# some conflicts. Earlier versions give other output.
+MIN_GIT = (2, 54)
+DEFAULT_MARKER_SIZE = 7
+MARKER_CHARS = "<|=>"
+LABELS = ("left", "base", "right")
+MODES = ("diff3", "zdiff3", "merge")
+# git's flag for each mode; the merge style is its default.
+MODE_FLAGS = {"diff3": ["--diff3"], "zdiff3": ["--zdiff3"], "merge": []}
+FAVOURS = ("ours", "theirs")
+MAX_EDITS = 4
+MAX_RUN = 3
+MAX_JOINED_SEEDS = 4
+HISTORY_LINES = 200
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+OUT = ROOT / "fixtures" / "oracle" / "corpus.jsonl"
+
+# Lines the mutations draw from. Repeats, blanks and braces are where alignment goes wrong;
+# whitespace variants exercise the whitespace modes; no NUL, which git treats as binary.
+# Marker-like lines come only from the seeds, so most cases keep the default marker size.
+POOL = [
+    "a\n", "b\n", "c\n", "}\n", "{\n", "\n", "    x\n", "  y\n", "\tz\n",
+    "a \n", " a\n", "a\r\n", "a\tb\n", "a  b\n", "end\n", "fn f() {\n", "é\n",
+    "\U0001F600\n",
+    "x\ry\n",
+]
+
+# Hand-written seeds: (name, base, left, right).
+SEEDS = [
+    ("identical", "a\nb\nc\n", "a\nb\nc\n", "a\nb\nc\n"),
+    ("all-empty", "", "", ""),
+    ("left-only", "a\nb\nc\n", "a\nB\nc\n", "a\nb\nc\n"),
+    ("right-only", "a\nb\nc\n", "a\nb\nc\n", "a\nb\nC\n"),
+    ("both-same", "a\nb\nc\n", "a\nX\nc\n", "a\nX\nc\n"),
+    ("conflict-one-line", "a\nb\nc\n", "a\nL\nc\n", "a\nR\nc\n"),
+    ("touching-changes", "a\nb\nc\nd\n", "a\nB\nc\nd\n", "a\nb\nC\nd\n"),
+    ("adjacent-separated", "a\nb\nc\nd\n", "A\nb\nc\nd\n", "a\nb\nc\nD\n"),
+    ("insert-same-position-same", "a\nb\n", "a\nx\nb\n", "a\nx\nb\n"),
+    ("insert-same-position-different", "a\nb\n", "a\nx\nb\n", "a\ny\nb\n"),
+    ("insert-at-start", "a\n", "x\na\n", "a\n"),
+    ("insert-at-end-both", "a\n", "a\nx\n", "a\ny\n"),
+    ("delete-vs-modify", "a\nb\nc\n", "a\nc\n", "a\nB\nc\n"),
+    ("delete-both", "a\nb\nc\n", "a\nc\n", "a\nc\n"),
+    ("add-add-same", "", "a\nb\n", "a\nb\n"),
+    ("add-add-different", "", "a\nb\n", "a\nc\n"),
+    ("add-add-shared-ends", "", "s\nL\nt\n", "s\nR\nt\n"),
+    ("one-side-empty", "a\nb\n", "", "a\nb\n"),
+    ("delete-all-vs-edit", "a\nb\n", "", "a\nB\n"),
+    ("no-final-newline-left", "a\nb\n", "a\nb", "a\nb\n"),
+    ("no-final-newline-both", "a\nb", "a\nB", "a\nb\nc"),
+    ("no-final-newline-conflict", "a\nb", "a\nL", "a\nR"),
+    ("crlf-to-lf-one-side", "a\r\nb\r\n", "a\nb\n", "a\r\nb\r\n"),
+    ("crlf-mixed-conflict", "a\r\nb\r\n", "a\r\nL\r\n", "a\r\nR\n"),
+    ("lone-cr", "a\rb\nc\n", "a\rB\nc\n", "a\rb\nC\n"),
+    # Marker line endings (spec §4.4).
+    ("crlf-markers-all-crlf", "a\r\nb\r\n", "a\r\nL\r\n", "a\r\nR\r\n"),
+    ("crlf-markers-left-preceding-lf", "a\r\nb\r\n", "a\nL\r\n", "a\r\nR\r\n"),
+    ("crlf-markers-right-preceding-lf", "a\r\nb\r\n", "a\r\nL\r\n", "a\nR\r\n"),
+    ("crlf-markers-base-first-lf", "a\nb\r\n", "a\r\nL\r\n", "a\r\nR\r\n"),
+    ("crlf-markers-first-line", "b\r\n", "L\r\n", "R\r\n"),
+    ("crlf-markers-first-line-left-lf", "b\r\n", "L\n", "R\r\n"),
+    ("crlf-markers-base-no-newline", "b", "L\r\n", "R\r\n"),
+    ("crlf-markers-conflict-lines-lf", "a\r\nb\n", "a\r\nL\n", "a\r\nR\n"),
+    ("crlf-markers-add-add", "", "L\r\n", "R\r\n"),
+    ("crlf-markers-sections-without-newline", "a\r\nb", "a\r\nL", "a\r\nR"),
+    ("shared-prefix-suffix-conflict", "o\n", "s1\ns2\nL\nmid\nL2\nt1\n", "s1\ns2\nR\nmid\nR2\nt1\n"),
+    ("conflicts-split-by-brace", "a\nb\n}\nc\nd\n", "A\nb\n}\nc\nD\n", "X\nb\n}\nc\nY\n"),
+    ("conflicts-split-by-punctuation", "a\n}\n)\n;\n{\n]\nd\n", "A\n}\n)\n;\n{\n]\nD\n", "X\n}\n)\n;\n{\n]\nY\n"),
+    ("whitespace-only-left", "a\nb\n", "a \nb\n", "a\nb\n"),
+    ("whitespace-both-differently", "a\nb\n", "a \nb\n", "a\t\nb\n"),
+    ("marker-like-line-in-conflict", "a\n<<<<<<< x\nb\n", "a\n<<<<<<< x\nL\n", "a\n<<<<<<< x\nR\n"),
+    ("long-marker-run", "a\n", "<<<<<<<<<< x\nL\n", "R\n"),
+    ("unicode", "é\nü\n", "é\nÜ\n", "É\nü\n"),
+    ("repeated-lines", "a\na\na\nb\n", "a\na\nb\n", "a\na\na\na\nb\n"),
+    ("braces-block-insert", "f {\n  x\n}\n", "f {\n  x\n}\ng {\n  y\n}\n", "f {\n  X\n}\n"),
+]
+
+# triad files at pinned commits: (path at each commit, [commits in order]). Paths moved from
+# 3merge/ to triad/ at commit 84332310.
+HISTORY = [
+    ("docs/SPEC.md", ["efa4851454e4", "84332310dd88", "c5a2b12213e5"]),
+    ("docs/IMPLEMENTATION_PLAN.md", ["efa4851454e4", "84332310dd88", "c5a2b12213e5"]),
+    ("docs/IMPLEMENTATION_PLAN.md", ["c5a2b12213e5", "95b2532b3713", "1b58a422ac4a"]),
+    ("docs/spike-gpui.md", ["efa4851454e4", "84332310dd88", "95b2532b3713"]),
+    ("crates/merge-core/src/text.rs", ["c64714fb06dc", "1b58a422ac4a", "1b58a422ac4a"]),
+]
+OLD_ROOT, NEW_ROOT = "3merge", "triad"
+PRE_RENAME_COMMITS = {"efa4851454e4", "65d590dde8eb"}
+
+
+def run(args, cwd=None, check=True):
+    return subprocess.run(args, cwd=cwd, capture_output=True, check=check)
+
+
+def check_git_version():
+    out = run(["git", "--version"]).stdout.decode()
+    version = tuple(int(n) for n in re.search(r"(\d+)\.(\d+)", out).groups())
+    if version < MIN_GIT:
+        sys.exit(f"gen-oracle needs git {MIN_GIT[0]}.{MIN_GIT[1]} or later, found {out.strip()}")
+    return out.strip()
+
+
+def marker_size(*texts):
+    """The spec §4.4 rule: one more than the longest marker run at a line start, at least 7."""
+    runs = [
+        len(m.group(0))
+        for text in texts
+        for line in text.split("\n")
+        for c in MARKER_CHARS
+        if (m := re.match(re.escape(c) + "+", line))
+    ]
+    longest = max((r for r in runs if r >= DEFAULT_MARKER_SIZE), default=0)
+    return max(DEFAULT_MARKER_SIZE, longest + 1)
+
+
+def merge(base, left, right, mode, size, workdir):
+    paths = {}
+    for name, text in (("base", base), ("left", left), ("right", right)):
+        paths[name] = workdir / name
+        paths[name].write_bytes(text.encode())
+
+    def merge_file(*flags):
+        args = [
+            "git", "merge-file", "-p", *MODE_FLAGS[mode], "--diff-algorithm=histogram",
+            f"--marker-size={size}", *flags,
+            "-L", LABELS[0], "-L", LABELS[1], "-L", LABELS[2],
+            str(paths["left"]), str(paths["base"]), str(paths["right"]),
+        ]
+        result = run(args, check=False)
+        if result.returncode < 0 or result.stderr:
+            sys.exit(f"git merge-file failed: {result.stderr.decode()}")
+        return result
+
+    result = merge_file()
+    record = {"exit": result.returncode, "output": result.stdout.decode()}
+    for favour in FAVOURS:
+        record[favour] = merge_file(f"--{favour}").stdout.decode()
+    return record
+
+
+def mutate(rng, text):
+    lines = text.splitlines(keepends=True)
+    for _ in range(rng.randint(1, MAX_EDITS)):
+        at = rng.randint(0, len(lines))
+        run_len = rng.randint(1, MAX_RUN)
+        op = rng.choice(["insert", "delete", "replace", "duplicate", "whitespace", "ending"])
+        new = [rng.choice(POOL) for _ in range(run_len)]
+        if op == "insert" or not lines:
+            lines[at:at] = new
+        elif op == "delete":
+            del lines[at:at + run_len]
+        elif op == "replace":
+            lines[at:at + run_len] = new
+        elif op == "duplicate":
+            lines[at:at] = lines[max(0, at - run_len):at]
+        elif op == "whitespace" and at < len(lines):
+            body, end = split_ending(lines[at])
+            lines[at] = rng.choice([body + " ", " " + body, body.replace(" ", "\t")]) + end
+        elif op == "ending" and at < len(lines):
+            body, end = split_ending(lines[at])
+            lines[at] = body + rng.choice(["\n", "\r\n", ""])
+    if lines and rng.random() < 0.1:
+        lines[-1] = split_ending(lines[-1])[0]
+    return "".join(lines)
+
+
+def split_ending(line):
+    for end in ("\r\n", "\n"):
+        if line.endswith(end):
+            return line[: -len(end)], end
+    return line, ""
+
+
+def mutation_cases(rng):
+    texts = [text for _, b, l, r in SEEDS for text in (b, l, r)]
+    for n in range(MUTATION_CASES):
+        # Joined seeds give longer files with several regions; a missing final newline may
+        # then sit mid-file, which is fine: it only joins two lines.
+        base = "".join(rng.choice(texts) for _ in range(rng.randint(1, MAX_JOINED_SEEDS)))
+        shape = rng.random()
+        if shape < 0.05:
+            left = mutate(rng, base)
+            right = left
+        elif shape < 0.10:
+            left, right = mutate(rng, base), base
+        elif shape < 0.40:
+            # Both sides share some edits: conflicts with shared lines, for refinement.
+            shared = mutate(rng, base)
+            left, right = mutate(rng, shared), mutate(rng, shared)
+        else:
+            left, right = mutate(rng, base), mutate(rng, base)
+        yield f"mutation-{n:04}", base, left, right
+
+
+def file_at(commit, path):
+    root = OLD_ROOT if commit_before_rename(commit) else NEW_ROOT
+    repo = vcs_root()
+    full = f"{root}/{path}"
+    if (repo / ".jj").exists():
+        out = run(["jj", "--ignore-working-copy", "file", "show", "-r", commit, full], cwd=repo)
+    else:
+        out = run(["git", "show", f"{commit}:{full}"], cwd=repo)
+    return out.stdout.decode()
+
+
+def commit_before_rename(commit):
+    return commit in PRE_RENAME_COMMITS
+
+
+def vcs_root():
+    for parent in (ROOT, *ROOT.parents):
+        if (parent / ".jj").exists() or (parent / ".git").exists():
+            return parent
+    sys.exit("gen-oracle: not inside a jj or git repository")
+
+
+def head(text):
+    return "".join(text.splitlines(keepends=True)[:HISTORY_LINES])
+
+
+def history_cases(rng):
+    for n, (path, (c0, c1, c2)) in enumerate(HISTORY):
+        v0, v1, v2 = (head(file_at(c, path)) for c in (c0, c1, c2))
+        yield f"history-{n:02}-sequential", v0, v1, v2
+        yield f"history-{n:02}-mutated", v0, v1, mutate(rng, v0)
+
+
+def main():
+    git = check_git_version()
+    rng = random.Random(RNG_SEED)
+    cases = [(f"seed-{name}", b, l, r) for name, b, l, r in SEEDS]
+    cases += list(mutation_cases(rng))
+    cases += list(history_cases(rng))
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as tmp, OUT.open("w") as out:
+        workdir = pathlib.Path(tmp)
+        for case_id, base, left, right in cases:
+            size = marker_size(base, left, right)
+            record = {
+                "id": case_id,
+                "base": base,
+                "left": left,
+                "right": right,
+                "marker_size": size,
+            }
+            for mode in MODES:
+                record[mode] = merge(base, left, right, mode, size, workdir)
+            out.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+    print(f"{len(cases)} cases written to {OUT.relative_to(ROOT)} with {git}")
+
+
+if __name__ == "__main__":
+    main()

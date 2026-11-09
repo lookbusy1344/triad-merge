@@ -1,0 +1,3 @@
+edition = "2024"
+# Fills lines to max_width before breaking struct literals, calls and chains.
+use_small_heuristics = "Max"

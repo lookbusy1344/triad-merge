@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# gen-conflict-repo — build a disposable jj repository whose working copy holds unresolved merge
+# conflicts in two Rust files. `jj git init` lays it out by jj's default: colocated.
+#
+# The sources sit in fixtures/conflict-repo/. `base/` is a small crate; `left/` and `right/`
+# hold the files each side changes, copied over base. Every fixture file ends in .txt, so
+# cargo, rustfmt, clippy and `jj fix` leave it alone; the copy drops the suffix. The
+# repository has this history:
+#
+#   @  merge of left and right: conflicts in src/config.rs and src/inventory.rs
+#   ├─╮
+#   │ ○  right (bookmark): quoted values, duplicate-line report, SKU charset, field rename
+#   ○ │  left (bookmark): INI sections, zero-count check, sorted SKUs
+#   ├─╯
+#   ○  base (bookmark)
+#
+# Identity, timestamps and change IDs are fixed, so every run gives the same commit and
+# change IDs. The script ignores the user's jj config.
+#
+# Usage: script/gen-conflict-repo [dest]
+#   dest  a directory that does not exist or is empty (default: a new temp directory)
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+FIXTURES="$ROOT/fixtures/conflict-repo"
+EXPECTED_CONFLICTS=$'src/config.rs\nsrc/inventory.rs'
+
+dest=
+for arg in "$@"; do
+  case "$arg" in
+    -h | --help) sed -n '2,/^set -euo/{/^set -euo/d;s/^# \{0,1\}//;p;}' "$0"; exit 0 ;;
+    -*) echo "error: unknown option $arg" >&2; exit 2 ;;
+    *)
+      [[ -z "$dest" ]] || { echo "error: more than one destination" >&2; exit 2; }
+      dest=$arg
+      ;;
+  esac
+done
+
+if [[ -z "$dest" ]]; then
+  dest=$(mktemp -d "${TMPDIR:-/tmp}/triad-conflicts.XXXXXX")
+elif [[ -e "$dest" && -n "$(ls -A "$dest")" ]]; then
+  echo "error: $dest is not empty" >&2
+  exit 1
+fi
+mkdir -p "$dest"
+dest=$(cd "$dest" && pwd)
+
+# An isolated jj config: no user settings, signing or hooks leak in.
+config=$(mktemp "${TMPDIR:-/tmp}/triad-conflicts-config.XXXXXX")
+trap 'rm -f "$config"' EXIT
+cat >"$config" <<'EOF'
+[user]
+name = "triad Fixture"
+email = "fixture@example.invalid"
+[ui]
+paginate = "never"
+color = "never"
+EOF
+export JJ_CONFIG="$config"
+export JJ_TIMESTAMP="2026-01-01T12:00:00+00:00"
+# jj reseeds its change-ID generator from this on every run; a new seed per call keeps the
+# IDs fixed across runs and distinct within one.
+seed=0
+jj_() { seed=$((seed + 1)); JJ_RANDOMNESS_SEED=$seed jj --quiet -R "$dest" "$@"; }
+# Copy a fixture tree into the working copy, dropping the .txt suffix.
+copy_tree() {
+  local src=$1 file rel
+  while IFS= read -r -d '' file; do
+    rel=${file#"$src"/}
+    mkdir -p "$dest/$(dirname "$rel")"
+    cp "$file" "$dest/${rel%.txt}"
+  done < <(find "$src" -type f -name '*.txt' -print0)
+}
+# Replace the working copy's files with base, then lay one side's files over it.
+lay() {
+  find "$dest" -mindepth 1 -maxdepth 1 ! -name .jj ! -name .git -exec rm -rf {} +
+  copy_tree "$FIXTURES/base"
+  [[ -z "${1:-}" ]] || copy_tree "$FIXTURES/$1"
+}
+
+# No --colocate or --no-colocate: the repository takes jj's default layout.
+JJ_RANDOMNESS_SEED=0 jj --quiet git init "$dest"
+
+lay
+jj_ commit -m "base: warehouse crate with inventory and config modules"
+jj_ bookmark create base -r @-
+
+lay left
+jj_ commit -m "left: INI sections, zero-count check, sorted SKUs"
+jj_ bookmark create left -r @-
+
+jj_ new base
+lay right
+jj_ commit -m "right: quoted values, duplicate-line report, SKU charset, field rename"
+jj_ bookmark create right -r @-
+
+jj_ new left right -m "merge left and right"
+
+conflicts=$(cd "$dest" && jj --quiet resolve --list | awk '{print $1}' | sort)
+if [[ "$conflicts" != "$EXPECTED_CONFLICTS" ]]; then
+  printf 'error: expected conflicts in:\n%s\ngot:\n%s\n' "$EXPECTED_CONFLICTS" "$conflicts" >&2
+  exit 1
+fi
+
+echo "$dest"

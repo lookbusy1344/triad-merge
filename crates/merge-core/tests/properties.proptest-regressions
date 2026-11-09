@@ -1,0 +1,11 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 2784b15ed5b03ab75dd763e952391e78cc78ac2e981e11a0fd0a5fe390aa7a90 # shrinks to left = "c\na \n", right = "}\na \nc\n"
+cc 4f21100e67a942a4a7d441faed4aa5818b93de0f15b3c53d283d53f214f99676 # shrinks to base = "", left = "", right = "", ops = [TwoCursors(0, 0, "x")]
+cc 709278fe53f24ef22f068d5550840484ba60c2dba547180c08916b7f054520af # shrinks to base = "c\n}\n", left = "c\n", right = "a \na\nc\n", ops = [Insert(269986965888733464, "x"), Delete(1206505962802142804, 5), Toggle(0, Side(0)), Toggle(0, Side(0)), Clear(1747580709), Undo, Delete(12225957737466670479, 2)]
+cc faea1e3b37b526963c467bc0d7c34e446727245c0795735c9b220684ef39553c # shrinks to base = "a\na\n", left = "a\na\na\na\na\na\na\n", right = "a \n", ops = [TwoCursors(0, 3034458135244086, "z\n")]
+cc 428a02f07503c12d9d54069a7981f7138efd67500cd25d5f338772bd5d47c3bd # shrinks to sides = ["=======", "=======", "a\n======="], bases = ["", "a"], refine = Ends
