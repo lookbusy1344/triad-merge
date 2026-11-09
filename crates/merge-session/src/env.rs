@@ -14,7 +14,7 @@ pub struct Env {
     /// `JJ_CONFIG`.
     pub jj_config: Option<OsString>,
     /// The platform's user config directory as jj finds it: `XDG_CONFIG_HOME` or `~/.config`
-    /// on Unix and macOS, `%APPDATA%` on Windows.
+    /// on Unix and macOS; `APPDATA`, else the roaming app data folder, on Windows.
     pub user_config_dir: Option<PathBuf>,
     /// jj's system config directory: `/etc/jj` on Unix, none on Windows.
     pub jj_system_config_dir: Option<PathBuf>,
@@ -50,7 +50,10 @@ impl Env {
             jj_system_config_dir: cfg!(unix).then(|| PathBuf::from(JJ_SYSTEM_CONFIG_DIR)),
         };
         env.user_config_dir = if cfg!(windows) {
-            directories::BaseDirs::new().map(|dirs| dirs.config_dir().to_owned())
+            // jj, through etcetera, reads APPDATA before it asks Windows for the folder.
+            var("APPDATA")
+                .map(PathBuf::from)
+                .or_else(|| directories::BaseDirs::new().map(|dirs| dirs.config_dir().to_owned()))
         } else {
             // jj, through etcetera, takes XDG_CONFIG_HOME only when it is absolute.
             env.xdg_config_home
@@ -121,6 +124,13 @@ mod tests {
     fn an_empty_xdg_config_home_puts_jjs_user_config_dir_under_the_platform_home() {
         let env = env_of(&[("HOME", ""), ("XDG_CONFIG_HOME", "")]);
         assert_eq!(env.user_config_dir, Some(PathBuf::from("/platform/home/.config")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn appdata_is_jjs_user_config_dir_on_windows() {
+        let env = env_of(&[("APPDATA", r"C:\roaming")]);
+        assert_eq!(env.user_config_dir, Some(PathBuf::from(r"C:\roaming")));
     }
 
     #[cfg(windows)]
