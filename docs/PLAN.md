@@ -32,6 +32,8 @@ Dependencies: jj-lib and jj-core 0.47.1 on gix 0.90 (§A7.1). gpui-kit 0.8.1 wit
 
 The Dock icon needs `triad.app` (`script/macos-app`): `setApplicationIconImage` is unsafe in `objc2-app-kit`, so a bare binary cannot set it under the `unsafe_code` rule.
 
+CI: `triad.yml` tests on Linux, macOS and Windows; `bench.yml` and `audit.yml` (`cargo audit`, `cargo deny check advisories`) run weekly. The Linux jobs pass under `act`.
+
 The workspace has 11 crates. `script/checks` runs format, workspace rules, build, clippy, the full test suite and `cargo deny`; `script/checks --quick`, run before each commit, leaves out the jj and scrolling tests and runs only the tests of the changed crates and their dependents.
 
 ## 2. Next steps
@@ -58,6 +60,7 @@ In order. Each is one or more commits.
 | Windows icon resource | A Windows build machine | §E7.2 |
 | A histogram diff that gives git's hunks faster: 1.5 s against jj's 70 ms on the 100k-line `deep` triple | — | §B6 |
 | More grammars | — | §F9 |
+| First CI run on macOS and Windows runners | A push | `.github/workflows/triad.yml` |
 | A sideways scrollbar for the top panes: a `ScrollbarHandle` over `Sideways` | — | §E4.4 |
 | Review and diff features, §G2, §G4–§G14 | Owner's choices on §G15's open points | G |
 | Razor | A grammar that covers its code blocks | §F1 |
@@ -93,7 +96,7 @@ Each part keeps its decisions with their reasons and dates: §A11, §B7, §C6, �
 - **Expected values.** They come from the spec, from hand calculation, or from the git oracle corpus (§A4.8). Never from the code's own output.
 - **Test runs.** While iterating, run targeted tests: `cargo nextest run --workspace -E 'package(<crate>) & test(<filter>)'`. Run the full suite once before each commit. Log output to a file and read its tail.
 - **Lints.** `unsafe_code = "forbid"` and clippy pedantic with `-D warnings` apply from the first commit of every production crate (spec §2.3, §2.4).
-- **Commits.** One task or sub-task per commit, as a conventional commit, through jj. Commits happen only when the owner asks. Nothing is pushed; the owner pushes. CI runs on request (`gh workflow run triad.yml`), on Linux only, to save runner minutes. Locally, `act` runs the Linux job.
+- **Commits.** One task or sub-task per commit, as a conventional commit, through jj. Commits happen only when the owner asks. Nothing is pushed; the owner pushes. CI (`triad.yml`) runs on each push to `main`, each pull request and weekly, on Linux, macOS and Windows; docs-only changes skip it. `bench.yml` and `audit.yml` run by hand and weekly. Locally, `act` runs the Linux jobs.
 - **git and jj parity** (spec §1.2). Every VCS task is done when it passes the conformance suite on git, colocated jj and internal jj repos. Shared types follow jj's model: n sides, n − 1 bases, an optional label per term. git fills the same types. Facts that only one VCS records are optional fields, never a separate code path in `merge-view` or `merge-app`.
 - **Zed first.** Before designing any UI, editor or VCS-integration task, check how Zed solves it, and record what was found and the source in the task. Spec §2.5 sets the licence rule: study the design, never copy GPL code. Tasks with a known Zed counterpart:
   - §A5.2 and §A6.3: scroll sync, from Zed's split diff.

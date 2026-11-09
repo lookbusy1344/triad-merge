@@ -73,7 +73,7 @@ macOS is outside the App Store. The App Store sandbox blocks access to the arbit
 - Prompts: the platform's alert on macOS and Windows, and triad's own on Linux. There, Enter takes the first button. Escape takes Keep Editing, Keep Mine or Cancel, or the only button, and otherwise does nothing, so it never discards a recovery journal.
 - A prompt that can lose work puts the answer that keeps it first, so the default button (Enter) never loses it: Save & Exit or Save when a window closes with changes, Keep Mine when a file with edits changes on disk, Restore for a recovery journal, Try Again after a failed save.
 - Paths use `std::path` and `camino`. No code assumes `/` separators, case-sensitive file systems or POSIX permissions.
-- CI runs on request, on Linux x64. macOS is tested locally. M4b adds Windows x64 and Windows ARM64 back to the matrix; Windows ARM64 runs on native ARM64 runners.
+- CI builds, lints and tests on Linux x64, macOS ARM64 and Windows x64 for each push to `main` and each pull request, and weekly. CI runs no ARM64 Linux or Windows jobs.
 
 ### 2.3 No unsafe code
 
@@ -702,7 +702,7 @@ Integration tests run the built binary in `--headless` and `inspect --json` mode
 
 ### 8.7 Performance tests
 
-Benchmarks (`criterion`) on generated 10k-, 100k- and 1M-line inputs, with a fixed seed. CI fails if a benchmark exceeds §9 targets by more than 20%.
+Benchmarks (`criterion`) on generated 10k-, 100k- and 1M-line inputs, with a fixed seed. `script/check-bench` fails if a benchmark exceeds §9 targets by more than 20%. The `bench` workflow runs by hand and weekly, and allows five times the target, since shared runners are noisy.
 
 ### 8.8 VCS backend tests
 

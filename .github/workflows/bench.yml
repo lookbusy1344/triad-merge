@@ -1,0 +1,49 @@
+name: bench
+
+permissions:
+  contents: read
+
+# Shared runners are too noisy to gate pushes on: run by hand or weekly.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'
+
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  bench:
+    name: performance targets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain from rust-toolchain.toml
+        # GitHub's runners carry rustup; act's images do not, so it is installed there first.
+        run: |
+          if ! command -v rustup >/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo bench -p merge-core --bench merge --locked -- 'load|toggle|keystroke'
+      - run: cargo bench -p merge-syntax --bench boundaries --locked -- bounded
+      - run: cargo bench -p merge-cli --bench memory --locked
+      # Shared runners vary 834-1401 ms on load/1M for unchanged code (450 ms on a reference
+      # machine). The word-level and bounded benches merge on rayon's pool and lose more on the
+      # runner's 4 vCPUs: load-word-small-rust-bounded/1M takes 3117 ms there, 515 ms on the
+      # reference machine, 3.1 times its target. CI allows five times the target, which keeps
+      # that worst case inside the runner's spread. Memory peaks are exact and stay strict.
+      - run: script/check-bench
+        env:
+          TRIAD_BENCH_TOLERANCE_PERCENT: 500

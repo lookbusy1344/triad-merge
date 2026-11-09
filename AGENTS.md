@@ -128,7 +128,7 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | Rewrite `images/` from the mark's geometry | `swift script/gen-images.swift` |
 | Print the accessibility tree of a running window | `swift script/ax-tree.swift PID [NAME...]` (`docs/release-checklist.md`) |
 | Linux test machine in OrbStack (`PLAN.md` §E7.1) | `script/linux/run image` once; then `script/linux/run cargo build -p triad-merge`, `script/linux/run cargo nextest run --workspace --profile linux-emulated`, `script/linux/run script/linux/smoke wayland` or `x11` |
-| Linux CI locally (needs OrbStack running) | `act -W .github/workflows/triad.yml -j <checks\|test\|package\|bench> -P ubuntu-latest=catthehacker/ubuntu:act-latest --container-architecture linux/arm64`. act runs as root, so the four tests of unreadable or unwritable paths fail there; GitHub's runners do not run as root |
+| Linux CI locally (needs OrbStack running) | `act workflow_dispatch -W .github/workflows/<triad\|bench\|audit>.yml [-j <job>] -P ubuntu-latest=catthehacker/ubuntu:act-latest --container-architecture linux/arm64`; `triad.yml` runs only its Linux matrix entry under act. act runs as root, so the four tests of unreadable or unwritable paths fail there; GitHub's runners do not run as root |
 | Linux packages into `target/linux/dist` | `script/linux/run script/package x86_64-unknown-linux-gnu` |
 
 ## Layout

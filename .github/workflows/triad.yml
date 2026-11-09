@@ -3,9 +3,18 @@ name: triad
 permissions:
   contents: read
 
-# Manual only, to save runner minutes: gh workflow run triad.yml
+# Docs-only changes run nothing. The weekly run catches breakage from outside the
+# repository: a new stable Rust (rust-toolchain.toml follows the channel), new lints,
+# new runner images.
 on:
+  push:
+    branches: [ main ]
+    paths-ignore: [ 'docs/**', '**/*.md', 'images/**', 'LICENSE' ]
+  pull_request:
+    paths-ignore: [ 'docs/**', '**/*.md', 'images/**', 'LICENSE' ]
   workflow_dispatch:
+  schedule:
+    - cron: '0 5 * * 1'
 
 concurrency:
   group: triad-${{ github.ref }}
@@ -45,7 +54,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-latest ]
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
     runs-on: ${{ matrix.os }}
     env:
       # Full debug info for the GPUI tree fills the Linux runner's disk. Line tables keep
@@ -71,16 +80,24 @@ jobs:
             export PATH="$HOME/.cargo/bin:$PATH"
           fi
           rustup show active-toolchain || rustup toolchain install
+      # Only main saves the cache, so branches cannot push main's out of the 10 GB limit.
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
+      # Clippy on every platform: the code has per-platform cfg branches.
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo nextest run --workspace --profile ci --locked
-      - run: cargo test --doc --workspace --locked
+      - name: Doc tests
+        if: runner.os == 'Linux'
+        run: cargo test --doc --workspace --locked
 
   package:
     name: Linux packages
+    # The container image and AppImage smoke tests are slow; run them by hand or weekly.
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -104,30 +121,3 @@ jobs:
         with:
           name: triad-linux
           path: target/linux/dist/
-
-  bench:
-    name: performance targets
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install toolchain from rust-toolchain.toml
-        # GitHub's runners carry rustup; act's images do not, so it is installed there first.
-        run: |
-          if ! command -v rustup >/dev/null; then
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
-            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-            export PATH="$HOME/.cargo/bin:$PATH"
-          fi
-          rustup show active-toolchain || rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo bench -p merge-core --bench merge --locked -- 'load|toggle|keystroke'
-      - run: cargo bench -p merge-syntax --bench boundaries --locked -- bounded
-      - run: cargo bench -p merge-cli --bench memory --locked
-      # Shared runners vary 834-1401 ms on load/1M for unchanged code (450 ms on a reference
-      # machine). The word-level and bounded benches merge on rayon's pool and lose more on the
-      # runner's 4 vCPUs: load-word-small-rust-bounded/1M takes 3117 ms there, 515 ms on the
-      # reference machine, 3.1 times its target. CI allows five times the target, which keeps
-      # that worst case inside the runner's spread. Memory peaks are exact and stay strict.
-      - run: script/check-bench
-        env:
-          TRIAD_BENCH_TOLERANCE_PERCENT: 500
