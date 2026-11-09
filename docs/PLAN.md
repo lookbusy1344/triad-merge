@@ -32,7 +32,7 @@ Dependencies: jj-lib and jj-core 0.47.1 on gix 0.90 (§A7.1). gpui-kit 0.8.1 wit
 
 The Dock icon needs `triad.app` (`script/macos-app`): `setApplicationIconImage` is unsafe in `objc2-app-kit`, so a bare binary cannot set it under the `unsafe_code` rule.
 
-CI: `triad.yml` tests on Linux, macOS and Windows; `bench.yml` and `audit.yml` (`cargo audit`, `cargo deny check advisories`) run weekly. The Linux jobs pass under `act`.
+CI: `triad.yml` tests on Linux, macOS and Windows; `bench.yml` and `audit.yml` (`cargo audit`, `cargo deny check advisories`) run weekly. Linux and macOS pass on GitHub's runners and the Linux jobs under `act`; Windows waits on the next push.
 
 The workspace has 11 crates. `script/checks` runs format, workspace rules, build, clippy, the full test suite and `cargo deny`; `script/checks --quick`, run before each commit, leaves out the jj and scrolling tests and runs only the tests of the changed crates and their dependents.
 
@@ -60,7 +60,7 @@ In order. Each is one or more commits.
 | Windows icon resource | A Windows build machine | §E7.2 |
 | A histogram diff that gives git's hunks faster: 1.5 s against jj's 70 ms on the 100k-line `deep` triple | — | §B6 |
 | More grammars | — | §F9 |
-| First CI run on macOS and Windows runners | A push | `.github/workflows/triad.yml` |
+| Windows CI passing | A push | `.github/workflows/triad.yml` |
 | Windows ARM64 in CI (`windows-11-arm`), before version 1.0 | Windows x64 passing in CI | `.github/workflows/triad.yml`, §E7 |
 | A sideways scrollbar for the top panes: a `ScrollbarHandle` over `Sideways` | — | §E4.4 |
 | Review and diff features, §G2, §G4–§G14 | Owner's choices on §G15's open points | G |
@@ -181,7 +181,7 @@ M1 needs no GUI. It produces a correct, tested engine and the `triad-merge --hea
   - A `checks` job on Linux: `cargo fmt --check`, `script/check-workspace`, `cargo deny check`.
   - A `test` job on each target: `cargo clippy --workspace --all-targets -- -D warnings`; `cargo nextest run --workspace --profile ci`.
   - Test the workflow locally with `act` for the Linux jobs. act needs OrbStack running.
-- Done when the Linux job passes under `act`, and CI passes on the three targets after the owner pushes. The Linux jobs pass under `act`; macOS and Windows wait on the first push (§3).
+- Done when the Linux job passes under `act`, and CI passes on the three targets after the owner pushes. Linux and macOS pass; Windows waits on the next push (§3).
 
 #### A4.2 Text loading (`merge-core::text`)
 

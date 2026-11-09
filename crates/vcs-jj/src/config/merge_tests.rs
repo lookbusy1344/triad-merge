@@ -27,7 +27,7 @@ impl World {
     }
 
     fn platform(&self) -> PathBuf {
-        self.home().join(".config/jj")
+        self.home().join(".config").join("jj")
     }
 
     fn workspace(&self) -> PathBuf {

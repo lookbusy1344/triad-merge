@@ -65,6 +65,13 @@ pub fn run(vcs: RepoKind, config: Option<&Path>) -> Result<String, InstallError>
 mod tests {
     use super::*;
 
+    /// A root that makes a path absolute on this platform.
+    const ROOT: &str = if cfg!(windows) { r"C:\" } else { "/" };
+
+    fn absolute(relative: &str) -> PathBuf {
+        Path::new(ROOT).join(relative)
+    }
+
     #[test]
     fn the_windows_gui_binary_installs_the_console_binary_beside_it() {
         assert_eq!(
@@ -79,12 +86,13 @@ mod tests {
 
     #[test]
     fn an_appimage_is_named_in_place_of_its_passing_mount() {
+        let appimage = absolute("home/me/triad-merge.AppImage");
         assert_eq!(
             entry_program(
-                Path::new("/tmp/.mount_triadX/usr/bin/triad-merge"),
-                Some(OsStr::new("/home/me/triad-merge.AppImage"))
+                &absolute("tmp/.mount_triadX/usr/bin/triad-merge"),
+                Some(appimage.as_os_str())
             ),
-            Path::new("/home/me/triad-merge.AppImage")
+            appimage
         );
     }
 

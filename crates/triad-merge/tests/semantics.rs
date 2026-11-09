@@ -221,6 +221,9 @@ fn reading_jjs_config_writes_nothing() {
         .env_remove("JJ_CONFIG")
         .env("HOME", &home)
         .env_remove("XDG_CONFIG_HOME")
+        // Windows takes the home from USERPROFILE and jj's config directory from APPDATA.
+        .env("USERPROFILE", &home)
+        .env("APPDATA", home.join(".config"))
         .arg("--headless")
         .args(["base", "left", "right"].into_iter().zip(SAME).map(|(name, text)| {
             let path = world.dir.path().join(name);

@@ -2113,11 +2113,18 @@ mod tests {
         assert_eq!(path, dir.path());
     }
 
+    /// A root that makes a path absolute on this platform.
+    const ROOT: &str = if cfg!(windows) { r"C:\" } else { "/" };
+
+    fn absolute(relative: &str) -> PathBuf {
+        Path::new(ROOT).join(relative)
+    }
+
     fn locations() -> Locations {
         Locations {
             config: None,
-            xdg_config_home: Some(PathBuf::from("/xdg")),
-            home: Some(PathBuf::from("/home/u")),
+            xdg_config_home: Some(absolute("xdg")),
+            home: Some(absolute("home").join("u")),
             app_data: Some(PathBuf::from(r"C:\Users\u\AppData\Roaming")),
         }
     }
@@ -2133,24 +2140,23 @@ mod tests {
     fn unix_takes_xdg_config_home_else_dot_config() {
         assert_eq!(
             locations().unix_path(),
-            Some(Path::new("/xdg").join("triad").join("config.triad"))
+            Some(absolute("xdg").join("triad").join("config.triad"))
         );
         let without = Locations { xdg_config_home: None, ..locations() };
         assert_eq!(
             without.unix_path(),
-            Some(Path::new("/home/u").join(".config").join("triad").join("config.triad"))
+            Some(absolute("home").join("u").join(".config").join("triad").join("config.triad"))
         );
         let neither = Locations { xdg_config_home: None, home: None, ..locations() };
         assert_eq!(neither.unix_path(), None);
     }
 
-    #[cfg(unix)]
     #[test]
     fn unix_ignores_a_relative_xdg_config_home() {
         let relative = Locations { xdg_config_home: Some(PathBuf::from("xdg")), ..locations() };
         assert_eq!(
             relative.unix_path(),
-            Some(Path::new("/home/u/.config/triad/config.triad").to_path_buf())
+            Some(absolute("home").join("u").join(".config").join("triad").join("config.triad"))
         );
     }
 

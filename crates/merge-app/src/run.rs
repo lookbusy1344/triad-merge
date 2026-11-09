@@ -358,7 +358,7 @@ mod tests {
         // Repository roots are canonical, as discovery gives them.
         assert_eq!(
             Caller::new(&repo, Some(&root), Some(&output)).journal_name(&output, Some("src/a.txt")),
-            std::fs::canonicalize(&root).unwrap().join("src/a.txt")
+            dunce::canonicalize(&root).unwrap().join("src/a.txt")
         );
     }
 

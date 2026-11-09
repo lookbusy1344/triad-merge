@@ -68,6 +68,7 @@ cargo deny check                  # when a manifest, Cargo.lock or deny.toml cha
 - Never `-p` for a local dev build, run or test run; the Linux container keeps its own target directory. It resolves a narrower feature set than the workspace, rebuilds the tree-sitter grammars, and the next gate rebuilds them again, past 30 s.
 - On macOS, a first run after a relink that stalls before any test starts is Gatekeeper scanning the new binaries. README § Build and test gives the fix.
 - Unit tests sit next to the code in `#[cfg(test)]` modules; integration tests in each crate's `tests/`.
+- Tests pass on Windows too. A path a test treats as absolute is absolute there: `/home/u` is not, `C:\home\u` is. Canonicalise with `dunce::canonicalize`, as the product does; `std::fs::canonicalize` gives `\\?\` paths on Windows. Build an expected path from `join` per component; its display must match the product's. Quote and escape a path written into a git config file. A child process that must not find the real home gets `USERPROFILE` and `APPDATA` beside `HOME`.
 
 ## Push
 

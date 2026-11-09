@@ -397,12 +397,19 @@ fn git_dir(home: &Home, fixture: &Fixture) -> PathBuf {
     get_git_backend(config.workspace.repo_loader().store()).unwrap().git_repo_path().to_owned()
 }
 
+/// `path` as a quoted git config value. Backslashes, as in Windows paths, and quotes are
+/// escapes there, so they are escaped.
+fn git_config_string(path: &Path) -> String {
+    let escaped = path.display().to_string().replace('\\', r"\\").replace('"', r#"\""#);
+    format!("\"{escaped}\"")
+}
+
 fn ignores_from_git(fixture: &Fixture) {
     let home = Home::new();
     let git = git_dir(&home, fixture);
     let global = home.write("global-ignore", "*.log\n");
     let config = std::fs::read_to_string(git.join("config")).unwrap();
-    let excludes = format!("{config}\n[core]\n\texcludesFile = {}\n", global.display());
+    let excludes = format!("{config}\n[core]\n\texcludesFile = {}\n", git_config_string(&global));
     std::fs::write(git.join("config"), excludes).unwrap();
     write(&git.join("info").join("exclude"), "*.tmp\n");
     let config = home.load(fixture);
