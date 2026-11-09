@@ -73,7 +73,7 @@ macOS is outside the App Store. The App Store sandbox blocks access to the arbit
 - Prompts: the platform's alert on macOS and Windows, and triad's own on Linux. There, Enter takes the first button. Escape takes Keep Editing, Keep Mine or Cancel, or the only button, and otherwise does nothing, so it never discards a recovery journal.
 - A prompt that can lose work puts the answer that keeps it first, so the default button (Enter) never loses it: Save & Exit or Save when a window closes with changes, Keep Mine when a file with edits changes on disk, Restore for a recovery journal, Try Again after a failed save.
 - Paths use `std::path` and `camino`. No code assumes `/` separators, case-sensitive file systems or POSIX permissions.
-- CI builds, lints and tests on Linux x64, macOS ARM64 and Windows x64 for each push to `main` and each pull request, and weekly. CI runs no ARM64 Linux or Windows jobs.
+- CI builds, lints and tests on Linux x64, macOS ARM64 and Windows x64 for each push to `main` and each pull request, and weekly. Windows ARM64 joins CI, on native ARM64 runners, before version 1.0. Linux ARM64 is not a target.
 
 ### 2.3 No unsafe code
 
@@ -791,6 +791,8 @@ The UI runs on GPUI, through `gpui-component` and its editor crate `gpui-base`, 
 | M5 | Chunk origin | §7.3 for git and jj. §8.8 annotation tests pass on both backends. |
 | M6 | Native resolution | §7.4 for git and jj, including jj conflicts with more than two sides. §8.8 passes on both backends. |
 | M7 | Syntax highlighting | tree-sitter for the main languages |
+
+Version 1.0 needs M4 and M4b: macOS, Linux x64, and Windows x64 and ARM64, with the same features.
 
 ## 13. Decisions
 

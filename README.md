@@ -7,7 +7,11 @@
 
 triad is a fast, native three-way merge and two-way diff tool, written in Rust and GPUI, built for [Jujutsu](https://github.com/jj-vcs/jj) with full Git support. It opens a million-line merge in under a second, merges exactly as your VCS does, and resolves conflicts straight from the repository.
 
-The binary is `triad-merge`. triad is in beta on macOS 27 and later, on Apple Silicon. Windows 11 and Linux follow the beta.
+The binary is `triad-merge`.
+
+## Platforms
+
+macOS comes first. The beta runs on macOS 27 and later, on Apple Silicon. Linux x64 and Windows 11 follow the macOS beta, with the same features and the same merge results: Windows on x64 first, then ARM64. Version 1.0 supports all three, Windows ARM64 included. CI builds and tests macOS, Linux x64 and Windows x64 on every code change.
 
 ## Why triad
 

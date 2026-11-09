@@ -61,6 +61,7 @@ In order. Each is one or more commits.
 | A histogram diff that gives git's hunks faster: 1.5 s against jj's 70 ms on the 100k-line `deep` triple | — | §B6 |
 | More grammars | — | §F9 |
 | First CI run on macOS and Windows runners | A push | `.github/workflows/triad.yml` |
+| Windows ARM64 in CI (`windows-11-arm`), before version 1.0 | Windows x64 passing in CI | `.github/workflows/triad.yml`, §E7 |
 | A sideways scrollbar for the top panes: a `ScrollbarHandle` over `Sideways` | — | §E4.4 |
 | Review and diff features, §G2, §G4–§G14 | Owner's choices on §G15's open points | G |
 | Razor | A grammar that covers its code blocks | §F1 |
@@ -169,18 +170,18 @@ M1 needs no GUI. It produces a correct, tested engine and the `triad-merge --hea
 #### A4.1 Workspace bootstrap
 
 - Move the spike's seeded fixture generator to `merge-core::testing`, behind a `testing` feature. Then delete `spike/`, `fixtures/spike/` and `script/bundle-spike`, and record commit `65d590d`. The spike's seven alignment tests are ported from that commit in §A4.4, where the code they test is written.
-- Replace the workspace manifest with the full layout from §A2. `merge-app` takes its GPUI dependency from the start, so CI builds GPUI on all four targets from M1. `vcs-git` and `vcs-jj` stay empty until M4: every jj-lib release so far needs gix 0.88, which carries GHSA-q54r-jf2p-rfr2.
+- Replace the workspace manifest with the full layout from §A2. `merge-app` takes its GPUI dependency from the start, so CI builds GPUI on every target from M1. `vcs-git` and `vcs-jj` stay empty until M4: every jj-lib release so far needs gix 0.88, which carries GHSA-q54r-jf2p-rfr2.
 - Add `deny.toml`. Allowed licences: MIT, Apache-2.0 (with or without LLVM-exception), BSD-2/3, 0BSD, CC0-1.0, ISC, Unicode-3.0, Zlib, MPL-2.0. GPL and AGPL are denied. Unmaintained-crate advisories fail only for direct dependencies.
 - Add `script/check-workspace`: every crate sets `[lints] workspace = true`, and the build holds one gix version.
 - Add `script/checks` (the AGENTS.md checklist), `script/pre-commit`, `script/pre-push` and `script/agent-pre-push-hook`, after the pattern in HashRust. Claude Code runs the push hook through `.claude/settings.json`.
 - Add `AGENTS.md` and a short README per crate (spec §10).
 - Add a CI workflow at `.github/workflows/triad.yml`:
-  - Matrix: `macos-latest` (arm64), `ubuntu-latest`, `windows-latest`, `windows-11-arm`.
+  - Matrix: `macos-latest` (arm64), `ubuntu-latest`, `windows-latest`. `windows-11-arm` joins before version 1.0 (§3).
   - Linux installs `pkg-config libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libx11-xcb-dev libxcb1-dev libvulkan-dev libfontconfig-dev libfreetype-dev libasound2-dev libzstd-dev`.
   - A `checks` job on Linux: `cargo fmt --check`, `script/check-workspace`, `cargo deny check`.
   - A `test` job on each target: `cargo clippy --workspace --all-targets -- -D warnings`; `cargo nextest run --workspace --profile ci`.
   - Test the workflow locally with `act` for the Linux jobs. act needs OrbStack running.
-- Done when the Linux job passes under `act`, and CI passes on all four targets after the owner pushes.
+- Done when the Linux job passes under `act`, and CI passes on the three targets after the owner pushes. The Linux jobs pass under `act`; macOS and Windows wait on the first push (§3).
 
 #### A4.2 Text loading (`merge-core::text`)
 
@@ -430,7 +431,7 @@ Writes to `tempfile::NamedTempFile` in the target's directory, copies the target
 - `toggle`: take left or right on one region. Spec §9 take left/right.
 - `keystroke`: one typed character at the caret, timed over runs of 1 000 keystrokes into a fresh document. Spec §9 keystroke.
 
-`script/check-bench` reads criterion's results and fails when a mean is above 120% of its spec §9 target. The CI `bench` job runs it on `ubuntu-latest` with `TRIAD_BENCH_TOLERANCE_PERCENT=500`: load/1M measured 834, 1223 and 1401 ms there over three runs of unchanged code, against 450 ms on a reference machine. The word-level and bounded benches merge on rayon's pool and lose more on the runner's 4 vCPUs. On 2026-11-05 `load-word-small/1M` took 2973 ms there against 608 ms, and `load-word-small-rust-bounded/1M` 3117 ms against 515 ms, 3.1 times its target. Five times the target keeps that case inside the runner's spread. That runner is not a reference machine, so the job catches gross regressions, and the reference machines decide the targets. Memory peaks do not vary and keep their limits.
+`script/check-bench` reads criterion's results and fails when a mean is above 120% of its spec §9 target. The `bench` workflow runs it by hand and weekly on `ubuntu-latest` with `TRIAD_BENCH_TOLERANCE_PERCENT=500`: load/1M measured 834, 1223 and 1401 ms there over three runs of unchanged code, against 450 ms on a reference machine. The word-level and bounded benches merge on rayon's pool and lose more on the runner's 4 vCPUs. On 2026-11-05 `load-word-small/1M` took 2973 ms there against 608 ms, and `load-word-small-rust-bounded/1M` 3117 ms against 515 ms, 3.1 times its target. Five times the target keeps that case inside the runner's spread. That runner is not a reference machine, so the job catches gross regressions, and the reference machines decide the targets. Memory peaks do not vary and keep their limits.
 
 Release build on an M4 Pro: `load` takes 25 ms at 100k lines and 451 ms at 1M lines, `toggle` and `keystroke` about 1 µs.
 
@@ -438,7 +439,7 @@ Release build on an M4 Pro: `load` takes 25 ms at 100k lines and 451 ms at 1M li
 
 The console binary (spec §6.1) starts `triad-merge-gui.exe`, waits, and forwards its exit code. M1 builds the forwarding in `triad-merge`. `merge_cli::forward` runs the child with inherited stdio and maps its status to `ExitCode`; any other code, a signal or a failed start gives 3 with a message. `triad-merge-gui` runs the same command line and window forms through `merge_app::run`. The tests' child is the `forward_stand_in` example of `triad-merge`: it names its arguments on stderr and exits with `TRIAD_STAND_IN_EXIT`, or 3. Tests: on every OS, `forward` passes 0–3 through and turns other codes and a missing binary into 3; on the Windows CI targets, `triad-merge.exe` forwards a window form's arguments and exit code, and the child's stderr reaches the caller.
 
-**M1 done when:** §A4.1–4.13 pass on all four CI targets, and the oracle corpus matches in both modes.
+**M1 done when:** §A4.1–4.13 pass on every CI target, and the oracle corpus matches in both modes.
 
 ### A5 Phase M2 — `merge-view`
 
@@ -931,7 +932,7 @@ Both windows are fit for the beta as they stand.
 
 #### A13.5 Pre-commit gate time
 
-Limit: 30 s on a warm build (`AGENTS.md`). The gate takes 12 s after an edit to `merge-app` and 19 s after an edit to `merge-core`, which runs every crate's tests.
+Limit: 30 s on a warm build (`AGENTS.md`). The gate takes 25 s after an edit to `merge-app` and 28 s after an edit to `merge-core`, which runs the tests of every crate but `vcs`, `vcs-git` and `vcs-jj`.
 
 - **Object files.** With debug info, rustc on macOS keeps each build's `*.rcgu.o` files in `target/debug/deps`, and nothing removes them. Every rustc run lists that directory: 1.26 million objects cost 10 s a listing, in each of clippy's and the build's units. `[profile.dev] debug = false` stops them. Panics keep their locations; `CARGO_PROFILE_DEV_DEBUG=line-tables-only` turns debug info on. An older `target/` needs `find target/debug/deps -name '*.rcgu.o' -delete` once.
 - **One integration-test binary per crate.** `tests/main.rs` declares each file as a module.
