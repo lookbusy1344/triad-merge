@@ -618,6 +618,19 @@ fn next_and_previous_difference_move_both_carets(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn the_bracket_chords_go_to_differences(cx: &mut TestAppContext) {
+    let files = Files::new(FIVE_LEFT, FIVE_RIGHT);
+    let o = open(cx, &files);
+    focus_at(cx, &o, Side::Left, 0);
+    press(cx, &o, "secondary-]");
+    assert_eq!(carets(cx, &o.view), (2, 2));
+    press(cx, &o, "secondary-]");
+    assert_eq!(carets(cx, &o.view), (6, 6));
+    press(cx, &o, "secondary-[");
+    assert_eq!(carets(cx, &o.view), (2, 2));
+}
+
+#[gpui_kit::test]
 fn an_empty_region_reached_by_navigation_stays_current(cx: &mut TestAppContext) {
     let files = Files::new(FIVE_LEFT, FIVE_RIGHT);
     let o = open(cx, &files);

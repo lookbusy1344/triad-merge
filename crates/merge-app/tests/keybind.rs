@@ -6,8 +6,8 @@ use common::{Finished, act, caret, doc, set_caret, texts};
 use gpui_kit::test::TestWindowExt;
 use gpui_kit::{Action, AnyWindowHandle, Entity, OwnedMenuItem, TestAppContext};
 use merge_app::{
-    Cancel, Find, MergeWindow, NextConflict, Save, SaveAndExit, TakeLeft, ToggleLeft,
-    WindowSettings,
+    Cancel, Find, MergeWindow, NextConflict, NextDifference, Save, SaveAndExit, TakeLeft,
+    ToggleLeft, WindowSettings,
 };
 use merge_config::keybind::{KeyBindings, Keybind, Platform};
 use merge_core::document::MergeDocument;
@@ -45,13 +45,17 @@ struct Opened {
 
 impl Opened {
     fn new(cx: &mut TestAppContext, lines: &[String]) -> Self {
+        Self::with(cx, lines, conflict())
+    }
+
+    fn with(cx: &mut TestAppContext, lines: &[String], document: MergeDocument) -> Self {
         let bindings = bindings(lines);
         let (window, view, finished) = cx.update(|cx| {
             gpui_kit::init(cx);
             merge_app::init_with(&bindings, cx);
             let finished = Finished::install(cx);
             let (window, view) =
-                merge_app::open(conflict(), &WindowSettings::default(), cx).expect("window opens");
+                merge_app::open(document, &WindowSettings::default(), cx).expect("window opens");
             (window, view, finished)
         });
         act(cx, window, TestWindowExt::render_frame);
@@ -195,4 +199,28 @@ fn find_binds_in_both_windows(cx: &mut TestAppContext) {
     let _opened = Opened::new(cx, &[]);
     let chord = format!("{SECONDARY}-f");
     assert_eq!(chords(cx, &Find), [chord.clone(), chord]);
+}
+
+#[gpui_kit::test]
+fn the_menus_show_the_merge_windows_chords_for_navigation(cx: &mut TestAppContext) {
+    let _opened = Opened::new(cx, &[]);
+    assert_eq!(chords(cx, &NextConflict)[0], format!("{SECONDARY}-]"));
+    assert_eq!(chords(cx, &NextDifference)[0], format!("{SECONDARY}-down"));
+}
+
+/// A one-sided change at line 1, then a conflict at line 3.
+const SPLIT_BASE: &str = "a\nb\nc\n";
+const SPLIT_LEFT: &str = "A\nb\nL\n";
+const SPLIT_RIGHT: &str = "a\nb\nR\n";
+/// The caret on the conflict: past `A\nb\n`.
+const ON_CONFLICT: usize = 4;
+
+#[gpui_kit::test]
+fn the_bracket_chords_go_to_conflicts_in_the_merge_window(cx: &mut TestAppContext) {
+    let opened = Opened::with(cx, &[], doc(SPLIT_BASE, SPLIT_LEFT, SPLIT_RIGHT));
+    assert_eq!(caret(cx, &opened.view), ON_CONFLICT);
+    opened.press(cx, &format!("{SECONDARY}-["));
+    assert_eq!(caret(cx, &opened.view), ON_CONFLICT, "no conflict before the first");
+    opened.press(cx, &format!("{SECONDARY}-up"));
+    assert_eq!(caret(cx, &opened.view), 0, "the one-sided change is a difference");
 }

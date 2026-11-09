@@ -2209,6 +2209,8 @@ confirm-unresolved-save = true
 keybind = clear
 keybind = cmd+z=undo
 keybind = cmd+shift+z=redo
+keybind = cmd+]=next-difference
+keybind = cmd+[=previous-difference
 keybind = cmd+down=next-difference
 keybind = cmd+up=previous-difference
 keybind = cmd+alt+down=next-conflict

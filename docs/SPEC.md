@@ -384,7 +384,7 @@ macOS keys are shown. On Linux and Windows, ⌘ is Ctrl and ⌥ is Alt. The `key
 
 | Action | Key |
 |---|---|
-| Next / previous difference | ⌘↓ / ⌘↑ |
+| Next / previous difference | ⌘↓ / ⌘↑; also ⌘] / ⌘[ in the diff window |
 | Next / previous conflict | ⌘] / ⌘[, or ⌥⌘↓ / ⌥⌘↑ |
 | Toggle left / base / right for current region | ⌘1 / ⌘2 / ⌘3 |
 | Clear choice (empty) | ⌘0 |
@@ -403,7 +403,7 @@ In the result and the diff panes these keys run the command, not the editor's ow
 
 - A chord is modifiers and a key joined by `+`. The modifiers are `ctrl`, `alt` and `shift`, with `cmd` on macOS and `super` on Linux and Windows. The key is one printing character, in lower case, or a GPUI key name: `enter`, `tab`, `space`, `backspace`, `delete`, `insert`, `escape`, `home`, `end`, `pageup`, `pagedown`, `up`, `down`, `left`, `right`, `f1` to `f35`.
 - An action is the kebab-case name of a menu command: `undo`, `redo`, `next-difference`, `previous-difference`, `next-conflict`, `previous-conflict`, `toggle-left`, `toggle-base`, `toggle-right`, `clear-choice`, `take-base`, `take-left`, `take-right`, `take-left-then-right`, `take-right-then-left`, `take-left-all-unresolved`, `take-right-all-unresolved`, `take-whole-left`, `take-whole-right`, `take-sorted-union`, `carry-moved-edit`, `toggle-base-pane`, `toggle-origin-column`, `toggle-syntax`, `toggle-soft-wrap`, `toggle-scroll-sync`, `find`, `go-to-line`, `save-and-exit`, `save-copy-as`, `save`, `cancel`, `open-settings`, `about`.
-- Each line adds a binding. A later line for a chord replaces an earlier one in each window that has both commands, so `cmd+s=take-left` leaves the diff window's `cmd+s=save`.
+- Each line adds a binding. A later line for a chord replaces an earlier one in each window that has both commands, so `cmd+s=take-left` leaves the diff window's `cmd+s=save`, and the defaults `cmd+]=next-difference` then `cmd+]=next-conflict` give ⌘] to conflicts in the merge window and to differences in the diff window. A binding replaced in every window is dropped.
 - `CHORD=unbind` makes the chord do nothing, in every window and in the editors. `clear` does the same for every chord bound so far. An empty value gives the default bindings.
 - The last `=` parts a line, so `cmd+==take-left` binds the `=` key.
 - An unknown action, a malformed chord or a modifier the platform lacks is a bad line (§6.4); the other bindings apply.

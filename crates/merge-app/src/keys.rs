@@ -4,7 +4,7 @@ use gpui_kit::base::input::{AddCursorAbove, AddCursorBelow};
 use std::rc::Rc;
 
 use gpui_kit::{Action, App, KeyBinding, KeyBindingContextPredicate, NoAction};
-use merge_config::keybind::{Chord, KeyAction, KeyBindings, Modifier};
+use merge_config::keybind::{Chord, KeyAction, KeyBindings, Modifier, Windows};
 
 use crate::{diff_window, window};
 
@@ -27,7 +27,8 @@ impl Contexts {
         }
     }
 
-    fn of(&self, action: KeyAction) -> Vec<Option<&str>> {
+    /// The contexts `action` binds in, given the `windows` its chord runs it in.
+    fn of(&self, action: KeyAction, windows: Windows) -> Vec<Option<&str>> {
         match action {
             KeyAction::OpenSettings | KeyAction::About => vec![None],
             // Inside an editor, the editor's own ⌘F opens its search.
@@ -35,10 +36,9 @@ impl Contexts {
             _ => {
                 let merge = [window::WINDOW_CONTEXT, self.result.as_str()];
                 let diff = [diff_window::DIFF_CONTEXT, self.pane.as_str()];
-                let windows = [(action.in_merge_window(), merge), (action.in_diff_window(), diff)];
-                windows
+                [(windows.merge, merge), (windows.diff, diff)]
                     .into_iter()
-                    .filter(|(has_command, _)| *has_command)
+                    .filter(|(runs, _)| *runs)
                     .flat_map(|(_, contexts)| contexts.map(Some))
                     .collect()
             }
@@ -70,14 +70,14 @@ pub(crate) fn bind(bindings: &KeyBindings, cx: &mut App) {
         KeyBinding::new("shift-alt-up", AddCursorAbove, Some(EDITOR_CONTEXT)),
     ]);
     let contexts = Contexts::new();
-    let bound: Vec<_> = bindings
-        .bound()
-        .iter()
+    let effective: Vec<_> = bindings.effective().collect();
+    let bound: Vec<_> = effective
+        .into_iter()
         .rev()
-        .flat_map(|bound| {
+        .flat_map(|(bound, windows)| {
             let chord = keystroke(&bound.chord);
             contexts
-                .of(bound.action)
+                .of(bound.action, windows)
                 .into_iter()
                 .map(|context| binding(&chord, crate::action(bound.action), context, cx))
                 .collect::<Vec<_>>()

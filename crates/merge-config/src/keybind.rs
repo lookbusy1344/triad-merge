@@ -49,6 +49,8 @@ const FUNCTION_KEYS: std::ops::RangeInclusive<u8> = 1..=35;
 const DEFAULT_BINDINGS: &[(&str, KeyAction)] = &[
     ("cmd+z", KeyAction::Undo),
     ("cmd+shift+z", KeyAction::Redo),
+    ("cmd+]", KeyAction::NextDifference),
+    ("cmd+[", KeyAction::PreviousDifference),
     ("cmd+down", KeyAction::NextDifference),
     ("cmd+up", KeyAction::PreviousDifference),
     ("cmd+alt+down", KeyAction::NextConflict),
@@ -179,10 +181,27 @@ impl KeyAction {
         )
     }
 
-    /// Whether a window has both commands, so one chord cannot run both.
-    const fn clashes_with(self, other: Self) -> bool {
-        (self.in_merge_window() && other.in_merge_window())
-            || (self.in_diff_window() && other.in_diff_window())
+    /// The windows that have this command.
+    #[must_use]
+    pub const fn windows(self) -> Windows {
+        Windows { merge: self.in_merge_window(), diff: self.in_diff_window() }
+    }
+}
+
+/// The windows a command or binding runs in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Windows {
+    pub merge: bool,
+    pub diff: bool,
+}
+
+impl Windows {
+    const fn without(self, other: Self) -> Self {
+        Self { merge: self.merge && !other.merge, diff: self.diff && !other.diff }
+    }
+
+    const fn is_empty(self) -> bool {
+        !self.merge && !self.diff
     }
 }
 
@@ -352,15 +371,20 @@ impl KeyBindings {
     }
 
     /// Apply one line: a later binding for a chord replaces an earlier one in each window
-    /// that has both commands.
+    /// that has both commands. An earlier binding left with no window is dropped.
     pub fn apply(&mut self, line: Keybind) {
         match line {
             Keybind::Bind(binding) => {
                 self.unbound.remove(&binding.chord);
-                self.bound.retain(|old| {
-                    old.chord != binding.chord || !old.action.clashes_with(binding.action)
-                });
                 self.bound.push(binding);
+                let kept: Vec<bool> = (0..self.bound.len())
+                    .map(|at| !windows_of(&self.bound, at).is_empty())
+                    .collect();
+                self.bound = std::mem::take(&mut self.bound)
+                    .into_iter()
+                    .zip(kept)
+                    .filter_map(|(binding, kept)| kept.then_some(binding))
+                    .collect();
             }
             Keybind::Unbind(chord) => {
                 self.bound.retain(|old| old.chord != chord);
@@ -379,10 +403,25 @@ impl KeyBindings {
         &self.bound
     }
 
+    /// The bindings, oldest first, each with the windows it runs in: its command's, less
+    /// those where a later binding of its chord runs.
+    pub fn effective(&self) -> impl Iterator<Item = (&Binding, Windows)> {
+        self.bound.iter().enumerate().map(|(at, binding)| (binding, windows_of(&self.bound, at)))
+    }
+
     /// The chords that do nothing.
     pub fn unbound(&self) -> impl Iterator<Item = &Chord> {
         self.unbound.iter()
     }
+}
+
+/// The windows `bound[at]` runs in: its command's, less those of later bindings of its chord.
+fn windows_of(bound: &[Binding], at: usize) -> Windows {
+    let binding = &bound[at];
+    bound[at + 1..]
+        .iter()
+        .filter(|later| later.chord == binding.chord)
+        .fold(binding.action.windows(), |windows, later| windows.without(later.action.windows()))
 }
 
 impl Default for KeyBindings {
@@ -427,6 +466,20 @@ mod tests {
     }
 
     /// The actions `text` runs, in binding order.
+    const MERGE: Windows = Windows { merge: true, diff: false };
+    const DIFF: Windows = Windows { merge: false, diff: true };
+    const BOTH: Windows = Windows { merge: true, diff: true };
+
+    /// The commands `text` runs, each with the windows it runs them in.
+    fn windows_of(bindings: &KeyBindings, text: &str) -> Vec<(KeyAction, Windows)> {
+        let wanted = chord(text);
+        bindings
+            .effective()
+            .filter(|(binding, _)| binding.chord == wanted)
+            .map(|(binding, windows)| (binding.action, windows))
+            .collect()
+    }
+
     fn actions_of(bindings: &KeyBindings, text: &str) -> Vec<KeyAction> {
         let wanted = chord(text);
         bindings
@@ -563,8 +616,14 @@ mod tests {
         let bindings = KeyBindings::for_platform(MacOs);
         assert_eq!(actions_of(&bindings, "cmd+z"), [KeyAction::Undo]);
         assert_eq!(actions_of(&bindings, "cmd+alt+up"), [KeyAction::PreviousConflict]);
-        assert_eq!(actions_of(&bindings, "cmd+]"), [KeyAction::NextConflict]);
-        assert_eq!(actions_of(&bindings, "cmd+["), [KeyAction::PreviousConflict]);
+        assert_eq!(
+            windows_of(&bindings, "cmd+]"),
+            [(KeyAction::NextDifference, DIFF), (KeyAction::NextConflict, MERGE)]
+        );
+        assert_eq!(
+            windows_of(&bindings, "cmd+["),
+            [(KeyAction::PreviousDifference, DIFF), (KeyAction::PreviousConflict, MERGE)]
+        );
         assert_eq!(actions_of(&bindings, "cmd+down"), [KeyAction::NextDifference]);
         assert_eq!(actions_of(&bindings, "cmd+r"), [KeyAction::ToggleSoftWrap]);
         assert_eq!(actions_of(&bindings, "cmd+y"), [KeyAction::ToggleSyntax]);
@@ -573,7 +632,7 @@ mod tests {
         assert_eq!(actions_of(&bindings, "cmd+q"), [KeyAction::Cancel]);
         assert_eq!(actions_of(&bindings, "cmd+w"), [KeyAction::Cancel]);
         assert_eq!(actions_of(&bindings, "cmd+s"), [KeyAction::SaveAndExit, KeyAction::Save]);
-        assert_eq!(bindings.bound().len(), 27);
+        assert_eq!(bindings.bound().len(), 29);
         assert_eq!(bindings.unbound().count(), 0);
     }
 
@@ -600,9 +659,12 @@ mod tests {
     }
 
     #[test]
-    fn a_binding_replaces_a_default_chord() {
+    fn a_binding_replaces_a_default_chord_in_the_windows_with_its_command() {
         let bindings = apply(&["cmd+z=next-conflict"]);
-        assert_eq!(actions_of(&bindings, "cmd+z"), [KeyAction::NextConflict]);
+        assert_eq!(
+            windows_of(&bindings, "cmd+z"),
+            [(KeyAction::Undo, DIFF), (KeyAction::NextConflict, MERGE)]
+        );
     }
 
     #[test]
@@ -633,6 +695,46 @@ mod tests {
     fn a_diff_only_command_leaves_the_merge_windows_binding_of_the_chord() {
         let bindings = apply(&["cmd+s=save"]);
         assert_eq!(actions_of(&bindings, "cmd+s"), [KeyAction::SaveAndExit, KeyAction::Save]);
+    }
+
+    #[test]
+    fn a_merge_only_command_leaves_an_older_command_of_both_windows_in_the_diff_window() {
+        let bindings = apply(&["cmd+j=next-difference", "cmd+j=next-conflict"]);
+        assert_eq!(
+            windows_of(&bindings, "cmd+j"),
+            [(KeyAction::NextDifference, DIFF), (KeyAction::NextConflict, MERGE)]
+        );
+    }
+
+    #[test]
+    fn a_command_of_both_windows_runs_in_both_until_a_later_line_takes_one() {
+        let bindings = apply(&["cmd+j=next-difference"]);
+        assert_eq!(windows_of(&bindings, "cmd+j"), [(KeyAction::NextDifference, BOTH)]);
+    }
+
+    #[test]
+    fn a_command_shadowed_in_every_window_is_dropped() {
+        let bindings = apply(&["cmd+j=next-difference", "cmd+j=next-conflict", "cmd+j=save"]);
+        assert_eq!(
+            windows_of(&bindings, "cmd+j"),
+            [(KeyAction::NextConflict, MERGE), (KeyAction::Save, DIFF)]
+        );
+    }
+
+    #[test]
+    fn a_command_of_both_windows_replaces_a_split_chord_in_both() {
+        let bindings = apply(&["cmd+]=undo"]);
+        assert_eq!(windows_of(&bindings, "cmd+]"), [(KeyAction::Undo, BOTH)]);
+    }
+
+    #[test]
+    fn a_split_chord_reads_back_from_its_display() {
+        let bindings = apply(&["cmd+j=next-difference", "cmd+j=next-conflict"]);
+        let mut again = KeyBindings::for_platform(MacOs);
+        for text in bindings.to_string().lines() {
+            again.apply(line(text));
+        }
+        assert_eq!(again, bindings);
     }
 
     #[test]
