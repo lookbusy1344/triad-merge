@@ -19,7 +19,7 @@ The initial beta targets macOS 27 on Apple Silicon. Linux x64 and Windows 11 wil
 - **Full Git parity.** In a git repository triad merges as `git merge-file` does, byte for byte, and reads conflicts from git's index through gix. Every feature works in both.
 - **Exact semantics, checked.** Two oracle corpora pin the engine: about 1,950 triples from `git merge-file` and about 1,970 merges from jj-lib. The tests compare triad's output with each.
 - **Fast on large files.** Panes draw only the rows on screen. Scrolling holds the display's refresh rate at 1M lines.
-- **No external processes.** triad reaches git and jj through gix and jj-lib, never their executables. No `unsafe` code in triad's own crates.
+- **No git or jj install needed.** triad reads and writes repositories in-process through gix and jj-lib, never their executables. No `unsafe` code in triad's own crates.
 - **Scriptable.** A headless mode and `inspect --json` expose the whole merge model to scripts, tests and agents.
 
 ## Features
@@ -116,7 +116,7 @@ In a jj repository, colocated or not, use `jj resolve`: `git mergetool` there ex
 
 ### From the repository, without the VCS command
 
-`triad-merge` finds the repository from the working directory, jj or git, and reads it directly.
+`triad-merge` finds the repository from the working directory, jj or git, and reads it directly. Neither `jj` nor `git` needs to be installed.
 
 ```sh
 triad-merge resolve                      # the first conflicted file, then the next after each save
