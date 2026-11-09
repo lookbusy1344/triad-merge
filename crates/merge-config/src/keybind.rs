@@ -53,6 +53,8 @@ const DEFAULT_BINDINGS: &[(&str, KeyAction)] = &[
     ("cmd+up", KeyAction::PreviousDifference),
     ("cmd+alt+down", KeyAction::NextConflict),
     ("cmd+alt+up", KeyAction::PreviousConflict),
+    ("cmd+]", KeyAction::NextConflict),
+    ("cmd+[", KeyAction::PreviousConflict),
     ("cmd+1", KeyAction::ToggleLeft),
     ("cmd+2", KeyAction::ToggleBase),
     ("cmd+3", KeyAction::ToggleRight),
@@ -60,6 +62,10 @@ const DEFAULT_BINDINGS: &[(&str, KeyAction)] = &[
     ("cmd+4", KeyAction::TakeLeftThenRight),
     ("cmd+5", KeyAction::TakeRightThenLeft),
     ("cmd+b", KeyAction::ToggleBasePane),
+    ("cmd+i", KeyAction::ToggleOriginColumn),
+    ("cmd+y", KeyAction::ToggleSyntax),
+    ("cmd+r", KeyAction::ToggleSoftWrap),
+    ("cmd+k", KeyAction::ToggleScrollSync),
     ("cmd+f", KeyAction::Find),
     ("cmd+l", KeyAction::GoToLine),
     ("cmd+s", KeyAction::SaveAndExit),
@@ -557,10 +563,17 @@ mod tests {
         let bindings = KeyBindings::for_platform(MacOs);
         assert_eq!(actions_of(&bindings, "cmd+z"), [KeyAction::Undo]);
         assert_eq!(actions_of(&bindings, "cmd+alt+up"), [KeyAction::PreviousConflict]);
+        assert_eq!(actions_of(&bindings, "cmd+]"), [KeyAction::NextConflict]);
+        assert_eq!(actions_of(&bindings, "cmd+["), [KeyAction::PreviousConflict]);
+        assert_eq!(actions_of(&bindings, "cmd+down"), [KeyAction::NextDifference]);
+        assert_eq!(actions_of(&bindings, "cmd+r"), [KeyAction::ToggleSoftWrap]);
+        assert_eq!(actions_of(&bindings, "cmd+y"), [KeyAction::ToggleSyntax]);
+        assert_eq!(actions_of(&bindings, "cmd+i"), [KeyAction::ToggleOriginColumn]);
+        assert_eq!(actions_of(&bindings, "cmd+k"), [KeyAction::ToggleScrollSync]);
         assert_eq!(actions_of(&bindings, "cmd+q"), [KeyAction::Cancel]);
         assert_eq!(actions_of(&bindings, "cmd+w"), [KeyAction::Cancel]);
         assert_eq!(actions_of(&bindings, "cmd+s"), [KeyAction::SaveAndExit, KeyAction::Save]);
-        assert_eq!(bindings.bound().len(), 21);
+        assert_eq!(bindings.bound().len(), 27);
         assert_eq!(bindings.unbound().count(), 0);
     }
 
@@ -598,8 +611,10 @@ mod tests {
         assert!(KeyAction::ToggleScrollSync.in_merge_window());
         // The diff panes always scroll together, so their spacer rows face each other.
         assert!(!KeyAction::ToggleScrollSync.in_diff_window());
-        // No default key: a `keybind` line gives it one.
-        assert!(DEFAULT_BINDINGS.iter().all(|&(_, action)| action != KeyAction::ToggleScrollSync));
+        assert_eq!(
+            actions_of(&KeyBindings::for_platform(MacOs), "cmd+k"),
+            [KeyAction::ToggleScrollSync]
+        );
     }
 
     #[test]

@@ -13,7 +13,7 @@ const EDITOR_CONTEXT: &str = "Input";
 
 /// The key contexts a command binds in. Each window's command binds for the window and again
 /// for its editor, whose own bindings for these keys would win: ⌘↑/↓ move to the start and
-/// end, ⌥⌘↑/↓ add cursors.
+/// end, ⌘[/] indent, ⌥⌘↑/↓ add cursors.
 struct Contexts {
     result: String,
     pane: String,

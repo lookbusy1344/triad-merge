@@ -2213,6 +2213,8 @@ keybind = cmd+down=next-difference
 keybind = cmd+up=previous-difference
 keybind = cmd+alt+down=next-conflict
 keybind = cmd+alt+up=previous-conflict
+keybind = cmd+]=next-conflict
+keybind = cmd+[=previous-conflict
 keybind = cmd+1=toggle-left
 keybind = cmd+2=toggle-base
 keybind = cmd+3=toggle-right
@@ -2220,6 +2222,10 @@ keybind = cmd+0=clear-choice
 keybind = cmd+4=take-left-then-right
 keybind = cmd+5=take-right-then-left
 keybind = cmd+b=toggle-base-pane
+keybind = cmd+i=toggle-origin-column
+keybind = cmd+y=toggle-syntax
+keybind = cmd+r=toggle-soft-wrap
+keybind = cmd+k=toggle-scroll-sync
 keybind = cmd+f=find
 keybind = cmd+l=go-to-line
 keybind = cmd+s=save-and-exit
