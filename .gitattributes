@@ -6,6 +6,9 @@
 # *.XX text eol=lf
 # *.XX linguist-detectable=false
 
+# Test inputs in other languages: keep them out of the language stats.
+fixtures/** linguist-vendored
+
 # General text files
 *.txt text eol=lf
 *.md text eol=lf
