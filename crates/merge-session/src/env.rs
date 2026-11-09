@@ -103,7 +103,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn empty_variables_count_as_unset() {
         let env = env_of(&[
@@ -115,7 +114,19 @@ mod tests {
         assert_eq!(env.home, Some(PathBuf::from("/platform/home")));
         assert_eq!([&env.xdg_config_home, &env.git_config_global], [&None, &None]);
         assert_eq!(env.jj_config, None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_empty_xdg_config_home_puts_jjs_user_config_dir_under_the_platform_home() {
+        let env = env_of(&[("HOME", ""), ("XDG_CONFIG_HOME", "")]);
         assert_eq!(env.user_config_dir, Some(PathBuf::from("/platform/home/.config")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_has_no_jj_system_config_dir() {
+        assert_eq!(env_of(&[]).jj_system_config_dir, None);
     }
 
     #[cfg(unix)]
