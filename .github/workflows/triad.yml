@@ -1,4 +1,4 @@
-name: triad
+name: Build & test
 
 permissions:
   contents: read
