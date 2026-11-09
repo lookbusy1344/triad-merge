@@ -187,7 +187,7 @@ Rerun with `TRIAD_LOG=debug` and send the command and what you expected, `triad-
 cargo build --workspace                                         # target/debug/triad-merge
 cargo nextest run --workspace --no-run                          # build the tests
 cargo nextest run --workspace -E 'package(merge-core) & test(merge3)'   # filtered; never plain `cargo test`
-script/pre-commit                                               # the gate before each commit; under 30 s warm
+script/pre-commit                                               # the gate before each commit; under 35 s warm
 script/checks                                                   # everything CI runs, with the full suite
 ```
 

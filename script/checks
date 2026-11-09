@@ -16,9 +16,10 @@
 # the vendored crate's tests only when vendor/ changed, and script/test-pre-push only
 # when script/pre-push or that test changed. A vendor/ change also runs
 # the tests of the crates that depend on gpui-kit, through which the vendored crate
-# reaches the workspace, and of their dependents. A docs/ change runs no tests. Any
-# other changed path outside crates/ runs every test. Build and clippy always cover the workspace, so the
-# feature set, and with it the build cache, stays the same for every run.
+# reaches the workspace, and of their dependents. A change to docs/ or to a Markdown file
+# at the root runs no tests. Any other changed path outside crates/ runs every test.
+# Build and clippy always cover the workspace, so the feature set, and with it the
+# build cache, stays the same for every run.
 
 set -euo pipefail
 
@@ -67,6 +68,9 @@ if [[ "${quick}" == true && ${#changed[@]} -gt 0 ]]; then
             crates/*/*) crate_dirs+=("$(cut -d/ -f1-2 <<< "${path}")") ;;
             vendor/*) vendor=true ;;
             docs/*) ;;
+            # Top-level Markdown: README.md, AGENTS.md.
+            */*) all_tests=true ;;
+            *.md) ;;
             script/pre-push | script/test-pre-push)
                 pre_push=true
                 all_tests=true

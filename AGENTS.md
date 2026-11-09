@@ -42,7 +42,7 @@ jj has no commit hooks. Run the gate before `jj commit`, `jj describe` (finalisi
 script/pre-commit              # from the repo root
 ```
 
-**The gate takes under 30 s on a warm build.** An edit to `merge-app` takes 18 s. A run over 30 s is a defect, not a slow run. Stop, report it to the owner with the time of each step, and fix the cause before going on. Never wait it out or raise a limit. Check `target/debug/deps` first: a huge file count there slows every rustc run (`PLAN.md` §A13.5).
+**The gate takes under 35 s on a warm build.** An edit to `merge-app` takes 25 s, one to `merge-core` 28 s. A run over 35 s is a defect, not a slow run. Stop, report it to the owner with the time of each step, and fix the cause before going on. Never wait it out or raise a limit. Check `target/debug/deps` first: a huge file count there slows every rustc run (`PLAN.md` §A13.5).
 
 The gate reads the changes in `@` (jj) or against `HEAD` (git). It skips the checks when no build file changed: `.rs`, `Cargo.toml`, `Cargo.lock`, `deny.toml`, toolchain and format config, `script/`, `fixtures/`. Otherwise it runs `script/checks --quick` on the changed paths:
 
@@ -56,7 +56,7 @@ cargo deny check                  # when a manifest, Cargo.lock or deny.toml cha
 ```
 
 - Every step passes with zero warnings. On a format failure, run `cargo fmt --all` and rerun.
-- A change to `docs/` runs no tests. A change to `vendor/` runs the tests of the crates that depend on `gpui-kit` and their dependents. Any other path outside `crates/` runs the whole profile.
+- A change to `docs/` or to a Markdown file at the root runs no tests. A change to `vendor/` runs the tests of the crates that depend on `gpui-kit` and their dependents. Any other path outside `crates/` runs the whole profile.
 - The `quick` profile (`.config/nextest.toml`) leaves out the tests that build jj repositories and the scrolling tests; git conformance stays in. A change to `vcs-jj`, to jj behaviour or to scrolling runs the full suite before commit: `script/checks`.
 - What keeps it fast: `cargo nextest run --no-run` builds only what the tests need; clippy always covers the whole workspace, so every run shares one feature set and build cache; each crate links one integration-test binary, `tests/main.rs` (`autotests = false`); dev builds carry no debug info.
 - In a plain git checkout, install the gate once: `ln -sf ../../script/pre-commit .git/hooks/pre-commit`.

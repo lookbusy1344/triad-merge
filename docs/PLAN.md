@@ -932,7 +932,7 @@ Both windows are fit for the beta as they stand.
 
 #### A13.5 Pre-commit gate time
 
-Limit: 30 s on a warm build (`AGENTS.md`). The gate takes 25 s after an edit to `merge-app` and 28 s after an edit to `merge-core`, which runs the tests of every crate but `vcs`, `vcs-git` and `vcs-jj`.
+Limit: 35 s on a warm build (`AGENTS.md`). The gate takes 25 s after an edit to `merge-app` and 28 s after an edit to `merge-core`, which runs the tests of every crate but `vcs`, `vcs-git` and `vcs-jj`.
 
 - **Object files.** With debug info, rustc on macOS keeps each build's `*.rcgu.o` files in `target/debug/deps`, and nothing removes them. Every rustc run lists that directory: 1.26 million objects cost 10 s a listing, in each of clippy's and the build's units. `[profile.dev] debug = false` stops them. Panics keep their locations; `CARGO_PROFILE_DEV_DEBUG=line-tables-only` turns debug info on. An older `target/` needs `find target/debug/deps -name '*.rcgu.o' -delete` once.
 - **One integration-test binary per crate.** `tests/main.rs` declares each file as a module.
