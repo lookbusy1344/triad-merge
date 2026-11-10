@@ -27,7 +27,8 @@ use jj_lib::git;
 use jj_lib::local_working_copy::LocalWorkingCopy;
 use jj_lib::merged_tree_builder::MergedTreeBuilder;
 use jj_lib::object_id::ObjectId as _;
-use jj_lib::ref_name::WorkspaceName;
+use jj_lib::op_store::RefTarget;
+use jj_lib::ref_name::{RefName, WorkspaceName};
 use jj_lib::repo::{ReadonlyRepo, Repo};
 use jj_lib::repo_path::RepoPathBuf;
 use jj_lib::settings::UserSettings;
@@ -333,6 +334,35 @@ impl Fixture {
             .expect("the workspace is found")
             .load(&settings(), &default_backend_factories(), &default_working_copy_factories())
             .expect("the workspace loads")
+    }
+
+    /// Point bookmark `name` at the working-copy commit, as `jj bookmark set NAME -r @` does.
+    /// A colocated workspace exports it to git.
+    pub fn set_bookmark_on_working_copy(&self, name: &str) {
+        let repo = self.repo();
+        let wc = self.working_copy(repo.as_ref()).id().clone();
+        let mut tx = repo.start_transaction();
+        tx.repo_mut().set_local_bookmark_target(RefName::new(name), RefTarget::normal(wc));
+        self.finish(tx, "set bookmark");
+    }
+
+    /// The full ID of the working-copy commit at the head operation.
+    #[must_use]
+    pub fn working_copy_id(&self) -> String {
+        self.working_copy(self.repo().as_ref()).id().hex()
+    }
+
+    /// The full ID git's branch `name` points at, in a colocated workspace.
+    ///
+    /// # Panics
+    ///
+    /// If git has no such branch.
+    #[must_use]
+    pub fn git_branch(&self, name: &str) -> String {
+        let repo = gix::open(self.root()).expect("git's repository opens");
+        let reference =
+            repo.find_reference(format!("refs/heads/{name}").as_str()).expect("the branch exists");
+        reference.id().to_string()
     }
 
     /// Make `commit` the working-copy commit, as `jj edit` does.

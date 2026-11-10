@@ -291,6 +291,26 @@ fn an_unmoved_git_head_imports_nothing() {
 }
 
 #[test]
+fn in_a_colocated_workspace_a_bookmark_the_snapshot_moves_is_exported_to_git() {
+    // As jj exports after each command: git's branch follows the rewritten `@`.
+    let fixture = conflict_on_disk(Fixture::colocated());
+    fixture.set_bookmark_on_working_copy("topic");
+    let before = fixture.working_copy_id();
+    assert_eq!(fixture.git_branch("topic"), before);
+    fixture.write("other.txt", EDITED);
+    let mut repo = open(&fixture);
+    repo.snapshot().expect("the snapshot is taken");
+    let snapshotted = fixture.working_copy_id();
+    assert_ne!(snapshotted, before, "the snapshot rewrites @");
+    assert_eq!(fixture.git_branch("topic"), snapshotted);
+    fixture.write("a.txt", MERGED);
+    repo.record_save(Utf8Path::new("a.txt"), true).expect("the save is recorded");
+    let saved = fixture.working_copy_id();
+    assert_ne!(saved, snapshotted, "the save rewrites @");
+    assert_eq!(fixture.git_branch("topic"), saved);
+}
+
+#[test]
 fn a_save_outside_the_repository_is_refused() {
     let fixture = conflict_on_disk(Fixture::new());
     let error = open(&fixture).record_save(Utf8Path::new("../a.txt"), true).expect_err("outside");
