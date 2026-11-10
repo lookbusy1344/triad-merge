@@ -40,7 +40,7 @@ impl JournalTasks {
 
 #[cfg(test)]
 mod tests {
-    use merge_core::document::{Command, MergeOptions};
+    use merge_core::document::{Command, Labels, MergeDocument, MergeOptions};
     use merge_core::index::RegionIx;
     use merge_core::journal::input_hashes;
     use merge_core::merge3::Inputs;
@@ -56,7 +56,11 @@ mod tests {
         let mut journal = Recovery::new(dir.to_owned(), None);
         journal.record(Command::Clear { region: RegionIx::new(0) });
         let inputs = Inputs::three_way(text("b\n"), text("l\n"), text("r\n"));
-        journal.hashed(input_hashes(&inputs), MergeOptions::default());
+        let hashes = input_hashes(&inputs);
+        let start = MergeDocument::new(inputs, MergeOptions::default(), Labels::none())
+            .expect("no labels")
+            .start();
+        journal.hashed(hashes, start);
         journal
     }
 

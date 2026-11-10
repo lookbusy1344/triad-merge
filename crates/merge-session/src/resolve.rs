@@ -190,6 +190,10 @@ pub enum ResolveError {
         "{0} has no conflict markers left in the working tree, so it looks resolved; mark it resolved, or put its markers back to merge it again"
     )]
     ResolvedInWorkingTree(Utf8PathBuf),
+    #[error(
+        "{path}: the working-tree file is not text ({source}), so it may hold edits a save would overwrite; put text with its conflict markers back, or resolve it by hand"
+    )]
+    WorkingTreeNotText { path: Utf8PathBuf, source: DecodeError },
     #[error("cannot read {path}: {source}")]
     Read { path: Utf8PathBuf, source: std::io::Error },
     #[error("{path}: {source}")]
@@ -209,6 +213,7 @@ impl ResolveError {
             self,
             Self::NotText { .. }
                 | Self::NotAFile { .. }
+                | Self::WorkingTreeNotText { .. }
                 | Self::DeletedEverywhere(_)
                 | Self::ResolvedInWorkingTree(_)
                 | Self::Markers { .. }
@@ -260,7 +265,9 @@ pub enum Snapshot {
 /// or the conflict cannot be read; [`ResolveError::NotText`] and [`ResolveError::NotAFile`] for a term with
 /// no text to merge; [`ResolveError::NotConflicted`] for a file without markers;
 /// [`ResolveError::Read`], [`ResolveError::Decode`] and [`ResolveError::Markers`] when the
-/// file cannot be read, is not text, or its markers are malformed.
+/// file cannot be read, is not text, or its markers are malformed;
+/// [`ResolveError::WorkingTreeNotText`] when the VCS wrote markers into a working-tree file
+/// that is no longer text.
 pub fn load(
     run: &mut RunRepository,
     cwd: &Path,
@@ -290,7 +297,7 @@ pub fn load(
     if conflict.sides.iter().all(|side| side.content == TermContent::Absent) {
         return Err(ResolveError::DeletedEverywhere(relative));
     }
-    let working = working_text(&file, &conflict.sides);
+    let working = working_text(&relative, &file, &conflict.sides)?;
     if working.as_ref().is_some_and(|text| !markers::has_conflict_start(text.content())) {
         return Err(ResolveError::ResolvedInWorkingTree(relative));
     }
@@ -332,22 +339,31 @@ pub fn load(
 }
 
 /// The working-tree `file` of a conflict with `sides` as text, when the VCS wrote markers
-/// there because every side is a file. None for a file that is missing, unreadable or not
-/// text: it holds no work a save could destroy.
-fn working_text(file: &Utf8Path, sides: &[ConflictTerm]) -> Option<Text> {
+/// there because every side is a file. None for a missing file, which holds no work a save
+/// could destroy. `path` names the file in errors.
+///
+/// # Errors
+///
+/// [`ResolveError::Read`] when the file cannot be read, and
+/// [`ResolveError::WorkingTreeNotText`] when it is not text: it may hold a hand resolution,
+/// which a save would overwrite.
+fn working_text(
+    path: &Utf8Path,
+    file: &Utf8Path,
+    sides: &[ConflictTerm],
+) -> Result<Option<Text>, ResolveError> {
     let markers_written = sides.iter().all(|side| matches!(side.content, TermContent::File { .. }));
     if !markers_written {
-        return None;
+        return Ok(None);
     }
     let bytes = match std::fs::read(file) {
         Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
-        Err(error) => {
-            tracing::warn!(%error, %file, "cannot read the working-tree file; the conflict loads from the repository");
-            return None;
-        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(source) => return Err(ResolveError::Read { path: path.to_owned(), source }),
     };
-    Text::decode(bytes).ok()
+    Text::decode(bytes)
+        .map(Some)
+        .map_err(|source| ResolveError::WorkingTreeNotText { path: path.to_owned(), source })
 }
 
 /// Whether `parsed`, a working-tree file's markers, shows the conflict of `inputs` with no

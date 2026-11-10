@@ -150,7 +150,7 @@ impl Session {
     pub fn flush_journal(&mut self) {
         if let Some(recovery) = &mut self.recovery {
             let inputs = self.doc.inputs();
-            recovery.flush(|| input_hashes(inputs), self.doc.options());
+            recovery.flush(|| input_hashes(inputs), self.doc.start());
         }
     }
 
@@ -271,7 +271,7 @@ mod tests {
     fn journalled(dir: &Path) -> Session {
         let mut recovery = Recovery::new(dir.join("journal"), Some(dir.join("out")));
         let doc = conflict();
-        recovery.hashed(input_hashes(doc.inputs()), doc.options());
+        recovery.hashed(input_hashes(doc.inputs()), doc.start());
         Session::new(doc, target(Some(dir.join("out")), UnresolvedSave::Write), Some(recovery))
     }
 

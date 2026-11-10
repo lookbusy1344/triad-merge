@@ -34,7 +34,8 @@ pub struct WriteError {
 
 /// Write `bytes` to a temporary file beside `path`, then rename it over `path`. An existing
 /// file keeps its permissions; a new one gets the permissions of any newly created file. A
-/// link at `path` stays: the file it names takes the bytes.
+/// link at `path` stays: the file it names takes the bytes. The rename makes a new file, so
+/// hard links to the old one keep its bytes, and its owner, extended attributes and ACLs go.
 ///
 /// # Errors
 ///
@@ -410,6 +411,18 @@ mod tests {
                 .expect("restore dir");
             result.expect("the file's directory is writable");
             assert_eq!(fs::read(real.join("file")).expect("read"), b"new");
+        }
+
+        #[test]
+        fn a_hard_link_keeps_the_old_bytes() {
+            // The rename puts a new file at the path; the other name still holds the old one.
+            let dir = tempfile::tempdir().expect("tempdir");
+            let (file, other) = (dir.path().join("file"), dir.path().join("other"));
+            fs::write(&file, b"old").expect("seed");
+            fs::hard_link(&file, &other).expect("hard link");
+            write_atomic(&file, b"new").expect("write");
+            assert_eq!(fs::read(&file).expect("read"), b"new");
+            assert_eq!(fs::read(&other).expect("read"), b"old");
         }
 
         #[test]

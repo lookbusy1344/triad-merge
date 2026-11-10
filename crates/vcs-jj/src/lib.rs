@@ -236,6 +236,7 @@ impl JjRepository {
                 )
                 .block_on()
                 .map_err(backend("updating git's index"))?;
+                export_refs(tx.repo_mut())?;
             }
             repo = tx
                 .commit(description)
@@ -695,6 +696,17 @@ fn import_git_head(
         .block_on()
         .map_err(backend("saving the working copy's state"))?;
     Ok(repo)
+}
+
+/// Export jj's bookmarks and tags to the colocated git repository, as jj does after each
+/// command, so a bookmark the snapshot moved with `@` moves in git too. A ref git holds
+/// otherwise than jj last saw stays as it is, as in jj; the next jj command reports it.
+fn export_refs(repo: &mut jj_lib::repo::MutableRepo) -> Result<(), VcsError> {
+    let stats = jj_lib::git::export_refs(repo).map_err(backend("exporting refs to git"))?;
+    for (symbol, reason) in stats.failed_bookmarks.iter().chain(&stats.failed_tags) {
+        tracing::warn!(%symbol, %reason, "cannot export a ref to git");
+    }
+    Ok(())
 }
 
 /// git's repository at the workspace root when the workspace is colocated with it, as jj
