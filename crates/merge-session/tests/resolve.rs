@@ -5,6 +5,7 @@ use std::path::Path;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use merge_core::document::Labels;
+use merge_core::text::DecodeError;
 use merge_session::repository::RunRepository;
 use merge_session::resolve::{self, Conflicted, Loaded, ResolveError, Snapshot};
 use merge_session::{EncodedOutput, ExitCode};
@@ -495,13 +496,60 @@ fn a_modify_delete_conflict_loads_although_git_writes_no_markers() {
     assert_eq!(texts(&loaded), (vec!["left\n", ""], vec!["a\n"]));
 }
 
+/// The bytes of `path` in `fixture`'s working tree.
+fn on_disk(fixture: &vcs_git::testing::Fixture, path: &str) -> Vec<u8> {
+    std::fs::read(fixture.root().join(path)).expect("the file is readable")
+}
+
 #[test]
-fn a_binary_working_tree_file_is_no_reason_to_refuse() {
-    // Only text with no markers shows a hand resolution; anything else loads from the stages.
+fn a_binary_working_tree_file_is_refused_since_a_save_would_overwrite_it() {
     let (fixture, _) = git_stopped(&[], &[("a.txt", files(BOTH_CHANGED))]);
     fixture.write("a.txt", b"\0binary\n");
-    let loaded = load(fixture.root().as_std_path(), Path::new("a.txt")).expect("it loads");
-    assert_eq!(texts(&loaded), (vec!["left\n", "right\n"], vec!["a\n"]));
+    let error = load(fixture.root().as_std_path(), Path::new("a.txt")).expect_err("binary");
+    assert!(
+        matches!(&error, ResolveError::WorkingTreeNotText { path, source: DecodeError::Binary }
+            if path == "a.txt"),
+        "{error:?}"
+    );
+    assert!(error.is_refusal(), "a run over every file skips it");
+    assert_eq!(on_disk(&fixture, "a.txt"), b"\0binary\n");
+}
+
+#[test]
+fn a_hand_edit_that_is_not_utf8_is_refused_at_its_first_bad_byte() {
+    // An editor saved the hand resolution in Latin-1: `caf\xe9` is `café`.
+    let (fixture, _) = git_stopped(&[], &[("a.txt", files(BOTH_CHANGED))]);
+    fixture.write("a.txt", b"caf\xe9\n");
+    let error = load(fixture.root().as_std_path(), Path::new("a.txt")).expect_err("Latin-1");
+    assert!(
+        matches!(&error, ResolveError::WorkingTreeNotText {
+            path,
+            source: DecodeError::InvalidUtf8 { offset: 3 },
+        } if path == "a.txt"),
+        "{error:?}"
+    );
+    assert_eq!(on_disk(&fixture, "a.txt"), b"caf\xe9\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn an_unreadable_working_tree_file_fails_with_its_read_error() {
+    use std::os::unix::fs::PermissionsExt as _;
+    const NO_ACCESS: u32 = 0o000;
+    const READ_WRITE: u32 = 0o644;
+    let (fixture, _) = git_stopped(&[], &[("a.txt", files(BOTH_CHANGED))]);
+    fixture.write("a.txt", b"<<<<<<< ours\nleft\n=======\nright\n>>>>>>> theirs\n");
+    let file = fixture.root().join("a.txt");
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(NO_ACCESS)).expect("chmod");
+    let result = load(fixture.root().as_std_path(), Path::new("a.txt"));
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(READ_WRITE)).expect("chmod");
+    let error = result.expect_err("unreadable");
+    assert!(
+        matches!(&error, ResolveError::Read { path, source }
+            if path == "a.txt" && source.kind() == std::io::ErrorKind::PermissionDenied),
+        "{error:?}"
+    );
+    assert!(!error.is_refusal(), "a run over every file stops");
 }
 
 /// Tests that build a jj repository. `script/pre-commit` leaves them out (`.config/nextest.toml`).
