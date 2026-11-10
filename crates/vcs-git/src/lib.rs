@@ -277,9 +277,20 @@ impl GitRepository {
     /// `git add` does: the bytes through git's clean filters, the executable bit from the file
     /// under `core.fileMode`, else from ours, then theirs, and the file's stat. A path
     /// without stages is left alone. The tree cache goes, since it may name the conflict.
+    /// The index is read and written under its lock, so no other writer's change is lost.
     fn stage_resolution(&self, path: &Utf8Path) -> Result<(), VcsError> {
         use gix::index::entry::{Flags, Mode, Stage, Stat};
+        use gix::lock::acquire::Fail;
+        /// The mode bits `core.sharedRepository` would add; gix's own index write adds none.
+        const NO_SHARED_PERMISSIONS: i32 = 0;
         let git_path = git_path(path);
+        let lock = gix::lock::File::acquire_to_update_resource(
+            self.repo.index_path(),
+            Fail::Immediately,
+            None,
+            NO_SHARED_PERMISSIONS,
+        )
+        .map_err(backend("writing the index"))?;
         let mut index = self.repo.open_index().map_err(backend("reading the index"))?;
         let staged_mode =
             |stage| index.entry_by_path_and_stage(git_path.as_ref(), stage).map(|entry| entry.mode);
@@ -306,7 +317,12 @@ impl GitRepository {
         index.dangerously_push_entry(stat, id, Flags::empty(), mode, git_path.as_ref());
         index.sort_entries();
         index.remove_tree();
-        index.write(gix::index::write::Options::default()).map_err(backend("writing the index"))?;
+        let mut out = std::io::BufWriter::new(lock);
+        index
+            .write_to(&mut out, gix::index::write::Options::default())
+            .map_err(backend("writing the index"))?;
+        let lock = out.into_inner().map_err(|e| backend("writing the index")(e.into_error()))?;
+        lock.commit().map_err(|e| backend("writing the index")(e.error))?;
         Ok(())
     }
 

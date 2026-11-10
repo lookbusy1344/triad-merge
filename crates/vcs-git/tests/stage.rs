@@ -205,6 +205,23 @@ fn a_locked_index_is_an_error_and_stays_as_it_was() {
 }
 
 #[test]
+fn the_index_is_read_under_its_lock() {
+    // A writer between the read and the write would be lost, so the lock comes first: with
+    // the lock taken, the index is not read at all, and its damage goes unseen.
+    let fixture = two_conflicts();
+    let lock = fixture.write(".git/index.lock", b"");
+    fixture.write(".git/index", b"not an index");
+    fixture.write("a.txt", MERGED);
+    let error = record(&fixture, "a.txt", true).expect_err("the index is locked");
+    assert!(
+        matches!(&error, VcsError::Backend { context, .. } if *context == "writing the index"),
+        "{error:?}"
+    );
+    std::fs::remove_file(lock).expect("the lock is removed");
+    assert_eq!(index_bytes(&fixture), b"not an index");
+}
+
+#[test]
 fn a_path_outside_the_repository_is_refused() {
     let fixture = two_conflicts();
     let error = record(&fixture, "../a.txt", true).expect_err("outside");
