@@ -59,6 +59,9 @@ pub struct Tool<'a> {
     pub marker_style: MarkerStyle,
     pub conflict_exit_codes: &'a [i64],
     pub diff_invocation: DiffInvocation,
+    /// jj runs the diff tool in its temporary directory, with paths relative to it. `false`
+    /// keeps the user's working directory and passes absolute paths.
+    pub diff_do_chdir: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -87,7 +90,7 @@ pub fn set_tool(config: &[u8], tool: &Tool<'_>) -> Result<String, ToolConfigErro
     let mut layer = ConfigLayer::parse(ConfigSource::User, text).map_err(ToolConfigError::Parse)?;
     let strings = |args: &[&str]| args.iter().copied().collect::<ConfigValue>();
     set(&mut layer, &["ui", "merge-editor"], tool.name.into())?;
-    let table: [(&str, ConfigValue); 7] = [
+    let table: [(&str, ConfigValue); 8] = [
         ("program", tool.program.into()),
         ("merge-args", strings(tool.merge_args)),
         ("merge-tool-edits-conflict-markers", true.into()),
@@ -95,6 +98,7 @@ pub fn set_tool(config: &[u8], tool: &Tool<'_>) -> Result<String, ToolConfigErro
         ("conflict-marker-style", tool.marker_style.as_str().into()),
         ("diff-args", strings(tool.diff_args)),
         ("diff-invocation-mode", tool.diff_invocation.as_str().into()),
+        ("diff-do-chdir", tool.diff_do_chdir.into()),
     ];
     for (name, value) in table {
         set(&mut layer, &["merge-tools", tool.name, name], value)?;
@@ -162,6 +166,7 @@ mod tests {
         marker_style: MarkerStyle::Git,
         conflict_exit_codes: &[3],
         diff_invocation: DiffInvocation::FileByFile,
+        diff_do_chdir: false,
     };
 
     fn set(config: &str) -> String {
@@ -189,6 +194,7 @@ mod tests {
             trimmed("merge-tools.t.diff-invocation-mode").as_deref(),
             Some(r#""file-by-file""#)
         );
+        assert_eq!(trimmed("merge-tools.t.diff-do-chdir").as_deref(), Some("false"));
     }
 
     #[test]

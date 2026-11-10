@@ -21,7 +21,7 @@ not (
     | package(vcs-jj)
     | test(/^native::jj::/)
     | test(/^tool_integration::jj::/)
-    | (package(merge-session) & test(/^(origin|resolve|discovery)::jj::/))
+    | (package(merge-session) & test(/^(origin|resolve|discovery|diff_tool)::jj::/))
     | (package(merge-app) & test(/^scroll::/))
 )
 """

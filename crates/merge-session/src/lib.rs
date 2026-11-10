@@ -3,6 +3,7 @@
 //! writing a merge's files. The CLI and the GUI build on it. No GUI and no argument parser.
 //! The settings and key bindings it applies live in `merge-config`.
 
+pub mod diff_tool;
 pub mod ending;
 pub mod env;
 pub mod install;

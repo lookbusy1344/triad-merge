@@ -759,7 +759,7 @@ fn a_relative_jj_copy_resolves_against_the_runs_directory(cx: &mut TestAppContex
         DiffFile {
             origin: Origin::File(PathBuf::from(relative)),
             text: Text::decode(side.as_bytes()).expect("decodes"),
-            read_only: true,
+            read_only: false,
         }
     });
     let settings =
@@ -770,6 +770,32 @@ fn a_relative_jj_copy_resolves_against_the_runs_directory(cx: &mut TestAppContex
         merge_app::diff_window::open(left, right, &settings, cx).expect("window opens").1
     });
     assert_eq!(banner(cx, &view).as_deref(), Some(JJ_BANNER));
+}
+
+/// `jj diff --tool` showing the working copy: the right side opens the working-copy file, and
+/// the left copy is read-only, so no edit is lost (spec §7.1).
+#[gpui_kit::test]
+fn a_read_only_jj_copy_beside_the_working_copy_shows_no_banner(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let copy = dir.path().join("jj-diff-x7Yq").join("left").join("a.txt");
+    let working = dir.path().join("repo").join("a.txt");
+    let [left, right] = [(copy, true), (working, false)].map(|(path, read_only)| {
+        std::fs::create_dir_all(path.parent().expect("a parent")).expect("dirs");
+        std::fs::write(&path, "a\n").expect("written");
+        DiffFile {
+            origin: Origin::File(path),
+            text: Text::decode(b"a\n".to_vec()).expect("decodes"),
+            read_only,
+        }
+    });
+    let view = cx.update(|cx| {
+        gpui_kit::init(cx);
+        merge_app::init(cx);
+        merge_app::diff_window::open(left, right, &DiffSettings::default(), cx)
+            .expect("window opens")
+            .1
+    });
+    assert_eq!(banner(cx, &view), None);
 }
 
 #[gpui_kit::test]

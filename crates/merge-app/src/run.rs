@@ -82,15 +82,24 @@ pub fn run(form: WindowForm) -> ExitCode {
                     read_only,
                 })
             };
+            let mut repo = repo;
+            let cwd = working_dir(dir);
+            let working_copy =
+                (!diff.readonly_right).then(|| jj_working_copy(&mut repo, &diff.right, &cwd));
+            // The right side saves to the working copy; the left copy's edits would be lost.
+            let (right, readonly_left) = match working_copy.flatten() {
+                Some(file) => (file, true),
+                None => (diff.right.clone(), diff.readonly_left),
+            };
             let kind = repo.kind();
             let origins = DiffLookup::Tool {
-                paths: [diff.left.clone(), diff.right.clone()],
+                paths: [diff.left.clone(), diff.right],
                 title: diff.title.clone(),
-                cwd: working_dir(dir),
+                cwd,
                 repo: Handoff::new(repo),
             };
-            let files = file(diff.left, diff.readonly_left)
-                .and_then(|left| Ok((left, file(diff.right, diff.readonly_right)?)));
+            let files = file(diff.left, readonly_left)
+                .and_then(|left| Ok((left, file(right, diff.readonly_right)?)));
             let (left, right) = match files {
                 Ok(files) => files,
                 Err(error) => return report(&error.to_string()),
@@ -103,6 +112,22 @@ pub fn run(form: WindowForm) -> ExitCode {
             run_native_diff(window, repo, base, errors, bindings)
         }
     }
+}
+
+/// The working-copy file that `right`, the right side of `jj diff --tool`, copies, so its
+/// edits save there (spec §7.1). Only a path in jj's temporary directory opens `repo`.
+fn jj_working_copy(repo: &mut RunRepository, right: &Path, cwd: &Path) -> Option<PathBuf> {
+    merge_session::origin::jj_diff_copy(right, cwd)?;
+    let found = match repo.open() {
+        Ok(Some(open)) => merge_session::diff_tool::jj_working_copy(open, right, cwd),
+        Ok(None) => Ok(None),
+        Err(error) => Err(error.into()),
+    };
+    found.unwrap_or_else(|error| {
+        // The window still opens on jj's copy, and its banner says edits there are lost.
+        tracing::warn!(%error, "cannot tell whether the right side is the working copy");
+        None
+    })
 }
 
 /// The parts of a `diff PATH` window form.

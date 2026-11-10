@@ -233,6 +233,7 @@ mod jj {
         assert_eq!(tool["conflict-marker-style"].as_str(), Some("git"));
         assert_eq!(tool["diff-args"], strings(&["diff", "$left", "$right"]));
         assert_eq!(tool["diff-invocation-mode"].as_str(), Some("file-by-file"));
+        assert_eq!(tool["diff-do-chdir"].as_bool(), Some(false));
     }
 
     #[test]

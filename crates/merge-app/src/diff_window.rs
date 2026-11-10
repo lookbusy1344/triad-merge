@@ -489,7 +489,8 @@ impl DiffWindow {
         let whitespace = strings::comparison(settings.options.comparison());
         // Without a working directory, a relative path stays relative.
         let cwd = settings.cwd.as_deref().unwrap_or(Path::new(""));
-        let banner = jj_banner(panes.iter().filter_map(|p| p.origin.path()), cwd);
+        let editable = panes.iter().filter(|p| !p.read_only);
+        let banner = jj_banner(editable.filter_map(|p| p.origin.path()), cwd);
         let watch = settings
             .watch
             .then(|| watch(panes.each_ref().map(|p| p.origin.path()), cwd, window, cx));
@@ -1752,7 +1753,8 @@ fn changed_sides(first: Side, receiver: &Receiver<Side>) -> impl Iterator<Item =
     SIDES.into_iter().filter(move |&side| changed[index(side)])
 }
 
-/// The banner for files `jj diff --tool` copied, whose edits it throws away (spec §7.1).
+/// The banner for editable files `jj diff --tool` copied, whose edits it throws away
+/// (spec §7.1).
 fn jj_banner<'a>(paths: impl IntoIterator<Item = &'a Path>, cwd: &Path) -> Option<SharedString> {
     paths.into_iter().any(|path| in_jj_diff_copy(path, cwd)).then(|| strings::JJ_DIFF_BANNER.into())
 }

@@ -45,7 +45,9 @@ pub struct Source {
 /// `jj diff --tool` copies each side to a temporary directory whose name starts with this,
 /// in a subdirectory named for the side (jj-cli 0.46 `merge_tools/external.rs`).
 pub const JJ_DIFF_PREFIX: &str = "jj-diff-";
-const JJ_DIFF_SIDES: [&str; 3] = ["left", "right", "output"];
+/// The side `jj diff --tool` copies the revision it shows changes in to.
+pub(crate) const JJ_DIFF_RIGHT: &str = "right";
+const JJ_DIFF_SIDES: [&str; 3] = ["left", JJ_DIFF_RIGHT, "output"];
 /// A two-way diff's inputs: left and right.
 const SIDES: usize = 2;
 
@@ -364,6 +366,12 @@ fn history(repo: &dyn Repository, parent: &RevSpec) -> Result<Option<CommitId>, 
 /// when relative (spec §7.1). `None` for any other path.
 #[must_use]
 pub fn jj_diff_copy(path: &Path, cwd: &Path) -> Option<PathBuf> {
+    jj_diff_side(path, cwd).map(|(_, path)| path)
+}
+
+/// The side, `left`, `right` or `output`, and the repository path of a file in the temporary
+/// directory `jj diff --tool` makes, as [`jj_diff_copy`] reads it.
+pub(crate) fn jj_diff_side(path: &Path, cwd: &Path) -> Option<(&'static str, PathBuf)> {
     // Lexical: `..` drops the name before it, as the path names it, not as links resolve.
     let full = cwd.join(path);
     let mut names: Vec<&OsStr> = Vec::new();
@@ -376,15 +384,15 @@ pub fn jj_diff_copy(path: &Path, cwd: &Path) -> Option<PathBuf> {
             Component::RootDir | Component::Prefix(_) | Component::CurDir => {}
         }
     }
-    let side = names.windows(2).position(|pair| {
-        let [dir, side] = pair else { return false };
+    names.windows(2).enumerate().find_map(|(at, pair)| {
+        let [dir, side] = pair else { return None };
         let random = dir
             .to_str()
             .and_then(|d| d.strip_prefix(JJ_DIFF_PREFIX))
             .is_some_and(|rest| !rest.is_empty());
-        random && JJ_DIFF_SIDES.iter().any(|s| side == s)
-    })?;
-    Some(names[side + 2..].iter().collect())
+        let side = JJ_DIFF_SIDES.into_iter().find(|s| side == s).filter(|_| random)?;
+        Some((side, names[at + 2..].iter().collect()))
+    })
 }
 
 /// `path` from `repo`'s root, or none when it lies outside. A missing file resolves through

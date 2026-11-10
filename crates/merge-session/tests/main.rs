@@ -2,6 +2,7 @@
 //! file. Each file is a module.
 
 mod conformance;
+mod diff_tool;
 mod discovery;
 mod install;
 mod native;

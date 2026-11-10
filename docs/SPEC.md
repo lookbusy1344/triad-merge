@@ -581,9 +581,10 @@ Diff tool configuration:
 [merge-tools.triad]
 diff-args = ["diff", "$left", "$right"]
 diff-invocation-mode = "file-by-file"
+diff-do-chdir = false
 ```
 
-`file-by-file` makes jj run the tool once for each changed file, because triad takes single files, not directories. jj runs `program` with `diff-args`, so the arguments start with the `diff` subcommand, as git's `cmd` does; `triad-merge LEFT RIGHT` alone is a merge missing its inputs.
+`file-by-file` makes jj run the tool once for each changed file, because triad takes single files, not directories. `diff-do-chdir = false` runs the tool in the user's working directory with absolute paths; jj's default runs it in its temporary directory, where no repository is found. jj runs `program` with `diff-args`, so the arguments start with the `diff` subcommand, as git's `cmd` does; `triad-merge LEFT RIGHT` alone is a merge missing its inputs.
 
 ```gitconfig
 [diff]
@@ -596,8 +597,9 @@ diff-invocation-mode = "file-by-file"
 
 Where edits land:
 
-- `jj diff --tool` passes temporary copies of both sides, so edits there are lost when the tool exits. The window shows a banner saying so when it detects jj's temporary directory: a path that, made absolute from the working directory and with `..` applied by name, has a directory `jj-diff-<random>` followed by `left`, `right` or `output`. jj names the directory with that prefix and may pass paths relative to it.
-- To edit jj working-copy files, use native mode, `triad-merge diff PATH`.
+- `jj diff --tool` passes temporary copies of both sides, and jj discards them when the tool exits. A path lies in jj's temporary directory when, made absolute from the working directory and with `..` applied by name, it has a directory `jj-diff-<random>` followed by `left`, `right` or `output`. jj names the directory with that prefix and may pass paths relative to it.
+- When the right side shows the working copy, triad opens the working-copy file in its place, so saved edits persist, and the left copy is read-only, as with `git difftool`. jj passes no revisions, so bytes decide: the right path lies under `right`, the repository is jj, and the copy holds the bytes of both the regular file at its path in the working tree and that file in `@`. jj snapshots the working copy before it runs the tool, so `jj diff --tool triad` and `jj diff --tool triad --from REV` qualify. A right side of another revision whose file holds the same bytes also qualifies; the right pane's title names the working-copy file. `--readonly-right` turns the check off.
+- Otherwise the window shows a banner when an editable side lies in jj's temporary directory, saying its edits are lost. To edit any jj working-copy file, use native mode, `triad-merge diff PATH`.
 - `git difftool` passes the real working-tree path for the working-tree side, `$REMOTE`, so saved edits persist. The left side, a temporary copy, is read-only.
 
 `triad-merge install --jj | --git` writes these entries through jj-lib's config API and gix's config API. The `install` command writes the binary's absolute path, quoted for the platform. On Windows that means backslash paths, a space-safe quoted `cmd` string for git, and `triad-merge.exe` (§6.1).

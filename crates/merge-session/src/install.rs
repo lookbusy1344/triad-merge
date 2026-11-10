@@ -203,6 +203,8 @@ pub fn jj(config: &Path, program: &Path) -> Result<Installed, InstallError> {
         marker_style: MarkerStyle::Git,
         conflict_exit_codes: &[JJ_CONFLICT_EXIT],
         diff_invocation: DiffInvocation::FileByFile,
+        // The run's working directory and absolute paths find the repository (spec §7.1).
+        diff_do_chdir: false,
     };
     let after = set_tool(&before, &tool).map_err(|error| match error {
         ToolConfigError::Set { key, source } => set_error(config, key, source),

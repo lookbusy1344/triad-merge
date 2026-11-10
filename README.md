@@ -105,7 +105,7 @@ jj diff --tool triad          # each changed file in the diff window
 jj diff --tool triad -r @-    # any revision jj diff takes
 ```
 
-A save that leaves conflicts exits 1; jj reads the saved markers back and keeps the conflict. `jj diff --tool` passes temporary copies, so edits there are lost; the window says so in a banner. Use `triad-merge diff PATH` to edit the working copy.
+A save that leaves conflicts exits 1; jj reads the saved markers back and keeps the conflict. `jj diff --tool` passes temporary copies. When the right side shows the working copy, triad opens the working-copy file instead, so saved edits persist; the left copy is read-only. Edits to other revisions are lost, and the window says so in a banner. This needs `diff-do-chdir = false`, which `triad-merge install --jj` writes; rerun it over an existing install.
 
 ### From git
 

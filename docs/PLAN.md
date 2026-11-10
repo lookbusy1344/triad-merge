@@ -8,14 +8,14 @@ Every task follows the ground rules of §A1: tests first, expected values from t
 
 ## 1. Status
 
-As of 2026-11-09.
+As of 2026-11-10.
 
 | Milestone | State | Part |
 |---|---|---|
 | M1 `merge-core` and headless CLI | Done | §A4 |
 | M2 `merge-view` | Done | §A5 |
 | M3 GUI release 1, macOS | Done, except the spoken VoiceOver steps of the release checklist | §A6 |
-| M4 tool integration, local macOS release | Done; release checklist passes on git and jj (§A7.3) | §A7 |
+| M4 tool integration, local macOS release | Done; release checklist passes on git and jj (§A7.3). `jj diff --tool` saves the right side to the working copy when it shows it (§A6.5); release checklist step 6 needs a rerun on jj | §A7 |
 | Beta, macOS | Open: testers build `triad.app` and install it in `/Applications` (§A7.4) | §A7.4 |
 | M4b Linux and Windows | Linux test machine and packages build (§E7.1); final checks need hardware, Windows a certificate | §A8, §E7 |
 | Merge semantics: jj's merge, word level, refinements, syntax-aware boundaries | Done | B |
@@ -595,7 +595,7 @@ Tests:
 - Two `EditorState` panes, both editable unless read-only.
 - Edits go to `DiffDocument`. A recompute runs on a background task after 100 ms (`DIFF_DEBOUNCE_MS`).
 - File watching uses `notify`, with the reload and conflict prompts from spec §6.1.
-- When a path sits in jj's temporary directory for `jj diff --tool`, a banner says edits will be lost (spec §7.1).
+- `jj diff --tool` with the working copy on the right opens the working-copy file on the right and makes the left copy read-only (`merge_session::diff_tool::jj_working_copy`, spec §7.1). `run.rs` checks before the window opens, and opens the repository only for a path in jj's temporary directory; the origin lookup reuses it. Otherwise, when an editable path sits in jj's temporary directory, a banner says edits will be lost.
 - Copy-to-other-side buttons sit in the central gutter.
 - **Alignment: spacer rows inside the editors, as Zed does.**
   - Zed's split diff (default since v0.224) keeps both sides editable. It aligns them with spacers: visual rows that belong to no buffer line, drawn with a checkerboard, inserted by its editor's block map.
