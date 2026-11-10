@@ -16,6 +16,7 @@ use crate::diff::DiffOptions;
 pub use crate::edit::{BatchError, EditBatch, TextPatch};
 use crate::edit::{apply, caret_after, inverse, prepare, starts_after};
 use crate::index::{ByteOffset, Line, RegionIx};
+use crate::journal::alignment_hash;
 use crate::lengths::RegionLengths;
 use crate::merge3::{
     Aligned, Alignment, HunkLevel, Inputs, Kind, Refine, Region, SameChange, Semantics, Source,
@@ -55,6 +56,15 @@ pub struct MergeOptions {
     /// which read as [`MarkerStyle::Diff3`].
     #[serde(default)]
     pub marker_style: MarkerStyle,
+}
+
+/// How a document was aligned, for a journal to check its replay against (spec §6.2): the
+/// options, and a hash of the alignment they gave before any command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Start {
+    pub options: MergeOptions,
+    /// SHA-256, in hex, of each region's kind, line ranges and text length as aligned.
+    pub alignment: String,
 }
 
 /// The markers of a two-sided conflict (spec §4.4). More sides take jj's snapshot style.
@@ -317,6 +327,8 @@ pub struct MergeDocument {
     inputs: Inputs,
     labels: Labels,
     options: MergeOptions,
+    /// The hash of the alignment as [`MergeDocument::new_bounded`] made it.
+    alignment: String,
     regions: Vec<Region>,
     resolutions: Vec<Resolution>,
     result: Rope,
@@ -391,6 +403,7 @@ impl MergeDocument {
         let mut doc = Self {
             marker_length: marker_length(&inputs, options.marker_length),
             options,
+            alignment: String::new(),
             typed_ending: typed_ending(&inputs.bases()[0], &inputs.sides()[0]),
             inputs,
             labels,
@@ -416,6 +429,7 @@ impl MergeDocument {
                 (text.len(), LineCount::of(&text))
             })
             .unzip();
+        doc.alignment = alignment_hash(&doc.regions, lengths.iter().copied());
         doc.lengths = RegionLengths::new(lengths);
         doc.lines = RegionLines::new(lines);
         doc.result = result.finish();
@@ -441,6 +455,12 @@ impl MergeDocument {
     #[must_use]
     pub fn options(&self) -> MergeOptions {
         self.options
+    }
+
+    /// The options and the alignment the document started from. Commands leave it as it is.
+    #[must_use]
+    pub fn start(&self) -> Start {
+        Start { options: self.options, alignment: self.alignment.clone() }
     }
 
     #[must_use]

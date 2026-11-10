@@ -578,7 +578,7 @@ Part 1: Save & Exit, Cancel, the exit codes and the binary.
 - A window ends through the `Finish` global. `merge_app::run` sets it to exit the process with the code, since GPUI's quit on macOS (`NSApplication terminate`) exits with 0. Tests set it to record the code.
 - `triad-merge` runs window forms through `merge_app::run` on macOS and Linux. The diff forms report that the diff window is not built yet (§A6.5). On Windows, `triad-merge-gui` runs them through `merge_app::run`.
 - Part 2: the recovery journal.
-  - `merge_core::journal::Journal` holds the format version, SHA-256 of each input's decoded text (`sha2`, already in the tree), the `MergeOptions` and the command log. The core's command and option types derive serde. The file is `<cache>/journal/<key>.json`, where the key hashes the input hashes.
+  - `merge_core::journal::Journal` holds the format version, SHA-256 of each input's decoded text (`sha2`, already in the tree), the `MergeOptions`, SHA-256 of the starting alignment (`MergeDocument::start`, version 10) and the command log. Restore aligns again and refuses a journal whose alignment hash differs, since its commands name regions and byte offsets of that alignment. The core's command and option types derive serde. The file is `<cache>/journal/<key>.json`, where the key hashes the input hashes.
   - The window records each command that applies. `JOURNAL_DEBOUNCE` (500 ms) restarts with each command; tests drive it with the executor's fake clock.
   - `Settings::journal_dir` turns the journal on; `merge_app::run` sets it from `merge_cli::journal_dir`. Tests that are not about the journal leave it off.
 

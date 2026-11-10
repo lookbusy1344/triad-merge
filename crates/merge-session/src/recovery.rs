@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, SystemTime};
 
 use crate::io::write_private;
-use merge_core::document::{Command, MergeOptions};
+use merge_core::document::{Command, Start};
 use merge_core::journal::{InputHashes, JOURNAL_EXTENSION, Journal};
 
 const SECONDS_PER_DAY: u64 = 24 * 60 * 60;
@@ -173,13 +173,13 @@ impl Recovery {
         }
     }
 
-    /// Name the file from `hashes` and move the waiting commands into the journal. Returns
-    /// whether the inputs were still hashing.
-    pub fn hashed(&mut self, hashes: InputHashes, options: MergeOptions) -> bool {
+    /// Name the file from `hashes` and move the waiting commands into the journal, for a
+    /// document that started from `start`. Returns whether the inputs were still hashing.
+    pub fn hashed(&mut self, hashes: InputHashes, start: Start) -> bool {
         let Log::Hashing { commands } = &mut self.log else {
             return false;
         };
-        let mut journal = Journal::with_hashes(hashes, options);
+        let mut journal = Journal::with_hashes(hashes, start);
         for command in std::mem::take(commands) {
             journal.record(command);
         }
@@ -251,11 +251,11 @@ impl Recovery {
     }
 
     /// Write the journal now, on this thread, hashing the inputs with `hashes` if they are
-    /// still hashing: the session is ending.
-    pub fn flush(&mut self, hashes: impl FnOnce() -> InputHashes, options: MergeOptions) {
+    /// still hashing: the session is ending. `start` is the document's.
+    pub fn flush(&mut self, hashes: impl FnOnce() -> InputHashes, start: Start) {
         self.retire();
         if matches!(self.log, Log::Hashing { .. }) {
-            self.hashed(hashes(), options);
+            self.hashed(hashes(), start);
         }
         let Some((write, upto)) = self.next_write() else {
             return;
@@ -332,6 +332,7 @@ impl Recovery {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use merge_core::document::{Labels, MergeDocument, MergeOptions};
     use merge_core::index::RegionIx;
     use merge_core::journal::{JOURNAL_VERSION, input_hashes};
     use merge_core::merge3::Inputs;
@@ -491,8 +492,19 @@ mod tests {
         Text::decode(s.as_bytes().to_vec()).expect("decodes")
     }
 
+    fn inputs() -> Inputs {
+        Inputs::three_way(text("b\n"), text("l\n"), text("r\n"))
+    }
+
     fn hashes() -> InputHashes {
-        input_hashes(&Inputs::three_way(text("b\n"), text("l\n"), text("r\n")))
+        input_hashes(&inputs())
+    }
+
+    /// How [`inputs`] start with the default options.
+    fn start() -> Start {
+        MergeDocument::new(inputs(), MergeOptions::default(), Labels::none())
+            .expect("no labels")
+            .start()
     }
 
     fn clear(region: RegionIx) -> Command {
@@ -502,7 +514,7 @@ mod tests {
     /// A journal in `dir`, its inputs hashed, holding `commands`.
     fn ready(dir: &Path, commands: usize) -> Recovery {
         let mut recovery = Recovery::new(dir.to_owned(), None);
-        recovery.hashed(hashes(), MergeOptions::default());
+        recovery.hashed(hashes(), start());
         (0..commands).for_each(|region| recovery.record(clear(RegionIx::new(region))));
         recovery
     }
@@ -528,10 +540,10 @@ mod tests {
         recovery.record(clear(RegionIx::new(1)));
         assert!(recovery.next_write().is_none());
         assert!(recovery.path().is_none());
-        assert!(recovery.hashed(hashes(), MergeOptions::default()));
+        assert!(recovery.hashed(hashes(), start()));
         let (write, upto) = recovery.next_write().expect("a write");
         assert_eq!((write.mode, upto), (WriteMode::Whole, 2));
-        let file = Journal::with_hashes(hashes(), MergeOptions::default()).file_name(None);
+        let file = Journal::with_hashes(hashes(), start()).file_name(None);
         assert_eq!(write.path, dir.path().join(file));
         assert_eq!(write.run().expect("written"), Written::Done);
         assert_eq!(file_commands(&recovery), [clear(RegionIx::new(0)), clear(RegionIx::new(1))]);
@@ -542,8 +554,8 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let name = PathBuf::from("/repo/a.txt");
         let mut recovery = Recovery::new(dir.path().to_owned(), Some(name.clone()));
-        recovery.hashed(hashes(), MergeOptions::default());
-        let file = Journal::with_hashes(hashes(), MergeOptions::default()).file_name(Some(&name));
+        recovery.hashed(hashes(), start());
+        let file = Journal::with_hashes(hashes(), start()).file_name(Some(&name));
         assert_eq!(recovery.path(), Some(dir.path().join(file).as_path()));
     }
 
@@ -552,8 +564,8 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut recovery = ready(dir.path(), 1);
         let other = input_hashes(&Inputs::three_way(text("x\n"), text("y\n"), text("z\n")));
-        assert!(!recovery.hashed(other, MergeOptions::default()));
-        let file = Journal::with_hashes(hashes(), MergeOptions::default()).file_name(None);
+        assert!(!recovery.hashed(other, start()));
+        let file = Journal::with_hashes(hashes(), start()).file_name(None);
         assert_eq!(recovery.path(), Some(dir.path().join(file).as_path()));
         assert_eq!(recovery.next_write().expect("a write").1, 1);
     }
@@ -624,7 +636,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut recovery = Recovery::new(dir.path().to_owned(), None);
         recovery.record(clear(RegionIx::new(0)));
-        recovery.flush(hashes, MergeOptions::default());
+        recovery.flush(hashes, start());
         assert_eq!(file_commands(&recovery), [clear(RegionIx::new(0))]);
         assert!(recovery.next_write().is_none());
     }
@@ -637,7 +649,7 @@ mod tests {
         recovery.record(clear(RegionIx::new(1)));
         let (stale, _) = recovery.next_write().expect("a write");
         std::fs::write(recovery.path().expect("hashed"), b"cut short").expect("written");
-        recovery.flush(hashes, MergeOptions::default());
+        recovery.flush(hashes, start());
         assert_eq!(file_commands(&recovery), [clear(RegionIx::new(0)), clear(RegionIx::new(1))]);
         assert_eq!(stale.run().expect("no error"), Written::Skipped);
     }
@@ -686,7 +698,7 @@ mod tests {
         let recovery = ready(dir.path(), 0);
         assert!(recovery.saved().is_none(), "no file");
         let path = recovery.path().expect("hashed").to_owned();
-        let empty = Journal::with_hashes(hashes(), MergeOptions::default());
+        let empty = Journal::with_hashes(hashes(), start());
         let header = empty.to_lines().expect("serialises");
         std::fs::write(&path, &header).expect("written");
         assert!(recovery.saved().is_none(), "no commands");
@@ -710,7 +722,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut recovery = ready(dir.path(), 1);
         assert!(write_next(&mut recovery));
-        let mut journal = Journal::with_hashes(hashes(), MergeOptions::default());
+        let mut journal = Journal::with_hashes(hashes(), start());
         journal.record(clear(RegionIx::new(5)));
         journal.record(clear(RegionIx::new(6)));
         recovery.restored(journal);

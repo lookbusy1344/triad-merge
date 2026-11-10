@@ -13,12 +13,12 @@ use sha2::{Digest as _, Sha256};
 
 use crate::boundaries::Boundaries;
 use crate::document::{
-    Command, CommandError, LabelCountError, Labels, MergeDocument, MergeOptions,
+    Command, CommandError, LabelCountError, Labels, MergeDocument, MergeOptions, Start,
 };
-use crate::merge3::Inputs;
+use crate::merge3::{Inputs, Kind, Region};
 
 /// The format of the journal. A journal of another version is not restored.
-pub const JOURNAL_VERSION: u32 = 9;
+pub const JOURNAL_VERSION: u32 = 10;
 
 const HEX_DIGITS_PER_BYTE: usize = 2;
 
@@ -39,6 +39,10 @@ struct Header {
     /// SHA-256 of each input's decoded text, in hex: the sides, then the bases.
     inputs: Vec<String>,
     options: MergeOptions,
+    /// [`Start::alignment`] of the document the commands applied to. Absent from a version-9
+    /// header, which restore then refuses by its version.
+    #[serde(default)]
+    alignment: String,
 }
 
 const LINE_END: u8 = b'\n';
@@ -63,6 +67,10 @@ pub enum RestoreError {
     Version { found: u32 },
     #[error("the journal was written for other inputs")]
     Inputs,
+    #[error(
+        "the journal was written for another alignment of these inputs, such as one by another version of triad"
+    )]
+    Alignment,
     #[error(transparent)]
     Labels(#[from] LabelCountError),
     #[error("command {index} of the journal does not apply: {source}")]
@@ -77,14 +85,15 @@ impl Journal {
     /// An empty journal for `doc` as it was aligned.
     #[must_use]
     pub fn new(doc: &MergeDocument) -> Self {
-        Self::with_hashes(input_hashes(doc.inputs()), doc.options())
+        Self::with_hashes(input_hashes(doc.inputs()), doc.start())
     }
 
-    /// An empty journal for inputs with `hashes`, aligned with `options`.
+    /// An empty journal for inputs with `hashes`, of a document that started from `start`.
     #[must_use]
-    pub fn with_hashes(hashes: InputHashes, options: MergeOptions) -> Self {
+    pub fn with_hashes(hashes: InputHashes, start: Start) -> Self {
+        let Start { options, alignment } = start;
         Self {
-            header: Header { version: JOURNAL_VERSION, inputs: hashes.0, options },
+            header: Header { version: JOURNAL_VERSION, inputs: hashes.0, options, alignment },
             commands: Vec::new(),
         }
     }
@@ -188,7 +197,8 @@ impl Journal {
     /// # Errors
     ///
     /// [`RestoreError`] when the journal has another version, `inputs` are not the ones it was
-    /// written for, `labels` do not fit, or a command does not apply.
+    /// written for, they align otherwise than they did, `labels` do not fit, or a command
+    /// does not apply.
     pub fn restore(&self, inputs: Inputs, labels: Labels) -> Result<MergeDocument, RestoreError> {
         self.restore_bounded(inputs, labels, None)
     }
@@ -211,6 +221,10 @@ impl Journal {
             return Err(RestoreError::Inputs);
         }
         let mut doc = MergeDocument::new_bounded(inputs, self.header.options, labels, boundaries)?;
+        // The commands name regions and byte offsets of the alignment they were made on.
+        if doc.start().alignment != self.header.alignment {
+            return Err(RestoreError::Alignment);
+        }
         for (index, command) in self.commands.iter().enumerate() {
             doc.apply(command.clone()).map_err(|source| RestoreError::Command { index, source })?;
         }
@@ -237,6 +251,42 @@ pub fn input_hashes(inputs: &Inputs) -> InputHashes {
     }))
 }
 
+/// SHA-256, in hex, of `regions` with the byte length of each one's text: per region a kind
+/// tag, the side for [`Kind::OneSide`], each base's and each side's line range, then the
+/// length, every number a little-endian `u64`.
+pub(crate) fn alignment_hash(
+    regions: &[Region],
+    lengths: impl IntoIterator<Item = usize>,
+) -> String {
+    const UNCHANGED: u8 = 0;
+    const ONE_SIDE: u8 = 1;
+    const ALL_SAME: u8 = 2;
+    const WORD_MERGED: u8 = 3;
+    const CONFLICT: u8 = 4;
+    let number = |hasher: &mut Sha256, n: usize| {
+        hasher.update(u64::try_from(n).expect("a usize fits a u64").to_le_bytes());
+    };
+    let mut hasher = Sha256::new();
+    for (region, length) in regions.iter().zip(lengths) {
+        match region.kind {
+            Kind::Unchanged => hasher.update([UNCHANGED]),
+            Kind::OneSide(side) => {
+                hasher.update([ONE_SIDE]);
+                number(&mut hasher, side);
+            }
+            Kind::AllSame => hasher.update([ALL_SAME]),
+            Kind::WordMerged => hasher.update([WORD_MERGED]),
+            Kind::Conflict => hasher.update([CONFLICT]),
+        }
+        for range in region.bases.iter().chain(&region.sides) {
+            number(&mut hasher, range.start);
+            number(&mut hasher, range.end);
+        }
+        number(&mut hasher, length);
+    }
+    hex(&hasher.finalize())
+}
+
 fn push_line(out: &mut Vec<u8>, value: &impl Serialize) -> Result<(), serde_json::Error> {
     serde_json::to_writer(&mut *out, value)?;
     out.push(LINE_END);
@@ -261,8 +311,10 @@ mod tests {
     use crate::diff::{DiffOptions, Whitespace};
     use crate::document::{EditBatch, Output, PickScope, Resolution, TextPatch};
     use crate::index::RegionIx;
+    use crate::merge3::Region;
     use crate::merge3::{HunkLevel, Kind, Refine, SameChange, Semantics, Source};
     use crate::text::Text;
+    use std::ops::Range;
     use std::path::Path;
 
     use super::*;
@@ -430,13 +482,15 @@ mod tests {
     }
 
     #[test]
-    fn the_format_version_is_nine() {
-        assert_eq!(JOURNAL_VERSION, 9);
-        let (_, journal) = session();
+    fn the_format_version_is_ten() {
+        assert_eq!(JOURNAL_VERSION, 10);
+        let (d, journal) = session();
         let all = bytes(&journal);
         let header =
             std::str::from_utf8(&all).expect("JSON is UTF-8").lines().next().expect("a header");
-        assert!(header.starts_with(r#"{"version":9,"#), "{header}");
+        assert!(header.starts_with(r#"{"version":10,"#), "{header}");
+        let alignment = format!(r#""alignment":"{}""#, d.start().alignment);
+        assert!(header.contains(&alignment), "{header}");
         assert!(header.contains(r#""refine":"ends""#), "{header}");
         assert!(header.contains(r#""syntax_boundaries":false"#), "{header}");
         assert!(header.contains(r#""line_endings":"Compare""#), "{header}");
@@ -448,15 +502,92 @@ mod tests {
         let (_, journal) = session();
         let lines = String::from_utf8(bytes(&journal)).expect("JSON is UTF-8");
         let header = format!(r#"{{"version":{version},"#);
-        let old =
-            edits.iter().fold(lines.replacen(r#"{"version":9,"#, &header, 1), |old, (from, to)| {
-                assert!(old.contains(from), "{from} in {old}");
-                old.replacen(from, to, 1)
-            });
+        let current = format!(r#"{{"version":{JOURNAL_VERSION},"#);
+        let old = edits.iter().fold(lines.replacen(&current, &header, 1), |old, (from, to)| {
+            assert!(old.contains(from), "{from} in {old}");
+            old.replacen(from, to, 1)
+        });
         let parsed = Journal::parse(old.as_bytes()).expect("an older header parses");
         let error =
             parsed.restore(inputs("a\nL\nc\n"), Labels::none()).expect_err("an older format");
         assert!(matches!(error, RestoreError::Version { found } if found == version), "{error:?}");
+    }
+
+    #[test]
+    fn a_version_nine_journal_without_an_alignment_is_refused_by_its_version() {
+        let (d, _) = session();
+        let alignment = format!(r#","alignment":"{}""#, d.start().alignment);
+        assert_refused_by_version(9, &[(&alignment, "")]);
+    }
+
+    #[test]
+    fn a_journal_from_another_alignment_is_refused() {
+        // A node across left's shared `m` keeps the conflict whole: three regions. Without
+        // it, as after a grammar changes, the conflict splits into five, and the pick of
+        // region 1 would land on another conflict.
+        let left = "a\nX\nm\nY\nz\n";
+        let marked = Marked(vec![(left, node(3..5))]);
+        let deep = || Inputs::three_way(text("a\np\nq\nz\n"), text(left), text("a\nZ\nm\nW\nz\n"));
+        let options = MergeOptions {
+            refine: Refine::Deep,
+            syntax_boundaries: true,
+            ..MergeOptions::default()
+        };
+        let mut d = MergeDocument::new_bounded(deep(), options, Labels::none(), Some(&marked))
+            .expect("no labels");
+        let mut journal = Journal::new(&d);
+        let pick = Command::Toggle { region: RegionIx::new(1), source: Source::Side(0) };
+        run(&mut d, &mut journal, pick);
+        let error =
+            journal.restore_bounded(deep(), Labels::none(), None).expect_err("five regions");
+        assert!(matches!(error, RestoreError::Alignment), "{error:?}");
+    }
+
+    fn region(kind: Kind, bases: Range<usize>, sides: [Range<usize>; 2]) -> Region {
+        Region { kind, bases: vec![bases], sides: Vec::from(sides) }
+    }
+
+    /// SHA-256 of `00`, then `0, 1`, `0, 1, 0, 1` and `2` as little-endian `u64`s, from
+    /// Python's `hashlib`.
+    const ONE_UNCHANGED_REGION: &str =
+        "66c778557a6d128974108420f1cf3a211a821c0890ed4b0943e6d01c88658b64";
+    /// As [`ONE_UNCHANGED_REGION`], then `01` and `1` for `OneSide(1)`, then `1, 2`,
+    /// `1, 1, 1, 3` and `5`.
+    const AND_A_RIGHT_ONLY_REGION: &str =
+        "cf7b6da6fe83cb7fb96ba3deb54e640f55751a27d8b9a2213f93d25551546c0d";
+
+    #[test]
+    fn the_alignment_hash_covers_each_regions_kind_ranges_and_text_length() {
+        let unchanged = region(Kind::Unchanged, 0..1, [0..1, 0..1]);
+        let right = region(Kind::OneSide(1), 1..2, [1..1, 1..3]);
+        assert_eq!(alignment_hash(std::slice::from_ref(&unchanged), [2]), ONE_UNCHANGED_REGION);
+        assert_eq!(
+            alignment_hash(&[unchanged.clone(), right.clone()], [2, 5]),
+            AND_A_RIGHT_ONLY_REGION
+        );
+        let left = region(Kind::OneSide(0), 1..2, [1..1, 1..3]);
+        let longer = alignment_hash(&[unchanged.clone(), right.clone()], [2, 6]);
+        let other_side = alignment_hash(&[unchanged.clone(), left], [2, 5]);
+        let other_range =
+            alignment_hash(&[unchanged, region(Kind::OneSide(1), 1..2, [1..2, 1..3])], [2, 5]);
+        for changed in [longer, other_side, other_range] {
+            assert_ne!(changed, AND_A_RIGHT_ONLY_REGION);
+        }
+    }
+
+    #[test]
+    fn a_document_starts_with_its_options_and_the_hash_of_its_alignment() {
+        let (d, journal) = session();
+        let start = d.start();
+        assert_eq!(start.options, MergeOptions::default());
+        assert_eq!(journal.options(), start.options);
+        // `a`, the conflict `b`/`L`/`R`, `c`; the conflict shows `L` then `R`.
+        let regions = [
+            region(Kind::Unchanged, 0..1, [0..1, 0..1]),
+            region(Kind::Conflict, 1..2, [1..2, 1..2]),
+            region(Kind::Unchanged, 2..3, [2..3, 2..3]),
+        ];
+        assert_eq!(start.alignment, alignment_hash(&regions, [2, 4, 2]));
     }
 
     #[test]
@@ -736,20 +867,21 @@ mod tests {
     }
 
     #[test]
-    fn a_journal_from_hashes_holds_those_hashes_and_options() {
-        let d = MergeDocument::new(
-            Inputs::three_way(text("b\n"), text("l\n"), text("r\n")),
-            MergeOptions::default(),
-            Labels::none(),
-        )
-        .expect("no labels");
+    fn a_journal_from_hashes_holds_those_hashes_and_the_start() {
         let all = MergeOptions {
             diff: DiffOptions { whitespace: Whitespace::All, ..DiffOptions::default() },
             ..MergeOptions::default()
         };
-        let journal = Journal::with_hashes(input_hashes(d.inputs()), all);
+        let d = MergeDocument::new(
+            Inputs::three_way(text("b\n"), text("l\n"), text("r\n")),
+            all,
+            Labels::none(),
+        )
+        .expect("no labels");
+        let journal = Journal::with_hashes(input_hashes(d.inputs()), d.start());
         assert_eq!(journal.header.inputs, [SHA256_L_NEWLINE, SHA256_R_NEWLINE, SHA256_B_NEWLINE]);
         assert_eq!(journal.options(), all);
+        assert_eq!(journal.header.alignment, d.start().alignment);
         assert_eq!(journal.commands(), []);
     }
 }

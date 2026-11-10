@@ -1557,12 +1557,12 @@ impl MergeWindow {
     }
 
     fn hashed(&mut self, hashes: InputHashes, window: &mut Window, cx: &mut Context<Self>) {
-        let options = self.session.document().options();
+        let start = self.session.document().start();
         let Some(recovery) = self.session.recovery_mut() else {
             return;
         };
         // A session that ended has hashed them itself.
-        if !recovery.hashed(hashes, options) {
+        if !recovery.hashed(hashes, start) {
             return;
         }
         if !self.offer_restore(window, cx) {
