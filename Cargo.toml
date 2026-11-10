@@ -120,3 +120,15 @@ gpui-base = { path = "vendor/gpui-base" }
 # keep their locations. CARGO_PROFILE_DEV_DEBUG=line-tables-only turns debug info on.
 [profile.dev]
 debug = false
+
+# One codegen unit and fat LTO let LLVM inline and drop code across crates: the stripped
+# triad-merge is 40.5 MB, 48.7 MB without them, and the merge-core benchmarks run 2-34% faster.
+# Thin LTO gains nothing here. Nothing in the product catches a panic, and the recovery journal
+# covers a crash, so a panic aborts and the binary drops its unwind tables: 35.4 MB. Tests,
+# benchmarks and build scripts unwind whatever this says. Benchmarks inherit this profile. A
+# release build of triad-merge takes 3 min.
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"

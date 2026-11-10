@@ -34,6 +34,8 @@ The Dock icon needs `triad.app` (`script/macos-app`): `setApplicationIconImage` 
 
 CI: `triad.yml` tests on Linux, macOS and Windows; `bench.yml` and `audit.yml` (`cargo audit`, `cargo deny check advisories`) run weekly. Linux and macOS pass on GitHub's runners and the Linux jobs under `act`; Windows waits on the next push.
 
+The release profile builds with fat LTO, one codegen unit, `panic = "abort"` and stripped symbols: `triad-merge` is 35.4 MB on macOS ARM64, and a release build takes 3 min (root `Cargo.toml`).
+
 The workspace has 11 crates. `script/checks` runs format, workspace rules, build, clippy, the full test suite and `cargo deny`; `script/checks --quick`, run before each commit, leaves out the jj and scrolling tests and runs only the tests of the changed crates and their dependents.
 
 ## 2. Next steps
