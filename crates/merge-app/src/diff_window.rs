@@ -1067,23 +1067,6 @@ impl DiffWindow {
         self.pane(side).flash.get_ranges(cx)
     }
 
-    fn next_difference(&mut self, _: &NextDifference, window: &mut Window, cx: &mut Context<Self>) {
-        self.navigate(next_change, window, cx);
-    }
-
-    fn previous_difference(
-        &mut self,
-        _: &PreviousDifference,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.navigate(previous_change, window, cx);
-    }
-
-    fn on_save(&mut self, _: &Save, window: &mut Window, cx: &mut Context<Self>) {
-        self.save(AfterSave::Stay, window, cx);
-    }
-
     /// Write each side with unsaved edits to its own path, as it stands now, off the UI
     /// thread and once the save before has landed. On a failure, an alert says why and the
     /// side keeps its marker. `after` says whether the window exits once every side is saved.
@@ -1177,10 +1160,6 @@ impl DiffWindow {
         if all_saved && after == AfterSave::Exit {
             finish(ExitCode::Resolved, cx);
         }
-    }
-
-    fn on_close(&mut self, _: &Cancel, window: &mut Window, cx: &mut Context<Self>) {
-        self.close(window, cx);
     }
 
     /// Close the window, asking first when a side has unsaved edits. The window exits with 0.
@@ -1901,10 +1880,16 @@ impl Render for DiffWindow {
             .on_action(cx.listener(Self::find))
             .on_action(cx.listener(Self::undo))
             .on_action(cx.listener(Self::redo))
-            .on_action(cx.listener(Self::next_difference))
-            .on_action(cx.listener(Self::previous_difference))
-            .on_action(cx.listener(Self::on_save))
-            .on_action(cx.listener(Self::on_close))
+            .on_action(cx.listener(|this, _: &NextDifference, window, cx| {
+                this.navigate(next_change, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &PreviousDifference, window, cx| {
+                this.navigate(previous_change, window, cx);
+            }))
+            .on_action(
+                cx.listener(|this, _: &Save, window, cx| this.save(AfterSave::Stay, window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &Cancel, window, cx| this.close(window, cx)))
             .font_family(self.typography.font.clone().unwrap_or(mono))
             .text_size(self.typography.size)
             .children(crate::menu_bar::render(self.menu_bar.bar(), cx.theme().is_dark()))

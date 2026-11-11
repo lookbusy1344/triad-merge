@@ -189,10 +189,7 @@ fn with_auto_track_none_a_new_file_stays_untracked_and_an_edit_is_taken() {
 #[test]
 fn a_stale_working_copy_is_refused_before_any_operation() {
     let fixture = Fixture::new();
-    let base = fixture.commit_on(&[], "base", &[("a.txt", BASE)]);
-    let left = fixture.commit_on(&[&base], "left", &[("a.txt", LEFT)]);
-    let right = fixture.commit_on(&[&base], "right", &[("a.txt", RIGHT)]);
-    fixture.check_out(&[&left, &right]);
+    let [_, left, _] = fixture.three_way("a.txt", [BASE, LEFT, RIGHT]);
     fixture.check_out_to_disk();
     // `@` moves on without the files, as from another workspace.
     fixture.check_out(&[&left]);

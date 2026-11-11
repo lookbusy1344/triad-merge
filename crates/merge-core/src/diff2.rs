@@ -369,10 +369,7 @@ impl DiffDocument {
 mod tests {
     use super::*;
     use crate::diff::Whitespace;
-
-    fn text(s: &str) -> Text {
-        Text::decode(s.as_bytes()).expect("test input decodes")
-    }
+    use crate::testing::text;
 
     fn of(left: &str, right: &str) -> Vec<Region2> {
         regions(&text(left), &text(right), DiffOptions::default())

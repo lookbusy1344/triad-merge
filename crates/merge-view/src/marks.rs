@@ -214,13 +214,9 @@ fn source_mark(source: Source, three_way: bool) -> Mark {
 mod tests {
     use merge_core::document::{Command, EditBatch, Labels, MergeOptions, TextPatch};
     use merge_core::merge3::Inputs;
-    use merge_core::text::Text;
+    use merge_core::testing::{text, three};
 
     use super::*;
-
-    fn text(s: &str) -> Text {
-        Text::decode(s.as_bytes()).expect("decodes")
-    }
 
     fn doc(inputs: Inputs) -> MergeDocument {
         MergeDocument::new(inputs, MergeOptions::default(), Labels::none()).expect("no labels")
@@ -246,7 +242,7 @@ mod tests {
             hunk_level: merge_core::merge3::HunkLevel::Word,
             ..MergeOptions::default()
         };
-        let inputs = Inputs::three_way(text("x = 1;\n"), text("y = 1;\n"), text("x = 2;\n"));
+        let inputs = three("x = 1;\n", "y = 1;\n", "x = 2;\n");
         let mut d = MergeDocument::new(inputs, options, Labels::none()).expect("no labels");
         assert_eq!(mark(&d, RegionIx::new(0)), Some(WORD_MERGED));
         assert_eq!(WORD_MERGED.tone, Tone::WordMerged);
@@ -446,7 +442,7 @@ mod tests {
 
     /// Left deletes b, c; right changes them. Region 1 is the conflict.
     fn left_deletes() -> MergeDocument {
-        doc(Inputs::three_way(text("a\nb\nc\nz\n"), text("a\nz\n"), text("a\nB\nC\nz\n")))
+        doc(three("a\nb\nc\nz\n", "a\nz\n", "a\nB\nC\nz\n"))
     }
 
     #[test]
@@ -456,7 +452,7 @@ mod tests {
             placeholder_mark(&d, RegionIx::new(1), &[L]),
             placeholder(Tone::Left, UNRESOLVED, Some(Tone::Conflict))
         );
-        let d = doc(Inputs::three_way(text("a\nb\nz\n"), text("a\nB\nz\n"), text("a\nz\n")));
+        let d = doc(three("a\nb\nz\n", "a\nB\nz\n", "a\nz\n"));
         assert_eq!(
             placeholder_mark(&d, RegionIx::new(1), &[R]),
             placeholder(Tone::Right, UNRESOLVED, Some(Tone::Conflict))
@@ -475,12 +471,12 @@ mod tests {
 
     #[test]
     fn an_automatic_placeholder_takes_its_kinds_mark() {
-        let one = doc(Inputs::three_way(text("a\nb\nz\n"), text("a\nb\nz\n"), text("a\nz\n")));
+        let one = doc(three("a\nb\nz\n", "a\nb\nz\n", "a\nz\n"));
         assert_eq!(
             placeholder_mark(&one, RegionIx::new(1), &[R]),
             placeholder(Tone::Right, RIGHT, None)
         );
-        let both = doc(Inputs::three_way(text("a\nb\nz\n"), text("a\nz\n"), text("a\nz\n")));
+        let both = doc(three("a\nb\nz\n", "a\nz\n", "a\nz\n"));
         assert_eq!(
             placeholder_mark(&both, RegionIx::new(1), &[L, R]),
             placeholder(Tone::Both, SAME, None)
@@ -489,7 +485,7 @@ mod tests {
 
     #[test]
     fn a_placeholder_for_several_picked_sources_takes_the_several_mark() {
-        let mut both = doc(Inputs::three_way(text("a\nb\nz\n"), text("a\nz\n"), text("a\nz\n")));
+        let mut both = doc(three("a\nb\nz\n", "a\nz\n", "a\nz\n"));
         both.apply(Command::Pick { region: RegionIx::new(1), sources: vec![R, L] }).expect("pick");
         assert_eq!(
             placeholder_mark(&both, RegionIx::new(1), &[R, L]),

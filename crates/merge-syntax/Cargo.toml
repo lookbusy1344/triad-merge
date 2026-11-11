@@ -32,6 +32,7 @@ tree-sitter-typescript.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+merge-core = { workspace = true, features = ["testing"] }
 criterion.workspace = true
 
 [[bench]]

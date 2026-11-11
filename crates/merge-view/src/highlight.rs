@@ -166,25 +166,14 @@ fn range(region: &Region, source: Source) -> Range<usize> {
 #[cfg(test)]
 #[expect(clippy::single_range_in_vec_init, reason = "spans are lists of ranges, often of one")]
 mod tests {
+    use merge_core::testing::{doc, doc_with};
     use std::fmt::Write as _;
 
-    use merge_core::document::{Command, EditBatch, Labels, MergeOptions, TextPatch};
-    use merge_core::merge3::Inputs;
-    use merge_core::text::Text;
+    use merge_core::document::{Command, EditBatch, MergeOptions, TextPatch};
 
     use super::*;
 
     const LRU_LINES: usize = 600;
-
-    fn three(base: &str, left: &str, right: &str) -> MergeDocument {
-        let text = |s: &str| Text::decode(s.as_bytes()).expect("utf-8");
-        MergeDocument::new(
-            Inputs::three_way(text(base), text(left), text(right)),
-            MergeOptions::default(),
-            Labels::none(),
-        )
-        .expect("no labels")
-    }
 
     fn row(doc: &MergeDocument, panes: PaneSet, index: usize) -> Vec<CellSpans> {
         let rows = RowMap::new(doc, panes).expect("panes fit");
@@ -197,13 +186,13 @@ mod tests {
 
     #[test]
     fn a_replaced_word_is_marked_in_the_side_and_in_base() {
-        let d = three("let x = 1;\n", "let y = 1;\n", "let x = 1;\n");
+        let d = doc("let x = 1;\n", "let y = 1;\n", "let x = 1;\n");
         assert_eq!(row(&d, PaneSet::LeftBaseRight, 0), [at(&[4..5]), at(&[4..5]), CellSpans::None]);
     }
 
     #[test]
     fn base_marks_the_union_of_both_sides_changes() {
-        let d = three("a b c\n", "A b c\n", "a b C\n");
+        let d = doc("a b c\n", "A b c\n", "a b C\n");
         assert_eq!(
             row(&d, PaneSet::LeftBaseRight, 0),
             [at(&[0..1]), at(&[0..1, 4..5]), at(&[4..5])]
@@ -212,15 +201,15 @@ mod tests {
 
     #[test]
     fn base_joins_overlapping_and_touching_changes() {
-        let overlapping = three("abcd\n", "XYcd\n", "aZcd\n");
+        let overlapping = doc("abcd\n", "XYcd\n", "aZcd\n");
         assert_eq!(row(&overlapping, PaneSet::LeftBaseRight, 0)[1], at(&[0..2]));
-        let touching = three("abcd\n", "Xbcd\n", "aZcd\n");
+        let touching = doc("abcd\n", "Xbcd\n", "aZcd\n");
         assert_eq!(row(&touching, PaneSet::LeftBaseRight, 0)[1], at(&[0..2]));
     }
 
     #[test]
     fn an_insertion_inside_a_line_is_marked_only_in_the_side() {
-        let d = three("a x\n", "abc x\n", "a x\n");
+        let d = doc("a x\n", "abc x\n", "a x\n");
         assert_eq!(
             row(&d, PaneSet::LeftBaseRight, 0),
             [at(&[1..3]), CellSpans::None, CellSpans::None]
@@ -229,7 +218,6 @@ mod tests {
 
     #[test]
     fn a_whitespace_only_change_has_no_spans() {
-        let text = |s: &str| Text::decode(s.as_bytes()).expect("utf-8");
         let options = MergeOptions {
             diff: merge_core::diff::DiffOptions {
                 whitespace: merge_core::diff::Whitespace::Trailing,
@@ -237,12 +225,7 @@ mod tests {
             },
             ..MergeOptions::default()
         };
-        let d = MergeDocument::new(
-            Inputs::three_way(text("a\n"), text("a \n"), text("a\n")),
-            options,
-            Labels::none(),
-        )
-        .expect("no labels");
+        let d = doc_with("a\n", "a \n", "a\n", options);
         assert_eq!(row(&d, PaneSet::LeftBaseRight, 0), vec![CellSpans::None; 3]);
     }
 
@@ -250,7 +233,7 @@ mod tests {
     fn a_line_over_the_limit_is_marked_whole() {
         let long =
             |c: &str| format!("{}\n", c.repeat(merge_core::diff::MAX_INTRALINE_DIFF_CHARS + 1));
-        let d = three(&long("a"), &long("b"), &long("a"));
+        let d = doc(&long("a"), &long("b"), &long("a"));
         assert_eq!(
             row(&d, PaneSet::LeftBaseRight, 0),
             [CellSpans::WholeLine, CellSpans::WholeLine, CellSpans::None]
@@ -260,7 +243,7 @@ mod tests {
     #[test]
     fn unpaired_lines_and_unchanged_regions_have_no_spans() {
         // Rows: a (unchanged), X (left inserts it; no base line to pair with).
-        let d = three("a\n", "a\nX\n", "a\n");
+        let d = doc("a\n", "a\nX\n", "a\n");
         let none = vec![CellSpans::None; 3];
         assert_eq!(row(&d, PaneSet::LeftBaseRight, 0), none);
         assert_eq!(row(&d, PaneSet::LeftBaseRight, 1), none);
@@ -269,7 +252,7 @@ mod tests {
     /// Regions: 0 a, 1 b→B (left), 2 m, 3 c→C (right), 4 n, 5 z→Z (left). One row each.
     /// Result: "a\nB\nm\nC\nn\nZ\n".
     fn six() -> MergeDocument {
-        three("a\nb\nm\nc\nn\nz\n", "a\nB\nm\nc\nn\nZ\n", "a\nb\nm\nC\nn\nz\n")
+        doc("a\nb\nm\nc\nn\nz\n", "a\nB\nm\nc\nn\nZ\n", "a\nb\nm\nC\nn\nz\n")
     }
 
     #[test]
@@ -319,7 +302,7 @@ mod tests {
         let left: String = (0..LRU_LINES)
             .map(|n| if n % 2 == 0 { format!("L{n}\n") } else { format!("l{n}\n") })
             .collect();
-        let d = three(&base, &left, &base);
+        let d = doc(&base, &left, &base);
         let rows = RowMap::new(&d, PaneSet::LeftRight).expect("panes fit");
         let mut h = Highlights::new(PaneSet::LeftRight);
         let changed = |k: usize| 2 * k;

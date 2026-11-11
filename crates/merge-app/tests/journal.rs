@@ -6,7 +6,7 @@ use merge_core::index::RegionIx;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use common::{Finished, act, open_with, set_caret, text};
+use common::{Finished, act, open_with, set_caret};
 use gpui_kit::test::TestWindowExt;
 use gpui_kit::{AnyWindowHandle, Entity, TestAppContext};
 use merge_app::window::JOURNAL_DEBOUNCE;
@@ -15,6 +15,7 @@ use merge_core::diff::{DiffOptions, Whitespace};
 use merge_core::document::{Command, Labels, MergeDocument, MergeOptions, Resolution};
 use merge_core::journal::{JOURNAL_VERSION, Journal};
 use merge_core::merge3::{Inputs, Source};
+use merge_core::testing::three;
 use tempfile::TempDir;
 
 const RESTORE: &str = "Restore";
@@ -26,7 +27,7 @@ const JUST_BEFORE: Duration = Duration::from_millis(499);
 const ONE_MS: Duration = Duration::from_millis(1);
 
 fn inputs() -> Inputs {
-    Inputs::three_way(text("a\nb\nc\n"), text("a\nL\nc\n"), text("a\nR\nc\n"))
+    three("a\nb\nc\n", "a\nL\nc\n", "a\nR\nc\n")
 }
 
 /// One conflict, region 1.

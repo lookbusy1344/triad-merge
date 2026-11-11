@@ -18,7 +18,7 @@ use vcs::IdKind;
 use gpui_kit::component::input::EditorState;
 use merge_core::diff2::Side;
 use merge_core::document::MergeDocument;
-use merge_core::text::Text;
+use merge_core::testing::text;
 use merge_session::repository::{Handoff, RunRepository};
 
 const PATH: &str = "a.txt";
@@ -277,10 +277,6 @@ fn worked_on() -> vcs_git::testing::Fixture {
     fixture.stage(&[(PATH, TWO.as_bytes())]);
     fixture.write(PATH, WORKING.as_bytes());
     fixture
-}
-
-fn text(s: &str) -> Text {
-    Text::decode(s.as_bytes()).expect("decodes")
 }
 
 struct Diff {

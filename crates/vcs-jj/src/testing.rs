@@ -297,6 +297,20 @@ impl Fixture {
         Committed::of(&commit)
     }
 
+    /// Commit `base`, then `left` and `right` on it, each holding `path` alone, and check
+    /// out their merge. Returns the base, left and right commits.
+    #[expect(
+        clippy::must_use_candidate,
+        reason = "called for its effect on the repository; tests often ignore the result"
+    )]
+    pub fn three_way(&self, path: &str, [base, left, right]: [&[u8]; 3]) -> [Committed; 3] {
+        let base = self.commit_on(&[], "base", &[(path, base)]);
+        let left = self.commit_on(&[&base], "left", &[(path, left)]);
+        let right = self.commit_on(&[&base], "right", &[(path, right)]);
+        self.check_out(&[&left, &right]);
+        [base, left, right]
+    }
+
     /// Start a new empty working-copy commit on `parents`; more than one makes a merge.
     pub fn check_out(&self, parents: &[&Committed]) {
         let repo = self.repo();

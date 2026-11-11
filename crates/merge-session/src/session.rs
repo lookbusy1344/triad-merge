@@ -235,27 +235,18 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use merge_core::document::{Labels, MergeOptions, Resolution};
+    use merge_core::document::Resolution;
     use merge_core::index::RegionIx;
     use merge_core::journal::Journal as JournalFile;
-    use merge_core::merge3::{Inputs, LEFT, Source};
-    use merge_core::text::Text;
+    use merge_core::merge3::{LEFT, Source};
+    use merge_core::testing::doc;
 
     const CONFLICT_REGION: RegionIx = RegionIx::new(1);
     const MARKERS: &str = "a\n<<<<<<<\nL\n|||||||\nb\n=======\nR\n>>>>>>>\nc\n";
 
-    fn text(s: &str) -> Text {
-        Text::decode(s.as_bytes()).expect("decodes")
-    }
-
     /// One conflict at line 2.
     fn conflict() -> MergeDocument {
-        MergeDocument::new(
-            Inputs::three_way(text("a\nb\nc\n"), text("a\nL\nc\n"), text("a\nR\nc\n")),
-            MergeOptions::default(),
-            Labels::none(),
-        )
-        .expect("no labels")
+        doc("a\nb\nc\n", "a\nL\nc\n", "a\nR\nc\n")
     }
 
     fn pick_left() -> Command {

@@ -314,16 +314,13 @@ impl InputSyntax {
 mod tests {
     use gpui_kit::component::highlighter::SyntaxHighlighter;
     use gpui_kit::component::input::Rope;
+    use merge_core::testing::text;
 
     use std::path::Path;
 
     use super::*;
 
     const RUST: &str = "fn a() {} // c\r\n// c\n\nlet\n";
-
-    fn text(s: &str) -> Text {
-        Text::decode(s.as_bytes().to_vec()).expect("decodes")
-    }
 
     fn style(theme: &HighlightTheme, capture: &str) -> HighlightStyle {
         theme.style.syntax.style(capture).expect("the theme styles the capture")

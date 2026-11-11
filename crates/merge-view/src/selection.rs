@@ -121,13 +121,10 @@ fn is_word(c: char) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use merge_core::testing::text;
 
     const LEFT: Source = Source::Side(0);
     const RIGHT: Source = Source::Side(1);
-
-    fn text(s: &str) -> Text {
-        Text::decode(s.as_bytes()).expect("utf-8")
-    }
 
     #[test]
     fn the_range_runs_from_the_lower_end_either_way() {

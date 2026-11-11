@@ -277,10 +277,7 @@ fn an_output_outside_the_working_directorys_repository_has_no_sources() {
 
 /// A jj working copy merging `left` and `right`, both on `base`, whose `a.txt` conflicts.
 fn jj_conflict(fixture: &vcs_jj::testing::Fixture) -> [vcs_jj::testing::Committed; 3] {
-    let base = fixture.commit_on(&[], "base", &[(PATH, BASE)]);
-    let left = fixture.commit_on(&[&base], "left", &[(PATH, LEFT)]);
-    let right = fixture.commit_on(&[&base], "right", &[(PATH, RIGHT)]);
-    fixture.check_out(&[&left, &right]);
+    let [base, left, right] = fixture.three_way(PATH, [BASE, LEFT, RIGHT]);
     [base, left, right]
 }
 

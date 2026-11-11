@@ -187,10 +187,11 @@ pub fn marker_length(inputs: &Inputs) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::{text, three};
 
     /// jj's marker length for a conflict of `sides` over `base`.
     fn jj_markers([left, right]: [&str; 2], base: &str) -> usize {
-        marker_length(&Inputs::three_way(text(base), text(left), text(right)))
+        marker_length(&three(base, left, right))
     }
 
     #[test]
@@ -215,12 +216,8 @@ mod tests {
         assert_eq!(jj_markers(["left\n", "%%%%%%%%\n"], "a\n"), 12);
     }
 
-    fn text(s: &str) -> Text {
-        Text::decode(s.as_bytes()).unwrap()
-    }
-
     fn hunks(base: &str, left: &str, right: &str) -> Vec<Hunk> {
-        let inputs = Inputs::three_way(text(base), text(left), text(right));
+        let inputs = three(base, left, right);
         LineDiff::new(&inputs, Comparison::default()).hunks().collect()
     }
 

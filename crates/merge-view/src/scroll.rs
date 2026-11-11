@@ -385,9 +385,9 @@ pub fn result_lines(doc: &MergeDocument, region: RegionIx) -> Range<usize> {
 
 #[cfg(test)]
 mod tests {
-    use merge_core::document::{Command, Labels, MergeOptions};
-    use merge_core::merge3::{Inputs, Source};
-    use merge_core::text::Text;
+    use merge_core::document::Command;
+    use merge_core::merge3::Source;
+    use merge_core::testing::doc;
 
     use super::*;
 
@@ -571,13 +571,7 @@ mod tests {
     const CONFLICT_LINE: usize = 2;
 
     fn three(base: &str, left: &str, right: &str) -> (MergeDocument, RowMap) {
-        let text = |s: &str| Text::decode(s.as_bytes()).expect("utf-8");
-        let doc = MergeDocument::new(
-            Inputs::three_way(text(base), text(left), text(right)),
-            MergeOptions::default(),
-            Labels::none(),
-        )
-        .expect("no labels");
+        let doc = doc(base, left, right);
         let rows = RowMap::new(&doc, PaneSet::LeftRight).expect("panes fit");
         (doc, rows)
     }

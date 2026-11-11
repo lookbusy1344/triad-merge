@@ -734,13 +734,7 @@ fn files_from_jj_diff_tool_show_a_banner(cx: &mut TestAppContext) {
             read_only: false,
         }
     });
-    let view = cx.update(|cx| {
-        gpui_kit::init(cx);
-        merge_app::init(cx);
-        merge_app::diff_window::open(left, right, &DiffSettings::default(), cx)
-            .expect("window opens")
-            .1
-    });
+    let view = open_files(cx, left, right).view;
     assert_eq!(banner(cx, &view).as_deref(), Some(JJ_BANNER));
 }
 
@@ -764,11 +758,7 @@ fn a_relative_jj_copy_resolves_against_the_runs_directory(cx: &mut TestAppContex
     });
     let settings =
         DiffSettings { cwd: Some(jj.join("left")), watch: false, ..DiffSettings::default() };
-    let view = cx.update(|cx| {
-        gpui_kit::init(cx);
-        merge_app::init(cx);
-        merge_app::diff_window::open(left, right, &settings, cx).expect("window opens").1
-    });
+    let view = open_files_with(cx, left, right, &settings).view;
     assert_eq!(banner(cx, &view).as_deref(), Some(JJ_BANNER));
 }
 
@@ -788,13 +778,7 @@ fn a_read_only_jj_copy_beside_the_working_copy_shows_no_banner(cx: &mut TestAppC
             read_only,
         }
     });
-    let view = cx.update(|cx| {
-        gpui_kit::init(cx);
-        merge_app::init(cx);
-        merge_app::diff_window::open(left, right, &DiffSettings::default(), cx)
-            .expect("window opens")
-            .1
-    });
+    let view = open_files(cx, left, right).view;
     assert_eq!(banner(cx, &view), None);
 }
 
@@ -1094,17 +1078,7 @@ fn copy_buttons_sit_on_their_rows_below_a_banner(cx: &mut TestAppContext) {
             read_only: false,
         }
     });
-    let (window, view, finished) = cx.update(|cx| {
-        gpui_kit::init(cx);
-        merge_app::init(cx);
-        let finished = Finished::install(cx);
-        let (window, view) =
-            merge_app::diff_window::open(left, right, &DiffSettings::default(), cx)
-                .expect("window opens");
-        (window, view, finished)
-    });
-    act(cx, window, TestWindowExt::render_frame);
-    let o = Opened { window, view, finished };
+    let o = open_files(cx, left, right);
     assert_eq!(banner(cx, &o.view).as_deref(), Some(JJ_BANNER));
     act(cx, o.window, TestWindowExt::render_frame);
     let first = rows_top(cx, &o.view, Side::Left);
@@ -1112,17 +1086,7 @@ fn copy_buttons_sit_on_their_rows_below_a_banner(cx: &mut TestAppContext) {
 }
 
 fn open_set(cx: &mut TestAppContext, files: &Files, settings: &DiffSettings) -> Opened {
-    let (left, right) = (files.file(Side::Left, false), files.file(Side::Right, false));
-    let (window, view, finished) = cx.update(|cx| {
-        gpui_kit::init(cx);
-        merge_app::init(cx);
-        let finished = Finished::install(cx);
-        let (window, view) =
-            merge_app::diff_window::open(left, right, settings, cx).expect("window opens");
-        (window, view, finished)
-    });
-    act(cx, window, TestWindowExt::render_frame);
-    Opened { window, view, finished }
+    open_files_with(cx, files.file(Side::Left, false), files.file(Side::Right, false), settings)
 }
 
 fn toggle_scroll_sync(cx: &mut TestAppContext, o: &Opened) {
@@ -1371,17 +1335,7 @@ fn the_jj_banner_is_an_alert(cx: &mut TestAppContext) {
             read_only: false,
         }
     });
-    let (window, view, finished) = cx.update(|cx| {
-        gpui_kit::init(cx);
-        merge_app::init(cx);
-        let finished = Finished::install(cx);
-        let (window, view) =
-            merge_app::diff_window::open(left, right, &DiffSettings::default(), cx)
-                .expect("window opens");
-        (window, view, finished)
-    });
-    act(cx, window, TestWindowExt::render_frame);
-    let o = Opened { window, view, finished };
+    let o = open_files(cx, left, right);
     assert_eq!(
         named(cx, &o, merge_app::diff_window::BANNER_ID),
         (Some(gpui_kit::Role::Alert), Some(JJ_BANNER.to_owned()))

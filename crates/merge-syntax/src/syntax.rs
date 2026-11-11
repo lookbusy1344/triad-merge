@@ -584,6 +584,7 @@ fn push_runs(paint: &[[u16; CAPTURE_DEPTH]], spans: &mut LineSpans) {
 
 #[cfg(test)]
 mod tests {
+    use merge_core::testing::text;
     use std::sync::Arc;
 
     use super::*;
@@ -599,10 +600,6 @@ mod tests {
     }
 
     const RUST: &str = "rust";
-
-    fn text(s: &str) -> Text {
-        Text::decode(s.as_bytes().to_vec()).expect("decodes")
-    }
 
     /// Line `n`'s spans as (range, innermost capture name).
     fn named<'g>(

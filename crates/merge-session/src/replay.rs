@@ -61,26 +61,16 @@ const FIRST_LINE: usize = 1;
 
 #[cfg(test)]
 mod tests {
-    use merge_core::document::{Labels, MergeOptions, Output};
+    use merge_core::document::Output;
     use merge_core::index::RegionIx;
-    use merge_core::merge3::{Inputs, Source};
-    use merge_core::text::Text;
+    use merge_core::merge3::Source;
+    use merge_core::testing::doc;
 
     use super::*;
 
-    fn document(base: &str, left: &str, right: &str) -> MergeDocument {
-        let text = |s: &str| Text::decode(s.as_bytes().to_vec()).expect("text");
-        MergeDocument::new(
-            Inputs::three_way(text(base), text(left), text(right)),
-            MergeOptions::default(),
-            Labels::none(),
-        )
-        .expect("a three-way merge")
-    }
-
     /// Regions: `a` unchanged, the L/R conflict, `c` unchanged.
     fn conflict() -> MergeDocument {
-        document("a\nb\nc\n", "a\nL\nc\n", "a\nR\nc\n")
+        doc("a\nb\nc\n", "a\nL\nc\n", "a\nR\nc\n")
     }
 
     fn applied(lines: &str) -> Output {
@@ -134,7 +124,7 @@ mod tests {
 
     #[test]
     fn an_edit_patches_the_result_text_by_byte() {
-        let mut doc = document("a\nb\nc\n", "A\nb\nc\n", "a\nb\nC\n");
+        let mut doc = doc("a\nb\nc\n", "A\nb\nc\n", "a\nb\nC\n");
         let edit = r#"{"Edit":[{"range":{"start":2,"end":3},"text":"B"}]}"#;
         apply(&mut doc, edit.as_bytes()).expect("the edit applies");
         assert_eq!(doc.output(), Output::Resolved("A\nB\nC\n".to_owned()));

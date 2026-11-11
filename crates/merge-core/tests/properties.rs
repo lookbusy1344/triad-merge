@@ -14,6 +14,7 @@ use merge_core::document::{
 };
 use merge_core::markers;
 use merge_core::merge3::{Inputs, Kind, LEFT, RIGHT, Refine, Region, Semantics, Source};
+use merge_core::testing::{text, three};
 use merge_core::text::Text;
 use proptest::prelude::*;
 use proptest::test_runner::{Config, RngSeed};
@@ -65,10 +66,6 @@ fn marked_file_strategy() -> impl Strategy<Value = String> {
         .prop_map(|(lines, last)| lines.concat() + last)
 }
 
-fn text(s: &str) -> Text {
-    Text::decode(s.as_bytes()).expect("generated text decodes")
-}
-
 fn semantics() -> impl Strategy<Value = Semantics> {
     prop::sample::select(vec![Semantics::Git, Semantics::Jj])
 }
@@ -92,7 +89,7 @@ fn document(
 ) -> MergeDocument {
     let options = MergeOptions { semantics, refine, ..MergeOptions::default() };
     MergeDocument::new(
-        Inputs::three_way(text(base), text(left), text(right)),
+        three(base, left, right),
         options,
         Labels::three_way("left", "base", "right"),
     )
@@ -349,7 +346,7 @@ proptest! {
     ) {
         let options = MergeOptions { semantics, refine, ..MergeOptions::default() };
         let doc = MergeDocument::new(
-            Inputs::three_way(text(&base), text(&left), text(&right)),
+            three(&base, &left, &right),
             options,
             Labels::three_way("ours", "anc", "theirs"),
         )
@@ -388,7 +385,7 @@ proptest! {
         base in file_strategy(), left in file_strategy(), right in file_strategy(),
         ops in prop::collection::vec(op_strategy(), 0..MAX_OPS), semantics in semantics(),
     ) {
-        let inputs = Inputs::three_way(text(&base), text(&left), text(&right));
+        let inputs = three(&base, &left, &right);
         let mut doc = document(&base, &left, &right, Refine::Ends, semantics);
         let start = (doc.output(), doc.regions().to_vec(), doc.resolutions().to_vec());
         for op in &ops {

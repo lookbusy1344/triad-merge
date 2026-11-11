@@ -260,6 +260,7 @@ fn widen(range: Range<u32>) -> Range<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::text;
     use proptest::prelude::*;
     use proptest::test_runner::{Config, RngSeed};
     use std::iter;
@@ -268,10 +269,6 @@ mod tests {
         [Algorithm::Histogram, Algorithm::Myers, Algorithm::MyersMinimal];
     const MODES: [Whitespace; 4] =
         [Whitespace::None, Whitespace::Trailing, Whitespace::Amount, Whitespace::All];
-
-    fn text(s: &str) -> Text {
-        Text::decode(s.as_bytes()).expect("test input decodes")
-    }
 
     fn hunk(before: Range<usize>, after: Range<usize>) -> Hunk {
         Hunk { before, after }

@@ -43,19 +43,14 @@ mod tests {
     use merge_core::document::{Command, Labels, MergeDocument, MergeOptions};
     use merge_core::index::RegionIx;
     use merge_core::journal::input_hashes;
-    use merge_core::merge3::Inputs;
-    use merge_core::text::Text;
+    use merge_core::testing::three;
 
     use super::*;
-
-    fn text(s: &str) -> Text {
-        Text::decode(s.as_bytes().to_vec()).expect("decodes")
-    }
 
     fn ready(dir: &std::path::Path) -> Recovery {
         let mut journal = Recovery::new(dir.to_owned(), None);
         journal.record(Command::Clear { region: RegionIx::new(0) });
-        let inputs = Inputs::three_way(text("b\n"), text("l\n"), text("r\n"));
+        let inputs = three("b\n", "l\n", "r\n");
         let hashes = input_hashes(&inputs);
         let start = MergeDocument::new(inputs, MergeOptions::default(), Labels::none())
             .expect("no labels")

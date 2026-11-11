@@ -192,27 +192,13 @@ pub fn position_of(hits: &[Hit], source: Source, line: usize, start: usize) -> O
 
 #[cfg(test)]
 mod tests {
-    use merge_core::document::{Labels, MergeOptions};
-    use merge_core::merge3::Inputs;
+    use merge_core::testing::doc;
 
     use super::*;
 
     const LEFT: Source = Source::Side(0);
     const BASE: Source = Source::Base(0);
     const RIGHT: Source = Source::Side(1);
-
-    fn text(s: &str) -> Text {
-        Text::decode(s.as_bytes()).expect("utf-8")
-    }
-
-    fn three(base: &str, left: &str, right: &str) -> MergeDocument {
-        MergeDocument::new(
-            Inputs::three_way(text(base), text(left), text(right)),
-            MergeOptions::default(),
-            Labels::none(),
-        )
-        .expect("no labels")
-    }
 
     fn lm(line: usize, bytes: Range<usize>) -> LineMatch {
         LineMatch { line, bytes }
@@ -224,7 +210,7 @@ mod tests {
 
     /// Left `AB ab` holds `ab` at 3 and, ignoring case, at 0 too.
     fn cases() -> MergeDocument {
-        three("x\nab\nz\n", "x\nAB ab\nz\n", "x\nab\nz\nab\n")
+        doc("x\nab\nz\n", "x\nAB ab\nz\n", "x\nab\nz\nab\n")
     }
 
     #[test]
@@ -248,7 +234,7 @@ mod tests {
 
     #[test]
     fn case_folding_leaves_letters_outside_ascii() {
-        let doc = three("x\n", "é\n", "x\n");
+        let doc = doc("x\n", "é\n", "x\n");
         let folded = found(&doc, PaneSet::LeftRight, "É", Case::Insensitive);
         assert!(folded.is_empty());
         let exact = found(&doc, PaneSet::LeftRight, "é", Case::Insensitive);
@@ -264,14 +250,14 @@ mod tests {
 
     #[test]
     fn matches_do_not_overlap() {
-        let doc = three("x\n", "aaa\n", "x\n");
+        let doc = doc("x\n", "aaa\n", "x\n");
         let m = found(&doc, PaneSet::LeftRight, "aa", Case::Sensitive);
         assert_eq!(m.in_source(LEFT), [lm(0, 0..2)]);
     }
 
     #[test]
     fn matches_sit_at_line_starts_and_ends_whatever_the_ending() {
-        let doc = three("x\n", "ba\r\nab", "x\n");
+        let doc = doc("x\n", "ba\r\nab", "x\n");
         let m = found(&doc, PaneSet::LeftRight, "b", Case::Sensitive);
         assert_eq!(m.in_source(LEFT), [lm(0, 0..1), lm(1, 1..2)]);
         assert_eq!(m.in_cell(LEFT, 1), [lm(1, 1..2)]);
@@ -280,14 +266,14 @@ mod tests {
 
     #[test]
     fn a_query_with_a_newline_or_none_finds_nothing() {
-        let doc = three("a\nb\n", "a\nb\n", "a\nb\n");
+        let doc = doc("a\nb\n", "a\nb\n", "a\nb\n");
         assert!(found(&doc, PaneSet::LeftRight, "a\nb", Case::Sensitive).is_empty());
         assert!(found(&doc, PaneSet::LeftRight, "", Case::Sensitive).is_empty());
     }
 
     /// Rows, base hidden: 0 `a|a`, 1 `bXb|-`, 2 `Y|-`, 3 `b|b`. With the base, 3 is `b|b|b`.
     fn inserted() -> MergeDocument {
-        three("a\nb\n", "a\nbXb\nY\nb\n", "a\nb\n")
+        doc("a\nb\n", "a\nbXb\nY\nb\n", "a\nb\n")
     }
 
     fn hit(row: usize, pane: usize, source: Source, line: usize, bytes: Range<usize>) -> Hit {
@@ -327,7 +313,7 @@ mod tests {
 
     #[test]
     fn a_left_pane_hit_comes_first_even_further_along_its_line() {
-        let doc = three("a\n", "xb\n", "b\n");
+        let doc = doc("a\n", "xb\n", "b\n");
         let rows = RowMap::new(&doc, PaneSet::LeftRight).expect("panes fit");
         let m = found(&doc, PaneSet::LeftRight, "b", Case::Sensitive);
         assert_eq!(

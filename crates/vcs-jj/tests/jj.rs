@@ -319,10 +319,7 @@ fn a_merge_reads_from_its_parents_merged_tree() {
 #[test]
 fn a_conflict_between_merged_parents_is_named() {
     let fixture = Fixture::new();
-    let base = fixture.commit_on(&[], "base", &[("a.txt", b"a\n")]);
-    let left = fixture.commit_on(&[&base], "left", &[("a.txt", b"left\n")]);
-    let right = fixture.commit_on(&[&base], "right", &[("a.txt", b"right\n")]);
-    fixture.check_out(&[&left, &right]);
+    fixture.three_way("a.txt", [b"a\n", b"left\n", b"right\n"]);
     match read_err(&fixture.open(), "a.txt", &rev("@-")) {
         VcsError::Conflicted { path, rev } => {
             assert_eq!(path, "a.txt");
@@ -375,10 +372,7 @@ fn conflicted_merge() -> Fixture {
 /// [`conflicted_merge`], with the full IDs of its parents.
 fn conflicted_merge_of_sides() -> (Fixture, [String; 2]) {
     let fixture = Fixture::new();
-    let base = fixture.commit_on(&[], "base", &[("a.txt", b"a\n")]);
-    let left = fixture.commit_on(&[&base], "left", &[("a.txt", b"left\n")]);
-    let right = fixture.commit_on(&[&base], "right", &[("a.txt", b"right\n")]);
-    fixture.check_out(&[&left, &right]);
+    let [_, left, right] = fixture.three_way("a.txt", [b"a\n", b"left\n", b"right\n"]);
     (fixture, [left.commit, right.commit])
 }
 
@@ -514,10 +508,7 @@ fn jj_label(committed: &vcs_jj::testing::Committed, summary: &str) -> vcs::Term 
 #[test]
 fn each_term_of_a_conflict_takes_jjs_label_for_its_commit() {
     let fixture = Fixture::new();
-    let base = fixture.commit_on(&[], "base", &[("a.txt", b"a\n")]);
-    let left = fixture.commit_on(&[&base], "left", &[("a.txt", b"left\n")]);
-    let right = fixture.commit_on(&[&base], "right", &[("a.txt", b"right\n")]);
-    fixture.check_out(&[&left, &right]);
+    let [base, left, right] = fixture.three_way("a.txt", [b"a\n", b"left\n", b"right\n"]);
     let conflict = fixture
         .open()
         .read_conflict(Utf8Path::new("a.txt"))
@@ -634,10 +625,7 @@ fn a_file_checked_out_from_another_conflict_is_stale() {
 #[test]
 fn a_new_working_copy_commit_with_the_same_conflict_is_not_stale() {
     let fixture = Fixture::new();
-    let base = fixture.commit_on(&[], "base", &[("a.txt", b"a\n")]);
-    let left = fixture.commit_on(&[&base], "left", &[("a.txt", b"left\n")]);
-    let right = fixture.commit_on(&[&base], "right", &[("a.txt", b"right\n")]);
-    fixture.check_out(&[&left, &right]);
+    let [_, left, right] = fixture.three_way("a.txt", [b"a\n", b"left\n", b"right\n"]);
     fixture.check_out_to_disk();
     fixture.check_out(&[&left, &right]);
     assert_eq!(

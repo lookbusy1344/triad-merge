@@ -95,30 +95,20 @@ pub fn conflict_number(doc: &MergeDocument, region: RegionIx) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use merge_core::document::{Command, EditBatch, Labels, MergeOptions, TextPatch};
-    use merge_core::merge3::{Inputs, Source};
-    use merge_core::text::Text;
+    use merge_core::document::{Command, EditBatch, MergeOptions, TextPatch};
+    use merge_core::merge3::Source;
+    use merge_core::testing::{doc, doc_with};
 
     use super::*;
 
-    fn three(base: &str, left: &str, right: &str) -> MergeDocument {
-        let text = |s: &str| Text::decode(s.as_bytes()).expect("utf-8");
-        MergeDocument::new(
-            Inputs::three_way(text(base), text(left), text(right)),
-            MergeOptions::default(),
-            Labels::none(),
-        )
-        .expect("no labels")
-    }
-
     /// Regions: 0 a, 1 B (left only), 2 c, 3 D (right only), 4 e, 5 f (conflict), 6 g.
     fn mixed() -> MergeDocument {
-        three("a\nb\nc\nd\ne\nf\ng\n", "a\nB\nc\nd\ne\nF\ng\n", "a\nb\nc\nD\ne\nX\ng\n")
+        doc("a\nb\nc\nd\ne\nf\ng\n", "a\nB\nc\nd\ne\nF\ng\n", "a\nb\nc\nD\ne\nX\ng\n")
     }
 
     /// Regions: 0 a, 1 conflict, 2 c, 3 D (right only), 4 e, 5 conflict, 6 g.
     fn two_conflicts() -> MergeDocument {
-        three("a\nb\nc\nd\ne\nf\ng\n", "a\nL\nc\nd\ne\nF\ng\n", "a\nR\nc\nD\ne\nX\ng\n")
+        doc("a\nb\nc\nd\ne\nf\ng\n", "a\nL\nc\nd\ne\nF\ng\n", "a\nR\nc\nD\ne\nX\ng\n")
     }
 
     #[test]
@@ -170,13 +160,13 @@ mod tests {
 
     #[test]
     fn a_difference_in_the_last_region_is_the_last() {
-        let d = three("a\nb\n", "a\nB\n", "a\nb\n");
+        let d = doc("a\nb\n", "a\nB\n", "a\nb\n");
         assert_eq!(last(&d, Target::Difference), Some(RegionIx::new(1)));
     }
 
     #[test]
     fn a_document_without_differences_has_nowhere_to_go() {
-        let d = three("a\nb\n", "a\nb\n", "a\nb\n");
+        let d = doc("a\nb\n", "a\nb\n", "a\nb\n");
         assert_eq!(first(&d, Target::Difference), None);
         assert_eq!(last(&d, Target::Difference), None);
         assert_eq!(next(&d, RegionIx::new(0), Target::Difference), None);
@@ -192,13 +182,7 @@ mod tests {
             },
             ..MergeOptions::default()
         };
-        let text = |s: &str| Text::decode(s.as_bytes()).expect("utf-8");
-        let d = MergeDocument::new(
-            Inputs::three_way(text("a\nb\n"), text("a \nb\n"), text("a\nb\n")),
-            options,
-            Labels::none(),
-        )
-        .expect("no labels");
+        let d = doc_with("a\nb\n", "a \nb\n", "a\nb\n", options);
         assert_eq!(first(&d, Target::Difference), None);
     }
 
@@ -277,18 +261,18 @@ mod tests {
     #[test]
     fn the_middle_difference_is_the_last_one_before_an_unchanged_middle() {
         // Regions: 0 a, 1 B, 2 c, 3 D. The middle, 2, is unchanged; 1 comes before it.
-        let d = three("a\nb\nc\nd\n", "a\nB\nc\nD\n", "a\nb\nc\nd\n");
+        let d = doc("a\nb\nc\nd\n", "a\nB\nc\nD\n", "a\nb\nc\nd\n");
         assert_eq!(d.regions().len(), 4);
         assert_eq!(middle_difference(&d), RegionIx::new(1));
         // Regions: 0 A, 1 b, 2 C. The middle, 1, is unchanged; 0 comes before it.
-        let d = three("a\nb\nc\n", "A\nb\nC\n", "a\nb\nc\n");
+        let d = doc("a\nb\nc\n", "A\nb\nC\n", "a\nb\nc\n");
         assert_eq!(d.regions().len(), 3);
         assert_eq!(middle_difference(&d), RegionIx::new(0));
     }
 
     #[test]
     fn without_differences_the_middle_difference_is_the_middle_region() {
-        let d = three("a\nb\n", "a\nb\n", "a\nb\n");
+        let d = doc("a\nb\n", "a\nb\n", "a\nb\n");
         assert_eq!(d.regions().len(), 1);
         assert_eq!(middle_difference(&d), RegionIx::new(0));
     }

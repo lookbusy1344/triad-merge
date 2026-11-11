@@ -684,16 +684,13 @@ mod tests {
     use super::*;
     use crate::boundaries::{Marked, node};
     use crate::diff::Whitespace;
+    use crate::testing::text;
     use proptest::prelude::*;
     use proptest::test_runner::{Config, RngSeed};
 
     const BASE: usize = 0;
     const LEFT_ONLY: Kind = Kind::OneSide(LEFT);
     const RIGHT_ONLY: Kind = Kind::OneSide(RIGHT);
-
-    fn text(s: &str) -> Text {
-        Text::decode(s.as_bytes()).expect("test input decodes")
-    }
 
     fn three(base: &str, left: &str, right: &str) -> Inputs {
         Inputs::three_way(text(base), text(left), text(right))

@@ -199,15 +199,11 @@ mod tests {
     use super::*;
     use crate::document::MergeOptions;
     use crate::merge3::{Inputs, Semantics, align};
-    use crate::text::Text;
-
-    fn text(s: &str) -> Text {
-        Text::decode(s.as_bytes()).unwrap()
-    }
+    use crate::testing::{text, three};
 
     /// Each region's suggestions, in both semantics, which must agree.
     fn suggested(base: &str, left: &str, right: &str) -> Vec<Vec<Suggestion>> {
-        let inputs = Inputs::three_way(text(base), text(left), text(right));
+        let inputs = three(base, left, right);
         let [git, jj] = [Semantics::Git, Semantics::Jj].map(|semantics| {
             let options = MergeOptions { semantics, ..MergeOptions::default() };
             let regions = align(&inputs, options.alignment());
@@ -374,7 +370,7 @@ mod tests {
         use crate::document::{
             Command, EditBatch, Labels, MergeDocument, Output, Resolution, TextPatch,
         };
-        let inputs = Inputs::three_way(text("a\nd\n"), text("a\nc\nd\n"), text("a\nb\nd\n"));
+        let inputs = three("a\nd\n", "a\nc\nd\n", "a\nb\nd\n");
         let mut doc = MergeDocument::new(inputs, MergeOptions::default(), Labels::none()).unwrap();
         let Some(Suggestion::SortedUnion(union)) =
             suggestions(doc.inputs(), doc.regions(), RegionIx::new(1)).pop()
@@ -390,7 +386,7 @@ mod tests {
     #[test]
     fn the_sorted_union_edit_resolves_the_region_to_it() {
         use crate::document::{Command, Labels, Output, Resolution};
-        let inputs = Inputs::three_way(text("a\nd\n"), text("a\nc\nd\n"), text("a\nb\nd\n"));
+        let inputs = three("a\nd\n", "a\nc\nd\n", "a\nb\nd\n");
         let mut doc = MergeDocument::new(inputs, MergeOptions::default(), Labels::none()).unwrap();
         let conflict = RegionIx::new(1);
         let batch =

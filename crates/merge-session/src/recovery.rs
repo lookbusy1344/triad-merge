@@ -336,7 +336,7 @@ mod tests {
     use merge_core::index::RegionIx;
     use merge_core::journal::{JOURNAL_VERSION, input_hashes};
     use merge_core::merge3::Inputs;
-    use merge_core::text::Text;
+    use merge_core::testing::three;
 
     const DAY: Duration = Duration::from_secs(SECONDS_PER_DAY);
 
@@ -488,12 +488,8 @@ mod tests {
 
     // `Recovery`: the session's journal and its writes.
 
-    fn text(s: &str) -> Text {
-        Text::decode(s.as_bytes().to_vec()).expect("decodes")
-    }
-
     fn inputs() -> Inputs {
-        Inputs::three_way(text("b\n"), text("l\n"), text("r\n"))
+        three("b\n", "l\n", "r\n")
     }
 
     fn hashes() -> InputHashes {
@@ -563,7 +559,7 @@ mod tests {
     fn a_second_hash_changes_nothing() {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut recovery = ready(dir.path(), 1);
-        let other = input_hashes(&Inputs::three_way(text("x\n"), text("y\n"), text("z\n")));
+        let other = input_hashes(&three("x\n", "y\n", "z\n"));
         assert!(!recovery.hashed(other, start()));
         let file = Journal::with_hashes(hashes(), start()).file_name(None);
         assert_eq!(recovery.path(), Some(dir.path().join(file).as_path()));

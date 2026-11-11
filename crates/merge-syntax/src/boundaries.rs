@@ -159,10 +159,7 @@ fn collect(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn text(s: &str) -> Text {
-        Text::decode(s.as_bytes().to_vec()).expect("decodes")
-    }
+    use merge_core::testing::text;
 
     /// The offsets of `at` whose cut is clean.
     fn clean(cuts: &Cuts, at: &[usize]) -> Vec<usize> {

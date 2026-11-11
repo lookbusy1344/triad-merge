@@ -84,28 +84,15 @@ fn in_region(doc: &MergeDocument, region: RegionIx) -> Vec<Placeholder> {
 
 #[cfg(test)]
 mod tests {
-    use merge_core::document::{Command, Labels, MergeOptions};
-    use merge_core::merge3::Inputs;
-    use merge_core::text::Text;
+    use merge_core::document::Command;
+    use merge_core::testing::doc;
+
     use smallvec::smallvec;
 
     use super::*;
 
     const LEFT: Source = Source::Side(merge_core::merge3::LEFT);
     const RIGHT: Source = Source::Side(merge_core::merge3::RIGHT);
-
-    fn text(s: &str) -> Text {
-        Text::decode(s.as_bytes()).expect("utf-8")
-    }
-
-    fn three(base: &str, left: &str, right: &str) -> MergeDocument {
-        MergeDocument::new(
-            Inputs::three_way(text(base), text(left), text(right)),
-            MergeOptions::default(),
-            Labels::none(),
-        )
-        .expect("no labels")
-    }
 
     fn pick(doc: &mut MergeDocument, region: RegionIx, sources: Vec<Source>) {
         doc.apply(Command::Pick { region, sources }).expect("pick");
@@ -122,7 +109,7 @@ mod tests {
 
     /// Left deletes b, c; right changes them to B, C. Region 1 is the conflict.
     fn left_deletes() -> MergeDocument {
-        three("a\nb\nc\nz\n", "a\nz\n", "a\nB\nC\nz\n")
+        doc("a\nb\nc\nz\n", "a\nz\n", "a\nB\nC\nz\n")
     }
 
     #[test]
@@ -134,7 +121,7 @@ mod tests {
 
     #[test]
     fn a_deleting_right_side_follows_the_left_block() {
-        let doc = three("a\nb\nc\nz\n", "a\nB\nC\nz\n", "a\nz\n");
+        let doc = doc("a\nb\nc\nz\n", "a\nB\nC\nz\n", "a\nz\n");
         // Result a, B, C, z: right's place is after left's block, above z.
         assert_eq!(placeholders(&doc), [at(3, RegionIx::new(1), &[RIGHT], 2)]);
     }
@@ -164,14 +151,14 @@ mod tests {
 
     #[test]
     fn a_one_side_deletion_shows_its_side() {
-        let doc = three("a\nb\nz\n", "a\nb\nz\n", "a\nz\n");
+        let doc = doc("a\nb\nz\n", "a\nb\nz\n", "a\nz\n");
         assert_eq!(doc.regions()[1].kind, Kind::OneSide(1));
         assert_eq!(placeholders(&doc), [at(1, RegionIx::new(1), &[RIGHT], 1)]);
     }
 
     #[test]
     fn a_deletion_on_both_sides_shares_one_placeholder() {
-        let doc = three("a\nb\nc\nz\n", "a\nz\n", "a\nz\n");
+        let doc = doc("a\nb\nc\nz\n", "a\nz\n", "a\nz\n");
         assert_eq!(doc.regions()[1].kind, Kind::AllSame);
         let both: SmallVec<[Source; 2]> = smallvec![LEFT, RIGHT];
         assert_eq!(placeholders(&doc), [at(1, RegionIx::new(1), &both, 2)]);
@@ -180,7 +167,7 @@ mod tests {
     #[test]
     fn deletions_on_either_side_of_a_block_get_a_placeholder_each() {
         // Both sides delete b; picking left, base, right puts base's b between them.
-        let mut doc = three("a\nb\nz\n", "a\nz\n", "a\nz\n");
+        let mut doc = doc("a\nb\nz\n", "a\nz\n", "a\nz\n");
         pick(&mut doc, RegionIx::new(1), vec![LEFT, Source::Base(0), RIGHT]);
         assert_eq!(doc.text(), "a\nb\nz\n");
         assert_eq!(
@@ -192,7 +179,7 @@ mod tests {
     #[test]
     fn an_empty_pick_counts_the_longest_input() {
         // Base has b, left B, right C and C2: right is longest.
-        let mut doc = three("a\nb\nz\n", "a\nB\nz\n", "a\nC\nC2\nz\n");
+        let mut doc = doc("a\nb\nz\n", "a\nB\nz\n", "a\nC\nC2\nz\n");
         doc.apply(Command::Clear { region: RegionIx::new(1) }).expect("clear");
         assert_eq!(doc.text(), "a\nz\n");
         assert_eq!(placeholders(&doc), [at(1, RegionIx::new(1), &[], 2)]);
@@ -200,7 +187,7 @@ mod tests {
 
     #[test]
     fn a_deletion_at_the_end_follows_the_last_line() {
-        let mut doc = three("a\nb\n", "a\n", "a\nB\n");
+        let mut doc = doc("a\nb\n", "a\n", "a\nB\n");
         pick(&mut doc, RegionIx::new(1), vec![LEFT]);
         assert_eq!((doc.text().as_str(), doc.line_count()), ("a\n", 1));
         assert_eq!(placeholders(&doc), [at(1, RegionIx::new(1), &[LEFT], 1)]);
@@ -209,7 +196,7 @@ mod tests {
     #[test]
     fn a_deletion_after_an_unterminated_last_line_follows_it() {
         // Right ends without a newline; left deletes the last line.
-        let mut doc = three("a\nb", "a\n", "a\nB");
+        let mut doc = doc("a\nb", "a\n", "a\nB");
         pick(&mut doc, RegionIx::new(1), vec![LEFT]);
         assert_eq!(placeholders(&doc), [at(doc.line_count(), RegionIx::new(1), &[LEFT], 1)]);
     }
@@ -217,7 +204,7 @@ mod tests {
     #[test]
     fn skipping_an_insertion_is_no_deletion() {
         // Left inserts X; picking right, which has no lines there, drops no base line.
-        let mut doc = three("a\nz\n", "a\nX\nz\n", "a\nz\n");
+        let mut doc = doc("a\nz\n", "a\nX\nz\n", "a\nz\n");
         pick(&mut doc, RegionIx::new(1), vec![RIGHT]);
         assert_eq!(doc.text(), "a\nz\n");
         assert_eq!(placeholders(&doc), []);
@@ -226,7 +213,7 @@ mod tests {
     #[test]
     fn an_empty_pick_of_an_insertion_counts_the_inserted_lines() {
         // Left inserts X; clearing the region drops it.
-        let mut doc = three("a\nz\n", "a\nX\nz\n", "a\nz\n");
+        let mut doc = doc("a\nz\n", "a\nX\nz\n", "a\nz\n");
         doc.apply(Command::Clear { region: RegionIx::new(1) }).expect("clear");
         assert_eq!(placeholders(&doc), [at(1, RegionIx::new(1), &[], 1)]);
     }
@@ -244,14 +231,14 @@ mod tests {
 
     #[test]
     fn unchanged_and_changed_regions_with_text_have_none() {
-        let doc = three("a\nb\nz\n", "a\nB\nz\n", "a\nb\nz\n");
+        let doc = doc("a\nb\nz\n", "a\nB\nz\n", "a\nb\nz\n");
         assert_eq!(placeholders(&doc), []);
     }
 
     #[test]
     fn placeholders_follow_each_region_in_order() {
         // Region 1: right deletes b. Region 3: left deletes y. Result a, m, z.
-        let doc = three("a\nb\nm\ny\nz\n", "a\nb\nm\nz\n", "a\nm\ny\nz\n");
+        let doc = doc("a\nb\nm\ny\nz\n", "a\nb\nm\nz\n", "a\nm\ny\nz\n");
         assert_eq!(doc.text(), "a\nm\nz\n");
         assert_eq!(
             placeholders(&doc),

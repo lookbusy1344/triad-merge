@@ -1829,22 +1829,6 @@ impl MergeWindow {
         self.pick(region, source, window, cx);
     }
 
-    fn toggle_left(&mut self, _: &ToggleLeft, window: &mut Window, cx: &mut Context<Self>) {
-        self.pick_current(Some(Source::Side(0)), window, cx);
-    }
-
-    fn toggle_base(&mut self, _: &ToggleBase, window: &mut Window, cx: &mut Context<Self>) {
-        self.pick_current(Some(Source::Base(0)), window, cx);
-    }
-
-    fn toggle_right(&mut self, _: &ToggleRight, window: &mut Window, cx: &mut Context<Self>) {
-        self.pick_current(Some(Source::Side(1)), window, cx);
-    }
-
-    fn clear_choice(&mut self, _: &ClearChoice, window: &mut Window, cx: &mut Context<Self>) {
-        self.pick_current(None, window, cx);
-    }
-
     /// Set the current region's pick to `choice`. The region stays current.
     fn take(&mut self, choice: Choice, window: &mut Window, cx: &mut Context<Self>) {
         self.send_edits(window, cx);
@@ -1868,82 +1852,9 @@ impl MergeWindow {
         self.run(Command::PickAll { scope, sources }, window, cx);
     }
 
-    fn take_left_all_unresolved(
-        &mut self,
-        _: &TakeLeftAllUnresolved,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.take_all(PickScope::Unresolved, Source::Side(LEFT), window, cx);
-    }
-
-    fn take_right_all_unresolved(
-        &mut self,
-        _: &TakeRightAllUnresolved,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.take_all(PickScope::Unresolved, Source::Side(RIGHT), window, cx);
-    }
-
-    fn take_whole_left(&mut self, _: &TakeWholeLeft, window: &mut Window, cx: &mut Context<Self>) {
-        self.take_all(PickScope::All, Source::Side(LEFT), window, cx);
-    }
-
-    fn take_whole_right(
-        &mut self,
-        _: &TakeWholeRight,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.take_all(PickScope::All, Source::Side(RIGHT), window, cx);
-    }
-
-    fn take_base(&mut self, _: &TakeBase, window: &mut Window, cx: &mut Context<Self>) {
-        self.take(Choice::Base, window, cx);
-    }
-
-    fn take_left(&mut self, _: &TakeLeft, window: &mut Window, cx: &mut Context<Self>) {
-        self.take(Choice::Left, window, cx);
-    }
-
-    fn take_right(&mut self, _: &TakeRight, window: &mut Window, cx: &mut Context<Self>) {
-        self.take(Choice::Right, window, cx);
-    }
-
-    fn take_left_then_right(
-        &mut self,
-        _: &TakeLeftThenRight,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.take(Choice::LeftThenRight, window, cx);
-    }
-
-    /// Replace the current region's text with its sorted union, when it has one (spec §4.4).
-    /// The region becomes `Edited`, as if the user had typed the union.
-    fn take_sorted_union(
-        &mut self,
-        _: &TakeSortedUnion,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.take_suggestion(EditSuggestion::SortedUnion, window, cx);
-    }
-
-    /// Carry the edit of a block the other side moved to the block's new place, when the
-    /// current region offers it (spec §4.4). The conflict takes the moving side's deletion,
-    /// and both regions become `Edited` in one undo step.
-    fn carry_moved_edit(
-        &mut self,
-        _: &CarryMovedEdit,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.take_suggestion(EditSuggestion::CarryEdit, window, cx);
-    }
-
-    /// Take the current region's suggestion `wanted` as an edit, when the region offers it.
+    /// Take the current region's suggestion `wanted` as an edit, when the region offers it
+    /// (spec §4.4). The regions it changes become `Edited` in one undo step, as if the user had
+    /// typed the text.
     fn take_suggestion(
         &mut self,
         wanted: EditSuggestion,
@@ -1986,32 +1897,53 @@ impl MergeWindow {
         self.go_to(region, window, cx);
     }
 
-    fn take_right_then_left(
-        &mut self,
-        _: &TakeRightThenLeft,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.take(Choice::RightThenLeft, window, cx);
-    }
-
     /// Bind the Merge menu's commands on `root`.
     fn on_merge_actions(root: Div, cx: &mut Context<Self>) -> Div {
-        root.on_action(cx.listener(Self::toggle_left))
-            .on_action(cx.listener(Self::toggle_base))
-            .on_action(cx.listener(Self::toggle_right))
-            .on_action(cx.listener(Self::clear_choice))
-            .on_action(cx.listener(Self::take_base))
-            .on_action(cx.listener(Self::take_left))
-            .on_action(cx.listener(Self::take_right))
-            .on_action(cx.listener(Self::take_left_then_right))
-            .on_action(cx.listener(Self::take_right_then_left))
-            .on_action(cx.listener(Self::take_left_all_unresolved))
-            .on_action(cx.listener(Self::take_right_all_unresolved))
-            .on_action(cx.listener(Self::take_whole_left))
-            .on_action(cx.listener(Self::take_whole_right))
-            .on_action(cx.listener(Self::take_sorted_union))
-            .on_action(cx.listener(Self::carry_moved_edit))
+        root.on_action(cx.listener(|this, _: &ToggleLeft, window, cx| {
+            this.pick_current(Some(Source::Side(0)), window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &ToggleBase, window, cx| {
+            this.pick_current(Some(Source::Base(0)), window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &ToggleRight, window, cx| {
+            this.pick_current(Some(Source::Side(1)), window, cx);
+        }))
+        .on_action(
+            cx.listener(|this, _: &ClearChoice, window, cx| this.pick_current(None, window, cx)),
+        )
+        .on_action(
+            cx.listener(|this, _: &TakeBase, window, cx| this.take(Choice::Base, window, cx)),
+        )
+        .on_action(
+            cx.listener(|this, _: &TakeLeft, window, cx| this.take(Choice::Left, window, cx)),
+        )
+        .on_action(
+            cx.listener(|this, _: &TakeRight, window, cx| this.take(Choice::Right, window, cx)),
+        )
+        .on_action(cx.listener(|this, _: &TakeLeftThenRight, window, cx| {
+            this.take(Choice::LeftThenRight, window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &TakeRightThenLeft, window, cx| {
+            this.take(Choice::RightThenLeft, window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &TakeLeftAllUnresolved, window, cx| {
+            this.take_all(PickScope::Unresolved, Source::Side(LEFT), window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &TakeRightAllUnresolved, window, cx| {
+            this.take_all(PickScope::Unresolved, Source::Side(RIGHT), window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &TakeWholeLeft, window, cx| {
+            this.take_all(PickScope::All, Source::Side(LEFT), window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &TakeWholeRight, window, cx| {
+            this.take_all(PickScope::All, Source::Side(RIGHT), window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &TakeSortedUnion, window, cx| {
+            this.take_suggestion(EditSuggestion::SortedUnion, window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &CarryMovedEdit, window, cx| {
+            this.take_suggestion(EditSuggestion::CarryEdit, window, cx);
+        }))
     }
 
     /// The right-click menu's choices for the current region.
@@ -2066,32 +1998,6 @@ impl MergeWindow {
             self.go_to(region, window, cx);
             self.start_flash(cx);
         }
-    }
-
-    fn next_difference(&mut self, _: &NextDifference, window: &mut Window, cx: &mut Context<Self>) {
-        self.navigate(nav::next, Target::Difference, window, cx);
-    }
-
-    fn previous_difference(
-        &mut self,
-        _: &PreviousDifference,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.navigate(nav::previous, Target::Difference, window, cx);
-    }
-
-    fn next_conflict(&mut self, _: &NextConflict, window: &mut Window, cx: &mut Context<Self>) {
-        self.navigate(nav::next, Target::Unresolved, window, cx);
-    }
-
-    fn previous_conflict(
-        &mut self,
-        _: &PreviousConflict,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.navigate(nav::previous, Target::Unresolved, window, cx);
     }
 
     /// Write the output and finish: with 0 when resolved, or with 1 after the user agrees
@@ -2343,10 +2249,6 @@ impl MergeWindow {
             ignore_closed_view(this.update_in(cx, |this, window, cx| this.step(next, window, cx)));
         })
         .detach();
-    }
-
-    fn on_cancel(&mut self, _: &Cancel, window: &mut Window, cx: &mut Context<Self>) {
-        self.cancel(window, cx);
     }
 
     /// Open the result's search, from anywhere in the window.
@@ -3561,10 +3463,18 @@ impl Render for MergeWindow {
             .key_context(WINDOW_CONTEXT)
             .on_action(cx.listener(Self::undo))
             .on_action(cx.listener(Self::redo))
-            .on_action(cx.listener(Self::next_difference))
-            .on_action(cx.listener(Self::previous_difference))
-            .on_action(cx.listener(Self::next_conflict))
-            .on_action(cx.listener(Self::previous_conflict))
+            .on_action(cx.listener(|this, _: &NextDifference, window, cx| {
+                this.navigate(nav::next, Target::Difference, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &PreviousDifference, window, cx| {
+                this.navigate(nav::previous, Target::Difference, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &NextConflict, window, cx| {
+                this.navigate(nav::next, Target::Unresolved, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &PreviousConflict, window, cx| {
+                this.navigate(nav::previous, Target::Unresolved, window, cx);
+            }))
             .on_action(cx.listener(Self::toggle_base_pane))
             .on_action(cx.listener(Self::toggle_syntax))
             .on_action(cx.listener(Self::toggle_soft_wrap))
@@ -3577,7 +3487,7 @@ impl Render for MergeWindow {
             .on_action(cx.listener(Self::open_go_to_line))
             .on_action(cx.listener(Self::save_and_exit))
             .on_action(cx.listener(Self::save_copy_as))
-            .on_action(cx.listener(Self::on_cancel))
+            .on_action(cx.listener(|this, _: &Cancel, window, cx| this.cancel(window, cx)))
             .font_family(self.typography.font.clone().unwrap_or(mono))
             .text_size(self.typography.size)
             .children(crate::menu_bar::render(self.menu_bar.bar(), cx.theme().is_dark()))

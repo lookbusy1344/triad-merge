@@ -262,10 +262,11 @@ pub fn hover_text(origin: &LineOrigin) -> String {
 mod tests {
     use crate::rows::RowIx;
     use merge_core::diff::{DiffOptions, Whitespace};
-    use merge_core::document::{Command, EditBatch, Labels, MergeOptions, TextPatch};
+    use merge_core::document::{Command, EditBatch, MergeOptions, TextPatch};
     use merge_core::index::RegionIx;
     use merge_core::merge3::HunkLevel;
-    use merge_core::text::Text;
+    use merge_core::testing::{doc, doc_with};
+
     use vcs::{ChangeInfo, OriginRun, Timestamp};
 
     use super::*;
@@ -274,23 +275,6 @@ mod tests {
     const L: Source = Source::Side(0);
     const R: Source = Source::Side(1);
     const B: Source = Source::Base(0);
-
-    fn text(s: &str) -> Text {
-        Text::decode(s.as_bytes()).expect("utf-8")
-    }
-
-    fn doc_with(base: &str, left: &str, right: &str, options: MergeOptions) -> MergeDocument {
-        MergeDocument::new(
-            Inputs::three_way(text(base), text(left), text(right)),
-            options,
-            Labels::none(),
-        )
-        .expect("no labels")
-    }
-
-    fn doc(base: &str, left: &str, right: &str) -> MergeDocument {
-        doc_with(base, left, right, MergeOptions::default())
-    }
 
     fn git(commit: &str) -> LineOrigin {
         LineOrigin {

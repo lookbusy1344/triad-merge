@@ -1,4 +1,9 @@
-//! Seeded generator for large base/left/right triples, for benchmarks and tests.
+//! Test inputs: a seeded generator for large base/left/right triples, for benchmarks and
+//! tests, and builders for small texts and documents.
+
+use crate::document::{Labels, MergeDocument, MergeOptions};
+use crate::merge3::Inputs;
+use crate::text::Text;
 
 /// Lines in each generated block. Each block gets one kind of change.
 const BLOCK_LINES: usize = 20;
@@ -88,18 +93,46 @@ fn base_line(n: usize) -> String {
     format!("{n:>7}  fn item_{n}(value: u64) -> u64 {{ value * {n} }}\n")
 }
 
+/// `s` as a text. Test input is UTF-8 and always decodes.
+///
+/// # Panics
+/// Never: UTF-8 always decodes.
+#[must_use]
+pub fn text(s: &str) -> Text {
+    Text::decode(s.as_bytes()).expect("UTF-8 decodes")
+}
+
+/// Three-way inputs from `base`, `left` and `right`.
+#[must_use]
+pub fn three(base: &str, left: &str, right: &str) -> Inputs {
+    Inputs::three_way(text(base), text(left), text(right))
+}
+
+/// The three-way merge of `base`, `left` and `right` under `options`, without labels.
+///
+/// # Panics
+/// Never: no labels fit any number of sides.
+#[must_use]
+pub fn doc_with(base: &str, left: &str, right: &str, options: MergeOptions) -> MergeDocument {
+    MergeDocument::new(three(base, left, right), options, Labels::none()).expect("no labels fit")
+}
+
+/// The three-way merge of `base`, `left` and `right` under the default options.
+#[must_use]
+pub fn doc(base: &str, left: &str, right: &str) -> MergeDocument {
+    doc_with(base, left, right, MergeOptions::default())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::document::{Labels, MergeDocument, MergeOptions, Output};
-    use crate::merge3::{HunkLevel, Inputs, Kind, Semantics};
-    use crate::text::Text;
+    use crate::document::Output;
+    use crate::merge3::{HunkLevel, Kind, Semantics};
 
     fn jj_doc(triple: &Triple, hunk_level: HunkLevel) -> MergeDocument {
-        let text = |s: &str| Text::decode(s.as_bytes()).unwrap();
         let options =
             MergeOptions { semantics: Semantics::Jj, hunk_level, ..MergeOptions::default() };
-        let inputs = Inputs::three_way(text(&triple.base), text(&triple.left), text(&triple.right));
+        let inputs = three(&triple.base, &triple.left, &triple.right);
         MergeDocument::new(inputs, options, Labels::three_way("l", "b", "r")).unwrap()
     }
 

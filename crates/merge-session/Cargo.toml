@@ -30,6 +30,7 @@ vcs-git.workspace = true
 vcs-jj.workspace = true
 
 [dev-dependencies]
+merge-core = { workspace = true, features = ["testing"] }
 # Reads the jj config `install` writes.
 toml.workspace = true
 # Object IDs of the fixture commits.

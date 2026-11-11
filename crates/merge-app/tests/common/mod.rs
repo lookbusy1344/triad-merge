@@ -5,22 +5,8 @@
 use gpui_kit::test::TestWindowExt;
 use gpui_kit::{AnyWindowHandle, App, AppContext as _, Entity, TestAppContext};
 use merge_app::{MergeWindow, WindowSettings};
-use merge_core::document::{Labels, MergeDocument, MergeOptions};
-use merge_core::merge3::Inputs;
-use merge_core::text::Text;
-
-pub fn text(s: &str) -> Text {
-    Text::decode(s.as_bytes()).expect("decodes")
-}
-
-pub fn doc(base: &str, left: &str, right: &str) -> MergeDocument {
-    MergeDocument::new(
-        Inputs::three_way(text(base), text(left), text(right)),
-        MergeOptions::default(),
-        Labels::none(),
-    )
-    .expect("no labels")
-}
+use merge_core::document::MergeDocument;
+pub use merge_core::testing::{doc, text};
 
 pub fn open(cx: &mut TestAppContext, doc: MergeDocument) -> (AnyWindowHandle, Entity<MergeWindow>) {
     let opened = cx.update(|cx| {

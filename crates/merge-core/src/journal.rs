@@ -313,7 +313,8 @@ mod tests {
     use crate::index::RegionIx;
     use crate::merge3::Region;
     use crate::merge3::{HunkLevel, Kind, Refine, SameChange, Semantics, Source};
-    use crate::text::Text;
+    use crate::testing::{doc_with, three};
+
     use std::ops::Range;
     use std::path::Path;
 
@@ -339,12 +340,8 @@ mod tests {
         "8adb091683e7305037b1e7b6dfd810a385c4a9f85ea7c4779b2562afdb1d850e";
     const OUTPUT: &str = "/work/out.txt";
 
-    fn text(s: &str) -> Text {
-        Text::decode(s.as_bytes()).expect("decodes")
-    }
-
     fn inputs(left: &str) -> Inputs {
-        Inputs::three_way(text("a\nb\nc\n"), text(left), text("a\nR\nc\n"))
+        three("a\nb\nc\n", left, "a\nR\nc\n")
     }
 
     fn doc(left: &str, options: MergeOptions) -> MergeDocument {
@@ -527,7 +524,7 @@ mod tests {
         // region 1 would land on another conflict.
         let left = "a\nX\nm\nY\nz\n";
         let marked = Marked(vec![(left, node(3..5))]);
-        let deep = || Inputs::three_way(text("a\np\nq\nz\n"), text(left), text("a\nZ\nm\nW\nz\n"));
+        let deep = || three("a\np\nq\nz\n", left, "a\nZ\nm\nW\nz\n");
         let options = MergeOptions {
             refine: Refine::Deep,
             syntax_boundaries: true,
@@ -651,18 +648,10 @@ mod tests {
             ..MergeOptions::default()
         };
         // Left changes only whitespace: one region when whitespace is ignored, three when not.
-        let d = MergeDocument::new(
-            Inputs::three_way(text("a\nb\nc\n"), text("a\nb \nc\n"), text("a\nb\nc\n")),
-            all,
-            Labels::none(),
-        )
-        .expect("no labels");
+        let d = doc_with("a\nb\nc\n", "a\nb \nc\n", "a\nb\nc\n", all);
         let journal = Journal::new(&d);
         let restored = journal
-            .restore(
-                Inputs::three_way(text("a\nb\nc\n"), text("a\nb \nc\n"), text("a\nb\nc\n")),
-                Labels::none(),
-            )
+            .restore(three("a\nb\nc\n", "a\nb \nc\n", "a\nb\nc\n"), Labels::none())
             .expect("restores");
         assert_eq!(restored.options(), all);
         assert_eq!(d.regions().len(), 1);
@@ -676,7 +665,7 @@ mod tests {
             same_change: SameChange::Keep,
             ..MergeOptions::default()
         };
-        let same = || Inputs::three_way(text("a\nb\n"), text("a\nB\n"), text("a\nB\n"));
+        let same = || three("a\nb\n", "a\nB\n", "a\nB\n");
         let d = MergeDocument::new(same(), jj_keep, Labels::none()).expect("no labels");
         let restored = Journal::new(&d).restore(same(), Labels::none()).expect("restores");
         assert_eq!(restored.options(), jj_keep);
@@ -687,7 +676,7 @@ mod tests {
 
     /// Word-resolvable inputs: left changes `x`, right changes `1`.
     fn words() -> Inputs {
-        Inputs::three_way(text("a\nlet x = 1;\n"), text("a\nlet y = 1;\n"), text("a\nlet x = 2;\n"))
+        three("a\nlet x = 1;\n", "a\nlet y = 1;\n", "a\nlet x = 2;\n")
     }
 
     const BY_WORD: MergeOptions = MergeOptions {
@@ -735,7 +724,7 @@ mod tests {
         // Left's shared m is at bytes 4..6; a node across its start keeps the conflict whole.
         let left = "a\nX\nm\nY\nz\n";
         let marked = Marked(vec![(left, node(3..5))]);
-        let deep = || Inputs::three_way(text("a\np\nq\nz\n"), text(left), text("a\nZ\nm\nW\nz\n"));
+        let deep = || three("a\np\nq\nz\n", left, "a\nZ\nm\nW\nz\n");
         let options = MergeOptions {
             refine: Refine::Deep,
             syntax_boundaries: true,
@@ -803,12 +792,7 @@ mod tests {
 
     #[test]
     fn the_key_hashes_every_input() {
-        let same = MergeDocument::new(
-            Inputs::three_way(text("a\n"), text("a\n"), text("a\n")),
-            MergeOptions::default(),
-            Labels::none(),
-        )
-        .expect("no labels");
+        let same = crate::testing::doc("a\n", "a\n", "a\n");
         assert_eq!(Journal::new(&same).key(None), KEY_OF_THREE_A_NEWLINES);
         let key = |left| Journal::new(&doc(left, MergeOptions::default())).key(None);
         assert_ne!(key("a\nL\nc\n"), key("a\nM\nc\n"));
@@ -816,23 +800,13 @@ mod tests {
 
     #[test]
     fn the_file_name_is_the_key_with_the_json_lines_extension() {
-        let same = MergeDocument::new(
-            Inputs::three_way(text("a\n"), text("a\n"), text("a\n")),
-            MergeOptions::default(),
-            Labels::none(),
-        )
-        .expect("no labels");
+        let same = crate::testing::doc("a\n", "a\n", "a\n");
         assert_eq!(Journal::new(&same).file_name(None), format!("{KEY_OF_THREE_A_NEWLINES}.jsonl"));
     }
 
     #[test]
     fn the_key_hashes_the_output_path_after_the_inputs() {
-        let same = MergeDocument::new(
-            Inputs::three_way(text("a\n"), text("a\n"), text("a\n")),
-            MergeOptions::default(),
-            Labels::none(),
-        )
-        .expect("no labels");
+        let same = crate::testing::doc("a\n", "a\n", "a\n");
         let journal = Journal::new(&same);
         assert_eq!(journal.key(Some(Path::new(OUTPUT))), KEY_OF_THREE_A_NEWLINES_AND_OUTPUT);
         assert_ne!(
@@ -843,12 +817,7 @@ mod tests {
 
     #[test]
     fn input_hashes_go_left_right_then_base() {
-        let d = MergeDocument::new(
-            Inputs::three_way(text("b\n"), text("l\n"), text("r\n")),
-            MergeOptions::default(),
-            Labels::none(),
-        )
-        .expect("no labels");
+        let d = crate::testing::doc("b\n", "l\n", "r\n");
         assert_eq!(
             Journal::new(&d).header.inputs,
             [SHA256_L_NEWLINE, SHA256_R_NEWLINE, SHA256_B_NEWLINE]
@@ -857,12 +826,7 @@ mod tests {
 
     #[test]
     fn an_input_hash_is_the_sha256_of_its_text() {
-        let d = MergeDocument::new(
-            Inputs::three_way(text("a\n"), text("a\n"), text("a\n")),
-            MergeOptions::default(),
-            Labels::none(),
-        )
-        .expect("no labels");
+        let d = crate::testing::doc("a\n", "a\n", "a\n");
         assert_eq!(Journal::new(&d).header.inputs, [SHA256_A_NEWLINE; 3]);
     }
 
@@ -872,12 +836,7 @@ mod tests {
             diff: DiffOptions { whitespace: Whitespace::All, ..DiffOptions::default() },
             ..MergeOptions::default()
         };
-        let d = MergeDocument::new(
-            Inputs::three_way(text("b\n"), text("l\n"), text("r\n")),
-            all,
-            Labels::none(),
-        )
-        .expect("no labels");
+        let d = doc_with("b\n", "l\n", "r\n", all);
         let journal = Journal::with_hashes(input_hashes(d.inputs()), d.start());
         assert_eq!(journal.header.inputs, [SHA256_L_NEWLINE, SHA256_R_NEWLINE, SHA256_B_NEWLINE]);
         assert_eq!(journal.options(), all);

@@ -491,15 +491,12 @@ pub fn carry(annotation: &Annotation, from: &Text, to: &Text) -> Annotation {
 
 #[cfg(test)]
 mod carry_tests {
+    use merge_core::testing::text;
     use std::ops::Range;
 
     use vcs::{ChangeInfo, OriginRun, Timestamp};
 
     use super::*;
-
-    fn text(s: &str) -> Text {
-        Text::decode(s.as_bytes()).expect("utf-8")
-    }
 
     fn git(commit: &str) -> LineOrigin {
         LineOrigin {

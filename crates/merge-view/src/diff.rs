@@ -164,16 +164,12 @@ fn changed(doc: &DiffDocument) -> impl Iterator<Item = &Region2> {
 mod tests {
     use merge_core::diff::DiffOptions;
     use merge_core::diff2::EditBatch;
-    use merge_core::text::Text;
+    use merge_core::testing::text;
 
     use super::*;
 
     /// Typed: `jj-core`'s regex dependencies add `PartialEq<Span>` impls for `Range`.
     const NO_BYTES: [Range<usize>; 0] = [];
-
-    fn text(s: &str) -> Text {
-        Text::decode(s.as_bytes()).expect("decodes")
-    }
 
     fn doc(left: &str, right: &str) -> DiffDocument {
         DiffDocument::new(&text(left), &text(right), DiffOptions::default())

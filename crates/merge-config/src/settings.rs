@@ -165,15 +165,6 @@ pub enum ConflictStyle {
     Merge,
 }
 
-impl From<ConflictStyle> for MarkerStyle {
-    fn from(style: ConflictStyle) -> Self {
-        match style {
-            ConflictStyle::Diff3 => Self::Diff3,
-            ConflictStyle::Merge => Self::Merge,
-        }
-    }
-}
-
 /// The `output-line-ending` values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, VariantArray, IntoStaticStr, EnumMessage)]
 #[strum(serialize_all = "kebab-case")]
@@ -182,28 +173,6 @@ pub enum LineEndingArg {
     Base,
     Lf,
     Crlf,
-}
-
-impl From<LineEndingArg> for OutputEnding {
-    fn from(arg: LineEndingArg) -> Self {
-        match arg {
-            LineEndingArg::Keep => Self::Keep,
-            LineEndingArg::Base => Self::Base,
-            LineEndingArg::Lf => Self::Lf,
-            LineEndingArg::Crlf => Self::CrLf,
-        }
-    }
-}
-
-impl From<OutputEnding> for LineEndingArg {
-    fn from(ending: OutputEnding) -> Self {
-        match ending {
-            OutputEnding::Keep => Self::Keep,
-            OutputEnding::Base => Self::Base,
-            OutputEnding::Lf => Self::Lf,
-            OutputEnding::CrLf => Self::Crlf,
-        }
-    }
 }
 
 /// An opaque sRGB colour, `#rrggbb` in the file.
@@ -313,15 +282,6 @@ pub enum RevisionId {
     Commit,
 }
 
-impl From<RevisionId> for vcs::IdKind {
-    fn from(id: RevisionId) -> Self {
-        match id {
-            RevisionId::Change => Self::Change,
-            RevisionId::Commit => Self::Commit,
-        }
-    }
-}
-
 /// The windows' appearance: the system's, or held light or dark.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, VariantArray, IntoStaticStr, EnumMessage)]
 #[strum(serialize_all = "kebab-case")]
@@ -420,15 +380,6 @@ pub enum SameChangeArg {
     Keep,
 }
 
-impl From<SameChangeArg> for SameChange {
-    fn from(arg: SameChangeArg) -> Self {
-        match arg {
-            SameChangeArg::Accept => SameChange::Accept,
-            SameChangeArg::Keep => SameChange::Keep,
-        }
-    }
-}
-
 /// `--hunk-level` and the settings file's `hunk-level`.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, VariantArray, IntoStaticStr, EnumMessage, Deserialize,
@@ -440,15 +391,6 @@ pub enum HunkLevelArg {
     Word,
 }
 
-impl From<HunkLevelArg> for HunkLevel {
-    fn from(arg: HunkLevelArg) -> Self {
-        match arg {
-            HunkLevelArg::Line => HunkLevel::Line,
-            HunkLevelArg::Word => HunkLevel::Word,
-        }
-    }
-}
-
 /// The diff algorithm, as the file and the command line name it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, VariantArray, IntoStaticStr, EnumMessage)]
 #[strum(serialize_all = "kebab-case")]
@@ -456,16 +398,6 @@ pub enum Algorithm {
     Histogram,
     Myers,
     MyersMinimal,
-}
-
-impl From<Algorithm> for diff::Algorithm {
-    fn from(algorithm: Algorithm) -> Self {
-        match algorithm {
-            Algorithm::Histogram => diff::Algorithm::Histogram,
-            Algorithm::Myers => diff::Algorithm::Myers,
-            Algorithm::MyersMinimal => diff::Algorithm::MyersMinimal,
-        }
-    }
 }
 
 /// The whitespace mode, as the file and the command line name it.
@@ -478,16 +410,46 @@ pub enum Whitespace {
     All,
 }
 
-impl From<Whitespace> for diff::Whitespace {
-    fn from(whitespace: Whitespace) -> Self {
-        match whitespace {
-            Whitespace::None => diff::Whitespace::None,
-            Whitespace::Trailing => diff::Whitespace::Trailing,
-            Whitespace::Amount => diff::Whitespace::Amount,
-            Whitespace::All => diff::Whitespace::All,
+/// `From` between a value as the file names it and the type that uses it, for each pair of
+/// variants. `<=>` converts both ways, `=>` from the file's type alone.
+macro_rules! convert {
+    ($file:ident => $used:ty { $($f:ident => $u:ident),+ $(,)? }) => {
+        impl From<$file> for $used {
+            fn from(value: $file) -> Self {
+                match value {
+                    $($file::$f => Self::$u),+
+                }
+            }
         }
-    }
+    };
+    ($file:ident <=> $used:ty { $($f:ident <=> $u:ident),+ $(,)? }) => {
+        convert!($file => $used { $($f => $u),+ });
+        impl From<$used> for $file {
+            fn from(value: $used) -> Self {
+                match value {
+                    $(<$used>::$u => Self::$f),+
+                }
+            }
+        }
+    };
 }
+
+convert!(ConflictStyle => MarkerStyle { Diff3 => Diff3, Merge => Merge });
+convert!(LineEndingArg <=> OutputEnding { Keep <=> Keep, Base <=> Base, Lf <=> Lf, Crlf <=> CrLf });
+convert!(RevisionId => vcs::IdKind { Change => Change, Commit => Commit });
+convert!(SameChangeArg <=> SameChange { Accept <=> Accept, Keep <=> Keep });
+convert!(HunkLevelArg <=> HunkLevel { Line <=> Line, Word <=> Word });
+convert!(Algorithm <=> diff::Algorithm {
+    Histogram <=> Histogram,
+    Myers <=> Myers,
+    MyersMinimal <=> MyersMinimal,
+});
+convert!(Whitespace <=> diff::Whitespace {
+    None <=> None,
+    Trailing <=> Trailing,
+    Amount <=> Amount,
+    All <=> All,
+});
 
 /// Why a line of the config file, or the file itself, could not be used. The other lines
 /// still apply.
@@ -691,144 +653,132 @@ macro_rules! colour_key {
     };
 }
 
+/// A key at `s.$field`: an empty value restores `$default`, `$parse` reads any other, and
+/// `$get` writes the value back.
+macro_rules! key {
+    ($name:expr, $description:expr, $($field:ident).+ = $default:expr, $parse:expr, $get:expr $(,)?) => {
+        Key {
+            name: $name,
+            description: $description,
+            set: |s, v| {
+                s.$($field).+ = or_default(v, $default, $parse)?;
+                Ok(())
+            },
+            get: $get,
+        }
+    };
+}
+
+/// A `true` or `false` key at `s.$field`, empty for its default.
+macro_rules! bool_key {
+    ($name:expr, $description:expr, $field:ident $(,)?) => {
+        key! {
+            $name,
+            $description,
+            $field = Settings::default().$field,
+            |v| boolean($name, v),
+            |s| s.$field.to_string()
+        }
+    };
+}
+
+/// A key at `s.$field` that holds one of the names of its type, empty for `$default`.
+macro_rules! named_key {
+    ($name:expr, $description:expr, $field:ident = $default:expr $(,)?) => {
+        key!($name, $description, $field = $default, |v| named($name, v), |s| name(s.$field))
+    };
+}
+
+/// A key at `s.$field` that holds one of the names of `$file`, or nothing when empty.
+macro_rules! optional_key {
+    ($name:expr, $description:expr, $field:ident = $file:ty $(,)?) => {
+        Key {
+            name: $name,
+            description: $description,
+            set: |s, v| {
+                s.$field = optional(v, |v| named::<$file>($name, v))?.map(Into::into);
+                Ok(())
+            },
+            get: |s| s.$field.map(<$file>::from).map(name).unwrap_or_default(),
+        }
+    };
+}
+
 /// Every setting, in the order of spec §6.4.
 const KEYS: &[Key] = &[
-    Key {
-        name: "merge-semantics",
-        description: "Whose merge rules apply: auto follows the repository, or git or jj.",
-        set: |s, v| {
-            s.semantics =
-                or_default(v, Settings::default().semantics, |v| named("merge-semantics", v))?;
-            Ok(())
-        },
-        get: |s| name(s.semantics),
-    },
-    Key {
-        name: "same-change",
-        description: "Whether a change every side made resolves (accept) or conflicts (keep). \
-                      Empty: jj's merge.same-change under jj semantics, else accept.",
-        set: |s, v| {
-            s.same_change =
-                optional(v, |v| named::<SameChangeArg>("same-change", v))?.map(Into::into);
-            Ok(())
-        },
-        get: |s| match s.same_change {
-            None => String::new(),
-            Some(SameChange::Accept) => name(SameChangeArg::Accept),
-            Some(SameChange::Keep) => name(SameChangeArg::Keep),
-        },
-    },
-    Key {
-        name: "hunk-level",
-        description: "Whether conflicts merge line by line or word by word. \
-                      Empty: jj's merge.hunk-level under jj semantics, else line.",
-        set: |s, v| {
-            s.hunk_level = optional(v, |v| named::<HunkLevelArg>("hunk-level", v))?.map(Into::into);
-            Ok(())
-        },
-        get: |s| match s.hunk_level {
-            None => String::new(),
-            Some(HunkLevel::Line) => name(HunkLevelArg::Line),
-            Some(HunkLevel::Word) => name(HunkLevelArg::Word),
-        },
-    },
-    Key {
-        name: "diff-algorithm",
-        description: "The diff algorithm: histogram, myers or myers-minimal.",
-        set: |s, v| {
-            s.diff.algorithm = or_default(v, Settings::default().diff.algorithm, |v| {
-                named::<Algorithm>("diff-algorithm", v).map(Into::into)
-            })?;
-            Ok(())
-        },
-        get: |s| {
-            name(match s.diff.algorithm {
-                diff::Algorithm::Histogram => Algorithm::Histogram,
-                diff::Algorithm::Myers => Algorithm::Myers,
-                diff::Algorithm::MyersMinimal => Algorithm::MyersMinimal,
-            })
-        },
-    },
-    Key {
-        name: "ignore-whitespace",
-        description: "The whitespace changes the diff ignores: none, trailing, amount or all.",
-        set: |s, v| {
-            s.diff.whitespace = or_default(v, Settings::default().diff.whitespace, |v| {
-                named::<Whitespace>("ignore-whitespace", v).map(Into::into)
-            })?;
-            Ok(())
-        },
-        get: |s| {
-            name(match s.diff.whitespace {
-                diff::Whitespace::None => Whitespace::None,
-                diff::Whitespace::Trailing => Whitespace::Trailing,
-                diff::Whitespace::Amount => Whitespace::Amount,
-                diff::Whitespace::All => Whitespace::All,
-            })
-        },
-    },
-    Key {
-        name: MERGE_IGNORE_LINE_ENDINGS_KEY,
-        description: "Merges compare \\r\\n, \\n and a missing final newline as equal. \
-                      The saved bytes stay each line's.",
-        set: |s, v| {
-            s.diff.line_endings = or_default(v, Settings::default().diff.line_endings, |v| {
-                line_ending_rule(MERGE_IGNORE_LINE_ENDINGS_KEY, v)
-            })?;
-            Ok(())
-        },
-        get: |s| ignores(s.diff.line_endings),
-    },
-    Key {
-        name: DIFF_IGNORE_LINE_ENDINGS_KEY,
-        description: "The diff window and diff --inspect compare \\r\\n, \\n and a missing \
-                      final newline as equal. Saves keep each line's bytes.",
-        set: |s, v| {
-            s.diff_line_endings = or_default(v, Settings::default().diff_line_endings, |v| {
-                line_ending_rule(DIFF_IGNORE_LINE_ENDINGS_KEY, v)
-            })?;
-            Ok(())
-        },
-        get: |s| ignores(s.diff_line_endings),
-    },
-    Key {
-        name: "refine-conflicts",
-        description: "How far conflicts are refined: false, true (lines every side shares \
-                      split off at a conflict's ends) or deep (inside it too).",
-        set: |s, v| {
-            s.refine = or_default(v, Settings::default().refine, refine)?;
-            Ok(())
-        },
-        get: |s| {
-            match s.refine {
-                Refine::Off => "false",
-                Refine::Ends => "true",
-                Refine::Deep => "deep",
-            }
-            .to_owned()
-        },
-    },
-    Key {
-        name: SYNTAX_BOUNDARIES_KEY,
-        description: "Keep deep refinement's splits and word merges off the inside of syntax \
-                      nodes, in files of a known language.",
-        set: |s, v| {
-            s.syntax_boundaries = or_default(v, Settings::default().syntax_boundaries, |v| {
-                boolean(SYNTAX_BOUNDARIES_KEY, v)
-            })?;
-            Ok(())
-        },
-        get: |s| s.syntax_boundaries.to_string(),
-    },
-    Key {
-        name: TAB_WIDTH_KEY,
-        description: "Columns between tab stops, 1–16. The Tab key types that many spaces.",
-        set: |s, v| {
-            s.tab_width = or_default(v, DEFAULT_TAB_WIDTH, tab_width)?;
-            Ok(())
-        },
-        get: |s| s.tab_width.to_string(),
-    },
+    named_key!(
+        "merge-semantics",
+        "Whose merge rules apply: auto follows the repository, or git or jj.",
+        semantics = Settings::default().semantics
+    ),
+    optional_key!(
+        "same-change",
+        "Whether a change every side made resolves (accept) or conflicts (keep). \
+         Empty: jj's merge.same-change under jj semantics, else accept.",
+        same_change = SameChangeArg
+    ),
+    optional_key!(
+        "hunk-level",
+        "Whether conflicts merge line by line or word by word. \
+         Empty: jj's merge.hunk-level under jj semantics, else line.",
+        hunk_level = HunkLevelArg
+    ),
+    key!(
+        "diff-algorithm",
+        "The diff algorithm: histogram, myers or myers-minimal.",
+        diff.algorithm = Settings::default().diff.algorithm,
+        |v| named::<Algorithm>("diff-algorithm", v).map(Into::into),
+        |s| name(Algorithm::from(s.diff.algorithm))
+    ),
+    key!(
+        "ignore-whitespace",
+        "The whitespace changes the diff ignores: none, trailing, amount or all.",
+        diff.whitespace = Settings::default().diff.whitespace,
+        |v| named::<Whitespace>("ignore-whitespace", v).map(Into::into),
+        |s| name(Whitespace::from(s.diff.whitespace))
+    ),
+    key!(
+        MERGE_IGNORE_LINE_ENDINGS_KEY,
+        "Merges compare \\r\\n, \\n and a missing final newline as equal. \
+         The saved bytes stay each line's.",
+        diff.line_endings = Settings::default().diff.line_endings,
+        |v| line_ending_rule(MERGE_IGNORE_LINE_ENDINGS_KEY, v),
+        |s| ignores(s.diff.line_endings)
+    ),
+    key!(
+        DIFF_IGNORE_LINE_ENDINGS_KEY,
+        "The diff window and diff --inspect compare \\r\\n, \\n and a missing \
+         final newline as equal. Saves keep each line's bytes.",
+        diff_line_endings = Settings::default().diff_line_endings,
+        |v| line_ending_rule(DIFF_IGNORE_LINE_ENDINGS_KEY, v),
+        |s| ignores(s.diff_line_endings)
+    ),
+    key!(
+        "refine-conflicts",
+        "How far conflicts are refined: false, true (lines every side shares \
+         split off at a conflict's ends) or deep (inside it too).",
+        refine = Settings::default().refine,
+        refine,
+        |s| match s.refine {
+            Refine::Off => "false",
+            Refine::Ends => "true",
+            Refine::Deep => "deep",
+        }
+        .to_owned()
+    ),
+    bool_key!(
+        SYNTAX_BOUNDARIES_KEY,
+        "Keep deep refinement's splits and word merges off the inside of syntax \
+         nodes, in files of a known language.",
+        syntax_boundaries
+    ),
+    key!(
+        TAB_WIDTH_KEY,
+        "Columns between tab stops, 1–16. The Tab key types that many spaces.",
+        tab_width = DEFAULT_TAB_WIDTH,
+        tab_width,
+        |s| s.tab_width.to_string()
+    ),
     Key {
         name: "font",
         description: "The editor font family. Empty: the theme's monospace font.",
@@ -838,104 +788,59 @@ const KEYS: &[Key] = &[
         },
         get: |s| s.font.clone().unwrap_or_default(),
     },
-    Key {
-        name: FONT_SIZE_KEY,
-        description: "Text size in points, 6–72.",
-        set: |s, v| {
-            s.font_size = or_default(v, DEFAULT_FONT_SIZE, font_size)?;
-            Ok(())
-        },
-        get: |s| s.font_size.to_string(),
-    },
-    Key {
-        name: TOOLBAR_FONT_SIZE_KEY,
-        description: "The toolbar's text size in points, 6–12: its labels, its conflict badge \
-                      and its menus.",
-        set: |s, v| {
-            s.toolbar_font_size = or_default(v, DEFAULT_TOOLBAR_FONT_SIZE, toolbar_font_size)?;
-            Ok(())
-        },
-        get: |s| s.toolbar_font_size.to_string(),
-    },
-    Key {
-        name: WINDOW_SIZE_KEY,
-        description: "The size the merge and diff windows open at, WIDTHxHEIGHT in points, \
-                      each 400–16384. A window opens no larger than its display.",
-        set: |s, v| {
-            s.window_size = or_default(v, DEFAULT_WINDOW_SIZE, window_size)?;
-            Ok(())
-        },
-        get: |s| s.window_size.to_string(),
-    },
-    Key {
-        name: "scroll-sync",
-        description: "The panes share one scroll position.",
-        set: |s, v| {
-            s.scroll_sync =
-                or_default(v, Settings::default().scroll_sync, |v| boolean("scroll-sync", v))?;
-            Ok(())
-        },
-        get: |s| s.scroll_sync.to_string(),
-    },
-    Key {
-        name: "scrollbars",
-        description: "When the panes show their scrollbars: always, hover (while the pointer \
-                      is over the pane) or when-scrolling (while the pane scrolls).",
-        set: |s, v| {
-            s.scrollbars = or_default(v, Scrollbars::default(), |v| named("scrollbars", v))?;
-            Ok(())
-        },
-        get: |s| name(s.scrollbars),
-    },
-    Key {
-        name: "show-base-pane",
-        description: "The merge window opens with the base pane showing.",
-        set: |s, v| {
-            s.base_pane =
-                or_default(v, Settings::default().base_pane, |v| boolean("show-base-pane", v))?;
-            Ok(())
-        },
-        get: |s| s.base_pane.to_string(),
-    },
-    Key {
-        name: "show-origin-column",
-        description: "The line origin column (View → Blame) shows once a window's origins load.",
-        set: |s, v| {
-            s.origin_column = or_default(v, Settings::default().origin_column, |v| {
-                boolean("show-origin-column", v)
-            })?;
-            Ok(())
-        },
-        get: |s| s.origin_column.to_string(),
-    },
-    Key {
-        name: "revision-id",
-        description: "The ID that names a jj revision in the pane headings and the origin column: change or commit. git shows commits.",
-        set: |s, v| {
-            s.revision_id = or_default(v, RevisionId::default(), |v| named("revision-id", v))?;
-            Ok(())
-        },
-        get: |s| name(s.revision_id),
-    },
-    Key {
-        name: "theme",
-        description: "The windows' appearance: system follows the system, or light or dark.",
-        set: |s, v| {
-            s.theme = or_default(v, Theme::default(), |v| named("theme", v))?;
-            Ok(())
-        },
-        get: |s| name(s.theme),
-    },
-    Key {
-        name: "line-height",
-        description: "Line height as a multiple of the text size, 1–3.",
-        set: |s, v| {
-            s.line_height =
-                or_default(v, DEFAULT_LINE_HEIGHT, |v| number_in("line-height", v, &LINE_HEIGHTS))?;
-            Ok(())
-        },
-        get: |s| s.line_height.to_string(),
-    },
+    key!(
+        FONT_SIZE_KEY,
+        "Text size in points, 6–72.",
+        font_size = DEFAULT_FONT_SIZE,
+        font_size,
+        |s| s.font_size.to_string()
+    ),
+    key!(
+        TOOLBAR_FONT_SIZE_KEY,
+        "The toolbar's text size in points, 6–12: its labels, its conflict badge \
+         and its menus.",
+        toolbar_font_size = DEFAULT_TOOLBAR_FONT_SIZE,
+        toolbar_font_size,
+        |s| s.toolbar_font_size.to_string()
+    ),
+    key!(
+        WINDOW_SIZE_KEY,
+        "The size the merge and diff windows open at, WIDTHxHEIGHT in points, \
+         each 400–16384. A window opens no larger than its display.",
+        window_size = DEFAULT_WINDOW_SIZE,
+        window_size,
+        |s| s.window_size.to_string()
+    ),
+    bool_key!("scroll-sync", "The panes share one scroll position.", scroll_sync),
+    named_key!(
+        "scrollbars",
+        "When the panes show their scrollbars: always, hover (while the pointer \
+         is over the pane) or when-scrolling (while the pane scrolls).",
+        scrollbars = Scrollbars::default()
+    ),
+    bool_key!("show-base-pane", "The merge window opens with the base pane showing.", base_pane),
+    bool_key!(
+        "show-origin-column",
+        "The line origin column (View → Blame) shows once a window's origins load.",
+        origin_column
+    ),
+    named_key!(
+        "revision-id",
+        "The ID that names a jj revision in the pane headings and the origin column: change or commit. git shows commits.",
+        revision_id = RevisionId::default()
+    ),
+    named_key!(
+        "theme",
+        "The windows' appearance: system follows the system, or light or dark.",
+        theme = Theme::default()
+    ),
+    key!(
+        "line-height",
+        "Line height as a multiple of the text size, 1–3.",
+        line_height = DEFAULT_LINE_HEIGHT,
+        |v| number_in("line-height", v, &LINE_HEIGHTS),
+        |s| s.line_height.to_string()
+    ),
     colour_key!("color-left", left, "The left side's colour"),
     colour_key!("color-right", right, "The right side's colour"),
     colour_key!("color-base", base, "The base's colour"),
@@ -950,54 +855,35 @@ const KEYS: &[Key] = &[
     ),
     colour_key!("color-deleted", deleted, "The colour of deletion notes and marks"),
     colour_key!("color-resolved", resolved, "The conflict badge's colour once no conflict is left"),
-    Key {
-        name: BAND_OPACITY_KEY,
-        description: "The opacity of the bands behind changed rows, 0–1, or light:N,dark:N.",
-        set: |s, v| {
-            s.colours.band_opacity = or_default(v, DEFAULT_COLOURS.band_opacity, |v| {
-                themed(BAND_OPACITY_KEY, v, OPACITY_PAIR, |part| {
-                    number_in(BAND_OPACITY_KEY, part, &BAND_OPACITIES)
-                })
-            })?;
-            Ok(())
-        },
-        get: |s| render_themed(s.colours.band_opacity),
-    },
-    Key {
-        name: "conflict-style",
-        description: "The markers of a conflict under git semantics: diff3 keeps the base \
-                      section, merge drops it. Empty: git's merge.conflictStyle, else diff3.",
-        set: |s, v| {
-            s.conflict_style = optional(v, |v| named("conflict-style", v))?;
-            Ok(())
-        },
-        get: |s| s.conflict_style.map(name).unwrap_or_default(),
-    },
-    Key {
-        name: "output-line-ending",
-        description: "The line endings of the saved merge: keep each line's, base's dominant \
-                      ending, lf or crlf. Markers included; the result pane shows the inputs' \
-                      bytes.",
-        set: |s, v| {
-            s.line_ending = or_default(v, Settings::default().line_ending, |v| {
-                named::<LineEndingArg>("output-line-ending", v).map(Into::into)
-            })?;
-            Ok(())
-        },
-        get: |s| name(LineEndingArg::from(s.line_ending)),
-    },
-    Key {
-        name: "confirm-unresolved-save",
-        description: "Save and Exit asks first while conflicts are unresolved.",
-        set: |s, v| {
-            s.confirm_unresolved_save =
-                or_default(v, Settings::default().confirm_unresolved_save, |v| {
-                    boolean("confirm-unresolved-save", v)
-                })?;
-            Ok(())
-        },
-        get: |s| s.confirm_unresolved_save.to_string(),
-    },
+    key!(
+        BAND_OPACITY_KEY,
+        "The opacity of the bands behind changed rows, 0–1, or light:N,dark:N.",
+        colours.band_opacity = DEFAULT_COLOURS.band_opacity,
+        |v| themed(BAND_OPACITY_KEY, v, OPACITY_PAIR, |part| {
+            number_in(BAND_OPACITY_KEY, part, &BAND_OPACITIES)
+        }),
+        |s| render_themed(s.colours.band_opacity)
+    ),
+    optional_key!(
+        "conflict-style",
+        "The markers of a conflict under git semantics: diff3 keeps the base \
+         section, merge drops it. Empty: git's merge.conflictStyle, else diff3.",
+        conflict_style = ConflictStyle
+    ),
+    key!(
+        "output-line-ending",
+        "The line endings of the saved merge: keep each line's, base's dominant \
+         ending, lf or crlf. Markers included; the result pane shows the inputs' \
+         bytes.",
+        line_ending = Settings::default().line_ending,
+        |v| named::<LineEndingArg>("output-line-ending", v).map(Into::into),
+        |s| name(LineEndingArg::from(s.line_ending))
+    ),
+    bool_key!(
+        "confirm-unresolved-save",
+        "Save and Exit asks first while conflicts are unresolved.",
+        confirm_unresolved_save
+    ),
     Key {
         name: "keybind",
         description: "A key and the menu command it runs: cmd+j=next-conflict, cmd+k=unbind to make a key do nothing, or clear to drop every binding so far. Each line adds to the ones before it.",
@@ -1017,37 +903,23 @@ const KEYS: &[Key] = &[
         },
         get: |s| s.key_bindings.to_string(),
     },
-    Key {
-        name: "syntax-highlighting",
-        description: "Colour each pane's text by its language's syntax when a window opens.",
-        set: |s, v| {
-            s.syntax =
-                or_default(v, Settings::default().syntax, |v| boolean("syntax-highlighting", v))?;
-            Ok(())
-        },
-        get: |s| s.syntax.to_string(),
-    },
-    Key {
-        name: SYNTAX_WHOLE_FILE_MAX_LINES_KEY,
-        description: "The longest file the result and diff editors parse whole for syntax colours, in lines; a longer one parses a chunk at a time.",
-        set: |s, v| {
-            s.syntax_max_lines = or_default(v, DEFAULT_SYNTAX_MAX_LINES, |v| {
-                v.parse().map_err(|_| invalid(SYNTAX_WHOLE_FILE_MAX_LINES_KEY, v, "a whole number"))
-            })?;
-            Ok(())
-        },
-        get: |s| s.syntax_max_lines.to_string(),
-    },
-    Key {
-        name: "soft-wrap",
-        description: "Long lines wrap in the result, input and diff panes when a window opens; false scrolls them sideways.",
-        set: |s, v| {
-            s.soft_wrap =
-                or_default(v, Settings::default().soft_wrap, |v| boolean("soft-wrap", v))?;
-            Ok(())
-        },
-        get: |s| s.soft_wrap.to_string(),
-    },
+    bool_key!(
+        "syntax-highlighting",
+        "Colour each pane's text by its language's syntax when a window opens.",
+        syntax
+    ),
+    key!(
+        SYNTAX_WHOLE_FILE_MAX_LINES_KEY,
+        "The longest file the result and diff editors parse whole for syntax colours, in lines; a longer one parses a chunk at a time.",
+        syntax_max_lines = DEFAULT_SYNTAX_MAX_LINES,
+        |v| v.parse().map_err(|_| invalid(SYNTAX_WHOLE_FILE_MAX_LINES_KEY, v, "a whole number")),
+        |s| s.syntax_max_lines.to_string()
+    ),
+    bool_key!(
+        "soft-wrap",
+        "Long lines wrap in the result, input and diff panes when a window opens; false scrolls them sideways.",
+        soft_wrap,
+    ),
 ];
 
 /// `settings` in the file's form, one `key = value` line per key in the order of spec §6.4.

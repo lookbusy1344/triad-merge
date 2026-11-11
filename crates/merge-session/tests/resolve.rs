@@ -121,10 +121,7 @@ fn jj_label(committed: &vcs_jj::testing::Committed, summary: &str) -> String {
 }
 
 fn jj_conflict(fixture: &vcs_jj::testing::Fixture) -> [String; 3] {
-    let base = fixture.commit_on(&[], "base", &[("a.txt", BASE)]);
-    let left = fixture.commit_on(&[&base], "left", &[("a.txt", LEFT)]);
-    let right = fixture.commit_on(&[&base], "right", &[("a.txt", RIGHT)]);
-    fixture.check_out(&[&left, &right]);
+    let [base, left, right] = fixture.three_way("a.txt", [BASE, LEFT, RIGHT]);
     fixture.check_out_to_disk();
     [jj_label(&base, "base"), jj_label(&left, "left"), jj_label(&right, "right")]
 }
@@ -342,10 +339,7 @@ fn a_term_without_a_title_is_named_by_position() {
 /// A jj conflict in `a.txt` between `left` and `right` over `a\n`, checked out to disk.
 fn jj_on_disk(left: &[u8], right: &[u8]) -> vcs_jj::testing::Fixture {
     let fixture = vcs_jj::testing::Fixture::new();
-    let base = fixture.commit_on(&[], "base", &[("a.txt", BASE)]);
-    let left = fixture.commit_on(&[&base], "left", &[("a.txt", left)]);
-    let right = fixture.commit_on(&[&base], "right", &[("a.txt", right)]);
-    fixture.check_out(&[&left, &right]);
+    fixture.three_way("a.txt", [BASE, left, right]);
     fixture.check_out_to_disk();
     fixture
 }
@@ -879,10 +873,7 @@ mod jj {
         let outer = tempfile::tempdir().expect("a temporary directory");
         let outer_root = Utf8Path::from_path(outer.path()).expect("UTF-8");
         let fixture = vcs_jj::testing::Fixture::new_in(outer_root);
-        let base = fixture.commit_on(&[], "base", &[("a.txt", BASE)]);
-        let left = fixture.commit_on(&[&base], "left", &[("a.txt", b"<<<<<<< left\n")]);
-        let right = fixture.commit_on(&[&base], "right", &[("a.txt", RIGHT)]);
-        fixture.check_out(&[&left, &right]);
+        fixture.three_way("a.txt", [BASE, b"<<<<<<< left\n", RIGHT]);
         fixture.check_out_to_disk();
         let into = fixture
             .root()
@@ -958,10 +949,7 @@ mod jj {
     #[test]
     fn after_git_checks_out_one_side_jj_imports_it_and_the_file_is_clean() {
         let fixture = vcs_jj::testing::Fixture::colocated();
-        let base = fixture.commit_on(&[], "base", &[("a.txt", BASE)]);
-        let left = fixture.commit_on(&[&base], "left", &[("a.txt", LEFT)]);
-        let right = fixture.commit_on(&[&base], "right", &[("a.txt", RIGHT)]);
-        fixture.check_out(&[&left, &right]);
+        let [_, _, right] = fixture.three_way("a.txt", [BASE, LEFT, RIGHT]);
         fixture.check_out_to_disk();
         // jj points git's HEAD at the merge's first parent, left; `git checkout --detach
         // right` moves it.
@@ -979,10 +967,7 @@ mod jj {
     #[test]
     fn a_marker_like_run_of_eight_in_a_term_gives_jjs_length_of_twelve() {
         let fixture = vcs_jj::testing::Fixture::new();
-        let base = fixture.commit_on(&[], "base", &[("a.txt", BASE)]);
-        let left = fixture.commit_on(&[&base], "left", &[("a.txt", b"|||||||| bar\n")]);
-        let right = fixture.commit_on(&[&base], "right", &[("a.txt", RIGHT)]);
-        fixture.check_out(&[&left, &right]);
+        fixture.three_way("a.txt", [BASE, b"|||||||| bar\n", RIGHT]);
         fixture.check_out_to_disk();
         let loaded = load(fixture.root().as_std_path(), Path::new("a.txt")).expect("it loads");
         // The longest marker-like run is 8, so jj chooses 8 + 4.

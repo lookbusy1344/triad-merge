@@ -25,4 +25,5 @@ tracing.workspace = true
 vcs.workspace = true
 
 [dev-dependencies]
+merge-core = { workspace = true, features = ["testing"] }
 merge-syntax = { workspace = true, features = ["testing"] }

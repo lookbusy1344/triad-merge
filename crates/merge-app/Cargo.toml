@@ -46,7 +46,7 @@ vcs.workspace = true
 dunce.workspace = true
 tempfile.workspace = true
 gpui-kit = { workspace = true, features = ["test-support"] }
-merge-core.workspace = true
+merge-core = { workspace = true, features = ["testing"] }
 vcs = { workspace = true, features = ["testing"] }
 vcs-git = { workspace = true, features = ["testing"] }
 vcs-jj = { workspace = true, features = ["testing"] }

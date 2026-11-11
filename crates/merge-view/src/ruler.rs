@@ -242,20 +242,16 @@ fn count(lines: usize) -> f32 {
 mod tests {
     use merge_core::diff::DiffOptions;
     use merge_core::document::{Command, EditBatch, Labels, MergeOptions, TextPatch};
-    use merge_core::merge3::{Inputs, Source};
-    use merge_core::text::Text;
+    use merge_core::merge3::Source;
+    use merge_core::testing::{text, three};
 
     use super::*;
 
     const HEIGHT: f32 = 500.;
     const MIN: f32 = 2.;
 
-    fn text(s: &str) -> Text {
-        Text::decode(s.as_bytes()).expect("decodes")
-    }
-
     fn doc(base: &str, left: &str, right: &str) -> MergeDocument {
-        let inputs = Inputs::three_way(text(base), text(left), text(right));
+        let inputs = three(base, left, right);
         MergeDocument::new(inputs, MergeOptions::default(), Labels::none()).expect("no labels")
     }
 

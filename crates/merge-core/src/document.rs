@@ -1265,17 +1265,14 @@ mod tests {
     use crate::boundaries::{Marked, node};
     use crate::diff::{LineEndingRule, Whitespace};
     use crate::merge3::{LEFT, RIGHT};
+    use crate::testing::{text, three};
 
     const L: Source = Source::Side(LEFT);
     const R: Source = Source::Side(RIGHT);
     const B: Source = Source::Base(0);
 
-    fn text(s: &str) -> Text {
-        Text::decode(s.as_bytes()).expect("test input decodes")
-    }
-
     fn doc_with(base: &str, left: &str, right: &str, options: MergeOptions) -> MergeDocument {
-        let inputs = Inputs::three_way(text(base), text(left), text(right));
+        let inputs = three(base, left, right);
         MergeDocument::new(inputs, options, Labels::three_way("left", "base", "right"))
             .expect("three labels fit")
     }
@@ -1920,7 +1917,7 @@ mod tests {
 
     #[test]
     fn labels_must_fit_the_merge() {
-        let inputs = || Inputs::three_way(text("a\n"), text("b\n"), text("c\n"));
+        let inputs = || three("a\n", "b\n", "c\n");
         let labels = Labels::new(vec!["l".to_owned()], vec!["b".to_owned()]);
         assert_eq!(
             MergeDocument::new(inputs(), MergeOptions::default(), labels).err(),
@@ -1935,7 +1932,7 @@ mod tests {
 
     #[test]
     fn an_empty_label_leaves_its_marker_bare() {
-        let inputs = Inputs::three_way(text("b\n"), text("L\n"), text("R\n"));
+        let inputs = three("b\n", "L\n", "R\n");
         let d =
             MergeDocument::new(inputs, MergeOptions::default(), Labels::three_way("ours", "", ""))
                 .expect("three labels fit");
@@ -2744,8 +2741,7 @@ mod tests {
     const DEEP_LEFT: &str = "a\nX\nm\nY\nz\n";
 
     fn deep_inputs() -> Inputs {
-        let text = |s: &str| Text::decode(s.as_bytes()).expect("decodes");
-        Inputs::three_way(text("a\np\nq\nz\n"), text(DEEP_LEFT), text("a\nZ\nm\nW\nz\n"))
+        three("a\np\nq\nz\n", DEEP_LEFT, "a\nZ\nm\nW\nz\n")
     }
 
     fn region(kind: Kind, base: Range<usize>, left: Range<usize>, right: Range<usize>) -> Region {

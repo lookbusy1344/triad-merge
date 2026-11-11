@@ -275,22 +275,9 @@ fn range(region: &Region, source: Source) -> std::ops::Range<usize> {
 mod tests {
     use merge_core::document::{Command, EditBatch, Labels, MergeOptions, TextPatch};
     use merge_core::merge3::{Inputs, Kind};
-    use merge_core::text::Text;
+    use merge_core::testing::{doc, text};
 
     use super::*;
-
-    fn text(s: &str) -> Text {
-        Text::decode(s.as_bytes()).expect("utf-8")
-    }
-
-    fn three(base: &str, left: &str, right: &str) -> MergeDocument {
-        MergeDocument::new(
-            Inputs::three_way(text(base), text(left), text(right)),
-            MergeOptions::default(),
-            Labels::none(),
-        )
-        .expect("no labels")
-    }
 
     fn rows(doc: &MergeDocument, panes: PaneSet) -> Vec<(usize, Vec<Option<usize>>)> {
         let map = RowMap::new(doc, panes).expect("panes fit");
@@ -305,13 +292,7 @@ mod tests {
     #[test]
     fn a_row_past_the_last_is_absent() {
         // One unchanged region of two lines: rows 0 and 1.
-        let text = |s: &str| Text::decode(s.as_bytes()).expect("utf-8");
-        let doc = MergeDocument::new(
-            Inputs::three_way(text("a\nb\n"), text("a\nb\n"), text("a\nb\n")),
-            MergeOptions::default(),
-            Labels::none(),
-        )
-        .expect("no labels");
+        let doc = doc("a\nb\n", "a\nb\n", "a\nb\n");
         let map = RowMap::new(&doc, PaneSet::Sides(2)).expect("two sides");
         let cells = |row| map.get_row(&doc, RowIx::new(row)).map(|row| row.cells.to_vec());
         assert_eq!(cells(1), Some(vec![Some(1), Some(1)]));
@@ -321,7 +302,7 @@ mod tests {
     #[test]
     fn a_filler_row_names_the_line_after_it() {
         // Rows: 0 a|a, 1 X|-, 2 Y|-, 3 b|b.
-        let doc = three("a\nb\n", "a\nX\nY\nb\n", "a\nb\n");
+        let doc = doc("a\nb\n", "a\nX\nY\nb\n", "a\nb\n");
         let map = RowMap::new(&doc, PaneSet::LeftRight).expect("panes fit");
         let line = |row, source| map.line_at_row(&doc, RowIx::new(row), source);
         let (left, right) = (Source::Side(0), Source::Side(1));
@@ -332,7 +313,7 @@ mod tests {
     #[test]
     fn a_filler_row_after_the_last_line_names_the_line_count() {
         // Rows: 0 a|a, 1 X|-.
-        let doc = three("a\n", "a\nX\n", "a\n");
+        let doc = doc("a\n", "a\nX\n", "a\n");
         let map = RowMap::new(&doc, PaneSet::LeftBaseRight).expect("panes fit");
         assert_eq!(map.line_at_row(&doc, RowIx::new(1), Source::Base(0)), Err(1));
         assert_eq!(map.line_at_row(&doc, RowIx::new(1), Source::Side(1)), Err(1));
@@ -348,7 +329,7 @@ mod tests {
 
     #[test]
     fn an_insertion_gets_filler_rows_on_the_other_side() {
-        let doc = three("a\nb\n", "a\nX\nY\nb\n", "a\nb\n");
+        let doc = doc("a\nb\n", "a\nX\nY\nb\n", "a\nb\n");
         assert_eq!(
             rows(&doc, PaneSet::LeftRight),
             [
@@ -362,7 +343,7 @@ mod tests {
 
     #[test]
     fn the_base_pane_adds_its_own_cells() {
-        let doc = three("a\nb\n", "a\nX\nY\nb\n", "a\nb\n");
+        let doc = doc("a\nb\n", "a\nX\nY\nb\n", "a\nb\n");
         assert_eq!(
             rows(&doc, PaneSet::LeftBaseRight),
             [
@@ -376,7 +357,7 @@ mod tests {
 
     #[test]
     fn a_conflict_takes_its_longest_side() {
-        let doc = three("a\nb\nc\n", "a\nL\nc\n", "a\nR1\nR2\nc\n");
+        let doc = doc("a\nb\nc\n", "a\nL\nc\n", "a\nR1\nR2\nc\n");
         assert_eq!(
             rows(&doc, PaneSet::LeftBaseRight),
             [
@@ -390,7 +371,7 @@ mod tests {
 
     #[test]
     fn a_deletion_on_both_sides_has_rows_only_with_the_base_pane() {
-        let doc = three("a\nb\nc\n", "a\nc\n", "a\nc\n");
+        let doc = doc("a\nb\nc\n", "a\nc\n", "a\nc\n");
         let map = RowMap::new(&doc, PaneSet::LeftRight).expect("panes fit");
         assert_eq!(
             rows(&doc, PaneSet::LeftRight),
@@ -418,21 +399,21 @@ mod tests {
     #[test]
     fn a_side_that_deletes_base_lines_in_a_conflict_marks_the_deletion() {
         // Left deletes b, c; right changes them. One conflict: base 1..3, left 1..1, right 1..3.
-        let doc = three("a\nb\nc\nz\n", "a\nz\n", "a\nB\nC\nz\n");
+        let doc = doc("a\nb\nc\nz\n", "a\nz\n", "a\nB\nC\nz\n");
         assert_eq!(doc.regions()[1].kind, Kind::Conflict);
         assert_eq!(deleted(&doc, RegionIx::new(1)), [Some(2), None, None]);
     }
 
     #[test]
     fn a_one_side_deletion_marks_only_the_deleting_side() {
-        let doc = three("a\nb\nz\n", "a\nb\nz\n", "a\nz\n");
+        let doc = doc("a\nb\nz\n", "a\nb\nz\n", "a\nz\n");
         assert_eq!(doc.regions()[1].kind, Kind::OneSide(1));
         assert_eq!(deleted(&doc, RegionIx::new(1)), [None, None, Some(1)]);
     }
 
     #[test]
     fn a_deletion_on_both_sides_marks_both() {
-        let doc = three("a\nb\nc\nz\n", "a\nz\n", "a\nz\n");
+        let doc = doc("a\nb\nc\nz\n", "a\nz\n", "a\nz\n");
         assert_eq!(doc.regions()[1].kind, Kind::AllSame);
         assert_eq!(deleted(&doc, RegionIx::new(1)), [Some(2), None, Some(2)]);
     }
@@ -440,20 +421,20 @@ mod tests {
     #[test]
     fn an_insertion_is_no_deletion() {
         // Left inserts X: base and right have no lines in the region.
-        let doc = three("a\nz\n", "a\nX\nz\n", "a\nz\n");
+        let doc = doc("a\nz\n", "a\nX\nz\n", "a\nz\n");
         assert_eq!(deleted(&doc, RegionIx::new(1)), [None, None, None]);
     }
 
     #[test]
     fn a_shorter_change_is_no_deletion() {
         // Left turns b, c into one line: filler rows, but left still has lines.
-        let doc = three("a\nb\nc\nz\n", "a\nL\nz\n", "a\nb\nc\nz\n");
+        let doc = doc("a\nb\nc\nz\n", "a\nL\nz\n", "a\nb\nc\nz\n");
         assert_eq!(deleted(&doc, RegionIx::new(1)), [None, None, None]);
     }
 
     #[test]
     fn unchanged_regions_mark_nothing() {
-        let doc = three("a\n", "a\n", "a\n");
+        let doc = doc("a\n", "a\n", "a\n");
         assert_eq!(deleted(&doc, RegionIx::new(0)), [None, None, None]);
     }
 
@@ -478,7 +459,7 @@ mod tests {
 
     #[test]
     fn a_pane_without_an_input_is_an_error() {
-        let doc = three("a\n", "a\n", "a\n");
+        let doc = doc("a\n", "a\n", "a\n");
         assert_eq!(
             RowMap::new(&doc, PaneSet::Sides(3)).err(),
             Some(PaneError { input: Source::Side(2), sides: 2, bases: 1 })
@@ -487,7 +468,7 @@ mod tests {
 
     #[test]
     fn empty_inputs_have_no_rows() {
-        let doc = three("", "", "");
+        let doc = doc("", "", "");
         let map = RowMap::new(&doc, PaneSet::LeftBaseRight).expect("panes fit");
         assert_eq!((map.row_count(), map.first_row(RegionIx::new(0)).get()), (0, 0));
     }
@@ -495,7 +476,7 @@ mod tests {
     #[test]
     fn rows_follow_a_merging_edit_and_its_undo() {
         // Regions: a | L (left only) | m | R (right only) | z. Result "a\nL\nm\nR\nz\n".
-        let mut doc = three("a\nm\nz\n", "a\nL\nm\nz\n", "a\nm\nR\nz\n");
+        let mut doc = doc("a\nm\nz\n", "a\nL\nm\nz\n", "a\nm\nR\nz\n");
         let mut map = RowMap::new(&doc, PaneSet::LeftRight).expect("panes fit");
         assert_eq!((map.row_count(), map.first_row(RegionIx::new(4)).get()), (5, 4));
 
@@ -519,7 +500,7 @@ mod tests {
 
     #[test]
     fn a_pick_leaves_the_rows_alone() {
-        let mut doc = three("a\nb\n", "a\nX\nY\nb\n", "a\nb\n");
+        let mut doc = doc("a\nb\n", "a\nX\nY\nb\n", "a\nb\n");
         let mut map = RowMap::new(&doc, PaneSet::LeftRight).expect("panes fit");
         let applied = doc
             .apply(Command::Toggle { region: RegionIx::new(1), source: Source::Side(1) })
