@@ -8,6 +8,7 @@
 [![Build & test](https://github.com/lookbusy1344/triad-merge/actions/workflows/triad.yml/badge.svg)](https://github.com/lookbusy1344/triad-merge/actions/workflows/triad.yml)
 [![CodeQL](https://github.com/lookbusy1344/triad-merge/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/lookbusy1344/triad-merge/actions/workflows/github-code-scanning/codeql)
 [![Audit](https://github.com/lookbusy1344/triad-merge/actions/workflows/audit.yml/badge.svg)](https://github.com/lookbusy1344/triad-merge/actions/workflows/audit.yml)
+[![crates.io](https://img.shields.io/crates/v/triad-merge.svg)](https://crates.io/crates/triad-merge)
 
 triad is a fast, native three-way merge and two-way diff tool, written in Rust and GPUI, built for [Jujutsu](https://github.com/jj-vcs/jj) with full Git support. It opens a million-line merge in under a second, merges exactly as your VCS does, and resolves conflicts straight from the repository.
 
@@ -65,6 +66,8 @@ An idle window draws nothing, and the GPU driver hands back its memory.
 ## Build and install
 
 You need an Apple Silicon Mac on macOS 27 or later, the Xcode Command Line Tools (`xcode-select --install`) and `rustup`, which fetches the toolchain on the first build. Run every command from the repository root.
+
+The [crates.io package](https://crates.io/crates/triad-merge) is a placeholder that holds the name. It prints a message and exits; `cargo install triad-merge` does not install triad. Build from source.
 
 ```sh
 script/macos-app                                                   # builds target/release/triad.app
