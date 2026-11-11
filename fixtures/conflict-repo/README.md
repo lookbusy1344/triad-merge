@@ -1,6 +1,6 @@
 # Conflict repository
 
-The sources of a disposable jj repository whose working copy holds unresolved conflicts. The script runs `jj git init` without a layout flag, so the repository takes jj's default layout: colocated. Use it to try `triad-merge resolve` and the jj conflict paths by hand.
+The sources of a disposable jj repository whose working copy holds unresolved conflicts. Use it to try `triad-merge resolve` and the jj conflict paths by hand.
 
 ```sh
 script/gen-conflict-repo                   # prints the new repository's path, under $TMPDIR

@@ -20,7 +20,7 @@ The initial beta targets macOS 27 on Apple Silicon. Linux x64 and Windows 11 wil
 
 ## Why triad
 
-- **jj first.** triad merges with jj's own rules in a jj repository: jj's diff, its trivial resolution, `merge.same-change` and `merge.hunk-level`, and conflicts with any number of sides. It reads jj's working-copy commit through jj-lib. A colocated repository is a jj repository.
+- **jj first.** triad merges with jj's own rules in a jj repository: jj's diff, its trivial resolution, `merge.same-change` and `merge.hunk-level`, and conflicts with any number of sides. It reads jj's working-copy commit through jj-lib.
 - **Full Git parity.** In a git repository triad merges as `git merge-file` does, byte for byte, and reads conflicts from git's index through gix. Every feature works in both.
 - **Exact semantics, checked.** Two oracle corpora pin the engine: about 1,950 triples from `git merge-file` and about 1,970 merges from jj-lib. The tests compare triad's output with each.
 - **Fast on large files.** Panes draw only the rows on screen. Scrolling holds the display's refresh rate at 1M lines.
@@ -120,7 +120,7 @@ git difftool                  # working tree against the index; edits to the rig
 git difftool HEAD~1 -- src/lib.rs
 ```
 
-In a jj repository, colocated or not, use `jj resolve`: `git mergetool` there exits 3, since triad merges with jj's semantics only (§ Merge semantics).
+In a jj repository, use `jj resolve`: `git mergetool` there exits 3, since triad merges with jj's semantics only (§ Merge semantics).
 
 ### From the repository, without the VCS command
 
@@ -154,7 +154,7 @@ Exit codes: 0 all conflicts resolved, 1 conflicts left, 2 cancelled, 3 error. `d
 
 ### Merge semantics
 
-triad follows the repository: jj's semantics in a jj repository (colocated or not) and in the directories `jj resolve` passes, git's elsewhere. `--merge-semantics jj|git` overrides it. triad refuses git's semantics in a jj repository: `git mergetool` there exits 3. Merge with jj and resolve with `jj resolve`.
+triad follows the repository: jj's semantics in a jj repository and in the directories `jj resolve` passes, git's elsewhere. `--merge-semantics jj|git` overrides it. triad refuses git's semantics in a jj repository: `git mergetool` there exits 3. Merge with jj and resolve with `jj resolve`.
 
 The two can differ. Outside any repository, this triple leaves one conflict as jj merges and none as git does:
 

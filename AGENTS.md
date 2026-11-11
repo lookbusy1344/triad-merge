@@ -14,11 +14,11 @@ triad is built for jj. git has full parity and comes second.
 
 - jj leads design, defaults, examples, docs and test fixtures. Design each VCS feature for jj, then give git the same feature, never a lesser one.
 - The `vcs` types follow jj's model: n sides, n − 1 bases, optional labels (spec §1.2). git fills the same types.
-- Every VCS feature passes the conformance suite on colocated jj, internal jj and git repositories.
+- Every VCS feature passes the conformance suite on jj, internal jj and git repositories.
 - The product reaches jj and git only through jj-lib and gix, never their executables.
-- In a jj repository, colocated or not, triad merges with jj's semantics only.
+- In a jj repository triad merges with jj's semantics only.
 
-**jj means colocated.** Every jj repository takes jj's default layout, colocated with git, unless a test, script or doc names another. This covers fixtures, scripts, docs and manual checks. The default is named in one place, so a change to jj's default is a one-line change:
+**jj means jj's default layout.** Every jj repository takes jj's default layout, colocated with git, unless a test, script or doc names another. This covers fixtures, scripts, docs and manual checks. Docs assume the default without comment: write "jj repository", never "colocated jj repository" or "colocated or not". Name the layout only for an internal repository, where behaviour differs. The default is named in one place, so a change to jj's default is a one-line change:
 
 - Fixtures: `Fixture::new` follows `vcs_jj::testing::DEFAULT_STORE`.
 - Scripts and docs: `jj git init` with neither `--colocate` nor `--no-colocate`.

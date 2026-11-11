@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # gen-conflict-repo — build a disposable jj repository whose working copy holds unresolved merge
-# conflicts in two Rust files. `jj git init` lays it out by jj's default: colocated.
+# conflicts in two Rust files. `jj git init` lays it out by jj's default.
 #
 # The sources sit in fixtures/conflict-repo/. `base/` is a small crate; `left/` and `right/`
 # hold the files each side changes, copied over base. Every fixture file ends in .txt, so
@@ -79,7 +79,7 @@ lay() {
   [[ -z "${1:-}" ]] || copy_tree "$FIXTURES/$1"
 }
 
-# No --colocate or --no-colocate: the repository takes jj's default layout.
+# jj's default layout: no layout flag.
 JJ_RANDOMNESS_SEED=0 jj --quiet git init "$dest"
 
 lay
