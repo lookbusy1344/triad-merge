@@ -6,7 +6,8 @@ use std::rc::Rc;
 use gpui_kit::{Action, App, KeyBinding, KeyBindingContextPredicate, NoAction};
 use merge_config::keybind::{Chord, KeyAction, KeyBindings, Modifier, Windows};
 
-use crate::{diff_window, window};
+use crate::input_select::INPUT_PANES_CONTEXT;
+use crate::{CopyInput, SelectAllInput, diff_window, window};
 
 /// The editor's own key context.
 const EDITOR_CONTEXT: &str = "Input";
@@ -46,6 +47,10 @@ impl Contexts {
     }
 }
 
+/// The top panes' copy and select all: ⌘ on macOS, Ctrl elsewhere.
+const COPY_KEY: &str = "secondary-c";
+const SELECT_ALL_KEY: &str = "secondary-a";
+
 /// Joins the parts of a GPUI keystroke.
 const KEYSTROKE_SEPARATOR: &str = "-";
 
@@ -62,12 +67,16 @@ fn keystroke(chord: &Chord) -> String {
     modifiers.chain([chord.key()]).collect::<Vec<_>>().join(KEYSTROKE_SEPARATOR)
 }
 
-/// Register `bindings`. ⌥⇧↑/↓ add cursors, and no setting names them, so a `keybind` line for
-/// those chords wins. The menus show a command's first binding, so the newest goes first.
+/// Register `bindings`. ⌥⇧↑/↓ add cursors and ⌘C and ⌘A copy and select in the top panes;
+/// no setting names them, so a `keybind` line for those chords wins. The menus show a command's first binding, so the newest goes first.
 pub(crate) fn bind(bindings: &KeyBindings, cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("shift-alt-down", AddCursorBelow, Some(EDITOR_CONTEXT)),
         KeyBinding::new("shift-alt-up", AddCursorAbove, Some(EDITOR_CONTEXT)),
+    ]);
+    cx.bind_keys([
+        binding(COPY_KEY, Box::new(CopyInput), Some(INPUT_PANES_CONTEXT), cx),
+        binding(SELECT_ALL_KEY, Box::new(SelectAllInput), Some(INPUT_PANES_CONTEXT), cx),
     ]);
     let contexts = Contexts::new();
     let effective: Vec<_> = bindings.effective().collect();

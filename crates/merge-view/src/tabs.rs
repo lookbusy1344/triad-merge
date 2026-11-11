@@ -76,6 +76,27 @@ impl<'a> Expanded<'a> {
             n => offset + self.tabs[n - 1].1,
         }
     }
+
+    /// The byte of the line that byte `at` of the expanded text shows: [`Self::offset`]
+    /// reversed. A byte inside a tab's spaces goes to the nearer side of the tab, the start on
+    /// a tie. A byte past the end is the line's end.
+    #[must_use]
+    pub fn line_offset(&self, at: usize) -> usize {
+        let at = at.min(self.text.len());
+        let mut added = 0;
+        for &(tab, through) in &self.tabs {
+            let start = tab + added;
+            if at <= start {
+                break;
+            }
+            let end = tab + through + 1;
+            if at < end {
+                return if at - start <= end - at { tab } else { tab + 1 };
+            }
+            added = through;
+        }
+        at - added
+    }
 }
 
 #[cfg(test)]
@@ -150,6 +171,38 @@ mod tests {
         assert_eq!(widest(std::iter::empty(), WIDTH), 0);
         assert_eq!(widest(["abcdef\n", "\tab\n", "x"].into_iter(), WIDTH), 6);
         assert_eq!(widest(["abcdef\n", "\t\tab\n"].into_iter(), WIDTH), 10);
+    }
+
+    #[test]
+    fn a_byte_of_the_expanded_text_maps_back_to_its_line_byte() {
+        // a at 0, the tab's spaces 1..4, b at 4.
+        let line = expand("a\tb", WIDTH);
+        assert_eq!((0..=6).map(|b| line.line_offset(b)).collect::<Vec<_>>(), [0, 1, 1, 2, 2, 3, 3]);
+    }
+
+    #[test]
+    fn a_tie_inside_a_tab_goes_to_its_start() {
+        // Two tabs of four spaces each: 0..4 and 4..8; 2 and 6 sit midway.
+        let line = expand("\t\tx", WIDTH);
+        assert_eq!(
+            (0..=9).map(|b| line.line_offset(b)).collect::<Vec<_>>(),
+            [0, 0, 0, 1, 1, 1, 1, 2, 2, 3]
+        );
+    }
+
+    #[test]
+    fn line_offset_reverses_offset() {
+        let line = "é\tx\ty";
+        let expanded = expand(line, WIDTH);
+        let boundaries = (0..=line.len()).filter(|&b| line.is_char_boundary(b));
+        assert!(boundaries.into_iter().all(|b| expanded.line_offset(expanded.offset(b)) == b));
+    }
+
+    #[test]
+    fn past_the_end_is_the_lines_end() {
+        assert_eq!(expand("ab", WIDTH).line_offset(1), 1);
+        assert_eq!(expand("ab", WIDTH).line_offset(9), 2);
+        assert_eq!(expand("a\t", WIDTH).line_offset(9), 2);
     }
 
     #[test]

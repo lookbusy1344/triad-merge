@@ -211,6 +211,28 @@ impl RowMap {
             .then(|| self.first_row(RegionIx::new(region)).plus(line - lines.start))
     }
 
+    /// The line of `source` row `index` shows: `Ok` with the line, or `Err` with the line after
+    /// the row on a filler row, which is the line count past the input's last line.
+    ///
+    /// # Errors
+    ///
+    /// The line after a filler row, as above.
+    ///
+    /// # Panics
+    ///
+    /// If `index` is not below [`RowMap::row_count`].
+    pub fn line_at_row(
+        &self,
+        doc: &MergeDocument,
+        index: RowIx,
+        source: Source,
+    ) -> Result<usize, usize> {
+        let region = self.region_of_row(index);
+        let k = index.since(self.first_row(region));
+        let lines = range(doc.region(region), source);
+        if k < lines.len() { Ok(lines.start + k) } else { Err(lines.end) }
+    }
+
     /// Rows of `region`.
     #[must_use]
     pub fn rows_in(&self, region: RegionIx) -> usize {
@@ -294,6 +316,27 @@ mod tests {
         let cells = |row| map.get_row(&doc, RowIx::new(row)).map(|row| row.cells.to_vec());
         assert_eq!(cells(1), Some(vec![Some(1), Some(1)]));
         assert_eq!(cells(2), None);
+    }
+
+    #[test]
+    fn a_filler_row_names_the_line_after_it() {
+        // Rows: 0 a|a, 1 X|-, 2 Y|-, 3 b|b.
+        let doc = three("a\nb\n", "a\nX\nY\nb\n", "a\nb\n");
+        let map = RowMap::new(&doc, PaneSet::LeftRight).expect("panes fit");
+        let line = |row, source| map.line_at_row(&doc, RowIx::new(row), source);
+        let (left, right) = (Source::Side(0), Source::Side(1));
+        assert_eq!([0, 1, 2, 3].map(|row| line(row, left)), [Ok(0), Ok(1), Ok(2), Ok(3)]);
+        assert_eq!([0, 1, 2, 3].map(|row| line(row, right)), [Ok(0), Err(1), Err(1), Ok(1)]);
+    }
+
+    #[test]
+    fn a_filler_row_after_the_last_line_names_the_line_count() {
+        // Rows: 0 a|a, 1 X|-.
+        let doc = three("a\n", "a\nX\n", "a\n");
+        let map = RowMap::new(&doc, PaneSet::LeftBaseRight).expect("panes fit");
+        assert_eq!(map.line_at_row(&doc, RowIx::new(1), Source::Base(0)), Err(1));
+        assert_eq!(map.line_at_row(&doc, RowIx::new(1), Source::Side(1)), Err(1));
+        assert_eq!(map.line_at_row(&doc, RowIx::new(1), Source::Side(0)), Ok(1));
     }
 
     #[test]

@@ -7,6 +7,7 @@ mod choices;
 mod common;
 mod diff;
 mod input_find;
+mod input_select;
 mod journal;
 mod keybind;
 mod line_ending;

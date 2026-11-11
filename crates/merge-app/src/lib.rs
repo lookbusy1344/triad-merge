@@ -9,6 +9,7 @@ mod editor_sync;
 mod editor_syntax;
 mod go_to_line;
 mod input_find;
+mod input_select;
 mod keys;
 mod logo;
 pub mod measure;
@@ -185,6 +186,9 @@ commands!(
     OpenSettings,
     About,
 );
+
+// The top panes' copy and select all (spec §5). Their keys are fixed, as the editors' are.
+actions!(triad, [CopyInput, SelectAllInput]);
 
 /// What happens when a window finishes with an exit code (spec §6.2). [`run`] exits the
 /// process; tests record the code.

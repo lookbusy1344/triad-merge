@@ -28,6 +28,8 @@ As of 2026-11-10.
 
 Every spec §9 target is met (§A6.7); README and spec §9 carry the figures.
 
+The top panes select and copy their input's text (spec §5): `merge_view::selection` holds the selection as byte offsets in the input, and `merge-app`'s `input_select` maps pointer positions to them through the drawn text's layout.
+
 Dependencies: jj-lib and jj-core 0.47.1 on gix 0.90 (§A7.1). gpui-kit 0.8.1 with the vendored `gpui-base` patch (`vendor/gpui-base/PATCHES.md`); the tree-sitter pins follow it. gpui-kit 0.9 is not adopted (`docs/gpui-kit-issues.md`).
 
 The Dock icon needs `triad.app` (`script/macos-app`): `setApplicationIconImage` is unsafe in `objc2-app-kit`, so a bare binary cannot set it under the `unsafe_code` rule.
@@ -65,6 +67,7 @@ In order. Each is one or more commits.
 | Windows CI passing | A push | `.github/workflows/triad.yml` |
 | Windows ARM64 in CI (`windows-11-arm`), before version 1.0 | Windows x64 passing in CI | `.github/workflows/triad.yml`, §E7 |
 | A sideways scrollbar for the top panes: a `ScrollbarHandle` over `Sideways` | — | §E4.4 |
+| Scrolling the top panes while a selection drag passes their top or bottom edge; Shift-press extends past the screen meanwhile | — | spec §5 |
 | Review and diff features, §G2, §G4–§G14 | Owner's choices on §G15's open points | G |
 | Razor | A grammar that covers its code blocks | §F1 |
 | Fuzzing | After release 1; `cargo-fuzz` needs nightly | §A4.9, spec §8.9 |

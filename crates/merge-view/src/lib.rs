@@ -14,5 +14,6 @@ pub mod ruler;
 pub mod runs;
 pub mod scroll;
 pub mod search;
+pub mod selection;
 pub mod status;
 pub mod tabs;

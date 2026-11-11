@@ -22,10 +22,11 @@ use gpui_kit::component::native_menu::NativeMenu;
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{ActiveTheme as _, Theme, h_flex, v_flex};
 use gpui_kit::{
-    AnyElement, AnyWindowHandle, App, AppContext as _, ClickEvent, Context, Div, ElementId, Entity,
-    EntityInputHandler as _, FontWeight, HighlightStyle, Hsla, IndentAdjustment,
-    InteractiveElement as _, IntoElement, LineFragment, ParentElement as _, Pixels, PromptLevel,
-    Render, Role, ScrollEvent, SharedString, Size, StatefulInteractiveElement as _, Styled as _,
+    AnyElement, AnyWindowHandle, App, AppContext as _, ClickEvent, ClipboardItem, Context, Div,
+    ElementId, Entity, EntityInputHandler as _, FocusHandle, FontWeight, HighlightStyle, Hsla,
+    IndentAdjustment, InteractiveElement as _, IntoElement, LineFragment, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, PromptLevel, Render,
+    Role, ScrollEvent, SharedString, Size, StatefulInteractiveElement as _, Styled as _,
     StyledText, Subscription, Task, TestSupportExt as _, Toggled, Window, WindowOptions, canvas,
     div, point, prelude::FluentBuilder as _, px, uniform_list,
 };
@@ -61,6 +62,7 @@ use merge_view::ruler::RulerMark;
 use merge_view::runs::{self, Matched};
 use merge_view::scroll::{Displayed, Geometry, ResultRows};
 use merge_view::search::{Case, Hit, InputMatches};
+use merge_view::selection::InputSelection;
 use merge_view::status::{FileNames, Status};
 use merge_view::tabs;
 use merge_view::{scroll, status};
@@ -70,6 +72,7 @@ use crate::blink::{self, Flash, SearchSteps};
 use crate::choice::{self, Choice, MenuAction, MenuChoice};
 use crate::editor_sync::{self, Caret};
 use crate::input_find::{self, Step};
+use crate::input_select::{self, CellHit, INPUT_PANES_CONTEXT, InputSelect};
 use crate::measure::{self, Measure, Measurement, Mode, Report, Run};
 use crate::origin_column::{
     Annotated, Described, HeadingText, ORIGIN_WIDTH, OriginCell, OriginColumn, Visibility,
@@ -88,12 +91,13 @@ use crate::tones::{Palette, Tones};
 use crate::toolbar::{self, GROUPS, Labels};
 use crate::wrap::Wrap;
 use crate::{
-    Cancel, CarryMovedEdit, ClearChoice, ExitCode, Find, GoToLine, LINE_HEIGHT, NextConflict,
-    NextDifference, PreviousConflict, PreviousDifference, Redo, SaveAndExit, SaveCopyAs, TakeBase,
-    TakeLeft, TakeLeftAllUnresolved, TakeLeftThenRight, TakeRight, TakeRightAllUnresolved,
-    TakeRightThenLeft, TakeSortedUnion, TakeWholeLeft, TakeWholeRight, ToggleBase, ToggleBasePane,
-    ToggleLeft, ToggleOriginColumn, ToggleRight, ToggleScrollSync, ToggleSoftWrap, ToggleSyntax,
-    Typography, Undo, finish, go_to_line, ignore_closed_view, strings,
+    Cancel, CarryMovedEdit, ClearChoice, CopyInput, ExitCode, Find, GoToLine, LINE_HEIGHT,
+    NextConflict, NextDifference, PreviousConflict, PreviousDifference, Redo, SaveAndExit,
+    SaveCopyAs, SelectAllInput, TakeBase, TakeLeft, TakeLeftAllUnresolved, TakeLeftThenRight,
+    TakeRight, TakeRightAllUnresolved, TakeRightThenLeft, TakeSortedUnion, TakeWholeLeft,
+    TakeWholeRight, ToggleBase, ToggleBasePane, ToggleLeft, ToggleOriginColumn, ToggleRight,
+    ToggleScrollSync, ToggleSoftWrap, ToggleSyntax, Typography, Undo, finish, go_to_line,
+    ignore_closed_view, strings,
 };
 use merge_session::recovery::{Recovery, WriteMode, Written, prune};
 use merge_session::session::{CannotSave, Refused, SaveJob, SaveTarget, Session};
@@ -475,6 +479,8 @@ pub struct MergeWindow {
     go_to_line: go_to_line::Field,
     /// The input panes' matches of the result search's query.
     input_find: input_find::Found,
+    /// The top panes' focus and selection.
+    input_select: InputSelect,
     pinned: Option<Pin>,
     measurement: Measurement,
     /// The inputs' line origins and their column.
@@ -610,13 +616,12 @@ impl MergeWindow {
             )
         });
         let go_to_line = go_to_line::Field::new(window, cx);
-        let subscriptions = Self::subscribe(&result, go_to_line.input(), window, cx);
-        let headings = headings(&doc, panes, &settings.file_names);
+        let input_focus = cx.focus_handle();
+        let subscriptions = Self::subscribe(&result, go_to_line.input(), &input_focus, window, cx);
         if let Some(lookup) = settings.origins.clone() {
             Self::load_origins(lookup, &doc, window, cx);
         }
         Self::count_widest(&doc, settings.typography.tab_width, cx);
-        let parsing = colouring.language().is_some();
         let syntax = colouring
             .language()
             .map(|language| Self::input_syntax(language, &doc))
@@ -650,8 +655,8 @@ impl MergeWindow {
             syntax,
             colouring,
             result_highlighter,
-            parsing,
-            headings,
+            parsing: colouring.language().is_some(),
+            headings: headings(&doc, panes, &settings.file_names),
             result_heading: status::result_heading(settings.output.as_deref()).into(),
             file_names: settings.file_names.clone(),
             journal: JournalTasks::default(),
@@ -678,6 +683,7 @@ impl MergeWindow {
             save_task: None,
             go_to_line,
             input_find: input_find::Found::default(),
+            input_select: InputSelect::new(input_focus),
             pinned: None,
             measurement: Measurement::new(settings.measure),
             origin_column: OriginColumn::new(
@@ -942,8 +948,62 @@ impl MergeWindow {
         let fills = self.match_fills(pane, cx);
         let spans = self.highlights.row(self.session.document(), &self.rows, row).get(pane)?;
         let tab_width = self.typography.tab_width;
-        let paint = CellPaint { changed, fills, tab_width };
-        Some(line_highlights(text.line(line), spans, &syntax, &matched, paint))
+        let selected = self.input_select.in_line(self.session.document(), source, line);
+        let paint = CellPaint { changed, fills, selected: cx.theme().selection, tab_width };
+        Some(line_highlights(text.line(line), spans, &syntax, &matched, selected, paint))
+    }
+
+    /// The top panes' selection, in its input's bytes.
+    #[must_use]
+    pub fn input_selection(&self) -> Option<InputSelection> {
+        self.input_select.selection()
+    }
+
+    fn press_input(
+        &mut self,
+        hit: &CellHit,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        window.focus(self.input_select.focus(), cx);
+        let inputs = input_select::Inputs {
+            doc: self.session.document(),
+            rows: &self.rows,
+            tab_width: self.typography.tab_width,
+        };
+        self.input_select.press(inputs, hit, event);
+        tracing::debug!(selection = ?self.input_select.selection(), "top pane press");
+        cx.notify();
+    }
+
+    fn drag_input(&mut self, hit: &CellHit, event: &MouseMoveEvent, cx: &mut Context<Self>) {
+        let inputs = input_select::Inputs {
+            doc: self.session.document(),
+            rows: &self.rows,
+            tab_width: self.typography.tab_width,
+        };
+        if self.input_select.drag(inputs, hit, event) {
+            cx.notify();
+        }
+    }
+
+    /// ⌘C in the top panes: copy their selection; with nothing selected, copy nothing.
+    fn copy_input(&mut self, _: &CopyInput, _: &mut Window, cx: &mut Context<Self>) {
+        let text = self.input_select.text(self.session.document());
+        tracing::debug!(selection = ?self.input_select.selection(), bytes = text.map(str::len), "top pane copy");
+        if let Some(text) = text {
+            cx.write_to_clipboard(ClipboardItem::new_string(text.to_owned()));
+        }
+    }
+
+    /// ⌘A in the top panes: select the whole input of the selection's pane, else the first.
+    fn select_all_input(&mut self, _: &SelectAllInput, _: &mut Window, cx: &mut Context<Self>) {
+        let Some(&first) = self.panes.sources().first() else {
+            return;
+        };
+        self.input_select.select_all(self.session.document(), first);
+        cx.notify();
     }
 
     /// The panes' titles, in pane order.
@@ -1278,10 +1338,17 @@ impl MergeWindow {
     fn subscribe(
         result: &Entity<EditorState>,
         go_to_line: &Entity<InputState>,
+        input_focus: &FocusHandle,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Vec<Subscription> {
         vec![
+            // The top panes' selection ends when they lose the focus.
+            cx.on_focus_out(input_focus, window, |this, _, _, cx| {
+                tracing::debug!("top panes lost the focus; their selection ends");
+                this.input_select.clear();
+                cx.notify();
+            }),
             cx.subscribe_in(result, window, |this, _, event: &InputEvent, window, cx| {
                 if matches!(event, InputEvent::Change) {
                     this.send_edits(window, cx);
@@ -2593,6 +2660,7 @@ impl MergeWindow {
             }
         };
         self.panes = panes;
+        self.input_select.keep_shown(&panes.sources());
         self.rows = rows;
         self.scroll.row_wrap_mut().rows_changed(self.rows.row_count());
         self.highlights = Highlights::new(panes);
@@ -2612,6 +2680,7 @@ impl MergeWindow {
             .map(|pane| CellPaint {
                 changed: None,
                 fills: self.match_fills(pane, cx),
+                selected: cx.theme().selection,
                 tab_width: self.typography.tab_width,
             })
             .collect()
@@ -2629,6 +2698,10 @@ impl MergeWindow {
             .flex_1()
             .min_h_0()
             .relative()
+            .track_focus(self.input_select.focus())
+            .key_context(INPUT_PANES_CONTEXT)
+            .on_action(cx.listener(Self::copy_input))
+            .on_action(cx.listener(Self::select_all_input))
             .on_scroll(cx.listener(Self::wheel_sideways))
             .child({
                 // One item per display row: an aligned row takes several while it wraps.
@@ -2718,7 +2791,8 @@ impl MergeWindow {
             .filter(|_| head)
             .map(|mark| (mark.label, tones.mark(mark.tone)));
         let (filler, muted, border) = (theme.muted, theme.muted_foreground, theme.border);
-        let inputs = self.session.document().inputs();
+        let doc = self.session.document();
+        let inputs = doc.inputs();
         // The theme is borrowed from `cx`, which the pick targets take mutably.
         let highlight_theme = Arc::clone(&theme.highlight_theme);
         let colouring = self.colouring;
@@ -2755,13 +2829,25 @@ impl MergeWindow {
                 let deleted_colour = deleted.filter(|_| head).map(|_| tones.deleted());
                 let note = deleted.filter(|_| head && first).map(strings::deleted_label);
                 let origin = origins.as_mut().map(|o| o.next().flatten());
-                let text = cell.and_then(|(_, text)| {
+                let text = cell.and_then(|(n, text)| {
                     let paint = paints[pane].with_changed(changed);
+                    let selected = self.input_select.in_line(doc, source, n);
                     let (text, highlights) =
-                        line_highlights(text, spans, &syntax, &matches[pane], paint);
+                        line_highlights(text, spans, &syntax, &matches[pane], selected, paint);
                     let segment = self.scroll.row_wrap().segment(index.get(), pane, sub, &text)?;
-                    Some(segment_text(text, highlights, segment))
+                    Some((segment.start, segment_text(text, highlights, segment)))
                 });
+                let segment_start = text.as_ref().map_or(0, |(start, _)| *start);
+                let text = text.map(|(_, (text, highlights))| {
+                    StyledText::new(text).with_highlights(highlights)
+                });
+                let hit = CellHit {
+                    source,
+                    row: index,
+                    segment_start,
+                    layout: text.as_ref().map(|text| text.layout().clone()),
+                };
+                let moved = hit.clone();
                 let (cell_id, text_id) = display.ids(pane);
                 div()
                     .id(cell_id)
@@ -2776,7 +2862,22 @@ impl MergeWindow {
                     })
                     .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                         this.go_to(region, window, cx);
+                        // Moving the caret focuses the result; the press focused the panes.
+                        window.focus(this.input_select.focus(), cx);
                     }))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                            this.press_input(&hit, event, window, cx);
+                        }),
+                    )
+                    .on_mouse_move(cx.listener(move |this, event: &MouseMoveEvent, _, cx| {
+                        this.drag_input(&moved, event, cx);
+                    }))
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|this, _: &MouseUpEvent, _, _| this.input_select.release()),
+                    )
                     .flex_1()
                     .h_full()
                     .flex()
@@ -2792,9 +2893,7 @@ impl MergeWindow {
                     .child(line_number_cell(line.filter(|_| head), deleted_colour, muted))
                     .child(cell_text(
                         text_id,
-                        text.map(|(text, highlights)| {
-                            StyledText::new(text).with_highlights(highlights)
-                        }),
+                        text,
                         deleted_colour.zip(note).map(|(colour, note)| deletion_note(colour, note)),
                         left,
                         probed.then(|| self.scroll.sideways().probe(pane)),
@@ -2972,6 +3071,8 @@ struct CellPaint {
     /// The background of the characters that differ.
     changed: Option<Hsla>,
     fills: MatchFills,
+    /// The background of the selected characters.
+    selected: Hsla,
     tab_width: usize,
 }
 
@@ -3052,15 +3153,25 @@ fn line_highlights(
     spans: &CellSpans,
     syntax: &[(Range<usize>, HighlightStyle)],
     matched: &[(Range<usize>, Matched)],
+    selected: Option<Range<usize>>,
     paint: CellPaint,
 ) -> (SharedString, CellHighlights) {
-    let (text, runs) = runs::cell(line, spans, syntax, matched, paint.tab_width);
+    let (text, runs) = runs::cell(line, spans, syntax, matched, selected, paint.tab_width);
     (
         SharedString::from(text.into_owned()),
         runs.into_iter()
             .map(|run| {
-                let style = run_style(run.style, run.changed, paint.changed);
-                (run.range, match_style(style, run.matched, paint.fills))
+                let style = match_style(
+                    run_style(run.style, run.changed, paint.changed),
+                    run.matched,
+                    paint.fills,
+                );
+                let style = if run.selected {
+                    HighlightStyle { background_color: Some(paint.selected), ..style }
+                } else {
+                    style
+                };
+                (run.range, style)
             })
             .collect(),
     )
