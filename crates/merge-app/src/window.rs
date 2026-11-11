@@ -22,13 +22,13 @@ use gpui_kit::component::native_menu::NativeMenu;
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{ActiveTheme as _, Theme, h_flex, v_flex};
 use gpui_kit::{
-    AnyElement, AnyWindowHandle, App, AppContext as _, ClickEvent, ClipboardItem, Context, Div,
-    ElementId, Entity, EntityInputHandler as _, FocusHandle, FontWeight, HighlightStyle, Hsla,
-    IndentAdjustment, InteractiveElement as _, IntoElement, LineFragment, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, PromptLevel, Render,
-    Role, ScrollEvent, SharedString, Size, StatefulInteractiveElement as _, Styled as _,
-    StyledText, Subscription, Task, TestSupportExt as _, Toggled, Window, WindowOptions, canvas,
-    div, point, prelude::FluentBuilder as _, px, uniform_list,
+    AnyElement, AnyWindowHandle, App, AppContext as _, ClickEvent, ClipboardItem, Context,
+    DispatchPhase, Div, ElementId, Entity, EntityInputHandler as _, FocusHandle, FontWeight,
+    HighlightStyle, Hsla, IndentAdjustment, InteractiveElement as _, IntoElement, LineFragment,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels,
+    PromptLevel, Render, Role, ScrollEvent, SharedString, Size, StatefulInteractiveElement as _,
+    Styled as _, StyledText, Subscription, Task, TestSupportExt as _, Toggled, Window,
+    WindowOptions, canvas, div, point, prelude::FluentBuilder as _, px, uniform_list,
 };
 use merge_config::settings::{Colours, DEFAULT_COLOURS, Scrollbars};
 use merge_core::boundaries::Boundaries;
@@ -72,7 +72,9 @@ use crate::blink::{self, Flash, SearchSteps};
 use crate::choice::{self, Choice, MenuAction, MenuChoice};
 use crate::editor_sync::{self, Caret};
 use crate::input_find::{self, Step};
-use crate::input_select::{self, CellHit, INPUT_PANES_CONTEXT, InputSelect};
+use crate::input_select::{
+    self, AUTOSCROLL_MAX_ROWS, AUTOSCROLL_TICK, CellHit, INPUT_PANES_CONTEXT, InputSelect,
+};
 use crate::measure::{self, Measure, Measurement, Mode, Report, Run};
 use crate::origin_column::{
     Annotated, Described, HeadingText, ORIGIN_WIDTH, OriginCell, OriginColumn, Visibility,
@@ -481,6 +483,9 @@ pub struct MergeWindow {
     input_find: input_find::Found,
     /// The top panes' focus and selection.
     input_select: InputSelect,
+    /// The steps that scroll the top panes while a selection drag holds the pointer past
+    /// their edge.
+    autoscroll: Option<Task<()>>,
     pinned: Option<Pin>,
     measurement: Measurement,
     /// The inputs' line origins and their column.
@@ -684,6 +689,7 @@ impl MergeWindow {
             go_to_line,
             input_find: input_find::Found::default(),
             input_select: InputSelect::new(input_focus),
+            autoscroll: None,
             pinned: None,
             measurement: Measurement::new(settings.measure),
             origin_column: OriginColumn::new(
@@ -2730,6 +2736,105 @@ impl MergeWindow {
                 list
             })
             .child(Scrollbar::vertical(self.scroll.list()).mode(self.scrollbar_mode))
+            .when(self.input_select.dragging(), |d| d.child(Self::drag_listener(cx)))
+    }
+
+    /// While a selection drag holds the button: the pointer's moves and its release anywhere
+    /// in the window, so a drag past the panes' edge scrolls them (spec §5).
+    fn drag_listener(cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let this = cx.entity().downgrade();
+        canvas(
+            |_, _, _| {},
+            move |bounds, (), window, _| {
+                let moved = this.clone();
+                window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
+                    if phase == DispatchPhase::Bubble {
+                        ignore_closed_view(moved.update(cx, |this, cx| {
+                            this.drag_past_edge(bounds, event, window, cx);
+                        }));
+                    }
+                });
+                let released = this.clone();
+                window.on_mouse_event(move |_: &MouseUpEvent, phase, _, cx| {
+                    if phase == DispatchPhase::Bubble {
+                        ignore_closed_view(released.update(cx, |this, cx| {
+                            this.input_select.release();
+                            cx.notify();
+                        }));
+                    }
+                });
+            },
+        )
+        .absolute()
+        .size_full()
+    }
+
+    /// A drag's move anywhere: past the panes' edge, start the steps that scroll them.
+    fn drag_past_edge(
+        &mut self,
+        panes: gpui_kit::Bounds<Pixels>,
+        event: &MouseMoveEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if event.pressed_button != Some(MouseButton::Left) {
+            self.input_select.release();
+            cx.notify();
+            return;
+        }
+        let most = self.typography.line_height() * AUTOSCROLL_MAX_ROWS;
+        let step =
+            input_select::autoscroll_step(event.position.y, panes.top(), panes.bottom(), most);
+        self.input_select.set_edge(step);
+        if self.input_select.edge().is_some() && self.autoscroll.is_none() {
+            self.autoscroll = Some(cx.spawn_in(window, async move |this, cx| {
+                loop {
+                    cx.background_executor().timer(AUTOSCROLL_TICK).await;
+                    match this.update(cx, Self::autoscroll_step) {
+                        Ok(true) => {}
+                        Ok(false) | Err(_) => break,
+                    }
+                }
+                ignore_closed_view(this.update(cx, |this, _| this.autoscroll = None));
+            }));
+        }
+    }
+
+    /// One autoscroll step: scroll the panes toward the pointer and move the selection's end
+    /// to the row at that edge. Whether the steps go on.
+    fn autoscroll_step(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(step) = self.input_select.edge() else {
+            return false;
+        };
+        let row_h = self.typography.line_height();
+        let view = self.scroll.view_height();
+        #[expect(clippy::cast_precision_loss, reason = "row counts stay far below 2^24")]
+        let rows = row_h * self.scroll.heights().rows() as f32;
+        let top = (self.scroll.top() + step).max(Pixels::ZERO).min((rows - view).max(Pixels::ZERO));
+        self.scroll.set_top(f32::from(top));
+        let down = step > Pixels::ZERO;
+        let row = if down { self.bottom_row(top, view, row_h) } else { self.scroll.top_row(row_h) };
+        let inputs = input_select::Inputs {
+            doc: self.session.document(),
+            rows: &self.rows,
+            tab_width: self.typography.tab_width,
+        };
+        self.input_select.drag_to_row(inputs, row, down);
+        cx.notify();
+        true
+    }
+
+    /// The last aligned row whose display rows reach into a view `view` high from `top`.
+    fn bottom_row(&self, top: Pixels, view: Pixels, row_h: Pixels) -> RowIx {
+        let heights = self.scroll.heights();
+        let last = heights.rows().saturating_sub(1);
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "a non-negative whole number of rows"
+        )]
+        let display = (((top + view) / row_h).ceil() as usize).saturating_sub(1).min(last);
+        RowIx::new(heights.at(display).map_or(0, |(row, _)| row))
     }
 
     /// The aligned rows display rows `display` show.
@@ -3114,6 +3219,7 @@ fn cell_text(
     div()
         .id(id)
         .test_support()
+        .cursor_text()
         .relative()
         .flex_1()
         .min_w_0()

@@ -67,7 +67,6 @@ In order. Each is one or more commits.
 | Windows CI passing | A push | `.github/workflows/triad.yml` |
 | Windows ARM64 in CI (`windows-11-arm`), before version 1.0 | Windows x64 passing in CI | `.github/workflows/triad.yml`, §E7 |
 | A sideways scrollbar for the top panes: a `ScrollbarHandle` over `Sideways` | — | §E4.4 |
-| Scrolling the top panes while a selection drag passes their top or bottom edge; Shift-press extends past the screen meanwhile | — | spec §5 |
 | Review and diff features, §G2, §G4–§G14 | Owner's choices on §G15's open points | G |
 | Razor | A grammar that covers its code blocks | §F1 |
 | Fuzzing | After release 1; `cargo-fuzz` needs nightly | §A4.9, spec §8.9 |

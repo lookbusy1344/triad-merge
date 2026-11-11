@@ -3,6 +3,7 @@
 //! the model; this module turns pointer positions into its byte offsets.
 
 use std::ops::Range;
+use std::time::Duration;
 
 use gpui_kit::{
     FocusHandle, MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, TextLayout, point, px,
@@ -26,6 +27,9 @@ pub(crate) struct InputSelect {
     selection: Option<InputSelection>,
     /// A press in a top pane started a drag that the left button still holds.
     dragging: bool,
+    /// The scroll of each autoscroll step while the drag holds the pointer past the panes'
+    /// top or bottom edge.
+    edge: Option<Pixels>,
 }
 
 /// What a press or drag over one display row of one pane needs to find its byte: the input,
@@ -51,7 +55,7 @@ pub(crate) struct Inputs<'a> {
 
 impl InputSelect {
     pub(crate) fn new(focus: FocusHandle) -> Self {
-        Self { focus, selection: None, dragging: false }
+        Self { focus, selection: None, dragging: false, edge: None }
     }
 
     pub(crate) fn focus(&self) -> &FocusHandle {
@@ -65,7 +69,36 @@ impl InputSelect {
     /// End the selection, as when the panes lose the focus.
     pub(crate) fn clear(&mut self) {
         self.selection = None;
-        self.dragging = false;
+        self.release();
+    }
+
+    /// Whether a drag from a top pane holds the left button.
+    pub(crate) fn dragging(&self) -> bool {
+        self.dragging
+    }
+
+    /// The scroll of the next autoscroll step: some while a drag holds the pointer past an
+    /// edge.
+    pub(crate) fn edge(&self) -> Option<Pixels> {
+        self.edge.filter(|_| self.dragging)
+    }
+
+    /// Hold the pointer past an edge with `step`, or between the edges with `None`.
+    pub(crate) fn set_edge(&mut self, step: Option<Pixels>) {
+        self.edge = step.filter(|_| self.dragging);
+    }
+
+    /// Move the end of a drag to row `row`: the start of its line, or with `end` the end of
+    /// its text.
+    pub(crate) fn drag_to_row(&mut self, inputs: Inputs<'_>, row: RowIx, end: bool) {
+        let Some(held) = self.selection.filter(|_| self.dragging) else {
+            return;
+        };
+        let source = held.source();
+        let line = inputs.rows.line_at_row(inputs.doc, row, source);
+        let column = if end { usize::MAX } else { 0 };
+        let text = inputs.doc.inputs().text(source);
+        self.selection = Some(held.with_head(selection::offset(text, line, column)));
     }
 
     /// End the selection when no pane in `shown` shows its input.
@@ -113,7 +146,7 @@ impl InputSelect {
         event: &MouseMoveEvent,
     ) -> bool {
         if event.pressed_button != Some(MouseButton::Left) {
-            self.dragging = false;
+            self.release();
             return false;
         }
         let Some(held) = self.selection.filter(|s| self.dragging && s.source() == hit.source)
@@ -128,6 +161,7 @@ impl InputSelect {
 
     pub(crate) fn release(&mut self) {
         self.dragging = false;
+        self.edge = None;
     }
 
     /// Select the whole input of the selection's pane, else `first`'s.
@@ -210,4 +244,72 @@ fn drawn_index(layout: &TextLayout, position: Point<Pixels>, pick: Pick) -> usiz
         Pick::Under => line.index_for_position(within, height),
     };
     found.unwrap_or_else(|index| index)
+}
+
+/// How often a drag held past the top panes' edge scrolls them (spec §5).
+pub(crate) const AUTOSCROLL_TICK: Duration = Duration::from_millis(16);
+/// A step scrolls this share of the pointer's distance past the edge.
+const AUTOSCROLL_GAIN: f32 = 0.5;
+/// The least a step scrolls.
+const AUTOSCROLL_MIN_STEP: Pixels = px(2.);
+/// The most a step scrolls, in rows.
+pub(crate) const AUTOSCROLL_MAX_ROWS: f32 = 2.;
+
+/// The scroll of one tick for a pointer at `y` with the panes between `top` and `bottom`:
+/// toward the pointer, by [`AUTOSCROLL_GAIN`] of its distance past the edge, from
+/// [`AUTOSCROLL_MIN_STEP`] up to `most`; negative scrolls up. `None` between the edges.
+pub(crate) fn autoscroll_step(
+    y: Pixels,
+    top: Pixels,
+    bottom: Pixels,
+    most: Pixels,
+) -> Option<Pixels> {
+    let past = if y < top {
+        y - top
+    } else if y > bottom {
+        y - bottom
+    } else {
+        return None;
+    };
+    let step = (past.abs() * AUTOSCROLL_GAIN).max(AUTOSCROLL_MIN_STEP).min(most);
+    Some(if past < Pixels::ZERO { -step } else { step })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TOP: Pixels = px(100.);
+    const BOTTOM: Pixels = px(500.);
+    const MOST: Pixels = px(40.);
+
+    fn step(y: f32) -> Option<Pixels> {
+        autoscroll_step(px(y), TOP, BOTTOM, MOST)
+    }
+
+    #[test]
+    fn between_the_edges_nothing_scrolls() {
+        assert_eq!(step(100.), None);
+        assert_eq!(step(300.), None);
+        assert_eq!(step(500.), None);
+    }
+
+    #[test]
+    fn below_the_bottom_a_step_is_half_the_distance_down() {
+        assert_eq!(step(530.), Some(px(15.)));
+        assert_eq!(step(520.), Some(px(10.)));
+    }
+
+    #[test]
+    fn above_the_top_a_step_is_half_the_distance_up() {
+        assert_eq!(step(70.), Some(px(-15.)));
+    }
+
+    #[test]
+    fn a_step_takes_at_least_the_least_and_at_most_the_most() {
+        assert_eq!(step(501.), Some(px(2.)));
+        assert_eq!(step(99.), Some(px(-2.)));
+        assert_eq!(step(700.), Some(px(40.)));
+        assert_eq!(step(-300.), Some(px(-40.)));
+    }
 }

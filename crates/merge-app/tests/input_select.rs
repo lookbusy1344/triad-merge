@@ -3,15 +3,18 @@
 
 use crate::common;
 
+use std::fmt::Write as _;
+
 use common::{act, doc, open};
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::test::{ClickOptions, TestWindowExt};
 use gpui_kit::{
-    AnyWindowHandle, ClipboardItem, Entity, HighlightStyle, Modifiers, Pixels, Point,
+    AnyWindowHandle, ClipboardItem, Entity, HighlightStyle, InputEvent as _, Modifiers,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, ScrollDelta,
     TestAppContext, point, px,
 };
 use merge_app::MergeWindow;
-use merge_app::window::{RESULT_ID, cell_text_id};
+use merge_app::window::{INPUT_LINES_ID, RESULT_ID, cell_text_id};
 use merge_config::settings::DEFAULT_FONT_SIZE;
 use merge_core::document::MergeDocument;
 use merge_core::merge3::Source;
@@ -323,4 +326,176 @@ fn the_selected_characters_fill_in_the_selection_colour(cx: &mut TestAppContext)
     assert_eq!(fills(cx, 0), one(0..1));
     assert_eq!(fills(cx, 1), one(0..3));
     assert_eq!(fills(cx, 2), Vec::<std::ops::Range<usize>>::new());
+}
+
+const NUMBERED_LINES: usize = 200;
+
+/// The time between autoscroll steps (spec §5).
+const TICK: std::time::Duration = std::time::Duration::from_millis(16);
+
+/// Enough steps of the most scroll, two rows, to cross 200 rows.
+const MANY_TICKS: usize = 120;
+
+/// `l1` to `l200`, one a line, the same in every input: more rows than the panes show.
+fn numbered_text() -> String {
+    (1..=NUMBERED_LINES).fold(String::new(), |mut text, n| {
+        writeln!(text, "l{n}").expect("a String takes any write");
+        text
+    })
+}
+
+fn numbered() -> MergeDocument {
+    let text = numbered_text();
+    doc(&text, &text, &text)
+}
+
+/// The top panes' bounds in the window.
+fn panes(cx: &mut TestAppContext, window: AnyWindowHandle) -> gpui_kit::Bounds<Pixels> {
+    let mut bounds = None;
+    act(cx, window, |window, _| bounds = Some(window.find(INPUT_LINES_ID).bounds()));
+    bounds.expect("the panes show")
+}
+
+fn mouse_down(cx: &mut TestAppContext, window: AnyWindowHandle, at: Point<Pixels>) {
+    act(cx, window, |window, cx| {
+        let down = MouseDownEvent {
+            button: MouseButton::Left,
+            position: at,
+            modifiers: Modifiers::none(),
+            click_count: 1,
+            first_mouse: false,
+        };
+        window.dispatch_event(down.to_platform_input(), cx);
+        window.render_frame(cx);
+    });
+    cx.run_until_parked();
+}
+
+/// Move the pointer to `at` with the left button held.
+fn mouse_drag(cx: &mut TestAppContext, window: AnyWindowHandle, at: Point<Pixels>) {
+    act(cx, window, |window, cx| {
+        let moved = MouseMoveEvent {
+            position: at,
+            pressed_button: Some(MouseButton::Left),
+            modifiers: Modifiers::none(),
+        };
+        window.dispatch_event(moved.to_platform_input(), cx);
+        window.render_frame(cx);
+    });
+    cx.run_until_parked();
+}
+
+fn mouse_up(cx: &mut TestAppContext, window: AnyWindowHandle, at: Point<Pixels>) {
+    act(cx, window, |window, cx| {
+        let up = MouseUpEvent {
+            button: MouseButton::Left,
+            position: at,
+            modifiers: Modifiers::none(),
+            click_count: 1,
+        };
+        window.dispatch_event(up.to_platform_input(), cx);
+        window.render_frame(cx);
+    });
+    cx.run_until_parked();
+}
+
+/// Let `ticks` autoscroll steps pass, then draw a frame.
+fn tick(cx: &mut TestAppContext, window: AnyWindowHandle, ticks: usize) {
+    for _ in 0..ticks {
+        cx.executor().advance_clock(TICK);
+        cx.run_until_parked();
+    }
+    act(cx, window, TestWindowExt::render_frame);
+}
+
+fn scroll_top(cx: &mut TestAppContext, view: &Entity<MergeWindow>) -> Pixels {
+    cx.read(|cx| view.read(cx).rows_scroll_top())
+}
+
+/// How far the rows scroll at most: 200 rows, each as high as a drawn cell, less the view.
+fn scroll_end(
+    cx: &mut TestAppContext,
+    window: AnyWindowHandle,
+    view: &Entity<MergeWindow>,
+) -> Pixels {
+    let mut row = None;
+    act(cx, window, |window, _| {
+        row = Some(window.find(cell_text_id(LEFT_PANE, RowIx::new(0))).bounds().size.height);
+    });
+    #[expect(clippy::cast_precision_loss, reason = "a small row count")]
+    let rows = row.expect("row 0 shows") * NUMBERED_LINES as f32;
+    rows - cx.read(|cx| view.read(cx).rows_view_height())
+}
+
+#[gpui_kit::test]
+fn a_drag_held_below_the_panes_scrolls_them_and_selects_to_the_end(cx: &mut TestAppContext) {
+    let (window, view) = opened(cx, numbered());
+    let end = scroll_end(cx, window, &view);
+    let below = panes(cx, window).bottom() + px(20.);
+    let start = at(cx, window, LEFT_PANE, 0, 0);
+    mouse_down(cx, window, start);
+    mouse_drag(cx, window, point(start.x, below));
+    tick(cx, window, 1);
+    // Half of 20 px past the edge.
+    assert_eq!(scroll_top(cx, &view), px(10.));
+    mouse_drag(cx, window, point(start.x, below + px(200.)));
+    tick(cx, window, MANY_TICKS);
+    assert_eq!(scroll_top(cx, &view), end);
+    // The bottom row is `l200`; its line's end leaves out the last terminator.
+    let text = numbered_text();
+    assert_eq!(copy(cx, window), text[..text.len() - 1]);
+}
+
+#[gpui_kit::test]
+fn a_drag_held_above_the_panes_scrolls_them_up_and_selects_to_the_start(cx: &mut TestAppContext) {
+    let (window, view) = opened(cx, numbered());
+    let bounds = panes(cx, window);
+    let end = scroll_end(cx, window, &view);
+    act(cx, window, |window, cx| {
+        window.scroll(INPUT_LINES_ID, ScrollDelta::Pixels(point(px(0.), -px(10_000.))), cx);
+    });
+    cx.run_until_parked();
+    assert_eq!(scroll_top(cx, &view), end);
+    // After `l2` on the last row, `l200`.
+    let start = at(cx, window, LEFT_PANE, NUMBERED_LINES - 1, 2);
+    mouse_down(cx, window, start);
+    mouse_drag(cx, window, point(start.x, bounds.top() - px(200.)));
+    tick(cx, window, MANY_TICKS);
+    assert_eq!(scroll_top(cx, &view), px(0.));
+    let text = numbered_text();
+    assert_eq!(copy(cx, window), text[..text.len() - "00\n".len()]);
+}
+
+#[gpui_kit::test]
+fn moving_back_over_the_panes_stops_the_scrolling(cx: &mut TestAppContext) {
+    let (window, view) = opened(cx, numbered());
+    let below = panes(cx, window).bottom() + px(40.);
+    let start = at(cx, window, LEFT_PANE, 0, 0);
+    mouse_down(cx, window, start);
+    mouse_drag(cx, window, point(start.x, below));
+    tick(cx, window, 3);
+    assert_eq!(scroll_top(cx, &view), px(60.));
+    let inside = panes(cx, window).center().y;
+    mouse_drag(cx, window, point(start.x, inside));
+    tick(cx, window, 10);
+    assert_eq!(scroll_top(cx, &view), px(60.));
+}
+
+#[gpui_kit::test]
+fn releasing_past_the_edge_stops_the_scrolling_and_the_drag(cx: &mut TestAppContext) {
+    let (window, view) = opened(cx, numbered());
+    let below = panes(cx, window).bottom() + px(40.);
+    let start = at(cx, window, LEFT_PANE, 0, 0);
+    mouse_down(cx, window, start);
+    mouse_drag(cx, window, point(start.x, below));
+    tick(cx, window, 2);
+    mouse_up(cx, window, point(start.x, below));
+    let held = selection(cx, &view);
+    tick(cx, window, 10);
+    assert_eq!(scroll_top(cx, &view), px(40.));
+    // A later move with the button down, as from another drag, leaves the selection.
+    mouse_drag(cx, window, point(start.x, below));
+    tick(cx, window, 3);
+    assert_eq!(scroll_top(cx, &view), px(40.));
+    assert_eq!(selection(cx, &view), held);
 }
