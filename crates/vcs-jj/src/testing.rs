@@ -60,7 +60,16 @@ pub struct Committed {
     id: CommitId,
 }
 
-/// How the fixture's git store sits.
+impl Committed {
+    fn of(commit: &Commit) -> Self {
+        Self {
+            commit: commit.id().hex(),
+            change_id: commit.change_id().reverse_hex(),
+            id: commit.id().clone(),
+        }
+    }
+}
+
 /// What the working-copy commit holds at a path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Held {
@@ -78,6 +87,7 @@ pub struct Op {
     pub is_snapshot: bool,
 }
 
+/// How the fixture's git store sits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Store {
     /// Inside `.jj/repo/store/git`; git sees nothing.
@@ -284,11 +294,7 @@ impl Fixture {
             .block_on()
             .expect("a commit");
         self.finish(tx, "commit");
-        Committed {
-            commit: commit.id().hex(),
-            change_id: commit.change_id().reverse_hex(),
-            id: commit.id().clone(),
-        }
+        Committed::of(&commit)
     }
 
     /// Start a new empty working-copy commit on `parents`; more than one makes a merge.
@@ -350,6 +356,13 @@ impl Fixture {
     #[must_use]
     pub fn working_copy_id(&self) -> String {
         self.working_copy(self.repo().as_ref()).id().hex()
+    }
+
+    /// The working-copy commit at the head operation, for `check_out` or `edit` to name.
+    #[must_use]
+    pub fn working_copy_commit(&self) -> Committed {
+        let commit = self.working_copy(self.repo().as_ref());
+        Committed::of(&commit)
     }
 
     /// The full ID git's branch `name` points at, in a colocated workspace.
@@ -468,32 +481,39 @@ impl Fixture {
     #[must_use]
     pub fn held_at(&self, back: usize, path: &str) -> Held {
         let repo = self.repo_at(back);
-        let repo_path = RepoPathBuf::from_internal_string(path).expect("a repository path");
-        let value = self
-            .working_copy(repo.as_ref())
-            .tree()
-            .path_value(&repo_path)
+        let commit = self.working_copy(repo.as_ref());
+        held(&repo, &commit, path)
+    }
+
+    /// The visible commit of `commit`'s change at the head operation: `commit` itself, or the
+    /// commit that rewrote it, as after a rebase.
+    ///
+    /// # Panics
+    ///
+    /// If the change has no visible commit, or is divergent.
+    #[must_use]
+    pub fn latest(&self, commit: &Committed) -> Committed {
+        let repo = self.repo();
+        let change_id = jj_lib::backend::ChangeId::try_from_reverse_hex(&commit.change_id)
+            .expect("a change ID in reverse hex");
+        let targets = repo
+            .resolve_change_id(&change_id)
             .block_on()
-            .expect("the path's value");
-        match value.into_resolved() {
-            Err(_) => Held::Conflict,
-            Ok(None) => Held::Absent,
-            Ok(Some(TreeValue::File { id, .. })) => {
-                let mut bytes = Vec::new();
-                futures::AsyncReadExt::read_to_end(
-                    &mut repo
-                        .store()
-                        .read_file(&repo_path, &id)
-                        .block_on()
-                        .expect("the file opens"),
-                    &mut bytes,
-                )
-                .block_on()
-                .expect("the file reads");
-                Held::File(bytes)
-            }
-            Ok(Some(_)) => Held::Other,
-        }
+            .expect("the index reads")
+            .expect("the change has commits");
+        let mut visible = targets.visible_with_offsets().map(|(_, id)| id);
+        let id = visible.next().expect("the change has a visible commit");
+        assert!(visible.next().is_none(), "change {} is divergent", commit.change_id);
+        let commit = repo.store().get_commit(id).expect("the commit");
+        Committed::of(&commit)
+    }
+
+    /// What `commit` holds at `path`, wherever the working copy is.
+    #[must_use]
+    pub fn held_in(&self, commit: &Committed, path: &str) -> Held {
+        let repo = self.repo();
+        let commit = repo.store().get_commit(&commit.id).expect("the commit");
+        held(&repo, &commit, path)
     }
 
     /// The number of operation heads.
@@ -511,6 +531,27 @@ impl Fixture {
     #[must_use]
     pub fn open(&self) -> JjRepository {
         JjRepository::discover(self.root()).expect("the repository is found")
+    }
+}
+
+/// What `commit` holds at `path` in `repo`.
+fn held(repo: &ReadonlyRepo, commit: &Commit, path: &str) -> Held {
+    let repo_path = RepoPathBuf::from_internal_string(path).expect("a repository path");
+    let value = commit.tree().path_value(&repo_path).block_on().expect("the path's value");
+    match value.into_resolved() {
+        Err(_) => Held::Conflict,
+        Ok(None) => Held::Absent,
+        Ok(Some(TreeValue::File { id, .. })) => {
+            let mut bytes = Vec::new();
+            futures::AsyncReadExt::read_to_end(
+                &mut repo.store().read_file(&repo_path, &id).block_on().expect("the file opens"),
+                &mut bytes,
+            )
+            .block_on()
+            .expect("the file reads");
+            Held::File(bytes)
+        }
+        Ok(Some(_)) => Held::Other,
     }
 }
 

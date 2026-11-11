@@ -8,7 +8,7 @@ Every task follows the ground rules of §A1: tests first, expected values from t
 
 ## 1. Status
 
-As of 2026-11-10.
+As of 2026-11-11.
 
 | Milestone | State | Part |
 |---|---|---|
@@ -20,7 +20,7 @@ As of 2026-11-10.
 | M4b Linux and Windows | Linux test machine and packages build (§E7.1); final checks need hardware, Windows a certificate | §A8, §E7 |
 | Merge semantics: jj's merge, word level, refinements, syntax-aware boundaries | Done | B |
 | M5 chunk origin | Done, with each input's commit in its pane heading (§C5.7) | C |
-| M6 native resolution | Done: git stages a resolved save; jj snapshots before the read and after each save (§D5.5) | D |
+| M6 native resolution | Done: git stages a resolved save; jj snapshots before the read and after each save (§D5.5). A save that resolves some of a file's conflicts leaves jj a conflict of the rest, which `jj edit` and `jj new` carry and a later `resolve` loads, in a working-copy commit or an ancestor whose descendants rebase; git reopens it from the file's markers | D |
 | M7 syntax highlighting | Done: Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX | F |
 | p4merge parity | Done: config file, overview ruler with the scrollbar thumb, scrollbars, output line ending, Save Copy As and key bindings | E |
 | Review and diff features | Bulk takes (§G3) and line endings in comparison (§G4) done; the rest open | G |

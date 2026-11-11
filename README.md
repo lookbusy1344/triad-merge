@@ -136,6 +136,20 @@ triad-merge diff --rev main src/lib.rs   # against another revision
 
 A save from `resolve` is recorded. git stages a resolved file as `git add` does. jj snapshots the save in an operation of its own, `save <path> in triad`, which `jj undo` reverts.
 
+### Resolving a jj conflict in steps
+
+jj can [record a conflict in a commit](https://docs.jj-vcs.dev/latest/conflicts/), for resolution later, so a rebase or merge never stops halfway. You can edit and build on that commit as on any other, and resolve the conflict when it suits you. triad works the same way. Resolve some of a file's conflicts, save, and the rest stay in the commit as a conflict; the save exits 1. Then carry on with jj as usual, and come back later.
+
+```sh
+jj edit xyz                   # a conflicted commit, here or further down the history
+triad-merge resolve a.rs      # resolve one of three conflicts and save
+jj new                        # work on top; the two left show as markers
+jj edit xyz                   # back to the conflicted commit
+triad-merge resolve a.rs      # resolve the rest
+```
+
+Each save in a commit with descendants rebases them, as any jj command does. A descendant's own edits stay when they are clear of the conflicts. A descendant of a partly resolved commit can show more than two sides for a conflict: jj [rebases a conflicted file](https://docs.jj-vcs.dev/latest/technical/conflicts/) by combining whole versions of it, not line by line, and triad shows each version in a pane of its own. Resolving in the ancestor clears it in every descendant. git keeps a partial save as markers in the file, with the index stages in place, and the next `resolve` opens the conflicts left.
+
 ### On files
 
 ```sh
