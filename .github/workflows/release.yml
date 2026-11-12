@@ -61,7 +61,6 @@ jobs:
         run: |
           mkdir -p dist
           ditto -c -k --keepParent target/dist/triad.app "dist/$NAME.zip"
-          (cd dist && shasum -a 256 "$NAME.zip" > "$NAME.sha256")
       - uses: actions/upload-artifact@v4
         with:
           name: triad-macos
@@ -89,7 +88,6 @@ jobs:
           cp target/dist/triad-merge.exe target/dist/triad-merge-gui.exe README.md "$stage/"
           cp vendor/gpui-base/LICENSE-APACHE "$stage/LICENSE-gpui-base"
           (cd stage && 7z a -tzip "../dist/$NAME.zip" "$NAME")
-          (cd dist && sha256sum "$NAME.zip" > "$NAME.sha256")
       - uses: actions/upload-artifact@v4
         with:
           name: triad-windows
@@ -128,6 +126,8 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      # GitHub shows each asset's SHA-256 digest, so script/package's checksum file stays out.
+      - run: rm dist/*.sha256
       - env:
           GH_TOKEN: ${{ github.token }}
         run: >

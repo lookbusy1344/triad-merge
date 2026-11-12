@@ -67,7 +67,7 @@ The [crates.io package](https://crates.io/crates/triad-merge) is a placeholder t
 
 ### From a release
 
-Download the archive for your platform from [Releases](https://github.com/lookbusy1344/triad-merge/releases); each has a `.sha256` beside it.
+Download the archive for your platform from [Releases](https://github.com/lookbusy1344/triad-merge/releases), which shows each file's SHA-256 digest.
 
 - **macOS:** `triad-merge-VERSION-aarch64-apple-darwin.zip` holds `triad.app`. It is signed ad hoc, not notarised, so clear the quarantine before the first run: `xattr -dr com.apple.quarantine triad.app`. Then copy it to `/Applications` and register it as below.
 - **Linux:** an AppImage and a `.tar.gz`, for glibc 2.35 or later.
