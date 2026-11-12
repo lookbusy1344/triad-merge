@@ -1,5 +1,8 @@
 //! `JjRepository` on repositories built in temporary directories through jj-lib (PLAN.md §A7.1).
-
+#![expect(
+    clippy::expect_used,
+    reason = "test support: a failed setup fails the test, named by its message"
+)]
 #![expect(clippy::panic, reason = "test helpers outside `#[test]` panic on a failed check")]
 
 #[path = "jj/snapshot.rs"]

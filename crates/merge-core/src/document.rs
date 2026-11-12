@@ -768,8 +768,7 @@ impl MergeDocument {
                 let bytes = self.bytes_of(region);
                 self.lines.set(region, LineCount::in_rope(&self.result, bytes));
             }
-            shift += isize::try_from(s.after.len()).expect("a splice's regions fit an isize")
-                - isize::try_from(s.before.len()).expect("a splice's regions fit an isize");
+            shift += s.after.len().cast_signed() - s.before.len().cast_signed();
         }
         regions_changed
     }
@@ -1216,6 +1215,10 @@ fn label(labels: &[String], i: usize) -> Option<&str> {
 /// word-merged region's text is computed again from the inputs: regions carry no text.
 /// Whitespace modes decide equality only: on each line of an unchanged region, the first
 /// side whose bytes differ from base gives the bytes (spec §4.2).
+#[expect(
+    clippy::expect_used,
+    reason = "invariant: `align` word-merges a region only after its words merge"
+)]
 fn auto_text<'a>(
     inputs: &'a Inputs,
     region: &Region,

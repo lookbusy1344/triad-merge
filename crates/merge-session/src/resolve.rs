@@ -373,6 +373,10 @@ fn working_text(
 fn same_conflict(parsed: &Parsed, inputs: &Inputs) -> bool {
     let options = MergeOptions { semantics: Semantics::Git, ..MergeOptions::default() };
     // Texts share their content, so the copy is O(1).
+    #[expect(
+        clippy::expect_used,
+        reason = "invariant: `MergeDocument::new` fails only on labels that do not fit"
+    )]
     let doc = MergeDocument::new(inputs.clone(), options, Labels::none())
         .expect("no labels fit any inputs");
     let Output::Conflicted(merged) = doc.output() else {

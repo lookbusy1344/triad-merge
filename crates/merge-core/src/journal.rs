@@ -263,6 +263,10 @@ pub(crate) fn alignment_hash(
     const ALL_SAME: u8 = 2;
     const WORD_MERGED: u8 = 3;
     const CONFLICT: u8 = 4;
+    #[expect(
+        clippy::expect_used,
+        reason = "invariant: triad's targets have a `usize` of at most 64 bits"
+    )]
     let number = |hasher: &mut Sha256, n: usize| {
         hasher.update(u64::try_from(n).expect("a usize fits a u64").to_le_bytes());
     };

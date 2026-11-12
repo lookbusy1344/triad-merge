@@ -1,5 +1,9 @@
 //! Test inputs: a seeded generator for large base/left/right triples, for benchmarks and
 //! tests, and builders for small texts and documents.
+#![expect(
+    clippy::expect_used,
+    reason = "test support: a failed setup fails the test, named by its message"
+)]
 
 use crate::document::{Labels, MergeDocument, MergeOptions};
 use crate::merge3::Inputs;

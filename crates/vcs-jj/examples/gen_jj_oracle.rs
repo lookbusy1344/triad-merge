@@ -4,6 +4,10 @@
 //! Each case is a triple of the git corpus or a hand seed, merged by
 //! `jj_lib::files::merge_hunks` under each combination of `same_change` and `hunk_level`. A
 //! case records jj's hunks: resolved text, and the terms of each conflict.
+#![expect(
+    clippy::expect_used,
+    reason = "dev-time generator: a failure stops it, named by its message"
+)]
 
 use std::collections::BTreeMap;
 use std::fs;

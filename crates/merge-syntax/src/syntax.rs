@@ -362,6 +362,10 @@ pub fn highlight_source(grammar: &Grammar, source: &str) -> LineSpans {
     spans
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "invariant: `Grammar::new` checked the language's ABI against this tree-sitter"
+)]
 fn parser(grammar: &Grammar) -> Parser {
     let mut parser = Parser::new();
     parser.set_language(&grammar.language).expect("Grammar::new loaded the language into a parser");

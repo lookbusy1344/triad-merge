@@ -357,6 +357,10 @@ impl KeyBindings {
     ///
     /// Never: the default table holds valid chords, which a test reads.
     #[must_use]
+    #[expect(
+        clippy::expect_used,
+        reason = "invariant: the default table is a constant, which a test parses"
+    )]
     pub fn for_platform(platform: Platform) -> Self {
         let bound = DEFAULT_BINDINGS
             .iter()

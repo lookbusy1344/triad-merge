@@ -1,6 +1,10 @@
 //! Syntax boundaries' cost on valid Rust (`docs/PLAN.md` §B5.8, task 6): a word
 //! conflict, or a conflict deep refinement splits at a shared `}`, every few functions, with the
 //! setting off and on, under jj's semantics. `script/check-bench` holds the `bounded` runs to spec §9's load target.
+#![expect(
+    clippy::expect_used,
+    reason = "benchmark: a failed setup stops the run, named by its message"
+)]
 
 use std::fmt::Write as _;
 use std::hint::black_box;

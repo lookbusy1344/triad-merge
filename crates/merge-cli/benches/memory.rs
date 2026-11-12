@@ -5,6 +5,10 @@
 //! The allocator's peak cannot be reset, so the sizes run smallest first, jj mode after git
 //! mode at each size, and each phase must raise the peak; a phase that does not is reported as an error. A child process writes each
 //! triple, so the generator's own peak stays out of the measurement.
+#![expect(
+    clippy::expect_used,
+    reason = "benchmark: a failed setup stops the run, named by its message"
+)]
 
 use std::alloc::System;
 use std::path::Path;

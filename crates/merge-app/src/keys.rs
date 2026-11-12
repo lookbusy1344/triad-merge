@@ -102,6 +102,10 @@ pub(crate) fn bind(bindings: &KeyBindings, cx: &mut App) {
 
 /// A binding of `keystroke` to `action` in `context`. `KeyBinding::new` takes only static
 /// keystrokes; these come from the settings.
+#[expect(
+    clippy::expect_used,
+    reason = "invariant: the contexts are constants and `Chord` writes only GPUI's key names"
+)]
 fn binding(
     keystroke: &str,
     action: Box<dyn Action>,

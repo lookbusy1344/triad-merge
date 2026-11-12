@@ -98,7 +98,8 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 - **Typed errors.** A function that can fail returns `Result<T, E>`.
   - Each crate defines its error enums with `thiserror`. Use `anyhow` only where a dependency returns `anyhow::Error`, such as GPUI's `open_window`, and wrap it in a typed variant there.
   - Propagate with `?`. Add context with `map_err` or a `#[source]` field, and keep the cause.
-  - `unwrap`, `expect` and `panic!` only for invariants the code guarantees; each `expect` message states the invariant. Tests may unwrap.
+  - Product code never calls `unwrap`, and calls `expect` or `panic!` only for an invariant the code guarantees. Clippy warns on all three (`unwrap_used`, `expect_used`, `panic`). Each `expect` carries a local `#[expect(clippy::expect_used, reason = "invariant: …")]` saying why the invariant holds, and its message says what the invariant is. First try to restructure so the invariant needs no check: a slice pattern, `cast_signed`, `strict_add_signed`, a narrower type.
+  - Tests, test-support modules (`testing.rs`), benchmarks and examples may unwrap, expect and panic. `clippy.toml` exempts `#[test]` functions and `#[cfg(test)]` modules. Other test support exempts itself with one `#![expect(…)]` at its root.
   - Never drop an error silently. Handle it, return it, or log it with `tracing` and say why going on is safe.
   - `Option` for a value that may be absent, never an error or a sentinel.
 - **Named constants.** No magic numbers.

@@ -3,6 +3,10 @@
 //! the first changes one line, in turn, and line 0 only ever comes from the first commit, so
 //! each annotation walks the whole history. Spec §9 sets no target; the results are recorded
 //! in the plan.
+#![expect(
+    clippy::expect_used,
+    reason = "benchmark: a failed setup stops the run, named by its message"
+)]
 
 use std::fmt::Write as _;
 use std::hint::black_box;

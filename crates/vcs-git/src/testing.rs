@@ -2,6 +2,7 @@
 //! crates' (`testing` feature). They panic on failure, as test code may.
 #![expect(
     clippy::missing_panics_doc,
+    clippy::expect_used,
     reason = "test support: each panic is a failed test setup, named by its message"
 )]
 

@@ -1,6 +1,10 @@
 //! Spec §9 targets on triples from the seeded generator, in git and jj mode, and on word
 //! conflicts at jj's word level (`docs/PLAN.md` §B6). `script/check-bench` compares the results against the
 //! targets.
+#![expect(
+    clippy::expect_used,
+    reason = "benchmark: a failed setup stops the run, named by its message"
+)]
 
 use merge_core::index::RegionIx;
 use std::hint::black_box;

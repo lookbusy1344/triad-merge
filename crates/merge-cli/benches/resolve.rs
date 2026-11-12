@@ -4,6 +4,10 @@
 //! snapshots jj's working copy again or stages git's file. Each repository holds `files`
 //! clean files in directories of `FILES_PER_DIR`, and one conflict in `a.txt`. The window
 //! runs these steps on the UI thread; spec §9's targets apply to the steps around them.
+#![expect(
+    clippy::expect_used,
+    reason = "benchmark: a failed setup stops the run, named by its message"
+)]
 
 use std::hint::black_box;
 use std::path::Path;

@@ -119,6 +119,7 @@ fn marker_length(value: &str) -> Result<usize, String> {
 
 /// A parser of `T`'s values by name, case-sensitive, each listed in help with its doc comment
 /// less the closing full stop, as clap shows a doc comment.
+#[expect(clippy::expect_used, reason = "invariant: clap passes on only the names it was given")]
 fn named<T: Named + Send + Sync>() -> impl TypedValueParser<Value = T> {
     let values = T::VARIANTS.iter().map(|&value| {
         let possible = PossibleValue::new(value.name());

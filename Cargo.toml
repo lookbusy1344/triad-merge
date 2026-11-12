@@ -16,11 +16,13 @@ unsafe_code = "forbid"
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
-# Restriction lints, picked one by one. `clippy.toml` lets tests unwrap and panic.
+# Restriction lints, picked one by one. `clippy.toml` lets tests unwrap, expect and panic.
 allow_attributes = "warn"
 allow_attributes_without_reason = "warn"
 clone_on_ref_ptr = "warn"
 dbg_macro = "warn"
+# Product code states an invariant with a local `#[expect(clippy::expect_used, reason = "…")]`.
+expect_used = "warn"
 panic = "warn"
 todo = "warn"
 unimplemented = "warn"

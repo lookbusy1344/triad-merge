@@ -75,12 +75,13 @@ pub fn parse(text: &Text) -> Result<Parsed, MarkerError> {
                 let texts = |texts: Vec<String>| -> Vec<Text> {
                     texts.into_iter().map(|t| Text::new(text.encoding(), t)).collect()
                 };
-                return Ok(Parsed {
-                    inputs: Inputs::new(texts(sides), texts(bases))
-                        .expect("every conflict has at least two sides and one base fewer"),
-                    labels,
-                    marker_length: len,
-                });
+                #[expect(
+                    clippy::expect_used,
+                    reason = "invariant: `parse_at` gives n > 1 sides and n - 1 bases"
+                )]
+                let inputs = Inputs::new(texts(sides), texts(bases))
+                    .expect("every conflict has at least two sides and one base fewer");
+                return Ok(Parsed { inputs, labels, marker_length: len });
             }
             Err(error) => {
                 first_error.get_or_insert(error);
@@ -167,8 +168,10 @@ struct Open<'a> {
     start: usize,
     /// The start marker's byte offset.
     offset: usize,
-    /// The conflict's lines so far, numbered, from the start marker.
-    lines: Vec<(usize, &'a str)>,
+    /// The start marker's line.
+    marker: &'a str,
+    /// The conflict's lines so far after the start marker, numbered.
+    body: Vec<(usize, &'a str)>,
 }
 
 /// [`parse`] at one marker length: each side's and base's whole text, and the labels.
@@ -184,13 +187,12 @@ fn parse_at(content: &str, len: usize) -> Result<Sections, MarkerError> {
         let kind = marker(line, Some(len)).map(|(kind, _, _)| kind);
         match (&mut open, kind) {
             (None, Some(Kind::Start)) => {
-                open = Some(Open { start: number, offset, lines: vec![(number, line)] });
+                open = Some(Open { start: number, offset, marker: line, body: Vec::new() });
             }
             (None, _) => {}
             (Some(_), Some(Kind::Start)) => return Err(MarkerError::Nested { line: number }),
             (Some(conflict), Some(Kind::End)) => {
-                conflict.lines.push((number, line));
-                let hunk = hunk(&conflict.lines, len)?;
+                let hunk = hunk(conflict, (number, line), len)?;
                 let plain = &content[plain_start..conflict.offset];
                 if labels.is_none() {
                     let count = hunk.sides.len();
@@ -220,7 +222,7 @@ fn parse_at(content: &str, len: usize) -> Result<Sections, MarkerError> {
                 plain_start = offset + line.len();
                 open = None;
             }
-            (Some(conflict), _) => conflict.lines.push((number, line)),
+            (Some(conflict), _) => conflict.body.push((number, line)),
         }
         offset += line.len();
     }
@@ -242,10 +244,9 @@ fn pad(labels: &[String], count: usize) -> Vec<String> {
     padded
 }
 
-/// A conflict from its lines, numbered: the start marker, the body, the end marker.
-fn hunk(lines: &[(usize, &str)], len: usize) -> Result<Hunk, MarkerError> {
-    let (&(start, start_line), rest) = lines.split_first().expect("a conflict has a start");
-    let (&(end, end_line), body) = rest.split_last().expect("a conflict has an end");
+/// A conflict from its start marker and body in `open` and its end marker, numbered.
+fn hunk(open: &Open, (end, end_line): (usize, &str), len: usize) -> Result<Hunk, MarkerError> {
+    let &Open { start, marker: start_line, ref body, .. } = open;
     let jj = body.first().is_some_and(|(_, line)| {
         matches!(marker(line, Some(len)), Some((Kind::Add | Kind::Remove | Kind::Diff, _, _)))
     });

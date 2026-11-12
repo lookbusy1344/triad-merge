@@ -431,9 +431,7 @@ impl Shift {
     fn place(&self, line: usize) -> Positions {
         // Panics only on a broken diff: the changes applied so far lie before `line`, so
         // they remove at most the lines before it.
-        let at = |delta: &isize| {
-            line.checked_add_signed(*delta).expect("diff offsets stay inside the file")
-        };
+        let at = |&delta: &isize| line.strict_add_signed(delta);
         Positions {
             sides: self.sides.iter().map(at).collect(),
             bases: self.bases.iter().map(at).collect(),

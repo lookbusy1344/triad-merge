@@ -56,7 +56,7 @@ fn growth(patch: &TextPatch) -> isize {
 fn shifted(offset: usize, shift: isize) -> usize {
     // Panics only on a broken caller: the shift sums patches that end at or before `offset`,
     // and disjoint patches remove at most the bytes before it.
-    offset.checked_add_signed(shift).expect("a sorted patch list never moves an offset below zero")
+    offset.strict_add_signed(shift)
 }
 
 #[cfg(test)]

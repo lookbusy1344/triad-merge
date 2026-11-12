@@ -84,6 +84,7 @@ impl<'a> LineDiff<'a> {
 struct LineKeys(Comparison);
 
 impl LineKeys {
+    #[expect(clippy::expect_used, reason = "invariant: jj-lib splits a `str` into lines at `\\n`")]
     fn key<'t>(&self, line: &'t [u8]) -> Cow<'t, str> {
         let line = std::str::from_utf8(line).expect("a line of a `str` is UTF-8: it ends at `\\n`");
         line_key(line, self.0)
@@ -141,6 +142,10 @@ pub(crate) fn merge_words(
             *offset += content.len();
         }
         // The word tokenizer splits at ASCII bytes only, so each piece of a `str` is UTF-8.
+        #[expect(
+            clippy::expect_used,
+            reason = "invariant: the word tokenizer splits a `str` at ASCII bytes"
+        )]
         merged.push_str(std::str::from_utf8(text).expect("a word hunk of a `str` is UTF-8"));
     }
     Some(merged)
@@ -156,6 +161,7 @@ fn jj_same_change(same_change: SameChange) -> JjSameChange {
 /// jj's trivial resolution of a `Different` hunk, given each input's text or comparison keys.
 /// [`Kind::AllSame`] when it resolves to a text every side holds, else [`Kind::OneSide`] with
 /// the lowest side holding it, else [`Kind::Conflict`].
+#[expect(clippy::expect_used, reason = "invariant: a trivial merge resolves to a side's term")]
 pub(crate) fn classify<T: Eq + Hash>(sides: &[T], bases: &[T], same_change: SameChange) -> Kind {
     let merge = Merge::from_removes_adds(bases, sides);
     let same_change = jj_same_change(same_change);

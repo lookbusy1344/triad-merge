@@ -335,11 +335,14 @@ fn settings(
     workspace_root: &Path,
     repo_path: &Path,
 ) -> Result<UserSettings, ConfigError> {
+    #[expect(
+        clippy::expect_used,
+        reason = "invariant: `CLI_DEFAULTS` is a constant, which every settings test parses"
+    )]
+    let cli_defaults = ConfigLayer::parse(ConfigSource::Default, CLI_DEFAULTS)
+        .expect("jj-cli's snapshot defaults are TOML");
     let mut defaults = StackedConfig::with_defaults();
-    defaults.add_layer(
-        ConfigLayer::parse(ConfigSource::Default, CLI_DEFAULTS)
-            .expect("jj-cli's snapshot defaults are TOML"),
-    );
+    defaults.add_layer(cli_defaults);
     defaults.add_layer(env.base_layer()?);
     let mut config = user_files(env, defaults)?;
     if let Some(root) = env.jj_config_dir() {
