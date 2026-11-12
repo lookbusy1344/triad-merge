@@ -94,9 +94,42 @@ fn the_dialog_fills_the_slots_and_starts_a_merge(cx: &mut TestAppContext) {
     let (window, _view) = opened(cx);
     fill_all(cx, window, dir.path());
     act(cx, window, |window, cx| window.click(START_ID, cx));
+    cx.run_until_parked();
     assert_eq!(merges(cx), [("A\nb\nC\n".to_owned(), Some(dir.path().join("out.txt")))]);
     assert!(!dialog_open(cx), "the dialog closes");
     assert!(!dir.path().join("out.txt").exists(), "nothing is written yet");
+}
+
+#[gpui_kit::test]
+fn start_loads_off_the_ui_thread_and_a_second_start_waits_for_it(cx: &mut TestAppContext) {
+    let dir = inputs();
+    let (window, _view) = opened(cx);
+    fill_all(cx, window, dir.path());
+    act(cx, window, |window, cx| window.click(START_ID, cx));
+    assert_eq!(merges(cx), [], "the inputs load in the background");
+    assert!(dialog_open(cx), "the dialog stays while they load");
+    // A second start while they load does nothing, so the slot's new path goes unread.
+    act(cx, window, |window, cx| {
+        window.click(Slot::Left.id(), cx);
+        window.press("secondary-a", cx);
+        window.input(&dir.path().join("missing.txt").to_string_lossy(), cx);
+        window.press("enter", cx);
+    });
+    cx.run_until_parked();
+    assert_eq!(merges(cx), [("A\nb\nC\n".to_owned(), Some(dir.path().join("out.txt")))]);
+    assert!(!dialog_open(cx));
+}
+
+#[gpui_kit::test]
+fn a_diff_loads_off_the_ui_thread(cx: &mut TestAppContext) {
+    let dir = inputs();
+    let (window, _view) = opened(cx);
+    select(cx, window, Mode::Diff);
+    fill_diff(cx, window, dir.path());
+    act(cx, window, |window, cx| window.click(START_ID, cx));
+    assert_eq!(diffs(cx).len(), 0, "the files read in the background");
+    cx.run_until_parked();
+    assert_eq!(diffs(cx).len(), 1);
 }
 
 #[gpui_kit::test]
@@ -105,6 +138,7 @@ fn the_merge_titles_its_panes_with_the_file_names(cx: &mut TestAppContext) {
     let (window, _view) = opened(cx);
     fill_all(cx, window, dir.path());
     act(cx, window, |window, cx| window.click(START_ID, cx));
+    cx.run_until_parked();
     let titles: Vec<Vec<String>> = cx.update(|cx| {
         views(cx)
             .into_iter()
@@ -124,6 +158,7 @@ fn enter_in_a_slot_starts_the_merge(cx: &mut TestAppContext) {
     let (window, _view) = opened(cx);
     fill_all(cx, window, dir.path());
     act(cx, window, |window, cx| window.press("enter", cx));
+    cx.run_until_parked();
     assert_eq!(merges(cx).len(), 1);
 }
 
@@ -135,6 +170,7 @@ fn an_empty_slot_is_named_and_starts_nothing(cx: &mut TestAppContext) {
     fill(cx, window, Slot::Left, &dir.path().join("left.txt"));
     fill(cx, window, Slot::Output, &dir.path().join("out.txt"));
     act(cx, window, |window, cx| window.click(START_ID, cx));
+    cx.run_until_parked();
     assert_eq!(error(cx, &view).as_deref(), Some("Choose a file for Right."));
     assert_eq!(merges(cx), []);
     assert!(dialog_open(cx));
@@ -147,6 +183,7 @@ fn an_unreadable_input_is_named_and_the_slots_are_kept(cx: &mut TestAppContext) 
     let (window, view) = opened(cx);
     fill_all(cx, window, dir.path());
     act(cx, window, |window, cx| window.click(START_ID, cx));
+    cx.run_until_parked();
     let left = dir.path().join("left.txt");
     let message = error(cx, &view).expect("an error shows");
     assert!(message.starts_with(&format!("cannot read {}: ", left.display())), "{message}");
@@ -154,6 +191,7 @@ fn an_unreadable_input_is_named_and_the_slots_are_kept(cx: &mut TestAppContext) 
     // Once the file is there, the same slots start the merge.
     std::fs::write(&left, "A\nb\nc\n").expect("left is written");
     act(cx, window, |window, cx| window.click(START_ID, cx));
+    cx.run_until_parked();
     assert_eq!(merges(cx).len(), 1);
 }
 
@@ -171,6 +209,7 @@ fn a_long_error_leaves_start_in_view(cx: &mut TestAppContext) {
     fill(cx, window, Slot::Right, &dir.path().join("right.txt"));
     fill(cx, window, Slot::Output, &dir.path().join("out.txt"));
     act(cx, window, |window, cx| window.click(START_ID, cx));
+    cx.run_until_parked();
     assert!(error(cx, &view).is_some());
     // Fixing the slot and starting again works with the error still showing.
     act(cx, window, |window, cx| {
@@ -179,6 +218,7 @@ fn a_long_error_leaves_start_in_view(cx: &mut TestAppContext) {
         window.input(&dir.path().join("base.txt").to_string_lossy(), cx);
         window.click(START_ID, cx);
     });
+    cx.run_until_parked();
     assert_eq!(merges(cx).len(), 1);
 }
 
@@ -189,6 +229,7 @@ fn a_binary_input_is_refused(cx: &mut TestAppContext) {
     let (window, view) = opened(cx);
     fill_all(cx, window, dir.path());
     act(cx, window, |window, cx| window.click(START_ID, cx));
+    cx.run_until_parked();
     let message = error(cx, &view).expect("an error shows");
     let base = dir.path().join("base.txt");
     assert!(message.starts_with(&format!("{}: ", base.display())), "{message}");
@@ -280,6 +321,7 @@ fn the_dialog_aligns_with_the_settings_options(cx: &mut TestAppContext) {
     act(cx, window, TestWindowExt::render_frame);
     fill_all(cx, window, dir.path());
     act(cx, window, |window, cx| window.click(START_ID, cx));
+    cx.run_until_parked();
     assert_eq!(merges(cx)[0].0, "b\n");
 }
 
@@ -356,6 +398,7 @@ fn the_error_is_an_alert_only_while_it_shows(cx: &mut TestAppContext) {
     let (window, _) = opened(cx);
     assert_eq!(named(cx, window, ERROR_ID), (None, None));
     act(cx, window, |window, cx| window.click(START_ID, cx));
+    cx.run_until_parked();
     assert_eq!(
         named(cx, window, ERROR_ID),
         (Some(Role::Alert), Some("Choose a file for Base.".to_owned()))
@@ -401,6 +444,7 @@ fn the_output_names_the_language_the_merge_keeps_syntax_boundaries_in(cx: &mut T
         fill(cx, window, slot, &dir.path().join(name));
     }
     act(cx, window, |window, cx| window.click(START_ID, cx));
+    cx.run_until_parked();
     let kinds = cx.update(|cx| {
         views(cx)
             .into_iter()
@@ -452,6 +496,7 @@ fn the_diff_tab_compares_left_and_right_in_a_diff_window(cx: &mut TestAppContext
     select(cx, window, Mode::Diff);
     fill_diff(cx, window, dir.path());
     act(cx, window, |window, cx| window.click(START_ID, cx));
+    cx.run_until_parked();
     let [left, right] = ["left.txt", "right.txt"].map(|n| dir.path().join(n).display().to_string());
     assert_eq!(diffs(cx), [["A\nb\nc\n".to_owned(), "a\nb\nC\n".to_owned(), left, right]]);
     assert_eq!(merges(cx), []);
@@ -467,6 +512,7 @@ fn the_diff_tab_ignores_line_endings_by_default(cx: &mut TestAppContext) {
     select(cx, window, Mode::Diff);
     fill_diff(cx, window, dir.path());
     act(cx, window, |window, cx| window.click(START_ID, cx));
+    cx.run_until_parked();
     let status = cx.update(|cx| {
         views(cx)
             .into_iter()
@@ -486,6 +532,7 @@ fn enter_in_a_diff_slot_starts_the_diff(cx: &mut TestAppContext) {
     select(cx, window, Mode::Diff);
     fill_diff(cx, window, dir.path());
     act(cx, window, |window, cx| window.press("enter", cx));
+    cx.run_until_parked();
     assert_eq!(diffs(cx).len(), 1);
     assert_eq!(merges(cx), []);
 }
@@ -529,6 +576,7 @@ fn the_slots_keep_their_paths_across_tabs(cx: &mut TestAppContext) {
     // Left and right typed for the merge serve the diff.
     select(cx, window, Mode::Diff);
     act(cx, window, |window, cx| window.click(START_ID, cx));
+    cx.run_until_parked();
     assert_eq!(diffs(cx).len(), 1);
 }
 
@@ -539,6 +587,7 @@ fn an_empty_diff_slot_is_named_and_starts_nothing(cx: &mut TestAppContext) {
     select(cx, window, Mode::Diff);
     fill(cx, window, Slot::Left, &dir.path().join("left.txt"));
     act(cx, window, |window, cx| window.click(START_ID, cx));
+    cx.run_until_parked();
     assert_eq!(error(cx, &view).as_deref(), Some("Choose a file for Right."));
     assert_eq!(diffs(cx), Vec::<[String; 4]>::new());
     assert!(dialog_open(cx));
@@ -553,11 +602,13 @@ fn an_unreadable_diff_input_is_named_and_the_slots_are_kept(cx: &mut TestAppCont
     select(cx, window, Mode::Diff);
     fill_diff(cx, window, dir.path());
     act(cx, window, |window, cx| window.click(START_ID, cx));
+    cx.run_until_parked();
     let message = error(cx, &view).expect("an error shows");
     assert!(message.starts_with(&format!("cannot read {}: ", right.display())), "{message}");
     assert_eq!(diffs(cx), Vec::<[String; 4]>::new());
     std::fs::write(&right, "a\nb\nC\n").expect("right is written");
     act(cx, window, |window, cx| window.click(START_ID, cx));
+    cx.run_until_parked();
     assert_eq!(diffs(cx).len(), 1);
 }
 
@@ -570,6 +621,7 @@ fn a_binary_diff_input_is_refused(cx: &mut TestAppContext) {
     select(cx, window, Mode::Diff);
     fill_diff(cx, window, dir.path());
     act(cx, window, |window, cx| window.click(START_ID, cx));
+    cx.run_until_parked();
     let message = error(cx, &view).expect("an error shows");
     assert!(message.starts_with(&format!("{}: ", left.display())), "{message}");
     assert_eq!(diffs(cx), Vec::<[String; 4]>::new());
@@ -579,6 +631,7 @@ fn a_binary_diff_input_is_refused(cx: &mut TestAppContext) {
 fn switching_tabs_clears_the_error(cx: &mut TestAppContext) {
     let (window, view) = opened(cx);
     act(cx, window, |window, cx| window.click(START_ID, cx));
+    cx.run_until_parked();
     assert_eq!(error(cx, &view).as_deref(), Some("Choose a file for Base."));
     select(cx, window, Mode::Diff);
     assert_eq!(error(cx, &view), None);

@@ -153,7 +153,7 @@ gpui-component's `Input::render` copies the whole text each frame, but only with
 - The window pins the region that navigation or a pick made current, with the caret it left: an empty region holds no byte, so the caret alone cannot name it.
 - Toolbar: `toolbar::Labels::for_width` drops every label below `LABELS_MIN_WIDTH` (1052 px at the default toolbar text, more at a larger `toolbar-font-size`); unlabelled, it fits at `COMPACT_MIN_WIDTH` (788 px).
 - Go to line: a field above the result, mapped through `scroll::row_of_line`. Zed's modal takes `row:column`; triad takes a line.
-- Open dialog: Merge and Diff tabs after Zed's modals (small text, a tab strip, icon-only pickers), on gpui-base's headless `Tabs`, which carry tab roles.
+- Open dialog: Merge and Diff tabs after Zed's modals (small text, a tab strip, icon-only pickers), on gpui-base's headless `Tabs`, which carry tab roles. Start validates the slots on the UI thread and hands a `Load` to the background executor, which reads, decodes and merges the inputs or reads the diff's files and finds their repository; the dialog opens the window when it lands. The button shows its loading state meanwhile and takes no clicks.
 - gpui-kit's `test-support` pins `cocoa` 0.26.0 and `unicode-properties` 0.1.3 in the lockfile through weak dependency features (rust-lang/cargo#10801).
 
 #### A6.3 Scroll sync for every source

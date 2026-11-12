@@ -13,7 +13,7 @@ use gpui_kit::component::{ActiveTheme as _, Sizable as _, h_flex, v_flex};
 use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, Bounds, ClickEvent, Context, ElementId, Entity,
     InteractiveElement as _, IntoElement, ParentElement as _, PathPromptOptions, Pixels, Render,
-    Role, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription,
+    Role, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Task,
     TestSupportExt as _, Window, WindowBounds, WindowOptions, div, prelude::FluentBuilder as _, px,
     size,
 };
@@ -102,7 +102,68 @@ pub struct OpenDialog {
     error: Option<SharedString>,
     settings: WindowSettings,
     watch: bool,
+    /// The inputs loading off the UI thread; Start waits for them.
+    loading: Option<Task<()>>,
     _subscriptions: Vec<Subscription>,
+}
+
+/// What Start loads off the UI thread.
+enum Load {
+    Merge { files: MergeFiles, output: PathBuf, settings: WindowSettings },
+    Diff { left: PathBuf, right: PathBuf, settings: WindowSettings, watch: bool },
+}
+
+/// Opens the window of the inputs a [`Load`] loaded.
+type Opener = Box<dyn FnOnce(&mut App) -> Result<(), String> + Send>;
+
+impl Load {
+    /// Read the inputs, find their repository and merge them.
+    fn run(self) -> Result<Opener, String> {
+        match self {
+            Self::Merge { files, output, settings } => {
+                let language = Language::of_run(files.paths(), Some(&output), None);
+                let doc = merge_session::load(&files, settings.options, Labels::none(), language)
+                    .map_err(|e| e.to_string())?;
+                let settings = WindowSettings {
+                    repo: run::repo_kind(settings.cwd.as_deref(), &output),
+                    output: Some(output),
+                    file_names: FileNames::three_way(&files.base, &files.left, &files.right),
+                    ..settings
+                };
+                Ok(Box::new(move |cx| {
+                    crate::window::open(doc, &settings, cx).map(drop).map_err(|e| e.to_string())
+                }))
+            }
+            Self::Diff { left, right, settings, watch } => {
+                let cwd = settings.cwd.as_deref();
+                let repo = RunRepository::of_diff_tool(cwd, &right);
+                let kind = repo.kind();
+                let origins = DiffLookup::Tool {
+                    paths: [left.clone(), right.clone()],
+                    title: None,
+                    cwd: run::working_dir(cwd),
+                    repo: Handoff::new(repo),
+                };
+                let read = |path: PathBuf| {
+                    merge_session::read_text(&path)
+                        .map(|text| DiffFile { origin: Origin::File(path), text, read_only: false })
+                        .map_err(|e| e.to_string())
+                };
+                let left = read(left)?;
+                let right = read(right)?;
+                let diff_options = settings.diff_options;
+                let settings = diff_window::DiffSettings {
+                    watch,
+                    ..run::diff_settings(None, diff_options, settings, origins, kind)
+                };
+                Ok(Box::new(move |cx| {
+                    diff_window::open(left, right, &settings, cx)
+                        .map(drop)
+                        .map_err(|e| e.to_string())
+                }))
+            }
+        }
+    }
 }
 
 /// Open the dialog. The merge window it starts gets `settings`, with the output slot's path;
@@ -160,6 +221,7 @@ impl OpenDialog {
             error: None,
             settings,
             watch,
+            loading: None,
             _subscriptions: subscriptions,
         }
     }
@@ -190,16 +252,32 @@ impl OpenDialog {
         self.error.as_ref()
     }
 
-    /// Load the inputs and open the merge window, or say why not and stay open.
+    /// Load the inputs off the UI thread and open their window, or say why not and stay
+    /// open. A start while the inputs load does nothing.
     fn start(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.error = self.try_start(cx).err().map(SharedString::from);
-        if self.error.is_none() {
-            window.remove_window();
+        if self.loading.is_some() {
+            return;
         }
+        let load = match self.load(cx) {
+            Ok(load) => load,
+            Err(error) => {
+                self.error = Some(error.into());
+                cx.notify();
+                return;
+            }
+        };
+        self.error = None;
+        self.loading = Some(cx.spawn_in(window, async move |this, cx| {
+            let loaded = cx.background_spawn(async move { load.run() }).await;
+            ignore_closed_view(this.update_in(cx, |this, window, cx| {
+                this.loaded(loaded, window, cx);
+            }));
+        }));
         cx.notify();
     }
 
-    fn try_start(&self, cx: &mut App) -> Result<(), String> {
+    /// What Start loads: the slots' paths, once each the mode needs is filled.
+    fn load(&self, cx: &App) -> Result<Load, String> {
         let paths = self.paths(cx);
         if let Some(&slot) =
             self.mode.slots().iter().find(|slot| paths[slot.index()].trim().is_empty())
@@ -207,56 +285,28 @@ impl OpenDialog {
             return Err(strings::missing_slot(slot));
         }
         let [base, left, right, output] = paths.map(PathBuf::from);
-        match self.mode {
-            Mode::Merge => self.start_merge(&MergeFiles { base, left, right }, output, cx),
-            Mode::Diff => self.start_diff(left, right, cx),
+        let settings = self.settings.clone();
+        Ok(match self.mode {
+            Mode::Merge => {
+                Load::Merge { files: MergeFiles { base, left, right }, output, settings }
+            }
+            Mode::Diff => Load::Diff { left, right, settings, watch: self.watch },
+        })
+    }
+
+    /// Open the window of the inputs `loaded`, or say why not.
+    fn loaded(
+        &mut self,
+        loaded: Result<Opener, String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.loading = None;
+        match loaded.and_then(|open| open(cx)) {
+            Ok(()) => window.remove_window(),
+            Err(error) => self.error = Some(error.into()),
         }
-    }
-
-    fn start_merge(&self, files: &MergeFiles, output: PathBuf, cx: &mut App) -> Result<(), String> {
-        let language = Language::of_run(files.paths(), Some(&output), None);
-        let doc = merge_session::load(files, self.settings.options, Labels::none(), language)
-            .map_err(|e| e.to_string())?;
-        let settings = WindowSettings {
-            repo: run::repo_kind(self.settings.cwd.as_deref(), &output),
-            output: Some(output),
-            file_names: FileNames::three_way(&files.base, &files.left, &files.right),
-            ..self.settings.clone()
-        };
-        crate::window::open(doc, &settings, cx).map_err(|e| e.to_string())?;
-        Ok(())
-    }
-
-    /// The diff window on `left` and `right`, as `diff LEFT RIGHT` opens it.
-    fn start_diff(&self, left: PathBuf, right: PathBuf, cx: &mut App) -> Result<(), String> {
-        let cwd = self.settings.cwd.as_deref();
-        let repo = RunRepository::of_diff_tool(cwd, &right);
-        let kind = repo.kind();
-        let origins = DiffLookup::Tool {
-            paths: [left.clone(), right.clone()],
-            title: None,
-            cwd: run::working_dir(cwd),
-            repo: Handoff::new(repo),
-        };
-        let read = |path: PathBuf| {
-            merge_session::read_text(&path)
-                .map(|text| DiffFile { origin: Origin::File(path), text, read_only: false })
-                .map_err(|e| e.to_string())
-        };
-        let left = read(left)?;
-        let right = read(right)?;
-        let settings = diff_window::DiffSettings {
-            watch: self.watch,
-            ..run::diff_settings(
-                None,
-                self.settings.diff_options,
-                self.settings.clone(),
-                origins,
-                kind,
-            )
-        };
-        diff_window::open(left, right, &settings, cx).map_err(|e| e.to_string())?;
-        Ok(())
+        cx.notify();
     }
 
     /// Fill `slot` from the platform's file picker. A cancelled picker leaves it as it was.
@@ -410,6 +460,7 @@ impl Render for OpenDialog {
                         .primary()
                         .small()
                         .label(strings::start(self.mode))
+                        .loading(self.loading.is_some())
                         .accessibility_label(strings::start(self.mode))
                         .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
                             this.start(window, cx);
