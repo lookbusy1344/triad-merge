@@ -167,8 +167,8 @@ fn auto_text(inputs: &Inputs, region: &Region) -> String {
         Kind::Unchanged => lines(&inputs.bases()[0], &region.bases[0]),
         Kind::OneSide(i) => lines(&inputs.sides()[i], &region.sides[i]),
         Kind::AllSame => lines(&inputs.sides()[LEFT], &region.sides[LEFT]),
-        Kind::Conflict => unreachable!("conflicts have no automatic text"),
-        Kind::WordMerged => unreachable!("git's corpus merges line by line"),
+        Kind::Conflict => panic!("conflicts have no automatic text"),
+        Kind::WordMerged => panic!("git's corpus merges line by line"),
     }
 }
 

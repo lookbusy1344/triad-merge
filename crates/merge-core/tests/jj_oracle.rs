@@ -168,7 +168,7 @@ fn identical_sides_resolve_only_when_the_same_change_is_accepted() {
             assert!(merge.conflicts >= 1, "{} {mode}", case.id);
             for hunk in merge.conflict_hunks() {
                 let Hunk::Conflict { sides, bases } = hunk else {
-                    unreachable!("conflict_hunks yields conflicts");
+                    panic!("conflict_hunks yields conflicts");
                 };
                 assert_eq!(sides[0], sides[1], "{} {mode}: sides differ", case.id);
                 assert_ne!(sides[0], bases[0], "{} {mode}: no change", case.id);

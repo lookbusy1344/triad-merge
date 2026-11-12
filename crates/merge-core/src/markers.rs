@@ -364,6 +364,10 @@ fn jj_hunk(start: usize, body: &[(usize, &str)], len: usize) -> Result<Hunk, Mar
                         diff_line(line, side, base)
                             .ok_or(MarkerError::BadDiffLine { line: number })?;
                     }
+                    #[expect(
+                        clippy::unreachable,
+                        reason = "invariant: `hunk` passes a body here only when it opens with a section marker"
+                    )]
                     _ => unreachable!("a jj conflict's body opens with a section marker"),
                 }
             }

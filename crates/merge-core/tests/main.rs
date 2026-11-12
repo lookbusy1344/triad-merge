@@ -2,7 +2,8 @@
 //! file. Each file is a module.
 #![expect(
     clippy::expect_used,
-    reason = "test support: a failed setup fails the test, named by its message"
+    clippy::panic,
+    reason = "test support: a failed setup or check fails the test, named by its message"
 )]
 
 mod hostile_input;

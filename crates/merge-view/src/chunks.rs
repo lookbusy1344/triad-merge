@@ -662,7 +662,7 @@ mod tests {
     fn a_chunk_within_the_limit_or_a_bad_cut_stays_whole() {
         let mut chunks = chunks(Limits::DEFAULT);
         let edited = chunks.edit(5..6, 2);
-        chunks.split(edited, 20, |_| unreachable!("11 lines fit"));
+        chunks.split(edited, 20, |_| panic!("11 lines fit"));
         let edited = chunks.edit(5..6, 30);
         chunks.split(edited, 20, |_| vec![1, 15]);
         chunks.split(edited, 20, |_| vec![0, 50]);
