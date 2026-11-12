@@ -1,0 +1,135 @@
+name: release
+
+permissions:
+  contents: read
+
+# A tag vX.Y.Z builds the packages of each target and attaches them to a draft release, which
+# the owner publishes by hand. The tag must match the workspace version. A manual run builds
+# the packages as workflow artifacts only.
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  version:
+    name: version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Tag matches the workspace version
+        if: github.ref_type == 'tag'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          [[ $GITHUB_REF_NAME == "v$VERSION" ]] || {
+            echo "::error::tag $GITHUB_REF_NAME does not match Cargo.toml version $VERSION"
+            exit 1
+          }
+
+  macos:
+    name: macOS ARM64
+    needs: version
+    runs-on: macos-latest
+    env:
+      NAME: triad-merge-${{ needs.version.outputs.version }}-aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v5
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: false
+      - run: script/macos-app
+      - name: Archive the app bundle
+        run: |
+          mkdir -p dist
+          ditto -c -k --keepParent target/release/triad.app "dist/$NAME.zip"
+          (cd dist && shasum -a 256 "$NAME.zip" > "$NAME.sha256")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: triad-macos
+          path: dist/
+
+  windows:
+    name: Windows x64
+    needs: version
+    runs-on: windows-latest
+    env:
+      NAME: triad-merge-${{ needs.version.outputs.version }}-x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v5
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: false
+      - run: |
+          eval "$(script/build-id)"
+          cargo build --profile dist --locked -p triad-merge
+      - name: Archive both binaries
+        run: |
+          stage=stage/$NAME
+          mkdir -p "$stage" dist
+          cp target/dist/triad-merge.exe target/dist/triad-merge-gui.exe README.md "$stage/"
+          cp vendor/gpui-base/LICENSE-APACHE "$stage/LICENSE-gpui-base"
+          (cd stage && 7z a -tzip "../dist/$NAME.zip" "$NAME")
+          (cd dist && sha256sum "$NAME.zip" > "$NAME.sha256")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: triad-windows
+          path: dist/
+
+  linux:
+    name: Linux x64
+    needs: version
+    runs-on: ubuntu-latest
+    env:
+      APPIMAGE: /out/dist/triad-merge-${{ needs.version.outputs.version }}-x86_64-unknown-linux-gnu.AppImage
+    steps:
+      - uses: actions/checkout@v5
+      - name: Let the Linux test machine write its results
+        run: mkdir -p target/linux && chmod a+w target/linux
+      - run: script/linux/run image
+      - run: script/linux/run script/package x86_64-unknown-linux-gnu
+      - name: Smoke test the AppImage on Wayland
+        run: script/linux/run env APPIMAGE_EXTRACT_AND_RUN=1 "TRIAD_APP=$APPIMAGE" script/linux/smoke wayland
+      - name: Smoke test the AppImage on X11
+        run: script/linux/run env APPIMAGE_EXTRACT_AND_RUN=1 "TRIAD_APP=$APPIMAGE" script/linux/smoke x11
+      - uses: actions/upload-artifact@v4
+        with:
+          name: triad-linux
+          path: target/linux/dist/
+
+  release:
+    name: draft release
+    if: github.ref_type == 'tag'
+    needs: [ macos, windows, linux ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" dist/*
+          --repo "$GITHUB_REPOSITORY" --draft --verify-tag --title "triad $GITHUB_REF_NAME"

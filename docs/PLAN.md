@@ -24,7 +24,7 @@ As of 2026-11-12.
 
 Every spec §9 target is met (§A6.7). Dependencies: jj-lib and jj-core 0.47.1 on gix 0.90; gpui-kit 0.8.1 with the vendored `gpui-base` patch; gpui-kit 0.9 is not adopted (`docs/gpui-kit-issues.md`).
 
-CI: `triad.yml` tests on Linux, macOS and Windows; `bench.yml` and `audit.yml` run weekly. Linux and macOS pass on GitHub's runners and under `act`; Windows waits on the next push.
+CI: `triad.yml` tests on Linux, macOS and Windows; `bench.yml` and `audit.yml` run weekly. Linux and macOS pass on GitHub's runners and under `act`; Windows waits on the next push. `release.yml` runs on a `v*` tag that matches the workspace version: it builds `triad.app` for macOS ARM64, a zip of both binaries for Windows x64 and the smoke-tested Linux x64 packages, and attaches them with checksums to a draft release. It has not run yet.
 
 Build profiles (root `Cargo.toml`): `release` aborts on panic and strips symbols, 37.5 MB on macOS ARM64, 1 min clean; `script/macos-app`, `script/measure-app` and the benchmarks use it. `dist` adds fat LTO and one codegen unit, 35.4 MB, 3 min; `script/package` uses it.
 
