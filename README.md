@@ -222,7 +222,7 @@ script/checks                                                   # everything CI 
 script/macos-app dist                                           # target/dist/triad.app, fat LTO, as a release builds it
 ```
 
-A tag `vX.Y.Z` that matches the workspace version runs `.github/workflows/release.yml`, which builds the three platforms' packages and attaches them to a draft release.
+A tag `vX.Y.Z` that matches the workspace version runs `.github/workflows/release.yml`, which builds the three platforms' packages and publishes them as a release.
 
 `script/gen-conflict-repo` builds a disposable jj repository with conflicts in two Rust files, for trying `jj resolve` and `triad-merge resolve`.
 

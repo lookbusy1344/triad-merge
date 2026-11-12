@@ -133,7 +133,7 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | Linux test machine in OrbStack (`DESIGN.md` §E7.1) | `script/linux/run image` once; then `script/linux/run cargo build -p triad-merge`, `script/linux/run cargo nextest run --workspace --profile linux-emulated`, `script/linux/run script/linux/smoke wayland` or `x11` |
 | Linux CI locally (needs OrbStack running) | `act workflow_dispatch -W .github/workflows/<triad\|bench\|audit>.yml [-j <job>] -P ubuntu-latest=catthehacker/ubuntu:act-latest --container-architecture linux/arm64`; `triad.yml` runs only its Linux matrix entry under act. act runs as root, so the four tests of unreadable or unwritable paths fail there; GitHub's runners do not run as root |
 | Linux packages into `target/linux/dist` | `script/linux/run script/package x86_64-unknown-linux-gnu` |
-| Release: macOS ARM64, Windows x64 and Linux x64 packages on a draft GitHub release; only on the owner's request | Push `main`, then `jj tag set vX.Y.Z -r main && jj git push --tag vX.Y.Z`; the tag must match the workspace version. `.github/workflows/release.yml` builds; the owner publishes the draft |
+| Release: macOS ARM64, Windows x64 and Linux x64 packages as a published GitHub release; only on the owner's request | Push `main`, then `jj tag set vX.Y.Z -r main && jj git push --tag vX.Y.Z`; the tag must match the workspace version. `.github/workflows/release.yml` builds and publishes; add notes with `gh release edit` |
 
 ## Layout
 

@@ -3,9 +3,9 @@ name: release
 permissions:
   contents: read
 
-# A tag vX.Y.Z builds the packages of each target and attaches them to a draft release, which
-# the owner publishes by hand. The tag must match the workspace version. A manual run builds
-# the packages as workflow artifacts only.
+# A tag vX.Y.Z builds the packages of each target and publishes them as a release, with notes
+# GitHub generates from the commits since the last tag. The tag must match the workspace
+# version. A manual run builds the packages as workflow artifacts only.
 on:
   push:
     tags: [ 'v*' ]
@@ -117,7 +117,7 @@ jobs:
           path: target/linux/dist/
 
   release:
-    name: draft release
+    name: publish release
     if: github.ref_type == 'tag'
     needs: [ macos, windows, linux ]
     runs-on: ubuntu-latest
@@ -132,4 +132,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: >
           gh release create "$GITHUB_REF_NAME" dist/*
-          --repo "$GITHUB_REPOSITORY" --draft --verify-tag --title "triad $GITHUB_REF_NAME"
+          --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "triad $GITHUB_REF_NAME"
