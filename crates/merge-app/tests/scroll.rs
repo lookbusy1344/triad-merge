@@ -1,4 +1,4 @@
-//! Headless tests of scroll sync between the rows and the result (spec §5; PLAN.md §A6.3).
+//! Headless tests of scroll sync between the rows and the result (spec §5; DESIGN.md §A6.3).
 
 use crate::common;
 use merge_core::index::Line;

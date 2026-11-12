@@ -1,5 +1,5 @@
 //! Headless tests of `resolve` without a path: each conflicted file opens in turn
-//! (spec §7.4, `PLAN.md` §D5.4).
+//! (spec §7.4, `DESIGN.md` §D5.4).
 
 use crate::common;
 use merge_view::rows::RowIx;

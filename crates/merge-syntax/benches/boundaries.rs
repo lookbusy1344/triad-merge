@@ -1,4 +1,4 @@
-//! Syntax boundaries' cost on valid Rust (`docs/PLAN.md` §B5.8, task 6): a word
+//! Syntax boundaries' cost on valid Rust (`docs/DESIGN.md` §B5.8, task 6): a word
 //! conflict, or a conflict deep refinement splits at a shared `}`, every few functions, with the
 //! setting off and on, under jj's semantics. `script/check-bench` holds the `bounded` runs to spec §9's load target.
 #![expect(
@@ -87,7 +87,7 @@ fn benches(c: &mut Criterion) {
         ..MergeOptions::default()
     };
     // jj's semantics: git's histogram costs 1.5 s on these 100k lines whatever the refinement
-    // (`docs/PLAN.md` §B6), which would hide the boundaries' cost.
+    // (`docs/DESIGN.md` §B6), which would hide the boundaries' cost.
     let deep =
         MergeOptions { semantics: Semantics::Jj, refine: Refine::Deep, ..MergeOptions::default() };
     let cases: [(&str, Conflict, MergeOptions); 2] =

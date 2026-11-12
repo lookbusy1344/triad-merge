@@ -1,5 +1,5 @@
 //! `merge.same-change` and `merge.hunk-level` from jj's config, for merges with jj's semantics
-//! (`docs/PLAN.md` §B3). `vcs_jj::config` layers jj's files as jj-cli does; this module maps
+//! (`docs/DESIGN.md` §B3). `vcs_jj::config` layers jj's files as jj-cli does; this module maps
 //! the process environment onto it and its values onto the engine's.
 
 use std::collections::HashMap;

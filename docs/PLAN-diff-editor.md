@@ -1,8 +1,8 @@
 # triad — diff editor plan
 
-Inputs: [SPEC.md](SPEC.md), [PLAN.md](PLAN.md). Rules for changes: `AGENTS.md`.
+Inputs: [SPEC.md](SPEC.md), [PLAN.md](PLAN.md), [DESIGN.md](DESIGN.md). Rules for changes: `AGENTS.md`.
 
-This file is part H of the plan, kept apart while the work is open. Cite it as `PLAN.md` cites its parts: §H4 is section 4 here. [PLAN.md](PLAN.md) §1–§3 carry its status and next steps. Each section is one or more commits, lands with its spec change, and follows the ground rules of §A1.
+This file is part H of the plan, kept apart while the work is open. Cite it by part and section: §H4 is section 4 here; §A–§F are in DESIGN.md. [PLAN.md](PLAN.md) §1–§3 carry its status and next steps. Each section is one or more commits, lands with its spec change, and follows the ground rules of §A1.
 
 ## H1 Goal
 

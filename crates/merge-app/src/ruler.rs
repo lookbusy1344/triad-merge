@@ -1,4 +1,4 @@
-//! The overview ruler's strip (`docs/PLAN.md` §E4): the marks of
+//! The overview ruler's strip (`docs/DESIGN.md` §E4): the marks of
 //! [`merge_view::ruler`], painted down a narrow strip, with the pane's vertical scrollbar
 //! thumb over them. A click on a mark goes to its region; a click elsewhere scrolls there; a
 //! drag of the thumb scrolls the pane.

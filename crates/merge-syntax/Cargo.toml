@@ -20,7 +20,7 @@ thiserror.workspace = true
 # Parses texts in chunks for their syntax colours, and regions for their boundaries.
 tree-sitter.workspace = true
 # Each language's grammar, for highlighting and syntax-aware merging
-# (`docs/PLAN.md` §B5.8).
+# (`docs/DESIGN.md` §B5.8).
 tree-sitter-c-sharp.workspace = true
 tree-sitter-go.workspace = true
 tree-sitter-html.workspace = true

@@ -1,5 +1,5 @@
 //! The cost of `Repository::annotate` against the length of history, on git and jj
-//! (`docs/PLAN.md` §C5.5). Each history holds one 100-line file; each commit after
+//! (`docs/DESIGN.md` §C5.5). Each history holds one 100-line file; each commit after
 //! the first changes one line, in turn, and line 0 only ever comes from the first commit, so
 //! each annotation walks the whole history. Spec §9 sets no target; the results are recorded
 //! in the plan.

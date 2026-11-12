@@ -1,4 +1,4 @@
-//! The commit that last changed each line of a file (spec §7.3, `docs/PLAN.md` §C4).
+//! The commit that last changed each line of a file (spec §7.3, `docs/DESIGN.md` §C4).
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;

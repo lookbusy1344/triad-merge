@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compare the merge benchmarks with the spec §9 targets (PLAN.md §A4.12, §A6.7). Fails when a mean
+# Compare the merge benchmarks with the spec §9 targets (DESIGN.md §A4.12, §A6.7). Fails when a mean
 # is above 120% of its target, a peak is above its target, or a benchmark with a target has no
 # result. TRIAD_BENCH_TOLERANCE_PERCENT replaces the 120% (CI sets it; its runners are noisy).
 # Usage: script/check-bench [criterion-dir] [memory-json]

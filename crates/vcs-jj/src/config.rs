@@ -1,5 +1,5 @@
 //! The user's jj configuration, layered as jj-cli 0.46 layers it, and the snapshot options it
-//! gives. A snapshot triad takes (`PLAN.md` §D5.5) tracks and ignores the files
+//! gives. A snapshot triad takes (`DESIGN.md` §D5.5) tracks and ignores the files
 //! the user's own jj would.
 //!
 //! The layers, lowest first: jj-lib's defaults, jj-cli's snapshot defaults, the host and user
@@ -10,7 +10,7 @@
 //! repository, the workspace, the host and the environment, with no command.
 //!
 //! [`merge_settings`] reads `merge.same-change` and `merge.hunk-level` from the same layers
-//! for a merge with jj's semantics (`PLAN.md` §B3). It only reads: the repository's and the
+//! for a merge with jj's semantics (`DESIGN.md` §B3). It only reads: the repository's and the
 //! workspace's files are found by their config IDs, or else at their legacy paths, and nothing
 //! is migrated or written.
 

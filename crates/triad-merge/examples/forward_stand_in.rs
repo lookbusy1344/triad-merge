@@ -1,4 +1,4 @@
-//! The child process of the forwarding tests (PLAN.md §A4.13). It names its arguments on stderr and
+//! The child process of the forwarding tests (DESIGN.md §A4.13). It names its arguments on stderr and
 //! exits with `TRIAD_STAND_IN_EXIT`, or with 3. Test builds compile it; plain builds leave it out.
 
 use merge_session::ExitCode;

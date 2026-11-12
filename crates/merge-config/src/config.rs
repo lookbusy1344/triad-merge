@@ -1,4 +1,4 @@
-//! The config file's format (`PLAN.md` §E3.1–3.2): `key = value` lines, `#` comments,
+//! The config file's format (`DESIGN.md` §E3.1–3.2): `key = value` lines, `#` comments,
 //! and `config-file` includes read in place. Keys are not checked here; `settings` knows them.
 
 use std::collections::HashMap;

@@ -1,4 +1,4 @@
-//! Frame measurement in the running app (PLAN.md §A6.7). `TRIAD_MEASURE=<mode>` makes the merge
+//! Frame measurement in the running app (DESIGN.md §A6.7). `TRIAD_MEASURE=<mode>` makes the merge
 //! window drive itself for a fixed number of frames, report the frame intervals and the time
 //! each action took on stderr, and finish with exit code 2 without writing.
 

@@ -1,4 +1,4 @@
-//! Headless tests of picks, navigation and the current region (spec §5, §6.3; PLAN.md §A6.2).
+//! Headless tests of picks, navigation and the current region (spec §5, §6.3; DESIGN.md §A6.2).
 
 use crate::common;
 use merge_core::index::RegionIx;

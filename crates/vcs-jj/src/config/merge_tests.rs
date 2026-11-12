@@ -1,4 +1,4 @@
-//! [`merge_settings`] on config files in temporary directories (spec §6.1, `PLAN.md` §B3).
+//! [`merge_settings`] on config files in temporary directories (spec §6.1, `DESIGN.md` §B3).
 
 use std::collections::HashMap;
 use std::fs;

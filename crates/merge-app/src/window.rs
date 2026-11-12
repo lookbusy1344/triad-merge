@@ -1,4 +1,4 @@
-//! The merge window (PLAN.md §A6.2): the toolbar, the inputs' aligned rows, the editable result
+//! The merge window (DESIGN.md §A6.2): the toolbar, the inputs' aligned rows, the editable result
 //! with its go-to-line field, and the status bar.
 //!
 //! The core is the source of truth. The editor makes the user's edits first; the window sends
@@ -327,7 +327,7 @@ pub struct WindowSettings {
     pub options: MergeOptions,
     /// What the open dialog compares the diff it starts with (spec §6.4).
     pub diff_options: DiffOptions,
-    /// Drive the window and report its frames (PLAN.md §A6.7).
+    /// Drive the window and report its frames (DESIGN.md §A6.7).
     pub measure: Option<Measure>,
     /// The inputs' file names, which title the panes of inputs without a label.
     pub file_names: FileNames,
@@ -454,7 +454,7 @@ pub struct MergeWindow {
     repo: Option<RepoKind>,
     /// The core's counts behind the status line and the conflict badge.
     counts: Status,
-    /// The overview ruler's marks (`docs/PLAN.md` §E4).
+    /// The overview ruler's marks (`docs/DESIGN.md` §E4).
     ruler: Rc<[RulerMark]>,
     /// The result's scroll, for the ruler's thumb.
     ruler_feed: scrollbars::Feed,
@@ -527,7 +527,7 @@ pub fn open(
         // Keys reach the window only through a focused element.
         let result = view.read(cx).result.clone();
         result.update(cx, |state, cx| state.focus(window, cx));
-        // A measured run starts at the top, so runs compare with the ones in PLAN.md §A6.7.
+        // A measured run starts at the top, so runs compare with the ones in DESIGN.md §A6.7.
         if settings.measure.is_none() {
             view.update(cx, |this, cx| this.open_on_first_target(window, cx));
         }
@@ -759,7 +759,7 @@ impl MergeWindow {
     }
 
     /// The inputs' syntax under `language`, none parsed yet: each chunk parses when its rows
-    /// show (`docs/PLAN.md` §F4).
+    /// show (`docs/DESIGN.md` §F4).
     fn input_syntax(language: Language, doc: &MergeDocument) -> InputSyntax {
         let grammar = match syntax::grammar(language) {
             Ok(grammar) => grammar,
@@ -2074,7 +2074,7 @@ impl MergeWindow {
     }
 
     /// Write the output to `path` as Save & Exit would, unresolved conflicts as markers,
-    /// without a confirmation (`docs/PLAN.md` §E6), off the UI thread. The window stays open;
+    /// without a confirmation (`docs/DESIGN.md` §E6), off the UI thread. The window stays open;
     /// OUTPUT, the exit code and the journal are unchanged. A failure shows an alert.
     pub fn save_copy(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
         self.send_edits(window, cx);
@@ -2286,7 +2286,7 @@ impl MergeWindow {
         }
     }
 
-    /// Search the visible inputs off the UI thread (`docs/PLAN.md` §A14 measures why). With
+    /// Search the visible inputs off the UI thread (`docs/DESIGN.md` §A14 measures why). With
     /// `keep`, each pane's current match stays if the search still finds it; otherwise a
     /// pane's first match from the top row is current.
     fn search_inputs(&mut self, keep: Keep, cx: &mut Context<Self>) {

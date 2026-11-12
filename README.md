@@ -222,7 +222,8 @@ On macOS, Gatekeeper scans each newly linked binary on its first run, so the fir
 | File | Contents |
 |---|---|
 | `docs/SPEC.md` | Behaviour |
-| `docs/PLAN.md` | Status, next steps and design notes |
+| `docs/PLAN.md` | Status, next steps and open work |
+| `docs/DESIGN.md` | Design notes: reasons, decisions, measurements |
 | `AGENTS.md` | Rules for changes, the commit gate and commands |
 | `docs/STYLE.md` | UI style |
 | `docs/json-schema.md` | JSON output and merge commands |

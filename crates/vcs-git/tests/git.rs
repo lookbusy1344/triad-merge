@@ -1,4 +1,4 @@
-//! `GitRepository` on repositories built in temporary directories through gix (PLAN.md §A7.1).
+//! `GitRepository` on repositories built in temporary directories through gix (DESIGN.md §A7.1).
 
 use camino::{Utf8Path, Utf8PathBuf};
 use vcs::testing::Entry;

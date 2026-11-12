@@ -1,5 +1,5 @@
 //! `snapshot` and `record_save` on jj: the working copy taken in before `resolve` reads a
-//! conflict, and again after each save, each in an operation of its own (`PLAN.md` §D5.5).
+//! conflict, and again after each save, each in an operation of its own (`DESIGN.md` §D5.5).
 
 use std::collections::HashMap;
 

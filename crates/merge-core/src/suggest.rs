@@ -1,5 +1,5 @@
 //! Resolutions triad offers for a conflict and never applies itself (spec §4.4,
-//! `docs/PLAN.md` §B5.7). The user takes one from the region's menu.
+//! `docs/DESIGN.md` §B5.7). The user takes one from the region's menu.
 
 use std::cmp::Ordering;
 use std::ops::Range;

@@ -1,5 +1,5 @@
 //! `resolve`'s inputs from conflicts in git, colocated jj and internal jj repositories built
-//! through gix and jj-lib (`PLAN.md` §D5.3).
+//! through gix and jj-lib (`DESIGN.md` §D5.3).
 
 use std::path::Path;
 
@@ -376,7 +376,7 @@ fn a_git_file_edited_beside_its_markers_opens_from_them() {
     fixture.write("a.txt", &[b"edited\n", GIT_MARKERS].concat());
     let loaded = load(fixture.root().as_std_path(), Path::new("a.txt")).expect("it loads");
     assert_eq!(texts(&loaded), (vec!["edited\nleft\n", "edited\nright\n"], vec!["edited\na\n"]));
-    // jj's default `base` counts as no label (`PLAN.md` §D5.7).
+    // jj's default `base` counts as no label (`DESIGN.md` §D5.7).
     assert_eq!(loaded.labels, labels(&["ours", "theirs"], &[""]));
     assert_eq!(loaded.repo, Some(RepoKind::Git));
     assert_eq!(loaded.path, Utf8PathBuf::from("a.txt"));

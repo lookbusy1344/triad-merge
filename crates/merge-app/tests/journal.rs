@@ -1,4 +1,4 @@
-//! Headless tests of the recovery journal (spec §6.2; PLAN.md §A6.4).
+//! Headless tests of the recovery journal (spec §6.2; DESIGN.md §A6.4).
 
 use crate::common;
 use merge_core::index::RegionIx;

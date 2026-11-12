@@ -66,9 +66,9 @@ gpui-kit = "=0.8.1"
 imara-diff = "0.2"
 # Already in the tree through jj-lib; the current time for jj revset date patterns.
 jiff = "0.2"
-# Exact pin, bumped with gix (PLAN.md §A3). The git backend only: no watchman.
+# Exact pin, bumped with gix (DESIGN.md §A3). The git backend only: no watchman.
 jj-lib = { version = "=0.47.1", default-features = false, features = ["git"] }
-# Exact pin with jj-lib. jj's line and word diff for jj-mode merges (PLAN.md §B5.1).
+# Exact pin with jj-lib. jj's line and word diff for jj-mode merges (DESIGN.md §B5.1).
 jj-core = "=0.47.1"
 # Already in the tree through gpui-component; the diff window watches its files with it.
 notify = "8"
@@ -78,7 +78,7 @@ proptest = "1"
 # Already in the tree through jj-lib; the generator jj-lib's secure config takes, for a new config ID.
 rand = "0.10"
 rand_chacha = "0.10"
-# Already in the tree through gpui; word-merges conflicts in parallel (PLAN.md §B6).
+# Already in the tree through gpui; word-merges conflicts in parallel (DESIGN.md §B6).
 rayon = "1.12"
 smallvec = "1.16"
 # Names the values of the settings, key bindings and flags, and lists them, without tying
@@ -92,7 +92,7 @@ serde_json = "1"
 # Already in the tree through gix; the journal hashes its inputs with it.
 sha2 = "0.11"
 # Exact pins: the versions gpui-component builds, so the build holds one tree-sitter. The top
-# panes parse with it directly, in chunks (docs/PLAN.md §F6.3); the grammars test that.
+# panes parse with it directly, in chunks (docs/DESIGN.md §F6.3); the grammars test that.
 tree-sitter = "=0.26.13"
 tree-sitter-rust = "=0.24.2"
 tree-sitter-c-sharp = "=0.23.5"
@@ -114,7 +114,7 @@ tracing-appender = "0.2"
 whoami = "2.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "std"] }
 
-# gpui-base 0.8.1 with triad's editor patch (PLAN.md §A6.1, vendor/gpui-base/PATCHES.md).
+# gpui-base 0.8.1 with triad's editor patch (DESIGN.md §A6.1, vendor/gpui-base/PATCHES.md).
 [patch.crates-io]
 gpui-base = { path = "vendor/gpui-base" }
 

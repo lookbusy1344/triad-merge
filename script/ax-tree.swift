@@ -1,5 +1,5 @@
 // Print a running app's accessibility tree, as VoiceOver reads it, after pressing the named
-// elements in order (PLAN.md §A6.7, docs/release-checklist.md). Each line is
+// elements in order (DESIGN.md §A6.7, docs/release-checklist.md). Each line is
 // role/subrole | title | value. Menus are left out.
 // Usage: swift script/ax-tree.swift PID [NAME...]
 // The terminal needs Accessibility permission (System Settings → Privacy & Security).

@@ -1,4 +1,4 @@
-//! The top panes' syntax colours as capture spans per line (`docs/PLAN.md` §F4, §F6.3).
+//! The top panes' syntax colours as capture spans per line (`docs/DESIGN.md` §F4, §F6.3).
 //!
 //! A tree-sitter tree costs about 90 bytes per byte of text, so a whole 100k-line input does
 //! not fit the memory target. The text parses in chunks of about [`CHUNK_LINES`] lines

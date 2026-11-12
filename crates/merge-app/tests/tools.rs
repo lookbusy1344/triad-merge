@@ -1,4 +1,4 @@
-//! Headless tests of find, go to line, the toolbar and the menus (spec §6.3; PLAN.md §A6.2).
+//! Headless tests of find, go to line, the toolbar and the menus (spec §6.3; DESIGN.md §A6.2).
 
 use crate::common;
 use merge_core::index::Line;

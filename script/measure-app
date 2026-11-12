@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Measure the running merge window against the spec §9 targets (PLAN.md §A6.7). Builds a release
+# Measure the running merge window against the spec §9 targets (DESIGN.md §A6.7). Builds a release
 # binary, generates 100k- and 1M-line triples, runs every TRIAD_MEASURE mode on each under
 # /usr/bin/time -l, prints a table and fails when a target is missed. macOS only.
 # Usage: script/measure-app [refresh-hz] [output-extension]   (defaults 60, txt)

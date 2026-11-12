@@ -1,4 +1,4 @@
-//! jj's line diff over a merge's inputs, in line coordinates (`PLAN.md` §B2).
+//! jj's line diff over a merge's inputs, in line coordinates (`DESIGN.md` §B2).
 //!
 //! `jj_core::diff::ContentDiff` diffs base 0 against every other input in one pass. A hunk is
 //! `Matching` where every input agrees and `Different` elsewhere. jj orders the inputs as every

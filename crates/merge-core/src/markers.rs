@@ -1,5 +1,5 @@
 //! Reading a file's conflict markers back into a merge's inputs (spec §7.4,
-//! `PLAN.md` §D5.7).
+//! `DESIGN.md` §D5.7).
 
 use crate::document::Labels;
 use crate::merge3::Inputs;

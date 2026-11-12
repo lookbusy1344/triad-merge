@@ -1,4 +1,4 @@
-//! The editors' syntax colours above `syntax-whole-file-max-lines` (`docs/PLAN.md` §F4.1). The
+//! The editors' syntax colours above `syntax-whole-file-max-lines` (`docs/DESIGN.md` §F4.1). The
 //! highlighter cuts the text into chunks as the top panes do and parses the chunks on screen,
 //! both off the UI thread. An edit parses its chunk again; until that lands, the chunk keeps
 //! its old spans, with none on the edited lines.

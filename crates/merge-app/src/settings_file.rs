@@ -1,4 +1,4 @@
-//! Settings…: open the config file in the default text editor (`PLAN.md` §E3.5). A
+//! Settings…: open the config file in the default text editor (`DESIGN.md` §E3.5). A
 //! missing file is first written from [`settings::template`]. Changes apply from the next run.
 
 use std::io;

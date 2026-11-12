@@ -1,4 +1,4 @@
-//! The language each editor highlights its text as (`docs/PLAN.md` §F5), and the
+//! The language each editor highlights its text as (`docs/DESIGN.md` §F5), and the
 //! inputs' capture spans that colour the top panes (§4).
 
 use std::ops::Range;

@@ -1,8 +1,8 @@
 # triad — agent notes
 
-triad is a three-way merge and two-way diff tool. The binary is `triad-merge`. `docs/SPEC.md` sets the behaviour. `docs/PLAN.md` holds the status, the next steps and the design notes. Cite the plan by part and section: `PLAN.md` §B5.8 is part B, section 5.8.
+triad is a three-way merge and two-way diff tool. The binary is `triad-merge`. `docs/SPEC.md` sets the behaviour. `docs/PLAN.md` holds the status, the next steps and the open work. `docs/DESIGN.md` holds the design of what is built: reasons, decisions and current measurements. Cite both by part and section: `DESIGN.md` §B5.8 is part B, section 5.8.
 
-When a task finishes, update `PLAN.md` §1–§3 in the same change. §1 states where the project stands, never a log of changes: jj holds the history. When a change finds the spec wrong or incomplete, update `docs/SPEC.md` in the same change.
+When a task finishes, update `PLAN.md` §1–§3 in the same change. §1 states where the project stands, never a log of changes: jj holds the history. When a change alters a design, a decision or a measured figure, update `DESIGN.md` in the same change: replace what it says, never append a dated entry. When a change finds the spec wrong or incomplete, update `docs/SPEC.md` in the same change.
 
 Docs describe the current design in the present tense. No before-and-after stories; a measurement is a present fact.
 
@@ -42,7 +42,7 @@ jj has no commit hooks. Run the gate before `jj commit`, `jj describe` (finalisi
 script/pre-commit              # from the repo root
 ```
 
-**The gate takes under 35 s on a warm build.** An edit to `merge-app` takes 12 s, one to `merge-core` 16 s. A run over 35 s is a defect, not a slow run. Stop, report it to the owner with the time of each step, and fix the cause before going on. Never wait it out or raise a limit. Check `target/debug/deps` first: a huge file count there slows every rustc run (`PLAN.md` §A13.5).
+**The gate takes under 35 s on a warm build.** An edit to `merge-app` takes 12 s, one to `merge-core` 16 s. A run over 35 s is a defect, not a slow run. Stop, report it to the owner with the time of each step, and fix the cause before going on. Never wait it out or raise a limit. Check `target/debug/deps` first: a huge file count there slows every rustc run (`DESIGN.md` §A13.5).
 
 The gate reads the changes in `@` (jj) or against `HEAD` (git). It skips the checks when no build file changed: `.rs`, `Cargo.toml`, `Cargo.lock`, `deny.toml`, toolchain and format config, `script/`, `fixtures/`. Otherwise it runs `script/checks --quick` on the changed paths:
 
@@ -124,13 +124,13 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | A disposable jj repository with conflicts in two Rust files | `script/gen-conflict-repo [dest]` (`fixtures/conflict-repo/README.md`) |
 | Build `target/release/triad.app` | `script/macos-app` |
 | Benchmarks against spec §9 | `cargo bench -p merge-core --bench merge`, `cargo bench -p merge-syntax --bench boundaries`, `cargo bench -p merge-cli --bench memory`, then `script/check-bench` |
-| Cost of `resolve`'s repository steps on 10k and 100k files (`PLAN.md` §D5.5) | `cargo bench -p merge-cli --bench resolve` |
-| Measure the running app against spec §9 (`PLAN.md` §A6.7) | `script/measure-app [refresh-hz] [output-extension]` (`rs` adds Rust highlighting); one mode: `TRIAD_MEASURE=<open\|scroll-rows\|scroll-result\|type\|pick\|syntax> target/release/triad-merge target/measure/<lines>/{base,left,right}.txt target/measure/<lines>/out.txt` |
+| Cost of `resolve`'s repository steps on 10k and 100k files (`DESIGN.md` §D5.5) | `cargo bench -p merge-cli --bench resolve` |
+| Measure the running app against spec §9 (`DESIGN.md` §A6.7) | `script/measure-app [refresh-hz] [output-extension]` (`rs` adds Rust highlighting); one mode: `TRIAD_MEASURE=<open\|scroll-rows\|scroll-result\|type\|pick\|syntax> target/release/triad-merge target/measure/<lines>/{base,left,right}.txt target/measure/<lines>/out.txt` |
 | Check that `script/pre-push` removes its git clone on every exit; `script/checks` runs it when either script changes | `script/test-pre-push` |
 | Check the revision `script/build-id` names and `script/pre-push` checks, merges included; `script/checks` runs it when one of the three changes | `script/test-tip` |
 | Rewrite `images/` from the mark's geometry | `swift script/gen-images.swift` |
 | Print the accessibility tree of a running window | `swift script/ax-tree.swift PID [NAME...]` (`docs/release-checklist.md`) |
-| Linux test machine in OrbStack (`PLAN.md` §E7.1) | `script/linux/run image` once; then `script/linux/run cargo build -p triad-merge`, `script/linux/run cargo nextest run --workspace --profile linux-emulated`, `script/linux/run script/linux/smoke wayland` or `x11` |
+| Linux test machine in OrbStack (`DESIGN.md` §E7.1) | `script/linux/run image` once; then `script/linux/run cargo build -p triad-merge`, `script/linux/run cargo nextest run --workspace --profile linux-emulated`, `script/linux/run script/linux/smoke wayland` or `x11` |
 | Linux CI locally (needs OrbStack running) | `act workflow_dispatch -W .github/workflows/<triad\|bench\|audit>.yml [-j <job>] -P ubuntu-latest=catthehacker/ubuntu:act-latest --container-architecture linux/arm64`; `triad.yml` runs only its Linux matrix entry under act. act runs as root, so the four tests of unreadable or unwritable paths fail there; GitHub's runners do not run as root |
 | Linux packages into `target/linux/dist` | `script/linux/run script/package x86_64-unknown-linux-gnu` |
 
@@ -153,5 +153,5 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | `fixtures/demo` | A 980-line Rust merge with 20 conflicts, from `script/gen-demo`. |
 | `images` | Mark, logo and app icon as SVG, PNG, ICNS and ICO, from `script/gen-images.swift`. |
 | `packaging/linux` | Desktop entry of the Linux packages. |
-| `docs` | Spec, plan, the diff editor plan (`PLAN-diff-editor.md`, part H), UI style, JSON schema, release checklist, gpui-kit and gix issues, `scroll-debugging.md`, `mark-colours.md`: the mark's colour schemes, geometry and the shapes not taken, and `residue.md`: the files triad and its scripts leave behind. |
+| `docs` | Spec, plan, design notes, the diff editor plan (`PLAN-diff-editor.md`, part H), UI style, JSON schema, release checklist, gpui-kit and gix issues, `scroll-debugging.md`, `mark-colours.md`: the mark's colour schemes, geometry and the shapes not taken, and `residue.md`: the files triad and its scripts leave behind. |
 | `vendor/gpui-base` | `gpui-base` 0.8.1 with triad's editor patch, through `[patch.crates-io]`. Outside the workspace: no workspace lints, `cargo fmt` or `jj fix`. See its `PATCHES.md`. |

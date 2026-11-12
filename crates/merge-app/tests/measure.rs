@@ -1,4 +1,4 @@
-//! Headless tests of `TRIAD_MEASURE` in the merge window (PLAN.md §A6.7): each mode acts once per
+//! Headless tests of `TRIAD_MEASURE` in the merge window (DESIGN.md §A6.7): each mode acts once per
 //! frame, reports, and finishes with 2 without writing. The test platform draws a window more
 //! than once per `render_frame`, so tests draw until the run finishes and check where it
 //! ended.

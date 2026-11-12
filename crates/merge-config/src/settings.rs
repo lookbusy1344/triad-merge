@@ -73,7 +73,7 @@ const SYNTAX_BOUNDARIES_KEY: &str = "syntax-boundaries";
 const MERGE_IGNORE_LINE_ENDINGS_KEY: &str = "merge-ignore-line-endings";
 const DIFF_IGNORE_LINE_ENDINGS_KEY: &str = "diff-ignore-line-endings";
 /// An editor's whole syntax tree costs about 90 bytes per byte of text
-/// (`docs/PLAN.md` §F6.3): some 60 MB for 20 000 lines of Rust. A longer file parses a
+/// (`docs/DESIGN.md` §F6.3): some 60 MB for 20 000 lines of Rust. A longer file parses a
 /// chunk at a time (§4.1).
 pub const DEFAULT_SYNTAX_MAX_LINES: usize = 20_000;
 
@@ -140,7 +140,7 @@ pub struct Settings {
     /// Long lines wrap in the result, input and diff panes when a window opens; else they scroll
     /// sideways.
     pub soft_wrap: bool,
-    /// The keys and the commands they run (`docs/PLAN.md` §E9).
+    /// The keys and the commands they run (`docs/DESIGN.md` §E9).
     pub key_bindings: KeyBindings,
 }
 

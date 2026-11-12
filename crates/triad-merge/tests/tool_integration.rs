@@ -1,4 +1,4 @@
-//! triad as git's and jj's merge and diff tool, end to end (spec §7.1, PLAN.md §A7.3).
+//! triad as git's and jj's merge and diff tool, end to end (spec §7.1, DESIGN.md §A7.3).
 //!
 //! The entries come from `install`. git runs a tool's `cmd` with `sh -c` and its variables;
 //! the tests do the same with a stub program that records its arguments, then parse them with

@@ -1,4 +1,4 @@
-//! `triad-merge install`: the spec §7.1 entries in git and jj config files (PLAN.md §A7.2).
+//! `triad-merge install`: the spec §7.1 entries in git and jj config files (DESIGN.md §A7.2).
 
 use std::path::{Path, PathBuf};
 

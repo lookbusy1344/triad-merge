@@ -1,4 +1,4 @@
-//! triad's light syntax colours (`docs/PLAN.md` §F6.2). gpui-component's light theme
+//! triad's light syntax colours (`docs/DESIGN.md` §F6.2). gpui-component's light theme
 //! draws comments in `#007fff` and attributes in `#957931`, under 3:1 on some bands. triad
 //! swaps in darker shades of the same hues, which hold 4:1 on every default band.
 

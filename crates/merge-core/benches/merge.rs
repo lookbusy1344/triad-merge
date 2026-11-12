@@ -1,5 +1,5 @@
 //! Spec §9 targets on triples from the seeded generator, in git and jj mode, and on word
-//! conflicts at jj's word level (`docs/PLAN.md` §B6). `script/check-bench` compares the results against the
+//! conflicts at jj's word level (`docs/DESIGN.md` §B6). `script/check-bench` compares the results against the
 //! targets.
 #![expect(
     clippy::expect_used,

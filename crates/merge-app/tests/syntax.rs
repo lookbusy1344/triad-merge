@@ -1,4 +1,4 @@
-//! Headless tests of the editors' syntax languages (`docs/PLAN.md` §F5, task 5).
+//! Headless tests of the editors' syntax languages (`docs/DESIGN.md` §F5, task 5).
 
 use crate::common;
 use merge_view::rows::RowIx;

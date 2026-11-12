@@ -1,5 +1,5 @@
 //! `--merge-semantics` and `--same-change` in real git, colocated jj and internal jj repositories
-//! (spec §6.1, `docs/PLAN.md` §B3), headless and through `inspect`.
+//! (spec §6.1, `docs/DESIGN.md` §B3), headless and through `inspect`.
 
 use std::fs;
 use std::path::{Path, PathBuf};

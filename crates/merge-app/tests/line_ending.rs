@@ -1,4 +1,4 @@
-//! Headless tests of the output line ending in the merge window (`docs/PLAN.md` §E5).
+//! Headless tests of the output line ending in the merge window (`docs/DESIGN.md` §E5).
 
 use crate::common;
 use merge_view::rows::RowIx;

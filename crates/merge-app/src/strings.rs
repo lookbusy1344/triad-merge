@@ -21,7 +21,7 @@ pub(crate) const DESCRIPTION: &str = "Three-way merge and two-way diff";
 pub(crate) const VCS_SUPPORT: &str = "Built for Jujutsu, with full Git support";
 /// The prefix of every message on stderr, as `merge-cli` writes them.
 pub(crate) const PROGRAM: &str = "triad-merge";
-/// The prefix of the measurement lines on stderr (PLAN.md §A6.7).
+/// The prefix of the measurement lines on stderr (DESIGN.md §A6.7).
 pub(crate) const MEASURE: &str = "triad-merge measure";
 pub(crate) const RESULT_TITLE: &str = "Result";
 pub(crate) const TOOLBAR: &str = "Merge tools";

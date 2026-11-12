@@ -1,5 +1,5 @@
 //! Conflicts as `gix-merge`'s tree merge leaves them in the index: renames and a criss-cross
-//! (`PLAN.md` §D5.2). The expected stages follow git's `ort` strategy.
+//! (`DESIGN.md` §D5.2). The expected stages follow git's `ort` strategy.
 
 use camino::{Utf8Path, Utf8PathBuf};
 use gix::merge::blob::builtin_driver::text::Labels;

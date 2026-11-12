@@ -1,4 +1,4 @@
-//! triad's conflict-marker parser against jj-lib's (`PLAN.md` §D5.7): jj
+//! triad's conflict-marker parser against jj-lib's (`DESIGN.md` §D5.7): jj
 //! materialises seeded merges in each of its styles, and triad's parse of the bytes gives
 //! the texts and labels jj's own parse and labels give.
 

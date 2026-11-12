@@ -30,7 +30,7 @@ const WATCH_FILES: bool = true;
 /// Run a window form of the command line until its window finishes. Inputs load before the
 /// window opens, so a bad input exits with 3 and a message, and no window shows. A merge
 /// or diff window opens with the config file's bad lines in its banner. With
-/// `TRIAD_MEASURE` set, a merge window measures itself from here (PLAN.md §A6.7).
+/// `TRIAD_MEASURE` set, a merge window measures itself from here (DESIGN.md §A6.7).
 #[must_use]
 pub fn run(form: WindowForm) -> ExitCode {
     let started = Instant::now();

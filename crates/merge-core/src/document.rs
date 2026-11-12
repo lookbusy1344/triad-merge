@@ -46,7 +46,7 @@ pub struct MergeOptions {
     /// which still parses, and restore then refuses by its version.
     pub refine: Refine,
     /// Whether deep refinement and the word merge keep off the inside of syntax nodes, where
-    /// the document is given a grammar (`docs/PLAN.md` §B5.8). Absent from a
+    /// the document is given a grammar (`docs/DESIGN.md` §B5.8). Absent from a
     /// version-6 journal header, which restore then refuses by its version.
     #[serde(default)]
     pub syntax_boundaries: bool,
@@ -216,7 +216,7 @@ pub enum Output {
     Conflicted(String),
 }
 
-/// The line endings of the saved output (`docs/PLAN.md` §E5).
+/// The line endings of the saved output (`docs/DESIGN.md` §E5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OutputEnding {
     /// Each region keeps its source's bytes (spec §4.1).
@@ -2739,7 +2739,7 @@ mod tests {
         assert_eq!(bytes(&d), [0..1, 1..6, 6..8]);
     }
 
-    // Syntax-aware boundaries (docs/PLAN.md §B5.8). Left's shared m is at
+    // Syntax-aware boundaries (docs/DESIGN.md §B5.8). Left's shared m is at
     // bytes 4..6.
     const DEEP_LEFT: &str = "a\nX\nm\nY\nz\n";
 
@@ -2783,7 +2783,7 @@ mod tests {
         assert_eq!(open(on, Some(&marked)), whole);
     }
 
-    // Output line endings (`docs/PLAN.md` §E5).
+    // Output line endings (`docs/DESIGN.md` §E5).
 
     const ENDINGS: [OutputEnding; 4] =
         [OutputEnding::Keep, OutputEnding::Base, OutputEnding::Lf, OutputEnding::CrLf];

@@ -1,4 +1,4 @@
-//! Forwarding to the GUI binary (PLAN.md §A4.13), with the `forward_stand_in`
+//! Forwarding to the GUI binary (DESIGN.md §A4.13), with the `forward_stand_in`
 //! example as the child.
 
 use std::path::PathBuf;

@@ -1,4 +1,4 @@
-//! Writes `fixtures/oracle/jj-corpus.jsonl` from jj-lib's file merge (`PLAN.md`
+//! Writes `fixtures/oracle/jj-corpus.jsonl` from jj-lib's file merge (`DESIGN.md`
 //! §B5.2). Dev-time only; `script/gen-jj-oracle` runs it.
 //!
 //! Each case is a triple of the git corpus or a hand seed, merged by
@@ -112,7 +112,7 @@ fn repeated(name: &str, count: usize) -> Case {
     triple(name, &base, &left, &right)
 }
 
-/// Seeds where jj's merge differs from git's or has no git counterpart (PLAN.md §B5.2).
+/// Seeds where jj's merge differs from git's or has no git counterpart (DESIGN.md §B5.2).
 fn seeds() -> Vec<Case> {
     const ABC: &str = "a\nb\nc\n";
     vec![

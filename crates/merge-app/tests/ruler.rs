@@ -1,4 +1,4 @@
-//! Headless tests of the overview ruler beside the result (`docs/PLAN.md` §E4).
+//! Headless tests of the overview ruler beside the result (`docs/DESIGN.md` §E4).
 
 use crate::common;
 

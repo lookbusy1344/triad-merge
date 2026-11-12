@@ -1,4 +1,4 @@
-//! Headless tests of Save Copy As (`docs/PLAN.md` §E6). The save dialog is GPUI's;
+//! Headless tests of Save Copy As (`docs/DESIGN.md` §E6). The save dialog is GPUI's;
 //! the tests call the write path with a chosen path.
 
 use crate::common;

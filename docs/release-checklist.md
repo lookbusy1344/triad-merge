@@ -1,15 +1,15 @@
 # Release checklist
 
-Manual checks before a release. Record the date, machine, macOS version and result of each run in the plan section named.
+Manual checks before a release. A run that changes a measured figure replaces it in the DESIGN.md section named; PLAN.md §1 states what still needs a run.
 
-## Performance on the reference machine (PLAN.md §A6.7, spec §9)
+## Performance on the reference machine (DESIGN.md §A6.7, spec §9)
 
 1. Plug in to power. Close other apps.
 2. From the repository root, run `script/measure-app 60`, or pass the display's refresh rate.
 3. Keep each window frontmost until it closes. Do not touch the mouse or keyboard. macOS slows a background app, which shows as frame intervals of 41.7 ms and slower keystrokes.
 4. The script prints a table and exits 0 when every target is met. On a failure, rerun the failing mode alone to rule out interference:
    `TRIAD_MEASURE=<mode> target/release/triad-merge target/measure/<lines>/{base,left,right}.txt target/measure/<lines>/out.txt`
-5. Full reports are in `target/measure/measure-app.log`. Copy the table into PLAN.md §A6.7 and the measured table in spec §9.
+5. Full reports are in `target/measure/measure-app.log`. Replace the table in DESIGN.md §A6.7 and the measured table in spec §9.
 
 | Check | 100k lines | 1M lines |
 |---|---|---|
@@ -20,7 +20,7 @@ Manual checks before a release. Record the date, machine, macOS version and resu
 | Keystroke, max | < 8 ms | < 8 ms |
 | Peak RSS | < 300 MB | < 2 GB |
 
-## Accessibility (PLAN.md §A6.6, spec §6.5)
+## Accessibility (DESIGN.md §A6.6, spec §6.5)
 
 ### Accessibility tree
 
@@ -51,13 +51,13 @@ Turn VoiceOver on (Command-F5) and open the demo merge.
 
 Known gaps, recorded in `docs/gpui-kit-issues.md`: status changes are not announced; region bands and gutter marks are not exposed; only the rows on screen are in the table.
 
-## Merge and diff tool integration (PLAN.md §A7.3, spec §7.1)
+## Merge and diff tool integration (DESIGN.md §A7.3, spec §7.1)
 
-`tests/tool_integration.rs` covers the command lines and jj's reading of the output. These steps cover what needs the window. Run them once for git and once for jj, in a scratch repository and with a scratch config, so your own config is untouched. Record each row as passed or failed, with the VCS versions, in PLAN.md §A7.3.
+`tests/tool_integration.rs` covers the command lines and jj's reading of the output. These steps cover what needs the window. Run them once for git and once for jj, in a scratch repository and with a scratch config, so your own config is untouched. A failed row becomes a bug with a test that reproduces it; PLAN.md §1 states which rows need a rerun.
 
 ### Setup
 
-Install the local build (PLAN.md §A7.4), with `triad-merge` on `PATH` as README § Build and install says, and point both VCSs at scratch configs:
+Install the local build (DESIGN.md §A7.4), with `triad-merge` on `PATH` as README § Build and install says, and point both VCSs at scratch configs:
 
 ```sh
 script/macos-app && rm -rf /Applications/triad.app && cp -R target/release/triad.app /Applications/

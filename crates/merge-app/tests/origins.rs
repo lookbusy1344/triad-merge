@@ -1,4 +1,4 @@
-//! Headless tests of line origins in the merge and diff windows (spec §5, §7.3; PLAN.md §C5.4).
+//! Headless tests of line origins in the merge and diff windows (spec §5, §7.3; DESIGN.md §C5.4).
 
 use crate::common;
 use merge_view::rows::RowIx;
@@ -262,7 +262,7 @@ fn a_merge_without_origins_has_no_blame_item(cx: &mut TestAppContext) {
     assert_eq!(blame_item(cx), None);
 }
 
-// The diff window (PLAN.md §C5.4, decision 3).
+// The diff window (DESIGN.md §C5.4, decision 3).
 
 const ONE: &str = "a\nb\n";
 const TWO: &str = "a\nb\nc\n";

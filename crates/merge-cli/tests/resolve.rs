@@ -1,4 +1,4 @@
-//! `resolve`'s targets: the conflicted files it lists and opens (`PLAN.md` §D5.3).
+//! `resolve`'s targets: the conflicted files it lists and opens (`DESIGN.md` §D5.3).
 
 use std::path::Path;
 

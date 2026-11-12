@@ -1,5 +1,5 @@
 //! Write a generated triple to `DIR/{base,left,right}.txt`, for measuring the app on large
-//! files (PLAN.md §A6.7). The same line count and seed give the same files.
+//! files (DESIGN.md §A6.7). The same line count and seed give the same files.
 //!
 //! Usage: `cargo run --release -p merge-core --features testing --example generate -- LINES DIR [SEED]`
 

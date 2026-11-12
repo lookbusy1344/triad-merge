@@ -1,4 +1,4 @@
-//! Key bindings (`docs/PLAN.md` §E9): the `keybind` lines of the config file and the bindings
+//! Key bindings (`docs/DESIGN.md` §E9): the `keybind` lines of the config file and the bindings
 //! they leave. This module knows no GUI; `merge-app` turns the bindings into GPUI's.
 
 use std::collections::BTreeSet;

@@ -201,7 +201,7 @@ Same change: `accept` (default) or `keep`, jj's `merge.same-change`. `keep` leav
 
 Hunk level: `line` (default) or `word`, jj's `merge.hunk-level`. Under `word`, in both semantics, each conflict is merged again word by word, as jj-lib's `merge_hunk_by_word` does: jj's word diff (`jj-core` `ContentDiff::by_word`) of the conflict's texts in every input, with each differing word hunk resolved by the trivial resolution and the same-change setting. If every word hunk resolves, the region is `WordMerged` and its automatic result is the merged text. If any word hunk does not resolve, the whole region stays a conflict: a conflict is never merged in part. Words compare as bytes, whatever the whitespace mode. The word merge runs before conflict refinement, so a `WordMerged` region is never split.
 
-For every input where git `merge-file` reports no conflicts, automatic output under `git` semantics must equal git's output byte for byte (§8.3). Under `jj` semantics, the regions and automatic output must equal jj-lib's `merge_hunks` for the jj corpus (`docs/PLAN.md` §B5.2), except for the encodings above.
+For every input where git `merge-file` reports no conflicts, automatic output under `git` semantics must equal git's output byte for byte (§8.3). Under `jj` semantics, the regions and automatic output must equal jj-lib's `merge_hunks` for the jj corpus (`docs/DESIGN.md` §B5.2), except for the encodings above.
 
 Conflict refinement: an option, on by default, under both semantics, trims lines that both sides share at the start and end of a conflict into separate `BothSame` regions. A conflict whose sides are all equal, which `keep` leaves, stays whole. These regions have an empty base range; the conflict keeps its whole base range, which its `|||||||` section shows. Lines shared inside a conflict stay in it. This is git's `--zdiff3` behaviour.
 
@@ -649,7 +649,7 @@ The git backend uses gix, not libgit2 (`git2`).
 
 `triad-merge resolve [PATH]` finds the repository at the current directory, picking jj if both `.jj` and `.git` exist. Outside any repository, it finds the one holding PATH. With no path, it lists the conflicted files and opens them in turn. It takes the diff and semantics flags of a merge and `--marker-length`; the semantics are chosen as for a merge whose output is the working-tree file. The window's title is the path relative to the repository root. Each term's title (§7.3) labels its pane and its markers.
 
-A file the VCS holds no conflict for, or one outside any repository, opens from its conflict markers when it has them: git's `merge`, `diff3` and `zdiff3` styles, and jj's snapshot, diff and git styles (`PLAN.md` §D5.7). A conflict without a base section opens with an empty base there. Labels come from the first conflict's marker lines. Without markers, the file is not conflicted and `resolve` exits with 3.
+A file the VCS holds no conflict for, or one outside any repository, opens from its conflict markers when it has them: git's `merge`, `diff3` and `zdiff3` styles, and jj's snapshot, diff and git styles (`DESIGN.md` §D5.7). A conflict without a base section opens with an empty base there. Labels come from the first conflict's marker lines. Without markers, the file is not conflicted and `resolve` exits with 3.
 
 - Git: read stages 1, 2 and 3 for the path from the index through gix. Stage 1 is the base; stages 2 and 3 are the sides, ours then theirs. Ours is `HEAD`, labelled with its branch; the base and theirs follow §7.3's rules for the stopped operation, and are unnamed without one. A missing stage is an absent term: the file was added, or deleted, on another term. Write the result to the working tree. If fully resolved, replace the conflict stages with one stage-0 entry, which is what `git add` does. Saving with markers leaves the stages in place.
 - jj: read the file's `Merge` from the working-copy commit through jj-lib, together with the commit's conflict labels. Its adds are the sides and its removes the bases, in jj's order. Each term takes the tree's conflict label at its position. Write the result to the working copy; jj's snapshot then records it on that commit. Saving with markers writes a conflict jj understands. The pane titles use the labels when the commit has them.
@@ -750,7 +750,7 @@ A word-level merge (`hunk-level = word`, §4.3) of a conflict that spans much of
 
 `resolve`'s repository steps have no target. jj's snapshot scans the working copy and costs what jj's own does: on an M4 Pro with 100k files, `jj util snapshot` takes 108 ms unchanged and 176 ms after one edit; `resolve` takes 105 ms to load a conflict and 168 ms to record a save. git stages a save in 30 ms with 100k index entries (`cargo bench -p merge-cli --bench resolve`).
 
-Measured (PLAN.md §A6.7) on 2026-11-08 on an M4 Pro, 120 Hz, with `TRIAD_MEASURE`, `/usr/bin/time -l` and the benchmarks:
+Measured (DESIGN.md §A6.7) on 2026-11-08 on an M4 Pro, 120 Hz, with `TRIAD_MEASURE`, `/usr/bin/time -l` and the benchmarks:
 
 | Operation | 100k lines | 1M lines |
 |---|---|---|
@@ -761,9 +761,9 @@ Measured (PLAN.md §A6.7) on 2026-11-08 on an M4 Pro, 120 Hz, with `TRIAD_MEASUR
 | Keystroke, mean / max | 0.3 / 0.5 ms | 1.9 / 5.2 ms |
 | Peak resident memory | 221 MB | 869 MB |
 
-These figures are for plain text. With Rust highlighting (`syntax-highlighting = true`, §6.4), 100k lines peak at 223–228 MB with a first frame of 225–273 ms; the other figures hold. The top panes, and the result and diff editors past `syntax-whole-file-max-lines`, parse the chunks on screen as they show: the rows on screen take their colours under 200 ms after the first frame, and 1M lines peak at 911–934 MB with every pane coloured ([PLAN.md](PLAN.md) §F4, §F4.1, §F6.3).
+These figures are for plain text. With Rust highlighting (`syntax-highlighting = true`, §6.4), 100k lines peak at 223–228 MB with a first frame of 225–273 ms; the other figures hold. The top panes, and the result and diff editors past `syntax-whole-file-max-lines`, parse the chunks on screen as they show: the rows on screen take their colours under 200 ms after the first frame, and 1M lines peak at 911–934 MB with every pane coloured ([DESIGN.md](DESIGN.md) §F4, §F4.1, §F6.3).
 
-An idle window draws nothing. The caret blinks for 10 s after the last key, click or focus, then stays shown; a window that is not frontmost shows no caret. While a window draws, the macOS Metal driver holds about 115 MB, which it reclaims once drawing stops. The diff of `fixtures/demo/code_a.py` and `code_b.py` in a 1400 × 887 pt window takes 212 MB while the caret blinks and 98 MB at rest ([PLAN.md](PLAN.md) §A6.7).
+An idle window draws nothing. The caret blinks for 10 s after the last key, click or focus, then stays shown; a window that is not frontmost shows no caret. While a window draws, the macOS Metal driver holds about 115 MB, which it reclaims once drawing stops. The diff of `fixtures/demo/code_a.py` and `code_b.py` in a 1400 × 887 pt window takes 212 MB while the caret blinks and 98 MB at rest ([DESIGN.md](DESIGN.md) §A6.7).
 
 ## 10. Agent-friendly practices
 

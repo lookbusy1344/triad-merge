@@ -16,7 +16,7 @@ A `gpui-base` test in `src/text/text_view.rs` includes `../../../../README.md`, 
 
 ## Whole-text copy per frame
 
-`gpui-component`'s `Input::render` (`src/input/input.rs`) calls `state.text(cx).to_string()` for the accessibility value when an accessibility client such as VoiceOver is active, or when `test-support` is on. At 1M lines this copies about 50 MB per frame, about 35 ms. Large files drop below the refresh rate for VoiceOver users, and headless measurements read slow. triad leaves it; PLAN.md §A6.7 decides from measurement.
+`gpui-component`'s `Input::render` (`src/input/input.rs`) calls `state.text(cx).to_string()` for the accessibility value when an accessibility client such as VoiceOver is active, or when `test-support` is on. At 1M lines this copies about 50 MB per frame, about 35 ms. Large files drop below the refresh rate for VoiceOver users, and headless measurements read slow. triad leaves it; DESIGN.md §A6.7 decides from measurement.
 
 ## Soft wrap at start-up
 
@@ -27,7 +27,7 @@ Soft wrap is on by default in `EditorState` and wraps every line before the firs
 | 100k | 2.7 s | 570 MB | 202 ms |
 | 1M | 26.6 s | 4.8 GB | 687 ms |
 
-triad turns soft wrap off, and allows it only up to `SOFT_WRAP_MAX_LINES` (PLAN.md §A6.2).
+triad turns soft wrap off, and allows it only up to `SOFT_WRAP_MAX_LINES` (DESIGN.md §A6.2).
 
 ## Line layout at start-up
 

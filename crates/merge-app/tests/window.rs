@@ -1,4 +1,4 @@
-//! Headless tests of the merge window (PLAN.md §A6.2).
+//! Headless tests of the merge window (DESIGN.md §A6.2).
 
 use crate::common;
 use merge_core::index::RegionIx;

@@ -1,5 +1,5 @@
 //! The top panes' syntax spans, parsed a chunk at a time as the rows show
-//! (`docs/PLAN.md` §F4).
+//! (`docs/DESIGN.md` §F4).
 //!
 //! A row on screen asks for its line with [`ChunkedSpans::want`]. That queues the line's chunk
 //! and its neighbours, the focus. [`ChunkedSpans::next_parse`] hands out the queued chunk nearest

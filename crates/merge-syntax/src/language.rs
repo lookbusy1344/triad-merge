@@ -1,5 +1,5 @@
 //! The language a pane's text is highlighted and merged as, from file names
-//! (`docs/PLAN.md` §F5), and its grammar.
+//! (`docs/DESIGN.md` §F5), and its grammar.
 //!
 //! git and jj hand a merge tool temporary inputs such as `BASE_1234.rs`, and jj's diff tool
 //! files in a temporary directory, so the caller lists every name it knows, best first: the

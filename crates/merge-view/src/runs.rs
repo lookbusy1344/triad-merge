@@ -1,5 +1,5 @@
 //! A top-pane cell's text as runs: syntax colours with the intra-line marks and search
-//! matches over them (`docs/PLAN.md` §F4). The syntax style is generic, so this stays free of GPUI.
+//! matches over them (`docs/DESIGN.md` §F4). The syntax style is generic, so this stays free of GPUI.
 
 use std::borrow::Cow;
 use std::ops::Range;

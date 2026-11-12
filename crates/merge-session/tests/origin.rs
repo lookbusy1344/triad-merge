@@ -1,4 +1,4 @@
-//! Which revision each input's line origins come from (`docs/PLAN.md` §C3, §C5.2),
+//! Which revision each input's line origins come from (`docs/DESIGN.md` §C3, §C5.2),
 //! one test per row of the plan's table, on repositories built through gix and jj-lib.
 
 use std::path::Path;

@@ -1,4 +1,4 @@
-//! Headless tests of the `keybind` setting in the windows (`docs/PLAN.md` §E9).
+//! Headless tests of the `keybind` setting in the windows (`docs/DESIGN.md` §E9).
 
 use crate::common;
 

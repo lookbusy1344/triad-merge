@@ -29,7 +29,7 @@ pub const RIGHT: usize = 1;
 const REFERENCE: usize = 0;
 const MIN_SIDES: usize = 2;
 
-/// Whose merge the alignment follows (`docs/PLAN.md` §B1).
+/// Whose merge the alignment follows (`docs/DESIGN.md` §B1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Semantics {
@@ -238,7 +238,7 @@ pub fn align_merged(inputs: &Inputs, opts: Alignment) -> Aligned {
 
 /// [`align_merged`], where `boundaries`, when given, drops each deep-refinement split at a cut
 /// inside a syntax node, and each word merge with a hunk inside a token
-/// (`docs/PLAN.md` §B5.8).
+/// (`docs/DESIGN.md` §B5.8).
 #[must_use]
 pub fn align_bounded(
     inputs: &Inputs,
@@ -305,7 +305,7 @@ pub fn word_merge(inputs: &Inputs, region: &Region, same_change: SameChange) -> 
 
 /// [`word_merge`], where `boundaries`, when given, also gives none when a word hunk resolved
 /// from a side starts or ends inside a token of a side that holds its text
-/// (`docs/PLAN.md` §B5.8). The text, when there is one, is [`word_merge`]'s.
+/// (`docs/DESIGN.md` §B5.8). The text, when there is one, is [`word_merge`]'s.
 #[must_use]
 pub fn word_merge_bounded(
     inputs: &Inputs,
@@ -1161,7 +1161,7 @@ mod tests {
         assert_eq!(align(&inputs, jj(Whitespace::None, SameChange::Keep, true)), kept);
     }
 
-    // jj semantics (docs/PLAN.md §B5.3)
+    // jj semantics (docs/DESIGN.md §B5.3)
 
     fn jj(whitespace: Whitespace, same_change: SameChange, refine: bool) -> Alignment {
         Alignment {
@@ -1202,7 +1202,7 @@ mod tests {
         assert_eq!(jj_merge("", "", ""), []);
     }
 
-    // Word-level merge (docs/PLAN.md §B5.4)
+    // Word-level merge (docs/DESIGN.md §B5.4)
 
     fn by_word(semantics: Semantics, same_change: SameChange) -> Alignment {
         Alignment {
@@ -1237,7 +1237,7 @@ mod tests {
         }
     }
 
-    // Syntax-aware word merge (docs/PLAN.md §B5.8). Line 1 starts at byte 2:
+    // Syntax-aware word merge (docs/DESIGN.md §B5.8). Line 1 starts at byte 2:
     // `let y = 1;` has y at 6..7, `let x = 2;` has 2 at 10..11.
     const WORD_BASE: &str = "a\nlet x = 1;\nb\n";
     const WORD_LEFT: &str = "a\nlet y = 1;\nb\n";
@@ -1652,7 +1652,7 @@ mod tests {
         prop::sample::select(vec![Refine::Off, Refine::Ends, Refine::Deep])
     }
 
-    // Deep refinement (docs/PLAN.md §B5.7)
+    // Deep refinement (docs/DESIGN.md §B5.7)
 
     fn deep(semantics: Semantics) -> Alignment {
         Alignment { semantics, refine: Refine::Deep, ..git(DiffOptions::default(), true) }

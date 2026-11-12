@@ -1,4 +1,4 @@
-//! The banner that lists the config file's bad lines (`PLAN.md` §E3.2). It shows above
+//! The banner that lists the config file's bad lines (`DESIGN.md` §E3.2). It shows above
 //! the panes of the merge and diff windows until its close button or a clean reload closes it.
 
 use gpui_kit::assets::IconName;

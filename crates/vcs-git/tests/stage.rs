@@ -1,5 +1,5 @@
 //! `record_save` and `snapshot` on git: a resolved save takes the place of the conflict's
-//! stages, as `git add` does (spec §7.4, `PLAN.md` §D5.5).
+//! stages, as `git add` does (spec §7.4, `DESIGN.md` §D5.5).
 
 use camino::Utf8Path;
 use gix::index::entry::{Mode, Stage};

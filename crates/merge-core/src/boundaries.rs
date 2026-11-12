@@ -1,5 +1,5 @@
 //! Where a cut through a region's text falls between syntax nodes
-//! (`docs/PLAN.md` §B5.8). `merge-core` knows no grammar: a caller that has one
+//! (`docs/DESIGN.md` §B5.8). `merge-core` knows no grammar: a caller that has one
 //! gives [`Boundaries`], and deep refinement and the word merge drop the cuts it marks.
 
 use std::fmt;

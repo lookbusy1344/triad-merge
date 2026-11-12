@@ -1,4 +1,4 @@
-//! Headless tests of the open dialog (spec §6.1; PLAN.md §A6.2).
+//! Headless tests of the open dialog (spec §6.1; DESIGN.md §A6.2).
 
 use crate::common;
 

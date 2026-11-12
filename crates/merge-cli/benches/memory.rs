@@ -1,5 +1,5 @@
 //! Peak heap of load, merge and save at spec §9's sizes, on triples from the seeded
-//! generator (PLAN.md §A6.7), in git and then jj mode (`docs/PLAN.md` §B6). Writes `target/tmp/memory.json`, which `script/check-bench` compares
+//! generator (DESIGN.md §A6.7), in git and then jj mode (`docs/DESIGN.md` §B6). Writes `target/tmp/memory.json`, which `script/check-bench` compares
 //! with spec §9's memory targets.
 //!
 //! The allocator's peak cannot be reset, so the sizes run smallest first, jj mode after git

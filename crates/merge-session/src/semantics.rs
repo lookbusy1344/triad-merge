@@ -1,5 +1,5 @@
 //! Choosing git's or jj's merge semantics for a merge (spec §6.1,
-//! `docs/PLAN.md` §B3).
+//! `docs/DESIGN.md` §B3).
 //!
 //! A repository with `.jj`, colocated or not, merges with jj's semantics, and a git merge there
 //! is an error. `auto` takes the nearest repository of the working directory, then of the

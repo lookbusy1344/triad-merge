@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Workspace rules that cargo and cargo-deny don't check (spec §2.3, PLAN.md §A3).
+# Workspace rules that cargo and cargo-deny don't check (spec §2.3, DESIGN.md §A3).
 # - Every workspace crate inherits the workspace lints.
 # - The build holds one copy of gix, the one jj-lib uses.
 # - merge-config reaches no repository: of the workspace crates it depends on merge-core and
-#   vcs alone (PLAN.md §A13.12).
+#   vcs alone (DESIGN.md §A13.7).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

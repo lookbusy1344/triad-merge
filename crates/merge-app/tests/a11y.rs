@@ -1,4 +1,4 @@
-//! Headless tests of the merge window's accessible roles and labels (spec §6.5; PLAN.md §A6.6).
+//! Headless tests of the merge window's accessible roles and labels (spec §6.5; DESIGN.md §A6.6).
 //! The test platform has no screen reader, so they read the roles and labels gpui-kit
 //! records for each element.
 

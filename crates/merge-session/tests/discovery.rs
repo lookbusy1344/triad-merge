@@ -1,4 +1,4 @@
-//! One rule finds a repository (`docs/PLAN.md` §A13.7): the nearest directory holding
+//! One rule finds a repository (`docs/DESIGN.md` §A13.7): the nearest directory holding
 //! `.jj` or `.git`, jj when it holds both. The probe that picks the merge semantics and the
 //! discovery that opens the repository give the same answer.
 

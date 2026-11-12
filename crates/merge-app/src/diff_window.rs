@@ -1,4 +1,4 @@
-//! The two-way diff window (PLAN.md §A6.5): the toolbar, two editable panes over a
+//! The two-way diff window (DESIGN.md §A6.5): the toolbar, two editable panes over a
 //! [`DiffDocument`], and the status bar.
 //!
 //! As in the merge window, the core is the source of truth. Each editor makes the user's

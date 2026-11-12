@@ -1,5 +1,5 @@
 //! Which revision each input's line origins come from (spec §7.3,
-//! `docs/PLAN.md` §C3).
+//! `docs/DESIGN.md` §C3).
 //!
 //! An input takes its origins from a commit whose file holds exactly the input's bytes, or, for
 //! the working copy of `diff PATH`, from its parent revision by a line diff. Every other input

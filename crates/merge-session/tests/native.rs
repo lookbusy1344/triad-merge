@@ -1,5 +1,5 @@
 //! `diff PATH` inputs from git and jj repositories built through gix and jj-lib (spec §6.1,
-//! PLAN.md §A7.1).
+//! DESIGN.md §A7.1).
 
 use merge_session::native::{self, NativeDiff, NativeError};
 use merge_session::repository::RunRepository;

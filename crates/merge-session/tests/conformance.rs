@@ -1,4 +1,4 @@
-//! The VCS conformance suite (spec §8.8, PLAN.md §A7.1): one set of checks, written against the
+//! The VCS conformance suite (spec §8.8, DESIGN.md §A7.1): one set of checks, written against the
 //! `vcs` trait, run on git, colocated jj and internal jj repositories found through
 //! `native::discover`.
 

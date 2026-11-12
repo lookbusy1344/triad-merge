@@ -1,4 +1,4 @@
-//! The overview ruler (`docs/PLAN.md` §E4): a strip beside the result pane, and beside
+//! The overview ruler (`docs/DESIGN.md` §E4): a strip beside the result pane, and beside
 //! the diff window's right pane, with a mark for every region that is not unchanged, placed
 //! by its lines' share of the whole text. Marks are visual only; the navigation commands reach
 //! every region from the keyboard.

@@ -1,4 +1,4 @@
-//! [`Boundaries`] from a tree-sitter grammar (`docs/PLAN.md` §B5.8).
+//! [`Boundaries`] from a tree-sitter grammar (`docs/DESIGN.md` §B5.8).
 //!
 //! A region parses with the lines around it, from the top-level line at or before its first
 //! line to the next top-level line after it ([`crate::syntax`]'s rule), never the whole file.

@@ -26,7 +26,7 @@ thiserror.workspace = true
 vcs.workspace = true
 
 [dev-dependencies]
-# `merge` stops a merge as git does, for the conflict tests (`PLAN.md` §D5.2).
+# `merge` stops a merge as git does, for the conflict tests (`DESIGN.md` §D5.2).
 gix = { workspace = true, features = ["merge"] }
 vcs-git = { path = ".", features = ["testing"] }
 

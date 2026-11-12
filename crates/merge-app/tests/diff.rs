@@ -1,4 +1,4 @@
-//! Headless tests of the two-way diff window (spec §6.1; PLAN.md §A6.5).
+//! Headless tests of the two-way diff window (spec §6.1; DESIGN.md §A6.5).
 
 use crate::common;
 use merge_core::index::RegionIx;

@@ -1,4 +1,4 @@
-//! `triad-merge resolve --headless` on git and jj repositories (`PLAN.md`
+//! `triad-merge resolve --headless` on git and jj repositories (`DESIGN.md`
 //! §D5.4): what reaches the working-tree file, what stays in the repository, and what jj
 //! reads back.
 
@@ -223,7 +223,7 @@ fn a_conflict_resolved_by_hand_beside_another_keeps_the_hand_resolution() {
     );
     let result = triad(fixture.root(), &["resolve", "--headless", "a.txt"]);
     assert_eq!(outcome(&result), (Some(CONFLICTS), String::new(), String::new()));
-    // jj's default `base` counts as no label (`PLAN.md` §D5.7), so its marker has none.
+    // jj's default `base` counts as no label (`DESIGN.md` §D5.7), so its marker has none.
     assert_eq!(
         String::from_utf8(read(fixture.root(), "a.txt")).expect("UTF-8"),
         "a\nL1\nc\n<<<<<<< ours\nL2\n|||||||\nd\n=======\nR2\n>>>>>>> theirs\ne\n"

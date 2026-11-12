@@ -1,5 +1,5 @@
 //! The cost of `resolve`'s repository steps against the size of the working copy, on jj and
-//! git (`docs/PLAN.md` §D5.5): loading a conflict, which snapshots jj's working copy first;
+//! git (`docs/DESIGN.md` §D5.5): loading a conflict, which snapshots jj's working copy first;
 //! listing the conflicts, which the queue does before each file; and recording a save, which
 //! snapshots jj's working copy again or stages git's file. Each repository holds `files`
 //! clean files in directories of `FILES_PER_DIR`, and one conflict in `a.txt`. The window
