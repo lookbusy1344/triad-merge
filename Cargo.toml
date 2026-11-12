@@ -124,6 +124,11 @@ gpui-base = { path = "vendor/gpui-base" }
 [profile.dev]
 debug = false
 
+# Dependencies: GPUI, jj-lib, gix, tree-sitter and its C grammars. Workspace crates stay at 0,
+# so an edit to them rebuilds as fast as before.
+[profile.dev.package."*"]
+opt-level = 1
+
 # Local builds for testing: `script/macos-app`, `script/measure-app`, benchmarks. Nothing in the
 # product catches a panic, and the recovery journal covers a crash, so a panic aborts and the
 # binary drops its unwind tables. Tests, benchmarks and build scripts unwind whatever this says.

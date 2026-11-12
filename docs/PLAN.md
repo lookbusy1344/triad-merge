@@ -939,9 +939,10 @@ Both windows are fit for the beta as they stand.
 
 #### A13.5 Pre-commit gate time
 
-Limit: 35 s on a warm build (`AGENTS.md`). The gate takes 25 s after an edit to `merge-app` and 28 s after an edit to `merge-core`, which runs the tests of every crate but `vcs`, `vcs-git` and `vcs-jj`.
+Limit: 35 s on a warm build (`AGENTS.md`). The gate takes 12 s after an edit to `merge-app` and 16 s after an edit to `merge-core`, which runs the tests of every crate but `vcs`, `vcs-git` and `vcs-jj`.
 
 - **Object files.** With debug info, rustc on macOS keeps each build's `*.rcgu.o` files in `target/debug/deps`, and nothing removes them. Every rustc run lists that directory: 1.26 million objects cost 10 s a listing, in each of clippy's and the build's units. `[profile.dev] debug = false` stops them. Panics keep their locations; `CARGO_PROFILE_DEV_DEBUG=line-tables-only` turns debug info on. An older `target/` needs `find target/debug/deps -name '*.rcgu.o' -delete` once.
+- **Optimised dependencies.** `[profile.dev.package."*"] opt-level = 1` compiles GPUI, jj-lib, gix and the tree-sitter grammars with optimisation; workspace crates stay at 0. merge-app's tests take 75 s of CPU, 130 s at opt-level 0; the highlighter comparison takes 1.3 s, 4.6 s at 0. The quick profile takes 7.3 s and the full suite 51 s. The jj tests gain nothing: their time is file-system work. A change to the setting rebuilds every dependency, 84 s on a cold cache, so build before the gate.
 - **One integration-test binary per crate.** `tests/main.rs` declares each file as a module.
 - **No serial tests in the quick profile.** A test with `threads-required = "num-test-threads"` waits for every running test to end and holds every thread while it runs. The six highlighter comparisons cost 10 s of the quick run's 20 s; without them it takes 10 s. pre-push and CI run them.
 - **jj tests in `jj` modules.** The quick profile drops a test that builds a jj repository by its module path. A test outside a `jj` module runs in every gate.
