@@ -638,59 +638,6 @@ fn the_diff_panes_have_no_label_column_by_default(cx: &mut TestAppContext) {
     assert_eq!(pane_labels(cx, &d.view, Side::Right), None);
 }
 
-/// jj shows IDs with at least this many characters.
-const JJ_SHORT_ID: usize = 8;
-
-/// The first label of the left pane of `diff PATH` in a jj repository whose `@-` holds
-/// [`TWO`], under `revision_id`, and that commit.
-fn jj_left_label(
-    cx: &mut TestAppContext,
-    revision_id: IdKind,
-) -> (String, vcs_jj::testing::Committed) {
-    let fixture = vcs_jj::testing::Fixture::new();
-    let two = fixture.commit("two", &[(PATH, TWO.as_bytes())]);
-    fixture.write(PATH, WORKING.as_bytes());
-    let path = fixture.root().join(PATH).into_std_path_buf();
-    let right =
-        DiffFile { origin: DiffOrigin::File(path.clone()), text: text(WORKING), read_only: false };
-    let settings = DiffSettings {
-        origins: Some(DiffLookup::Native {
-            repo: Handoff::new(RunRepository::of_file(&path)),
-            path,
-            rev: None,
-        }),
-        revision_id,
-        ..DiffSettings::default()
-    };
-    let d = open_diff_with(cx, DiffFile::revision(text(TWO), "@-"), right, &settings);
-    settle(cx);
-    let label = cx
-        .read(|cx| d.view.read(cx).origin_cell(Side::Left, 0))
-        .and_then(|cell| cell.label)
-        .expect("the first line is labelled");
-    (label.to_string(), two)
-}
-
-#[gpui_kit::test]
-fn a_jj_origin_column_shows_change_ids_by_default(cx: &mut TestAppContext) {
-    let (label, two) = jj_left_label(cx, IdKind::default());
-    assert!(
-        label.len() >= JJ_SHORT_ID && two.change_id.starts_with(&label),
-        "{label} shortens the change ID {}",
-        two.change_id
-    );
-}
-
-#[gpui_kit::test]
-fn a_jj_origin_column_shows_commits_under_the_commit_setting(cx: &mut TestAppContext) {
-    let (label, two) = jj_left_label(cx, IdKind::Commit);
-    assert!(
-        label.len() >= JJ_SHORT_ID && two.commit.starts_with(&label),
-        "{label} shortens the commit {}",
-        two.commit
-    );
-}
-
 // The revision chips of the pane headings (spec §5).
 
 /// Each pane's chip, in pane order, as its ID and the summary its hover ends with.
@@ -750,39 +697,6 @@ fn a_merge_run_outside_any_repository_names_no_commit(cx: &mut TestAppContext) {
     assert_eq!(merge_chips(cx, &view), [None, None]);
 }
 
-#[gpui_kit::test]
-fn a_three_sided_jj_merges_headings_name_each_sides_commit(cx: &mut TestAppContext) {
-    use merge_core::document::{Labels, MergeOptions};
-    use merge_core::merge3::Inputs;
-    const THIRD: &str = "a\nB\nc\n";
-    let fixture = vcs_jj::testing::Fixture::new();
-    let base = fixture.commit_on(&[], "base", &[(PATH, BASE.as_bytes())]);
-    let sides = [("one", LEFT), ("two", RIGHT), ("three", THIRD)]
-        .map(|(name, body)| fixture.commit_on(&[&base], name, &[(PATH, body.as_bytes())]));
-    fixture.check_out(&sides.each_ref());
-    let inputs =
-        Inputs::new([LEFT, RIGHT, THIRD].map(text).to_vec(), [BASE, BASE].map(text).to_vec())
-            .expect("three sides, two bases");
-    let doc =
-        MergeDocument::new(inputs, MergeOptions::default(), Labels::none()).expect("no labels");
-    let cwd = fixture.root().as_std_path().to_owned();
-    let output = cwd.join(PATH);
-    let settings = WindowSettings {
-        origins: Some(OriginLookup {
-            repo: Handoff::new(RunRepository::of_merge(Some(&cwd), Some(&output))),
-            output,
-            title: Some(PATH.to_owned()),
-            cwd,
-        }),
-        ..WindowSettings::default()
-    };
-    let (_window, view, _) = open_with(cx, doc, &settings);
-    cx.run_until_parked();
-    let summaries: Vec<Option<String>> =
-        merge_chips(cx, &view).into_iter().map(|chip| chip.map(|(_, summary)| summary)).collect();
-    assert_eq!(summaries, owned(&[Some("one"), Some("two"), Some("three")]));
-}
-
 /// git shortens commit IDs to at least this many characters.
 const GIT_SHORT_ID: usize = 7;
 
@@ -804,83 +718,6 @@ fn a_git_diff_names_heads_commit_and_none_for_the_working_tree(cx: &mut TestAppC
     assert!(id.len() >= GIT_SHORT_ID && head.starts_with(&id), "{id} shortens {head}");
     assert_eq!(summary, "two");
     assert_eq!(diff_chip(cx, &d, Side::Right), None);
-}
-
-/// `diff PATH` in a jj repository whose `@-` holds [`TWO`], its left pane titled as `title`
-/// gives for that commit, under `revision_id`; and that commit.
-fn open_jj_native(
-    cx: &mut TestAppContext,
-    title: impl FnOnce(&vcs_jj::testing::Committed) -> String,
-    revision_id: IdKind,
-) -> (Diff, vcs_jj::testing::Fixture, vcs_jj::testing::Committed) {
-    let fixture = vcs_jj::testing::Fixture::new();
-    let two = fixture.commit("two", &[(PATH, TWO.as_bytes())]);
-    let title = title(&two);
-    fixture.write(PATH, WORKING.as_bytes());
-    let path = fixture.root().join(PATH).into_std_path_buf();
-    let right =
-        DiffFile { origin: DiffOrigin::File(path.clone()), text: text(WORKING), read_only: false };
-    let settings = DiffSettings {
-        origins: Some(DiffLookup::Native {
-            repo: Handoff::new(RunRepository::of_file(&path)),
-            path,
-            rev: None,
-        }),
-        revision_id,
-        ..DiffSettings::default()
-    };
-    let d = open_diff_with(cx, DiffFile::revision(text(TWO), title), right, &settings);
-    settle(cx);
-    (d, fixture, two)
-}
-
-#[gpui_kit::test]
-fn a_jj_diff_names_the_parent_and_the_working_copy_by_change_id(cx: &mut TestAppContext) {
-    let (d, _fixture, two) = open_jj_native(cx, |_| "@-".to_owned(), IdKind::Change);
-    let (left, summary) = diff_chip(cx, &d, Side::Left).expect("@- is a commit");
-    assert!(
-        left.len() >= JJ_SHORT_ID && two.change_id.starts_with(&left),
-        "{left} shortens {}",
-        two.change_id
-    );
-    assert_eq!(summary, "two");
-    let (right, _) = diff_chip(cx, &d, Side::Right).expect("the working copy is @");
-    assert!(right.len() >= JJ_SHORT_ID, "{right}");
-    assert!(!two.change_id.starts_with(&right), "@ is another change: {right}");
-}
-
-#[gpui_kit::test]
-fn a_jj_diff_names_commits_under_the_commit_setting(cx: &mut TestAppContext) {
-    let (d, _fixture, two) = open_jj_native(cx, |_| "@-".to_owned(), IdKind::Commit);
-    let (left, _) = diff_chip(cx, &d, Side::Left).expect("@- is a commit");
-    assert!(
-        left.len() >= JJ_SHORT_ID && two.commit.starts_with(&left),
-        "{left} shortens {}",
-        two.commit
-    );
-}
-
-/// The title of a jj term without a label: its change ID and summary (`vcs::Term::title`).
-fn jj_term_title(two: &vcs_jj::testing::Committed) -> String {
-    format!("{} two", &two.change_id[..JJ_SHORT_ID])
-}
-
-#[gpui_kit::test]
-fn a_title_that_starts_with_the_change_id_gives_it_to_the_chip(cx: &mut TestAppContext) {
-    let (d, _fixture, two) = open_jj_native(cx, jj_term_title, IdKind::Change);
-    let text = cx.read(|cx| d.view.read(cx).heading_text(Side::Left));
-    assert_eq!(text.title.as_ref(), "two");
-    let (left, _) = text.chip.map(chip_parts).expect("the chip names the change");
-    assert_eq!(left, two.change_id[..JJ_SHORT_ID]);
-}
-
-#[gpui_kit::test]
-fn a_title_that_names_the_change_loses_it_beside_the_commit_chip(cx: &mut TestAppContext) {
-    let (d, _fixture, two) = open_jj_native(cx, jj_term_title, IdKind::Commit);
-    let text = cx.read(|cx| d.view.read(cx).heading_text(Side::Left));
-    assert_eq!(text.title.as_ref(), "two", "the title names neither ID");
-    let (left, _) = text.chip.map(chip_parts).expect("the chip names the commit");
-    assert!(two.commit.starts_with(&left), "{left} shortens {}", two.commit);
 }
 
 // The diff window without origins (spec §7.3).
@@ -966,4 +803,179 @@ fn a_diff_takes_blame_only_once_its_origins_load(cx: &mut TestAppContext) {
     settle(cx);
     act(cx, d.window, TestWindowExt::render_frame);
     assert!(blame_available(cx, d.window));
+}
+
+mod jj {
+    use super::*;
+
+    /// jj shows IDs with at least this many characters.
+    const JJ_SHORT_ID: usize = 8;
+
+    /// The first label of the left pane of `diff PATH` in a jj repository whose `@-` holds
+    /// [`TWO`], under `revision_id`, and that commit.
+    fn jj_left_label(
+        cx: &mut TestAppContext,
+        revision_id: IdKind,
+    ) -> (String, vcs_jj::testing::Committed) {
+        let fixture = vcs_jj::testing::Fixture::new();
+        let two = fixture.commit("two", &[(PATH, TWO.as_bytes())]);
+        fixture.write(PATH, WORKING.as_bytes());
+        let path = fixture.root().join(PATH).into_std_path_buf();
+        let right = DiffFile {
+            origin: DiffOrigin::File(path.clone()),
+            text: text(WORKING),
+            read_only: false,
+        };
+        let settings = DiffSettings {
+            origins: Some(DiffLookup::Native {
+                repo: Handoff::new(RunRepository::of_file(&path)),
+                path,
+                rev: None,
+            }),
+            revision_id,
+            ..DiffSettings::default()
+        };
+        let d = open_diff_with(cx, DiffFile::revision(text(TWO), "@-"), right, &settings);
+        settle(cx);
+        let label = cx
+            .read(|cx| d.view.read(cx).origin_cell(Side::Left, 0))
+            .and_then(|cell| cell.label)
+            .expect("the first line is labelled");
+        (label.to_string(), two)
+    }
+
+    #[gpui_kit::test]
+    fn a_jj_origin_column_shows_change_ids_by_default(cx: &mut TestAppContext) {
+        let (label, two) = jj_left_label(cx, IdKind::default());
+        assert!(
+            label.len() >= JJ_SHORT_ID && two.change_id.starts_with(&label),
+            "{label} shortens the change ID {}",
+            two.change_id
+        );
+    }
+
+    #[gpui_kit::test]
+    fn a_jj_origin_column_shows_commits_under_the_commit_setting(cx: &mut TestAppContext) {
+        let (label, two) = jj_left_label(cx, IdKind::Commit);
+        assert!(
+            label.len() >= JJ_SHORT_ID && two.commit.starts_with(&label),
+            "{label} shortens the commit {}",
+            two.commit
+        );
+    }
+
+    #[gpui_kit::test]
+    fn a_three_sided_jj_merges_headings_name_each_sides_commit(cx: &mut TestAppContext) {
+        use merge_core::document::{Labels, MergeOptions};
+        use merge_core::merge3::Inputs;
+        const THIRD: &str = "a\nB\nc\n";
+        let fixture = vcs_jj::testing::Fixture::new();
+        let base = fixture.commit_on(&[], "base", &[(PATH, BASE.as_bytes())]);
+        let sides = [("one", LEFT), ("two", RIGHT), ("three", THIRD)]
+            .map(|(name, body)| fixture.commit_on(&[&base], name, &[(PATH, body.as_bytes())]));
+        fixture.check_out(&sides.each_ref());
+        let inputs =
+            Inputs::new([LEFT, RIGHT, THIRD].map(text).to_vec(), [BASE, BASE].map(text).to_vec())
+                .expect("three sides, two bases");
+        let doc =
+            MergeDocument::new(inputs, MergeOptions::default(), Labels::none()).expect("no labels");
+        let cwd = fixture.root().as_std_path().to_owned();
+        let output = cwd.join(PATH);
+        let settings = WindowSettings {
+            origins: Some(OriginLookup {
+                repo: Handoff::new(RunRepository::of_merge(Some(&cwd), Some(&output))),
+                output,
+                title: Some(PATH.to_owned()),
+                cwd,
+            }),
+            ..WindowSettings::default()
+        };
+        let (_window, view, _) = open_with(cx, doc, &settings);
+        cx.run_until_parked();
+        let summaries: Vec<Option<String>> = merge_chips(cx, &view)
+            .into_iter()
+            .map(|chip| chip.map(|(_, summary)| summary))
+            .collect();
+        assert_eq!(summaries, owned(&[Some("one"), Some("two"), Some("three")]));
+    }
+
+    /// `diff PATH` in a jj repository whose `@-` holds [`TWO`], its left pane titled as `title`
+    /// gives for that commit, under `revision_id`; and that commit.
+    fn open_jj_native(
+        cx: &mut TestAppContext,
+        title: impl FnOnce(&vcs_jj::testing::Committed) -> String,
+        revision_id: IdKind,
+    ) -> (Diff, vcs_jj::testing::Fixture, vcs_jj::testing::Committed) {
+        let fixture = vcs_jj::testing::Fixture::new();
+        let two = fixture.commit("two", &[(PATH, TWO.as_bytes())]);
+        let title = title(&two);
+        fixture.write(PATH, WORKING.as_bytes());
+        let path = fixture.root().join(PATH).into_std_path_buf();
+        let right = DiffFile {
+            origin: DiffOrigin::File(path.clone()),
+            text: text(WORKING),
+            read_only: false,
+        };
+        let settings = DiffSettings {
+            origins: Some(DiffLookup::Native {
+                repo: Handoff::new(RunRepository::of_file(&path)),
+                path,
+                rev: None,
+            }),
+            revision_id,
+            ..DiffSettings::default()
+        };
+        let d = open_diff_with(cx, DiffFile::revision(text(TWO), title), right, &settings);
+        settle(cx);
+        (d, fixture, two)
+    }
+
+    #[gpui_kit::test]
+    fn a_jj_diff_names_the_parent_and_the_working_copy_by_change_id(cx: &mut TestAppContext) {
+        let (d, _fixture, two) = open_jj_native(cx, |_| "@-".to_owned(), IdKind::Change);
+        let (left, summary) = diff_chip(cx, &d, Side::Left).expect("@- is a commit");
+        assert!(
+            left.len() >= JJ_SHORT_ID && two.change_id.starts_with(&left),
+            "{left} shortens {}",
+            two.change_id
+        );
+        assert_eq!(summary, "two");
+        let (right, _) = diff_chip(cx, &d, Side::Right).expect("the working copy is @");
+        assert!(right.len() >= JJ_SHORT_ID, "{right}");
+        assert!(!two.change_id.starts_with(&right), "@ is another change: {right}");
+    }
+
+    #[gpui_kit::test]
+    fn a_jj_diff_names_commits_under_the_commit_setting(cx: &mut TestAppContext) {
+        let (d, _fixture, two) = open_jj_native(cx, |_| "@-".to_owned(), IdKind::Commit);
+        let (left, _) = diff_chip(cx, &d, Side::Left).expect("@- is a commit");
+        assert!(
+            left.len() >= JJ_SHORT_ID && two.commit.starts_with(&left),
+            "{left} shortens {}",
+            two.commit
+        );
+    }
+
+    /// The title of a jj term without a label: its change ID and summary (`vcs::Term::title`).
+    fn jj_term_title(two: &vcs_jj::testing::Committed) -> String {
+        format!("{} two", &two.change_id[..JJ_SHORT_ID])
+    }
+
+    #[gpui_kit::test]
+    fn a_title_that_starts_with_the_change_id_gives_it_to_the_chip(cx: &mut TestAppContext) {
+        let (d, _fixture, two) = open_jj_native(cx, jj_term_title, IdKind::Change);
+        let text = cx.read(|cx| d.view.read(cx).heading_text(Side::Left));
+        assert_eq!(text.title.as_ref(), "two");
+        let (left, _) = text.chip.map(chip_parts).expect("the chip names the change");
+        assert_eq!(left, two.change_id[..JJ_SHORT_ID]);
+    }
+
+    #[gpui_kit::test]
+    fn a_title_that_names_the_change_loses_it_beside_the_commit_chip(cx: &mut TestAppContext) {
+        let (d, _fixture, two) = open_jj_native(cx, jj_term_title, IdKind::Commit);
+        let text = cx.read(|cx| d.view.read(cx).heading_text(Side::Left));
+        assert_eq!(text.title.as_ref(), "two", "the title names neither ID");
+        let (left, _) = text.chip.map(chip_parts).expect("the chip names the commit");
+        assert!(two.commit.starts_with(&left), "{left} shortens {}", two.commit);
+    }
 }

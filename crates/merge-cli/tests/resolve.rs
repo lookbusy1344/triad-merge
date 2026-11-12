@@ -66,16 +66,6 @@ fn without_a_path_every_conflicted_file_is_listed_and_targeted() {
 }
 
 #[test]
-fn without_a_path_or_a_conflict_nothing_opens() {
-    let fixture = vcs_jj::testing::Fixture::new();
-    fixture.commit("one", &[("a.txt", BASE)]);
-    fixture.check_out_to_disk();
-    let (found, out) = target(fixture.root(), None);
-    assert_eq!(out, "no conflicted files\n");
-    assert_eq!(found, Vec::<std::path::PathBuf>::new());
-}
-
-#[test]
 fn a_given_path_is_the_target_and_nothing_is_listed() {
     let (fixture, _) = git_stopped(&[], &[("a.txt", files(BOTH_CHANGED))]);
     let (found, out) = target(fixture.root(), Some("a.txt"));
@@ -100,4 +90,18 @@ fn listing_outside_a_repository_is_an_error() {
         ),
         "{error:?}"
     );
+}
+
+mod jj {
+    use super::*;
+
+    #[test]
+    fn without_a_path_or_a_conflict_nothing_opens() {
+        let fixture = vcs_jj::testing::Fixture::new();
+        fixture.commit("one", &[("a.txt", BASE)]);
+        fixture.check_out_to_disk();
+        let (found, out) = target(fixture.root(), None);
+        assert_eq!(out, "no conflicted files\n");
+        assert_eq!(found, Vec::<std::path::PathBuf>::new());
+    }
 }

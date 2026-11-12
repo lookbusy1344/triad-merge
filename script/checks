@@ -9,7 +9,7 @@
 #   script/checks --quick [PATH...]        pre-commit's run
 #
 # --quick runs the tests of nextest's `quick` profile, which leaves out the slow
-# repository and scrolling tests, and skips `cargo build`: nextest builds what the
+# repository, scrolling and highlighter tests, and skips `cargo build`: nextest builds what the
 # tests need and clippy checks every target. Given the changed PATHs, relative to
 # the workspace root, it also runs only the tests of the changed crates and the crates that
 # depend on them, `cargo deny` only when a manifest or the lock file changed, and

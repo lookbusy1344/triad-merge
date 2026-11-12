@@ -12,17 +12,26 @@ package(merge-app) & (
 '''
 threads-required = "num-test-threads"
 
-# pre-commit's run: the default profile without the tests that build jj repositories
-# or simulate seconds of scrolling. pre-push and CI run them all.
+# pre-commit's run: the default profile without the tests that build jj repositories,
+# simulate seconds of scrolling, or compare against the editor's highlighter. pre-push and CI
+# run them all. A test that builds a jj repository sits in a `jj` module, which a line below
+# names. The highlighter tests are the default profile's serial override, repeated: each
+# stops every other test while it runs.
 [profile.quick]
 default-filter = """
 not (
     test(/^conformance::(jj_colocated|jj_internal)::/)
     | package(vcs-jj)
     | test(/^native::jj::/)
-    | test(/^tool_integration::jj::/)
     | (package(merge-session) & test(/^(origin|resolve|discovery|diff_tool)::jj::/))
+    | (package(merge-app) & test(/^(origins|resolve_queue)::jj::/))
+    | (package(merge-cli) & test(/^resolve::jj::/))
+    | (package(triad-merge) & test(/^(headless|resolve|semantics|tool_integration)::jj::/))
     | (package(merge-app) & test(/^scroll::/))
+    | (package(merge-app) & (
+        test(/^editor_syntax::tests::(a_cut_of_an_older_text_is_dropped_and_the_text_cuts_again|an_edit_keeps_the_old_colours_until_its_chunk_parses_again|an_edit_that_opens_a_comment_recolours_the_lines_after_it|rows_that_do_not_match_the_text_cut_afresh|the_styles_match_the_editors_highlighter_over_two_chunks)$/)
+        | test(/^syntax::tests::the_spans_draw_what_the_editors_highlighter_draws$/)
+    ))
 )
 """
 

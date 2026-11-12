@@ -57,7 +57,7 @@ cargo deny check                  # when a manifest, Cargo.lock or deny.toml cha
 
 - Every step passes with zero warnings. On a format failure, run `cargo fmt --all` and rerun.
 - A change to `docs/` or to a Markdown file at the root runs no tests. A change to `vendor/` runs the tests of the crates that depend on `gpui-kit` and their dependents. Any other path outside `crates/` runs the whole profile.
-- The `quick` profile (`.config/nextest.toml`) leaves out the tests that build jj repositories and the scrolling tests; git conformance stays in. A change to `vcs-jj`, to jj behaviour or to scrolling runs the full suite before commit: `script/checks`.
+- The `quick` profile (`.config/nextest.toml`) leaves out the tests that build jj repositories, the scrolling tests and the serial tests that compare against the editor's highlighter; git conformance stays in. A test that builds a jj repository sits in a `jj` module, and the profile names that module. A change to `vcs-jj`, to jj behaviour, to scrolling or to syntax highlighting runs the full suite before commit: `script/checks`.
 - What keeps it fast: `cargo nextest run --no-run` builds only what the tests need; clippy always covers the whole workspace, so every run shares one feature set and build cache; each crate links one integration-test binary, `tests/main.rs` (`autotests = false`); dev builds carry no debug info.
 - In a plain git checkout, install the gate once: `ln -sf ../../script/pre-commit .git/hooks/pre-commit`.
 

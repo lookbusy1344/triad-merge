@@ -367,37 +367,6 @@ fn native_diff_of_a_missing_file_is_refused() {
     );
 }
 
-#[cfg(not(windows))]
-#[test]
-fn resolve_of_a_clean_file_is_refused_before_any_window() {
-    let fixture = vcs_jj::testing::Fixture::new();
-    fixture.commit("one", &[("a.txt", b"a\n")]);
-    fixture.check_out_to_disk();
-    let result = command()
-        .args(["resolve", "a.txt"])
-        .current_dir(fixture.root())
-        .output()
-        .expect("binary runs");
-    assert_failed(&result, "triad-merge: a.txt is not conflicted\n");
-}
-
-#[test]
-fn resolve_without_conflicts_says_so_and_exits_0() {
-    let fixture = vcs_jj::testing::Fixture::new();
-    fixture.commit("one", &[("a.txt", b"a\n")]);
-    fixture.check_out_to_disk();
-    let result =
-        command().arg("resolve").current_dir(fixture.root()).output().expect("binary runs");
-    assert_eq!(
-        (
-            result.status.code(),
-            String::from_utf8_lossy(&result.stdout).as_ref(),
-            stderr(&result).as_str()
-        ),
-        (Some(0), "no conflicted files\n", "")
-    );
-}
-
 #[test]
 fn resolve_outside_a_repository_exits_3() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -523,4 +492,39 @@ fn a_missing_command_file_fails_with_3_and_writes_nothing() {
     );
     assert_eq!(result.status.code(), Some(ERROR_EXIT));
     assert!(!output.exists());
+}
+
+mod jj {
+    use super::*;
+
+    #[cfg(not(windows))]
+    #[test]
+    fn resolve_of_a_clean_file_is_refused_before_any_window() {
+        let fixture = vcs_jj::testing::Fixture::new();
+        fixture.commit("one", &[("a.txt", b"a\n")]);
+        fixture.check_out_to_disk();
+        let result = command()
+            .args(["resolve", "a.txt"])
+            .current_dir(fixture.root())
+            .output()
+            .expect("binary runs");
+        assert_failed(&result, "triad-merge: a.txt is not conflicted\n");
+    }
+
+    #[test]
+    fn resolve_without_conflicts_says_so_and_exits_0() {
+        let fixture = vcs_jj::testing::Fixture::new();
+        fixture.commit("one", &[("a.txt", b"a\n")]);
+        fixture.check_out_to_disk();
+        let result =
+            command().arg("resolve").current_dir(fixture.root()).output().expect("binary runs");
+        assert_eq!(
+            (
+                result.status.code(),
+                String::from_utf8_lossy(&result.stdout).as_ref(),
+                stderr(&result).as_str()
+            ),
+            (Some(0), "no conflicted files\n", "")
+        );
+    }
 }

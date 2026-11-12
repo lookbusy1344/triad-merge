@@ -161,24 +161,6 @@ fn a_git_conflict_shows_each_sides_origins(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn a_jj_conflict_shows_each_sides_origins(cx: &mut TestAppContext) {
-    let fixture = vcs_jj::testing::Fixture::new();
-    let one = fixture.commit_on(&[], "one", &[("a.txt", ONE)]);
-    let left = fixture.commit_on(&[&one], "left", &[("a.txt", LEFT_ONE)]);
-    let right = fixture.commit_on(&[&one], "right", &[("a.txt", RIGHT_ONE)]);
-    fixture.check_out(&[&left, &right]);
-    fixture.check_out_to_disk();
-    start_at(cx, fixture.root().as_std_path());
-    assert_eq!(
-        pane_origins(cx),
-        [
-            owned([Some("left"), Some("one"), Some("one")]),
-            owned([Some("right"), Some("one"), Some("one")])
-        ]
-    );
-}
-
-#[gpui_kit::test]
 fn a_git_conflicts_headings_read_title_then_chip_on_every_side(cx: &mut TestAppContext) {
     let fixture = vcs_git::testing::Fixture::new();
     let one = fixture.commit("one", &[("a.txt", ONE)]);
@@ -358,28 +340,6 @@ fn quit_after_an_unrecorded_save_ends_the_run_with_3(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn a_jj_save_is_an_operation_of_its_own_and_ends_the_conflict(cx: &mut TestAppContext) {
-    let fixture = vcs_jj::testing::Fixture::new();
-    let one = fixture.commit_on(&[], "one", &[("a.txt", ONE)]);
-    let left = fixture.commit_on(&[&one], "left", &[("a.txt", LEFT_ONE)]);
-    let right = fixture.commit_on(&[&one], "right", &[("a.txt", RIGHT_ONE)]);
-    fixture.check_out(&[&left, &right]);
-    fixture.check_out_to_disk();
-    let exits = start_at(cx, fixture.root().as_std_path());
-    let (window, _) = the_window(cx);
-    save_resolved(cx, window);
-    // jj no longer lists a.txt, so the run ends.
-    assert_eq!(windows(cx), []);
-    assert_eq!(exits.borrow().as_slice(), [ExitCode::Resolved]);
-    assert_eq!(
-        fixture.operations()[0],
-        Op { description: "save a.txt in triad".to_owned(), is_snapshot: false }
-    );
-    assert_eq!(fixture.held_at(0, "a.txt"), Held::File(LEFT_ONE.to_vec()));
-    assert_eq!(fixture.held_at(1, "a.txt"), Held::Conflict);
-}
-
-#[gpui_kit::test]
 fn every_file_resolved_exits_0(cx: &mut TestAppContext) {
     let fixture = stopped(&["a.txt", "b.txt"]);
     let exits = start(cx, &fixture);
@@ -428,4 +388,48 @@ fn cancel_ends_the_run_with_2(cx: &mut TestAppContext) {
         None,
         "the next file never opened"
     );
+}
+
+mod jj {
+    use super::*;
+
+    #[gpui_kit::test]
+    fn a_jj_conflict_shows_each_sides_origins(cx: &mut TestAppContext) {
+        let fixture = vcs_jj::testing::Fixture::new();
+        let one = fixture.commit_on(&[], "one", &[("a.txt", ONE)]);
+        let left = fixture.commit_on(&[&one], "left", &[("a.txt", LEFT_ONE)]);
+        let right = fixture.commit_on(&[&one], "right", &[("a.txt", RIGHT_ONE)]);
+        fixture.check_out(&[&left, &right]);
+        fixture.check_out_to_disk();
+        start_at(cx, fixture.root().as_std_path());
+        assert_eq!(
+            pane_origins(cx),
+            [
+                owned([Some("left"), Some("one"), Some("one")]),
+                owned([Some("right"), Some("one"), Some("one")])
+            ]
+        );
+    }
+
+    #[gpui_kit::test]
+    fn a_jj_save_is_an_operation_of_its_own_and_ends_the_conflict(cx: &mut TestAppContext) {
+        let fixture = vcs_jj::testing::Fixture::new();
+        let one = fixture.commit_on(&[], "one", &[("a.txt", ONE)]);
+        let left = fixture.commit_on(&[&one], "left", &[("a.txt", LEFT_ONE)]);
+        let right = fixture.commit_on(&[&one], "right", &[("a.txt", RIGHT_ONE)]);
+        fixture.check_out(&[&left, &right]);
+        fixture.check_out_to_disk();
+        let exits = start_at(cx, fixture.root().as_std_path());
+        let (window, _) = the_window(cx);
+        save_resolved(cx, window);
+        // jj no longer lists a.txt, so the run ends.
+        assert_eq!(windows(cx), []);
+        assert_eq!(exits.borrow().as_slice(), [ExitCode::Resolved]);
+        assert_eq!(
+            fixture.operations()[0],
+            Op { description: "save a.txt in triad".to_owned(), is_snapshot: false }
+        );
+        assert_eq!(fixture.held_at(0, "a.txt"), Held::File(LEFT_ONE.to_vec()));
+        assert_eq!(fixture.held_at(1, "a.txt"), Held::Conflict);
+    }
 }

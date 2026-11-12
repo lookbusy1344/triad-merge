@@ -38,7 +38,7 @@ CI: `triad.yml` tests on Linux, macOS and Windows; `bench.yml` and `audit.yml` (
 
 The release profile builds with fat LTO, one codegen unit, `panic = "abort"` and stripped symbols: `triad-merge` is 35.4 MB on macOS ARM64, and a release build takes 3 min (root `Cargo.toml`).
 
-The workspace has 11 crates. `script/checks` runs format, workspace rules, build, clippy, the full test suite and `cargo deny`; `script/checks --quick`, run before each commit, leaves out the jj and scrolling tests and runs only the tests of the changed crates and their dependents.
+The workspace has 11 crates. `script/checks` runs format, workspace rules, build, clippy, the full test suite and `cargo deny`; `script/checks --quick`, run before each commit, leaves out the jj, scrolling and highlighter tests and runs only the tests of the changed crates and their dependents.
 
 ## 2. Next steps
 
@@ -940,6 +940,8 @@ Limit: 35 s on a warm build (`AGENTS.md`). The gate takes 25 s after an edit to 
 
 - **Object files.** With debug info, rustc on macOS keeps each build's `*.rcgu.o` files in `target/debug/deps`, and nothing removes them. Every rustc run lists that directory: 1.26 million objects cost 10 s a listing, in each of clippy's and the build's units. `[profile.dev] debug = false` stops them. Panics keep their locations; `CARGO_PROFILE_DEV_DEBUG=line-tables-only` turns debug info on. An older `target/` needs `find target/debug/deps -name '*.rcgu.o' -delete` once.
 - **One integration-test binary per crate.** `tests/main.rs` declares each file as a module.
+- **No serial tests in the quick profile.** A test with `threads-required = "num-test-threads"` waits for every running test to end and holds every thread while it runs. The six highlighter comparisons cost 10 s of the quick run's 20 s; without them it takes 10 s. pre-push and CI run them.
+- **jj tests in `jj` modules.** The quick profile drops a test that builds a jj repository by its module path. A test outside a `jj` module runs in every gate.
 - **Scoped checks.** `script/checks --quick` takes the changed paths: tests of the changed crates and their dependents, `cargo deny` and the vendored tests only when their inputs changed, no `cargo build`.
 
 #### A13.6 VCS boundary
