@@ -207,6 +207,21 @@ fn start_over_discards_the_journal(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn commands_while_the_offer_is_open_keep_the_crashed_journal(cx: &mut TestAppContext) {
+    let session = Session::new();
+    let (window, view, _) = session.open(cx, conflict(MergeOptions::default()));
+    work(cx, window, &view);
+    wait(cx, JOURNAL_DEBOUNCE);
+    let (again, after, _) = session.open(cx, conflict(MergeOptions::default()));
+    assert!(cx.has_pending_prompt(), "a restore is offered");
+    set_caret(cx, &after, 0);
+    act(cx, again, |window, cx| window.input("y", cx));
+    wait(cx, JOURNAL_DEBOUNCE);
+    let kept = session.journal().expect("the crashed journal");
+    assert_eq!(kept.commands().len(), 2, "a crash now still finds the first session");
+}
+
+#[gpui_kit::test]
 fn start_over_journals_the_commands_made_while_the_offer_was_open(cx: &mut TestAppContext) {
     let session = Session::new();
     let (window, view, _) = session.open(cx, conflict(MergeOptions::default()));

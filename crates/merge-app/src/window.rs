@@ -1654,7 +1654,7 @@ impl MergeWindow {
 
     /// Offer the journal a crashed session left for these inputs. Returns whether it asked.
     fn offer_restore(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        let Some(journal) = self.session.recovery().and_then(Recovery::saved) else {
+        let Some(journal) = self.session.recovery_mut().and_then(Recovery::offer) else {
             return false;
         };
         let answer = window.prompt(

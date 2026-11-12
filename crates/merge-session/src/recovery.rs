@@ -171,6 +171,9 @@ enum OnDisk {
     Commands(usize),
     /// A removal runs, and no write starts until it ends.
     Removing,
+    /// A crashed session's journal, offered for a restore. No write replaces it until the
+    /// answer: a crash while the offer is open still finds it.
+    Offered,
 }
 
 /// This session's journal and its writes.
@@ -265,7 +268,7 @@ impl Recovery {
         let (mode, bytes) = match self.on_disk {
             OnDisk::Commands(from) => (WriteMode::Append, journal.lines_from(from)),
             OnDisk::Unknown => (WriteMode::Whole, journal.to_lines()),
-            OnDisk::Removing => return None,
+            OnDisk::Removing | OnDisk::Offered => return None,
         };
         match bytes {
             Ok(bytes) => {
@@ -369,6 +372,14 @@ impl Recovery {
                 None
             }
         }
+    }
+
+    /// The journal a crashed session left, to offer for a restore. Writes wait for the
+    /// answer: [`Recovery::restored`], or [`Recovery::discard`] to start over.
+    pub fn offer(&mut self) -> Option<Journal> {
+        let journal = self.saved()?;
+        self.on_disk = OnDisk::Offered;
+        Some(journal)
     }
 
     /// Carry on from `journal`, which the session was restored from.
@@ -882,6 +893,52 @@ mod tests {
         assert_ne!(old.as_bytes(), full.to_lines().expect("serialises"));
         std::fs::write(&path, old).expect("written");
         assert!(recovery.saved().is_none(), "another format");
+    }
+
+    /// A crashed session's journal of `commands` commands in `dir`, for [`ready`]'s inputs.
+    fn crashed(dir: &Path, commands: usize) -> PathBuf {
+        let mut crashed = ready(dir, commands);
+        assert!(write_next(&mut crashed));
+        crashed.path().expect("hashed").to_owned()
+    }
+
+    #[test]
+    fn an_open_offer_holds_every_write_until_the_answer() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = crashed(dir.path(), 2);
+        let mut recovery = ready(dir.path(), 0);
+        let offered = recovery.offer().expect("a journal to offer");
+        assert_eq!(offered.commands().len(), 2);
+        recovery.record(clear(RegionIx::new(5)));
+        assert!(recovery.next_write().is_none(), "the crashed journal stays");
+        assert_eq!(
+            Journal::parse(&std::fs::read(&path).expect("kept")).expect("parses").commands().len(),
+            2
+        );
+        assert!(discard_now(&mut recovery), "start over: the new command waits");
+        let (write, upto) = recovery.next_write().expect("a write");
+        assert_eq!((write.mode, upto), (WriteMode::Whole, 1));
+    }
+
+    #[test]
+    fn a_restore_ends_the_hold() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        crashed(dir.path(), 1);
+        let mut recovery = ready(dir.path(), 0);
+        let offered = recovery.offer().expect("a journal to offer");
+        recovery.restored(offered);
+        recovery.record(clear(RegionIx::new(1)));
+        let (write, upto) = recovery.next_write().expect("a write");
+        assert_eq!((write.mode, upto), (WriteMode::Whole, 2));
+    }
+
+    #[test]
+    fn without_a_journal_to_offer_nothing_is_held() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut recovery = ready(dir.path(), 0);
+        assert!(recovery.offer().is_none());
+        recovery.record(clear(RegionIx::new(0)));
+        assert_eq!(recovery.next_write().expect("a write").1, 1);
     }
 
     #[test]
