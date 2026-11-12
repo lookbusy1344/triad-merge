@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# test-tip — check the revision that script/build-id names and that script/pre-push checks.
+#
+# A clean jj merge is empty: its tree is the merge of its parents. It is still the tip: the
+# build and the push carry its tree, which neither parent has. Each case builds a repository in
+# a temporary directory and compares the output with the IDs jj or git give for the revision
+# that should be named.
+#
+# Usage: script/test-tip
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+readonly BUILD_ID="$ROOT/script/build-id"
+readonly PRE_PUSH="$ROOT/script/pre-push"
+readonly ID_LENGTH=12
+
+work=$(mktemp -d "${TMPDIR:-/tmp}/triad-test-tip.XXXXXX")
+trap 'rm -rf "$work"' EXIT
+
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+export GIT_AUTHOR_NAME=Fixture GIT_AUTHOR_EMAIL=fixture@example.invalid
+export GIT_COMMITTER_NAME=Fixture GIT_COMMITTER_EMAIL=fixture@example.invalid
+export JJ_CONFIG="$work/jj-config.toml"
+cat >"$JJ_CONFIG" <<'EOF'
+user.name = "Fixture"
+user.email = "fixture@example.invalid"
+EOF
+
+failures=0
+
+# Compare output $1 with the expected $2.
+expect() {
+  [[ $1 == "$2" ]] && return
+  echo "    expected: ${2//$'\n'/\\n}" >&2
+  echo "    actual:   ${1//$'\n'/\\n}" >&2
+  return 1
+}
+
+# Run case function $1 in a subshell with errexit, so a failed setup step fails the case.
+run_case() {
+  local status=0
+  set +e
+  (set -e; "$1")
+  status=$?
+  set -e
+  if [[ $status -eq 0 ]]; then
+    echo "ok   $1"
+  else
+    echo "FAIL $1" >&2
+    failures=$((failures + 1))
+  fi
+}
+
+# A jj repository in $work/$1, entered: base, then left and right on base, each a bookmark.
+# base holds script/pre-push and a passing script/checks stub.
+make_jj_fork() {
+  mkdir -p "$work/$1/script"
+  cd "$work/$1"
+  jj git init --quiet
+  cp "$PRE_PUSH" script/pre-push
+  printf '#!/usr/bin/env bash\n' >script/checks
+  chmod +x script/checks
+  echo base >base.txt
+  jj commit --quiet -m base
+  jj bookmark create --quiet base -r @-
+  echo left >left.txt
+  jj commit --quiet -m left
+  jj bookmark create --quiet left -r @-
+  jj new --quiet base
+  echo right >right.txt
+  jj commit --quiet -m right
+  jj bookmark create --quiet right -r @-
+}
+
+# make_jj_fork, then a clean merge of left and right at @, bookmarked as merge.
+make_jj_merge() {
+  make_jj_fork "$1"
+  jj new --quiet left right -m merge
+  jj bookmark create --quiet merge -r @
+}
+
+# A git repository in $work/$1, entered, with one commit on main.
+make_git() {
+  git init --quiet --initial-branch=main "$work/$1"
+  cd "$work/$1"
+  echo base >base.txt
+  git add .
+  git commit --quiet -m base
+}
+
+# What build-id should print for jj revision $1.
+jj_build_id() {
+  jj log --no-graph -r "$1" -T '
+    "export TRIAD_COMMIT=" ++ commit_id.short('"$ID_LENGTH"') ++ "\n" ++
+    "export TRIAD_CHANGE=" ++ change_id.short('"$ID_LENGTH"')'
+}
+
+# What build-id should print for git's HEAD.
+git_build_id() {
+  echo "export TRIAD_COMMIT=$(git rev-parse --short="$ID_LENGTH" HEAD)"
+}
+
+# What pre-push should print for its tip, jj revision $1.
+jj_tip_line() {
+  jj log --no-graph -r "$1" -T '"==> Checking tip " ++ change_id.short() ++ " " ++ description.first_line()'
+}
+
+# Run pre-push in the jj repository in the current directory. Prints its lines that name what
+# it checks.
+run_pre_push() {
+  script/pre-push 2>&1 | grep -E '^==> (Checking|Nothing)' || true
+}
+
+jj_build_id_names_a_clean_merge_at_working_copy() {
+  make_jj_merge jj-merge-at-working-copy
+  expect "$("$BUILD_ID")" "$(jj_build_id merge)"
+}
+
+jj_build_id_names_a_clean_merge_under_an_empty_working_copy() {
+  make_jj_merge jj-merge-under-empty
+  jj new --quiet
+  expect "$("$BUILD_ID")" "$(jj_build_id merge)"
+}
+
+jj_build_id_names_the_parent_of_an_empty_working_copy() {
+  make_jj_fork jj-linear
+  expect "$("$BUILD_ID")" "$(jj_build_id right)"
+}
+
+git_build_id_names_head_without_a_change() {
+  make_git git-linear
+  expect "$("$BUILD_ID")" "$(git_build_id)"
+}
+
+git_build_id_names_a_merge_commit() {
+  make_git git-merge
+  git switch --quiet -c side
+  echo side >side.txt
+  git add .
+  git commit --quiet -m side
+  git switch --quiet main
+  echo main >main.txt
+  git add .
+  git commit --quiet -m main
+  git merge --quiet --no-edit side
+  expect "$("$BUILD_ID")" "$(git_build_id)"
+}
+
+jj_pre_push_checks_a_clean_merge() {
+  make_jj_merge jj-pre-push-merge
+  jj new --quiet
+  expect "$(run_pre_push)" "$(jj_tip_line merge)"
+}
+
+# Both parents pushed: only the merge is left to check.
+jj_pre_push_checks_a_clean_merge_of_pushed_revisions() {
+  make_jj_merge jj-pre-push-merge-of-pushed
+  jj new --quiet
+  export JJ_CONFIG="$work/jj-config-pushed.toml"
+  cat "$work/jj-config.toml" - >"$JJ_CONFIG" <<'TOML'
+[revset-aliases]
+"immutable_heads()" = "left | right"
+TOML
+  expect "$(run_pre_push)" "$(jj_tip_line merge)"
+}
+
+run_case jj_build_id_names_a_clean_merge_at_working_copy
+run_case jj_build_id_names_a_clean_merge_under_an_empty_working_copy
+run_case jj_build_id_names_the_parent_of_an_empty_working_copy
+run_case git_build_id_names_head_without_a_change
+run_case git_build_id_names_a_merge_commit
+run_case jj_pre_push_checks_a_clean_merge
+run_case jj_pre_push_checks_a_clean_merge_of_pushed_revisions
+
+if [[ $failures -gt 0 ]]; then
+  echo "$failures case(s) failed" >&2
+  exit 1
+fi

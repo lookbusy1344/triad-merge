@@ -8,7 +8,7 @@ Every task follows the ground rules of §A1: tests first, expected values from t
 
 ## 1. Status
 
-As of 2026-11-11.
+As of 2026-11-12.
 
 | Milestone | State | Part |
 |---|---|---|
@@ -38,7 +38,7 @@ CI: `triad.yml` tests on Linux, macOS and Windows; `bench.yml` and `audit.yml` (
 
 Two optimised profiles (root `Cargo.toml`). `release` aborts on panic and strips symbols; `script/macos-app`, `script/measure-app` and the benchmarks build with it: `triad-merge` is 37.5 MB on macOS ARM64, and a clean build takes 1 min. `dist` adds fat LTO and one codegen unit; `script/package` builds with it: 35.4 MB, and a build takes 3 min. The spec §9 measurements in this plan predate the split and come from the `dist` settings.
 
-The workspace has 11 crates. `script/checks` runs format, workspace rules, build, clippy, the full test suite and `cargo deny`; `script/checks --quick`, run before each commit, leaves out the jj, scrolling and highlighter tests and runs only the tests of the changed crates and their dependents.
+The workspace has 11 crates. `script/checks` runs format, workspace rules, build, clippy, the full test suite and `cargo deny`; `script/checks --quick`, run before each commit, leaves out the jj, scrolling and highlighter tests and runs only the tests of the changed crates and their dependents. A release build names its source through `script/build-id`, and `script/pre-push` checks the same tip in jj: the head of the non-empty revisions in `::@`, a clean merge included. `script/test-tip` covers both on jj and git.
 
 ## 2. Next steps
 

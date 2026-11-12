@@ -2,10 +2,12 @@
 # pre-push — format, build, lint and test unpushed revisions.
 #
 # jj:
-#   Default: format the tip (newest non-empty mutable revision in ::@)
+#   Default: format the tip (head of the non-empty mutable revisions in ::@)
 #   with `jj fix`, then check it in the working copy.
 #   --full: format every non-empty mutable revision in ::@ and check
 #   each in its own checkout via `jj run`.
+#   A merge counts as non-empty: a clean merge is empty, and its tree is
+#   the one pushed.
 # git:
 #   Default: check HEAD, in place when the working tree is clean, otherwise
 #   in a temporary clone of HEAD.
@@ -19,7 +21,7 @@
 
 set -euo pipefail
 
-readonly STACK="mutable() & ::@ ~ empty()"
+readonly STACK="mutable() & ::@ ~ (empty() ~ merges())"
 readonly TIP="heads(${STACK})"
 
 # Inline so formatting does not depend on unversioned .jj/repo/config.toml.

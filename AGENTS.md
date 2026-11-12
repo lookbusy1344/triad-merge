@@ -74,7 +74,7 @@ cargo deny check                  # when a manifest, Cargo.lock or deny.toml cha
 
 Push only on explicit request. Before `jj git push` or moving a shared bookmark, run `script/pre-push`. It does nothing when there is no unpushed revision.
 
-- Default: formats `**/*.rs` outside `vendor/` in the tip (newest non-empty mutable revision) with `jj fix`, then runs `script/checks` on it with the full suite.
+- Default: formats `**/*.rs` outside `vendor/` in the tip (head of the non-empty mutable revisions; a merge counts as non-empty) with `jj fix`, then runs `script/checks` on it with the full suite.
 - `--full`: formats every mutable revision in `::@` and checks each in its own checkout through `jj run`.
 - Plain git: checks `HEAD` (`--full`: each commit in `@{upstream}..HEAD`), without formatting. Install once: `ln -sf ../../script/pre-push .git/hooks/pre-push`.
 
@@ -127,6 +127,7 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | Cost of `resolve`'s repository steps on 10k and 100k files (`PLAN.md` §D5.5) | `cargo bench -p merge-cli --bench resolve` |
 | Measure the running app against spec §9 (`PLAN.md` §A6.7) | `script/measure-app [refresh-hz] [output-extension]` (`rs` adds Rust highlighting); one mode: `TRIAD_MEASURE=<open\|scroll-rows\|scroll-result\|type\|pick\|syntax> target/release/triad-merge target/measure/<lines>/{base,left,right}.txt target/measure/<lines>/out.txt` |
 | Check that `script/pre-push` removes its git clone on every exit; `script/checks` runs it when either script changes | `script/test-pre-push` |
+| Check the revision `script/build-id` names and `script/pre-push` checks, merges included; `script/checks` runs it when one of the three changes | `script/test-tip` |
 | Rewrite `images/` from the mark's geometry | `swift script/gen-images.swift` |
 | Print the accessibility tree of a running window | `swift script/ax-tree.swift PID [NAME...]` (`docs/release-checklist.md`) |
 | Linux test machine in OrbStack (`PLAN.md` §E7.1) | `script/linux/run image` once; then `script/linux/run cargo build -p triad-merge`, `script/linux/run cargo nextest run --workspace --profile linux-emulated`, `script/linux/run script/linux/smoke wayland` or `x11` |

@@ -13,8 +13,9 @@
 # tests need and clippy checks every target. Given the changed PATHs, relative to
 # the workspace root, it also runs only the tests of the changed crates and the crates that
 # depend on them, `cargo deny` only when a manifest or the lock file changed, and
-# the vendored crate's tests only when vendor/ changed, and script/test-pre-push only
-# when script/pre-push or that test changed. A vendor/ change also runs
+# the vendored crate's tests only when vendor/ changed, script/test-pre-push only
+# when script/pre-push or that test changed, and script/test-tip only when script/build-id,
+# script/pre-push or that test changed. A vendor/ change also runs
 # the tests of the crates that depend on gpui-kit, through which the vendored crate
 # reaches the workspace, and of their dependents. A change to docs/ or to a Markdown file
 # at the root runs no tests. Any other changed path outside crates/ runs every test.
@@ -53,12 +54,14 @@ all_tests=true
 deny=true
 vendor=true
 pre_push=true
+tip=true
 crate_dirs=()
 if [[ "${quick}" == true && ${#changed[@]} -gt 0 ]]; then
     all_tests=false
     deny=false
     vendor=false
     pre_push=false
+    tip=false
     for path in "${changed[@]}"; do
         case "${path}" in
             crates/*/Cargo.toml)
@@ -68,13 +71,22 @@ if [[ "${quick}" == true && ${#changed[@]} -gt 0 ]]; then
             crates/*/*) crate_dirs+=("$(cut -d/ -f1-2 <<< "${path}")") ;;
             vendor/*) vendor=true ;;
             docs/*) ;;
-            # Top-level Markdown: README.md, AGENTS.md.
-            */*) all_tests=true ;;
-            *.md) ;;
-            script/pre-push | script/test-pre-push)
+            script/pre-push)
+                pre_push=true
+                tip=true
+                all_tests=true
+                ;;
+            script/test-pre-push)
                 pre_push=true
                 all_tests=true
                 ;;
+            script/build-id | script/test-tip)
+                tip=true
+                all_tests=true
+                ;;
+            */*) all_tests=true ;;
+            # Top-level Markdown: README.md, AGENTS.md.
+            *.md) ;;
             Cargo.toml | Cargo.lock | deny.toml)
                 deny=true
                 all_tests=true
@@ -142,6 +154,7 @@ fi
 [[ "${quick}" == true ]] || run ${test_prefix[@]+"${test_prefix[@]}"} cargo test --doc --workspace
 [[ "${deny}" == true ]] && run cargo deny check
 [[ "${pre_push}" == true ]] && run script/test-pre-push
+[[ "${tip}" == true ]] && run script/test-tip
 # The vendored crate sits outside the workspace; its own unit tests cover the patch.
 if [[ "${vendor}" == true ]]; then
     run ${test_prefix[@]+"${test_prefix[@]}"} env CARGO_TARGET_DIR=target/vendor \
