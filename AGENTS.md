@@ -122,7 +122,7 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | Format | `cargo fmt --all` |
 | Try a merge by hand | `cargo build --workspace`, then `target/debug/triad-merge inspect fixtures/demo/{base,left,right}.txt` (`fixtures/demo/README.md`) |
 | A disposable jj repository with conflicts in two Rust files | `script/gen-conflict-repo [dest]` (`fixtures/conflict-repo/README.md`) |
-| Build `target/release/triad.app` | `script/macos-app` |
+| Build `target/release/triad.app`; `dist` builds `target/dist/triad.app` with fat LTO, as a release does | `script/macos-app [dist]` |
 | Benchmarks against spec §9 | `cargo bench -p merge-core --bench merge`, `cargo bench -p merge-syntax --bench boundaries`, `cargo bench -p merge-cli --bench memory`, then `script/check-bench` |
 | Cost of `resolve`'s repository steps on 10k and 100k files (`DESIGN.md` §D5.5) | `cargo bench -p merge-cli --bench resolve` |
 | Measure the running app against spec §9 (`DESIGN.md` §A6.7) | `script/measure-app [refresh-hz] [output-extension]` (`rs` adds Rust highlighting); one mode: `TRIAD_MEASURE=<open\|scroll-rows\|scroll-result\|type\|pick\|syntax> target/release/triad-merge target/measure/<lines>/{base,left,right}.txt target/measure/<lines>/out.txt` |
@@ -133,6 +133,7 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | Linux test machine in OrbStack (`DESIGN.md` §E7.1) | `script/linux/run image` once; then `script/linux/run cargo build -p triad-merge`, `script/linux/run cargo nextest run --workspace --profile linux-emulated`, `script/linux/run script/linux/smoke wayland` or `x11` |
 | Linux CI locally (needs OrbStack running) | `act workflow_dispatch -W .github/workflows/<triad\|bench\|audit>.yml [-j <job>] -P ubuntu-latest=catthehacker/ubuntu:act-latest --container-architecture linux/arm64`; `triad.yml` runs only its Linux matrix entry under act. act runs as root, so the four tests of unreadable or unwritable paths fail there; GitHub's runners do not run as root |
 | Linux packages into `target/linux/dist` | `script/linux/run script/package x86_64-unknown-linux-gnu` |
+| Release: macOS ARM64, Windows x64 and Linux x64 packages on a draft GitHub release; only on the owner's request | Push `main`, then `jj tag set vX.Y.Z -r main && jj git push --tag vX.Y.Z`; the tag must match the workspace version. `.github/workflows/release.yml` builds; the owner publishes the draft |
 
 ## Layout
 
@@ -148,6 +149,7 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | `crates/triad-merge` | Binaries `triad-merge` and `triad-merge-gui`. |
 | `crates/vcs`, `vcs-jj`, `vcs-git` | Repository trait and its jj-lib and gix backends. |
 | `fixtures/core` | Hand-written triples with expected outputs, named for the case they cover. |
+| `fixtures/syntax` | One sample file per highlighted language, for the highlighting tests. |
 | `fixtures/oracle` | `jj-corpus.jsonl`: jj-lib merges with jj seeds, from `script/gen-jj-oracle`. `corpus.jsonl`: `git merge-file` triples, from `script/gen-oracle`. |
 | `fixtures/conflict-repo` | Sources of a disposable jj repository with two conflicted Rust files, for `script/gen-conflict-repo`. |
 | `fixtures/demo` | A 980-line Rust merge with 20 conflicts, from `script/gen-demo`. |

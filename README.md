@@ -10,13 +10,11 @@
 [![Audit](https://github.com/lookbusy1344/triad-merge/actions/workflows/audit.yml/badge.svg)](https://github.com/lookbusy1344/triad-merge/actions/workflows/audit.yml)
 [![crates.io](https://img.shields.io/crates/v/triad-merge.svg)](https://crates.io/crates/triad-merge)
 
-triad is a fast, native three-way merge and two-way diff tool, written in Rust and GPUI, built for [Jujutsu](https://github.com/jj-vcs/jj) with full Git support. It opens a million-line merge in under a second, merges exactly as your VCS does, and resolves conflicts straight from the repository.
-
-The binary is `triad-merge`.
+triad is a fast, native three-way merge and two-way diff tool, written in Rust and GPUI, built for [Jujutsu](https://github.com/jj-vcs/jj) with full Git support. It opens a million-line merge in under a second, merges exactly as your VCS does, and resolves conflicts straight from the repository. The binary is `triad-merge`.
 
 ## Platforms
 
-The initial beta targets macOS 27 on Apple Silicon. Linux x64 and Windows 11 will follow before release 1.0.
+triad 0.1 is an early beta. It is tested on macOS 27 on Apple Silicon. [Releases](https://github.com/lookbusy1344/triad-merge/releases) also carry builds for Linux x64 and Windows x64; those build and pass CI but are untested on real desktops.
 
 ## Why triad
 
@@ -24,13 +22,13 @@ The initial beta targets macOS 27 on Apple Silicon. Linux x64 and Windows 11 wil
 - **Full Git parity.** In a git repository triad merges as `git merge-file` does, byte for byte, and reads conflicts from git's index through gix. Every feature works in both.
 - **Exact semantics, checked.** Two oracle corpora pin the engine: about 1,950 triples from `git merge-file` and about 1,970 merges from jj-lib. The tests compare triad's output with each.
 - **Fast on large files.** Panes draw only the rows on screen. Scrolling holds the display's refresh rate at 1M lines.
-- **No unsafe code** 100% safe Rust.
-- **No git or jj binaries needed.** triad reads and writes repositories in-process through gix and jj-lib, never their executables.
+- **No unsafe code.** The workspace forbids it.
+- **No git or jj binaries needed.** triad reads and writes repositories in-process through gix and jj-lib.
 - **Scriptable.** A headless mode and `inspect --json` expose the whole merge model to scripts, tests and agents.
 
 ## Features
 
-**Merge window.** Left and right sit side by side, each showing its changes from base; the editable result sits below. Changes on one side, or the same change on both, apply automatically. You resolve each conflict by picking sources in order (left, base, right, or several) or by typing in the result. One undo history covers picks and edits.
+**Merge window.** Left and right sit side by side, each showing its changes from base; the editable result sits below. Changes on one side, or the same change on both, apply automatically. You resolve each conflict by picking sources in order (left, base, right, or several) or by typing in the result, or take one side for every unresolved conflict at once. One undo history covers picks and edits.
 
 **Diff window.** Two editable, aligned panes with copy to the other side. `triad-merge diff PATH` compares a working-copy file with its parent revision and saves edits to the working copy.
 
@@ -46,7 +44,7 @@ The initial beta targets macOS 27 on Apple Silicon. Linux x64 and Windows 11 wil
 - Syntax boundaries keep both refinements from cutting inside a syntax node.
 - Suggestions offer, never apply, resolutions for common shapes: both sides inserting, sorted lists, a block moved on one side and edited on the other.
 
-**Editor.** Syntax highlighting for Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript and TSX. Overview ruler, search and replace, soft wrap, scroll sync, whitespace modes, line-ending control, recovery journals for unfinished merges, and a plain-text config file.
+**Editor.** Syntax highlighting for Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript and TSX. Overview ruler, search and replace, soft wrap, scroll sync, whitespace modes, line endings ignored or kept in comparison and output, recovery journals for unfinished merges, and a plain-text config file.
 
 ## Performance
 
@@ -63,11 +61,21 @@ Release build on an M4 Pro, 120 Hz display, plain text. Spec §9 holds the targe
 
 An idle window draws nothing, and the GPU driver hands back its memory.
 
-## Build and install
+## Install
+
+The [crates.io package](https://crates.io/crates/triad-merge) is a placeholder that holds the name: `cargo install triad-merge` does not install triad.
+
+### From a release
+
+Download the archive for your platform from [Releases](https://github.com/lookbusy1344/triad-merge/releases); each has a `.sha256` beside it.
+
+- **macOS:** `triad-merge-VERSION-aarch64-apple-darwin.zip` holds `triad.app`. It is signed ad hoc, not notarised, so clear the quarantine before the first run: `xattr -dr com.apple.quarantine triad.app`. Then copy it to `/Applications` and register it as below.
+- **Linux:** an AppImage and a `.tar.gz`, for glibc 2.35 or later.
+- **Windows:** a zip with `triad-merge.exe`, the console binary that tools call, and `triad-merge-gui.exe`. Neither is signed, so SmartScreen warns on the first run.
+
+### From source on macOS
 
 You need an Apple Silicon Mac on macOS 27 or later, the Xcode Command Line Tools (`xcode-select --install`) and `rustup`, which fetches the toolchain on the first build. Run every command from the repository root.
-
-The [crates.io package](https://crates.io/crates/triad-merge) is a placeholder that holds the name. It prints a message and exits; `cargo install triad-merge` does not install triad. Build from source.
 
 ```sh
 script/macos-app                                                   # builds target/release/triad.app
@@ -134,7 +142,7 @@ triad-merge diff src/lib.rs              # a file against its parent revision; e
 triad-merge diff --rev main src/lib.rs   # against another revision
 ```
 
-A save from `resolve` is recorded. git stages a resolved file as `git add` does. jj snapshots the save in an operation of its own, `save <path> in triad`, which `jj undo` reverts.
+A save from `resolve` is recorded as § Features says; jj names its operation `save <path> in triad`.
 
 ### Resolving a jj conflict in steps
 
@@ -201,7 +209,7 @@ triad-merge show-config                    # the settings in effect
 
 ## Report a problem
 
-Rerun with `TRIAD_LOG=debug` and send the command and what you expected, `triad-merge --version`, `sw_vers -productVersion`, the day's log from `~/Library/Caches/triad/logs/`, and the input files if you can share them. The log names files and paths; it holds none of their text.
+Rerun with `TRIAD_LOG=debug` and send the command and what you expected, `triad-merge --version`, your OS version, the day's log, and the input files if you can share them. Logs sit in `~/Library/Caches/triad/logs/` on macOS, `~/.cache/triad/logs/` on Linux and `%LOCALAPPDATA%\triad\cache\logs` on Windows. The log names files and paths; it holds none of their text.
 
 ## Build and test
 
@@ -211,7 +219,10 @@ cargo nextest run --workspace --no-run                          # build the test
 cargo nextest run --workspace -E 'package(merge-core) & test(merge3)'   # filtered; never plain `cargo test`
 script/pre-commit                                               # the gate before each commit; under 35 s warm
 script/checks                                                   # everything CI runs, with the full suite
+script/macos-app dist                                           # target/dist/triad.app, fat LTO, as a release builds it
 ```
+
+A tag `vX.Y.Z` that matches the workspace version runs `.github/workflows/release.yml`, which builds the three platforms' packages and attaches them to a draft release.
 
 `script/gen-conflict-repo` builds a disposable jj repository with conflicts in two Rust files, for trying `jj resolve` and `triad-merge resolve`.
 
