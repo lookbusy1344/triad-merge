@@ -35,7 +35,7 @@ In order. Each is one or more commits.
 1. **Beta reports.** Each bug starts with a test that reproduces it; README § Report a problem says what testers send.
 2. **Close M3.** The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
 3. **Recovery gate** (§A13.4). Measure first; drop the item if the stall stays under one frame.
-4. **Review and diff features** (part G): collapse unchanged regions (§G2), the rest of the comparison filters (§G4), moved code in the two-way diff (§G5); then §G6–§G14.
+4. **Review and diff features** (part G): collapse unchanged regions (§G2), diff window first, after a spike on the editor patch; the rest of the comparison filters (§G4), moved code in the two-way diff (§G5); then §G6–§G14.
 5. **More grammars,** one commit each: C, C++, Java and Kotlin; then JSON, YAML, TOML, CSS and Markdown; then Bash, Ruby, PHP and SQL.
 6. **M4b** (§3) once the owner has the machines and the certificate.
 7. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
@@ -62,7 +62,8 @@ In order. Each is one or more commits.
 | Fuzzing | After release 1; `cargo-fuzz` needs nightly | spec §8.9 |
 | Accessibility gaps: no live announcements, region bands and gutter marks not exposed | gpui-kit | `docs/gpui-kit-issues.md` |
 | gpui-kit 0.9: build, rebase the patch, measure | — | `docs/gpui-kit-issues.md` |
-| Review and diff features, §G2, §G4–§G14 | Owner's choices on §G15's open points | G |
+| Collapse unchanged regions, diff window then merge window | — | §G2 |
+| Review and diff features, §G4–§G14 | Owner's choices on §G15's open points | G |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
 
 ## 4. Risks
@@ -96,7 +97,7 @@ The main way to move through a large file with few changes; every tool compared 
 - Merge window: the top panes' fold row stands in for a run of aligned rows, so the panes stay level. The result editor folds the same lines through gpui-base's `FoldMap`, which is off there now (§A6.2). Scroll sync counts a fold row as one row in each pane.
 - Diff window: both editors fold. The spacer layer sits after `FoldMap` (§A6.5), so its row counts must take folded rows.
 - A jump, a search step or a go-to-line into a fold expands it; so does an edit it touches. Line numbers keep the file's numbers.
-- Open: whether `FoldMap` can draw a custom placeholder row, or the vendored patch grows (§A6.1).
+- The vendored patch grows (§A6.1). `FoldMap` folds tree-sitter's ranges, which the gutter chevrons toggle, and draws no row for what it hides. The fold row is a spacer row with a spacer note, above the first line after the hidden run, which is not folded and so keeps its spacer. The patch adds folds the application sets, apart from tree-sitter's; a click handler on a spacer row; and spacer counts that leave out spacers inside a fold. A spike checks this before the work starts.
 - Tests: fold boundaries at `2 × context` and `2 × context + 2` lines; first and last regions; a file with no changes; `context-lines = 0`; a jump into a fold; an edit inside a fold; scroll sync across a fold.
 
 ### G3 Bulk resolution
@@ -170,4 +171,7 @@ The merge window watches its inputs as the diff window does (spec §6.1). A chan
 
 ### G15 Decisions
 
-None yet. Open: G2's default, G4's case folding and blank lines in a merge, G6's renames, G8's resolution model.
+- **G2 default:** `collapse-unchanged` is `false`. The merge window moves by conflict, and next and previous conflict already pass the unchanged text; resolving a conflict needs the code around it. Folding in the result editor carries the most risk: edits in a fold, undo, search and scroll sync.
+- **G2 order:** the diff window first, then the merge window. A diff with few changes is where folding helps most, and part H's diff editor needs it. Two editors and no aligned top panes make it the smaller step, and it settles the editor patch the merge window reuses.
+
+Open: G4's case folding and blank lines in a merge, G6's renames, G8's resolution model.
