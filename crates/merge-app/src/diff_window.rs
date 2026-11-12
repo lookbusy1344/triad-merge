@@ -55,6 +55,7 @@ use crate::editor_sync::{self, Caret};
 use crate::origin_column::{
     Annotated, Described, HeadingText, OriginCell, OriginColumn, Visibility,
 };
+use crate::own_writes::OwnWrites;
 use crate::recorder::Recorded;
 use crate::ruler;
 use crate::scrollbars;
@@ -276,9 +277,9 @@ struct Pane {
     /// Counts the edits and reloads, so a save that lands knows whether the text it wrote is
     /// still the pane's.
     changes: u64,
-    /// The text and encoding the window last wrote to the file, until a reload. A change on
-    /// disk that reads back as it is the window's own save.
-    saved: Option<(Rope, Encoding)>,
+    /// The texts the window wrote or is writing to the file. A change on disk that reads back
+    /// as one is the window's own save.
+    writes: OwnWrites,
     /// A prompt about a change on disk is open.
     asking: bool,
     /// The read of the file running after a change on disk, and what follows it.
@@ -1061,6 +1062,14 @@ impl DiffWindow {
         self.flash.running()
     }
 
+    /// Whether `side`'s file holding `text`, in the pane's encoding, would be the window's
+    /// own save: one written, or one being written.
+    #[must_use]
+    pub fn is_own_write(&self, side: Side, text: &str) -> bool {
+        let pane = self.pane(side);
+        pane.writes.holds(text, pane.encoding)
+    }
+
     /// The byte ranges `side`'s pane frames now.
     #[must_use]
     pub fn flash_frames(&self, side: Side, cx: &App) -> Vec<Range<usize>> {
@@ -1075,6 +1084,11 @@ impl DiffWindow {
             self.send_edits(side, window, cx);
         }
         let writes = self.side_writes();
+        for write in &writes {
+            // A rope clone shares its chunks.
+            let text = write.text.clone();
+            self.pane_mut(write.side).writes.start(write.changes, text, write.encoding);
+        }
         let before = self.saving.take();
         self.saving = Some(cx.spawn_in(window, async move |this, cx| {
             if let Some(before) = before {
@@ -1133,13 +1147,14 @@ impl DiffWindow {
                 Ok(()) => {
                     let pane = self.pane_mut(write.side);
                     let unchanged = pane.changes == write.changes;
-                    pane.saved = Some((write.text, write.encoding));
+                    pane.writes.ended(write.changes, true);
                     if unchanged {
                         self.set_modified(write.side, false);
                     }
                 }
                 Err(error) => {
                     all_saved = false;
+                    self.pane_mut(write.side).writes.ended(write.changes, false);
                     let detail = error.to_string();
                     let answer = window.prompt(
                         PromptLevel::Critical,
@@ -1274,9 +1289,7 @@ impl DiffWindow {
         };
         let pane = self.pane(side);
         let same = text.encoding() == pane.encoding && self.doc.text(side) == text.content();
-        let own_save = pane.saved.as_ref().is_some_and(|(saved, encoding)| {
-            *encoding == text.encoding() && *saved == text.content()
-        });
+        let own_save = pane.writes.holds(text.content(), text.encoding());
         (!same && !own_save).then_some(text)
     }
 
@@ -1293,7 +1306,7 @@ impl DiffWindow {
         let pane = self.pane_mut(side);
         pane.encoding = text.encoding();
         pane.changes += 1;
-        pane.saved = None;
+        pane.writes.reloaded();
         self.reload(side, window, cx);
         self.set_modified(side, false);
         self.schedule_recompute(window, cx);
@@ -1826,7 +1839,7 @@ fn new_pane(
         modified: false,
         asking: false,
         changes: 0,
-        saved: None,
+        writes: OwnWrites::default(),
         reading: None,
         annotated: None,
     }

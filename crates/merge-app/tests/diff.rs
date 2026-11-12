@@ -548,6 +548,29 @@ fn the_windows_own_save_changes_nothing(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn a_save_in_flight_is_the_windows_own_until_it_fails(cx: &mut TestAppContext) {
+    let files = Files::new("a\n", "b\n");
+    let o = open(cx, &files);
+    type_at(cx, &o, Side::Left, 0, "x");
+    press(cx, &o, "secondary-s");
+    // The watcher can report the write before its result arrives.
+    let own = |cx: &mut TestAppContext, text| {
+        cx.read(|cx| o.view.read(cx).is_own_write(Side::Left, text))
+    };
+    assert!(own(cx, "xa\n"), "own while the write runs");
+    assert!(!own(cx, "a\n"));
+    cx.run_until_parked();
+    assert!(own(cx, "xa\n"), "own once it lands");
+    // A write that fails is not the window's.
+    std::fs::remove_file(files.path(Side::Left)).expect("removed");
+    std::fs::create_dir(files.path(Side::Left)).expect("a directory in its place");
+    type_at(cx, &o, Side::Left, 0, "y");
+    save(cx, &o);
+    assert!(cx.has_pending_prompt(), "the save failed");
+    assert!(!own(cx, "yxa\n"));
+}
+
+#[gpui_kit::test]
 fn a_file_gone_from_disk_is_left_as_it_is(cx: &mut TestAppContext) {
     let files = Files::new("a\n", "b\n");
     let o = open(cx, &files);

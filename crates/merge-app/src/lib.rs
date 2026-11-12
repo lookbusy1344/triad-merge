@@ -16,6 +16,7 @@ pub mod measure;
 mod menu_bar;
 pub mod open_dialog;
 pub mod origin_column;
+mod own_writes;
 mod pane_scroll;
 mod patches;
 mod prompt_view;
