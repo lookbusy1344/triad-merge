@@ -10,7 +10,8 @@ use std::time::{Duration, SystemTime};
 
 use crate::io::write_private;
 use merge_core::document::{Command, Start};
-use merge_core::journal::{InputHashes, JOURNAL_EXTENSION, Journal};
+use merge_core::journal::{InputHashes, JOURNAL_EXTENSION, Journal, input_hashes};
+use merge_core::merge3::Inputs;
 
 const SECONDS_PER_DAY: u64 = 24 * 60 * 60;
 const JOURNAL_MAX_AGE_DAYS: u64 = 30;
@@ -46,6 +47,65 @@ fn prune_entry(path: &Path, now: SystemTime) -> io::Result<()> {
         std::fs::remove_file(path)?;
     }
     Ok(())
+}
+
+/// The journal at `path`, if it has this format and holds commands.
+fn read_saved(path: &Path) -> Option<Journal> {
+    let journal = match std::fs::read(path) {
+        Ok(bytes) => Journal::parse(&bytes),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return None,
+        Err(error) => {
+            tracing::warn!(%error, "cannot read the journal");
+            return None;
+        }
+    };
+    match journal {
+        Ok(journal) if !journal.is_current() => {
+            tracing::warn!("the journal has another format, so it is not offered");
+            None
+        }
+        Ok(journal) => (!journal.commands().is_empty()).then_some(journal),
+        Err(error) => {
+            tracing::warn!(%error, "the journal does not parse");
+            None
+        }
+    }
+}
+
+/// The journal file of a session whose inputs are still hashing: hashing them names it.
+#[derive(Debug, Clone)]
+pub struct Locator {
+    dir: PathBuf,
+    name: Option<PathBuf>,
+}
+
+/// The inputs' hashes, and the journal a crashed session left for them.
+#[derive(Debug)]
+pub struct FoundJournal {
+    pub hashes: InputHashes,
+    pub saved: Option<Journal>,
+}
+
+impl Locator {
+    /// Hash `inputs`, which start from `start`, and read the journal they name. Slow: the
+    /// hashes take 100 ms per input at 1M lines.
+    #[must_use]
+    pub fn find(&self, inputs: &Inputs, start: &Start) -> FoundJournal {
+        let hashes = input_hashes(inputs);
+        let path = self.path(&hashes, start);
+        FoundJournal { hashes, saved: read_saved(&path) }
+    }
+
+    /// The directory the journals live in.
+    #[must_use]
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+
+    fn path(&self, hashes: &InputHashes, start: &Start) -> PathBuf {
+        let journal = Journal::with_hashes(hashes.clone(), start.clone());
+        self.dir.join(journal.file_name(self.name.as_deref()))
+    }
 }
 
 /// Lets one generation of a journal's file operations through until it closes, in order with
@@ -309,6 +369,11 @@ impl Recovery {
     /// with `hashes` if they are still hashing: the session is ending. `start` is the
     /// document's.
     pub fn flush(&mut self, hashes: impl FnOnce() -> InputHashes, start: Start) {
+        // The file holds every command this session wrote, and no write is in flight: each
+        // write's result is taken before the next starts.
+        if self.on_disk == OnDisk::Commands(self.len()) {
+            return;
+        }
         self.retire();
         if matches!(self.log, Log::Hashing { .. }) {
             self.hashed(hashes(), start);
@@ -349,35 +414,23 @@ impl Recovery {
         self.behind()
     }
 
-    /// The journal a crashed session left for these inputs, if it has this format and holds
-    /// commands.
-    pub fn saved(&self) -> Option<Journal> {
-        let path = self.path()?;
-        let journal = match std::fs::read(path) {
-            Ok(bytes) => Journal::parse(&bytes),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return None,
-            Err(error) => {
-                tracing::warn!(%error, "cannot read the journal");
-                return None;
-            }
-        };
-        match journal {
-            Ok(journal) if !journal.is_current() => {
-                tracing::warn!("the journal has another format, so it is not offered");
-                None
-            }
-            Ok(journal) => (!journal.commands().is_empty()).then_some(journal),
-            Err(error) => {
-                tracing::warn!(%error, "the journal does not parse");
-                None
-            }
-        }
+    /// Where this session's journal goes once the inputs hash, for a thread of its own.
+    #[must_use]
+    pub fn locator(&self) -> Locator {
+        Locator { dir: self.dir.clone(), name: self.name.clone() }
     }
 
-    /// The journal a crashed session left, to offer for a restore. Writes wait for the
+    /// The journal a crashed session left for these inputs, if it has this format and holds
+    /// commands.
+    #[must_use]
+    pub fn saved(&self) -> Option<Journal> {
+        read_saved(self.path()?)
+    }
+
+    /// Offer `saved`, the journal a crashed session left, for a restore. Writes wait for the
     /// answer: [`Recovery::restored`], or [`Recovery::discard`] to start over.
-    pub fn offer(&mut self) -> Option<Journal> {
-        let journal = self.saved()?;
+    pub fn offer(&mut self, saved: Option<Journal>) -> Option<Journal> {
+        let journal = saved?;
         self.on_disk = OnDisk::Offered;
         Some(journal)
     }
@@ -902,12 +955,48 @@ mod tests {
         crashed.path().expect("hashed").to_owned()
     }
 
+    /// Read the saved journal, as the background does, and offer it.
+    fn offer_saved(recovery: &mut Recovery) -> Option<Journal> {
+        let saved = recovery.saved();
+        recovery.offer(saved)
+    }
+
+    #[test]
+    fn the_locator_reads_the_journal_the_hashed_inputs_name() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = crashed(dir.path(), 2);
+        let mut recovery = Recovery::new(dir.path().to_owned(), None);
+        let found = recovery.locator().find(&inputs(), &start());
+        assert_eq!(found.saved.as_ref().map(|j| j.commands().len()), Some(2));
+        assert!(recovery.hashed(found.hashes, start()));
+        assert_eq!(recovery.path(), Some(path.as_path()));
+    }
+
+    #[test]
+    fn the_locator_names_the_journal_by_its_output() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        crashed(dir.path(), 1);
+        let recovery = Recovery::new(dir.path().to_owned(), Some(PathBuf::from("/repo/a.txt")));
+        assert!(recovery.locator().find(&inputs(), &start()).saved.is_none(), "another name");
+    }
+
+    #[test]
+    fn flush_of_a_journal_up_to_date_writes_nothing() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut recovery = ready(dir.path(), 1);
+        assert!(write_next(&mut recovery));
+        let path = recovery.path().expect("hashed").to_owned();
+        std::fs::write(&path, b"marker").expect("written");
+        recovery.flush(hashes, start());
+        assert_eq!(std::fs::read(&path).expect("kept"), b"marker");
+    }
+
     #[test]
     fn an_open_offer_holds_every_write_until_the_answer() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = crashed(dir.path(), 2);
         let mut recovery = ready(dir.path(), 0);
-        let offered = recovery.offer().expect("a journal to offer");
+        let offered = offer_saved(&mut recovery).expect("a journal to offer");
         assert_eq!(offered.commands().len(), 2);
         recovery.record(clear(RegionIx::new(5)));
         assert!(recovery.next_write().is_none(), "the crashed journal stays");
@@ -925,7 +1014,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         crashed(dir.path(), 1);
         let mut recovery = ready(dir.path(), 0);
-        let offered = recovery.offer().expect("a journal to offer");
+        let offered = offer_saved(&mut recovery).expect("a journal to offer");
         recovery.restored(offered);
         recovery.record(clear(RegionIx::new(1)));
         let (write, upto) = recovery.next_write().expect("a write");
@@ -936,7 +1025,7 @@ mod tests {
     fn without_a_journal_to_offer_nothing_is_held() {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut recovery = ready(dir.path(), 0);
-        assert!(recovery.offer().is_none());
+        assert!(offer_saved(&mut recovery).is_none());
         recovery.record(clear(RegionIx::new(0)));
         assert_eq!(recovery.next_write().expect("a write").1, 1);
     }

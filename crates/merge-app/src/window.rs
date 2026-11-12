@@ -38,7 +38,7 @@ use merge_core::document::{
     PickScope, Resolution, TextPatch,
 };
 use merge_core::index::{ByteOffset, Line, RegionIx};
-use merge_core::journal::{InputHashes, Journal, RestoreError, input_hashes};
+use merge_core::journal::{Journal, RestoreError};
 use merge_core::merge3::{Inputs, Kind, LEFT, RIGHT, Source};
 use merge_core::suggest::{self, EditSuggestion};
 use merge_core::text::Text;
@@ -101,7 +101,7 @@ use crate::{
     ToggleScrollSync, ToggleSoftWrap, ToggleSyntax, Typography, Undo, finish, go_to_line,
     ignore_closed_view, strings,
 };
-use merge_session::recovery::{Recovery, WriteMode, Written, prune};
+use merge_session::recovery::{FoundJournal, Locator, Recovery, WriteMode, Written, prune};
 use merge_session::session::{CannotSave, Refused, SaveJob, SaveTarget, Session};
 
 /// One row of the side panes at the default text size: an editor line, so the rows and the
@@ -710,9 +710,10 @@ impl MergeWindow {
         cx: &mut Context<Self>,
     ) -> Option<Recovery> {
         settings.journal_dir.clone().map(|dir| {
-            Self::hash_inputs(doc, &dir, window, cx);
             let name = settings.journal_name.clone().or_else(|| settings.output.clone());
-            Recovery::new(dir, name)
+            let recovery = Recovery::new(dir, name);
+            Self::hash_inputs(doc, recovery.locator(), window, cx);
+            recovery
         })
     }
 
@@ -1618,43 +1619,54 @@ impl MergeWindow {
         }
     }
 
-    /// Off the UI thread, delete old journals and hash the inputs; then name the journal and
-    /// offer any restore.
-    fn hash_inputs(doc: &MergeDocument, dir: &Path, window: &mut Window, cx: &mut Context<Self>) {
+    /// Off the UI thread, delete old journals, hash the inputs and read the journal they
+    /// name; then name this session's journal and offer any restore.
+    fn hash_inputs(
+        doc: &MergeDocument,
+        locator: Locator,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         // Texts share their content, so the copy is O(1).
         let inputs = doc.inputs().clone();
-        let dir = dir.to_owned();
+        let start = doc.start();
         cx.spawn_in(window, async move |this, cx| {
-            let hashes = cx
+            let found = cx
                 .background_spawn(async move {
-                    prune(&dir, SystemTime::now());
-                    input_hashes(&inputs)
+                    prune(locator.dir(), SystemTime::now());
+                    locator.find(&inputs, &start)
                 })
                 .await;
             ignore_closed_view(
-                this.update_in(cx, |this, window, cx| this.hashed(hashes, window, cx)),
+                this.update_in(cx, |this, window, cx| this.hashed(found, window, cx)),
             );
         })
         .detach();
     }
 
-    fn hashed(&mut self, hashes: InputHashes, window: &mut Window, cx: &mut Context<Self>) {
+    fn hashed(&mut self, found: FoundJournal, window: &mut Window, cx: &mut Context<Self>) {
         let start = self.session.document().start();
         let Some(recovery) = self.session.recovery_mut() else {
             return;
         };
         // A session that ended has hashed them itself.
-        if !recovery.hashed(hashes, start) {
+        if !recovery.hashed(found.hashes, start) {
             return;
         }
-        if !self.offer_restore(window, cx) {
+        if !self.offer_restore(found.saved, window, cx) {
             self.write_journal(cx);
         }
     }
 
-    /// Offer the journal a crashed session left for these inputs. Returns whether it asked.
-    fn offer_restore(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        let Some(journal) = self.session.recovery_mut().and_then(Recovery::offer) else {
+    /// Offer `saved`, the journal a crashed session left for these inputs. Returns whether it
+    /// asked.
+    fn offer_restore(
+        &mut self,
+        saved: Option<Journal>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(journal) = self.session.recovery_mut().and_then(|r| r.offer(saved)) else {
             return false;
         };
         let answer = window.prompt(
@@ -1678,19 +1690,38 @@ impl MergeWindow {
         true
     }
 
-    /// Replace the session with the journal's replay.
+    /// Replay `journal` off the UI thread, then switch the session to it.
     fn restore(&mut self, journal: Journal, window: &mut Window, cx: &mut Context<Self>) {
         // Texts share their content and line index, so the copy is O(1).
         let inputs = self.session.document().inputs().clone();
+        let labels = self.session.document().labels().clone();
         let boundaries = self.colouring.detected().map(SyntaxBoundaries::new);
-        let restored = journal
-            .restore_bounded(
-                inputs,
-                self.session.document().labels().clone(),
-                boundaries.as_ref().map(|b| b as &dyn Boundaries),
-            )
-            .map_err(RebuildError::from)
-            .and_then(|doc| with_rows(doc, self.panes));
+        // The writes stay held while the replay runs, so a crash keeps the journal.
+        cx.spawn_in(window, async move |this, cx| {
+            let (journal, replayed) = cx
+                .background_spawn(async move {
+                    let boundaries = boundaries.as_ref().map(|b| b as &dyn Boundaries);
+                    let replayed = journal.restore_bounded(inputs, labels, boundaries);
+                    (journal, replayed)
+                })
+                .await;
+            ignore_closed_view(this.update_in(cx, |this, window, cx| {
+                this.replayed(journal, replayed, window, cx);
+            }));
+        })
+        .detach();
+    }
+
+    /// Switch the session to `replayed`, the replay of `journal`, or say why it cannot.
+    fn replayed(
+        &mut self,
+        journal: Journal,
+        replayed: Result<MergeDocument, RestoreError>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let restored =
+            replayed.map_err(RebuildError::from).and_then(|doc| with_rows(doc, self.panes));
         let (doc, rows) = match restored {
             Ok(restored) => restored,
             Err(error) => {
