@@ -2,7 +2,7 @@
 
 Inputs: [SPEC.md](SPEC.md). Rules for changes: `AGENTS.md`.
 
-This is the one plan. §1–§5 hold the status, the next steps and the open work. §1 states where the project stands; the history is in jj. Parts A–G hold the design notes of each phase: the design, the reasons, the measurements and the decisions. A reference such as §B5.8 names part B, section 5.8. Where a later part changes an earlier one, the later part holds: part E's config file replaces the TOML settings of §A6.6, for example.
+This is the plan. Part H, the diff editor, sits in [PLAN-diff-editor.md](PLAN-diff-editor.md) while it is open; §1–§3 here carry its status. §1–§5 hold the status, the next steps and the open work. §1 states where the project stands; the history is in jj. Parts A–G hold the design notes of each phase: the design, the reasons, the measurements and the decisions. A reference such as §B5.8 names part B, section 5.8. Where a later part changes an earlier one, the later part holds: part E's config file replaces the TOML settings of §A6.6, for example.
 
 Every task follows the ground rules of §A1: tests first, expected values from the spec, hand calculation or an oracle, one task per commit, the spec updated in the same change, jj first with git parity.
 
@@ -25,6 +25,7 @@ As of 2026-11-12.
 | p4merge parity | Done: config file, overview ruler with the scrollbar thumb, scrollbars, output line ending, Save Copy As and key bindings | E |
 | Review and diff features | Bulk takes (§G3) and line endings in comparison (§G4) done; the rest open | G |
 | Code quality | Done, except the recovery gate (§A13.4) and the optional row-rendering move (§A13.3) | §A13 |
+| Diff editor: `jj split`, `jj squash -i` and the other diff-editing commands; `stage` for git | Planned | H |
 
 Every spec §9 target is met (§A6.7); README and spec §9 carry the figures.
 
@@ -50,6 +51,7 @@ In order. Each is one or more commits.
 4. **Review and diff features** (part G), in its order: collapse unchanged regions (§G2), the rest of the comparison filters (§G4), moved code in the two-way diff (§G5); then §G6–§G14.
 5. **More grammars,** one commit each (§F9, decision 1): C, C++, Java and Kotlin; then JSON, YAML, TOML, CSS and Markdown; then Bash, Ruby, PHP and SQL.
 6. **M4b** (§A8, §E7) once the owner has the machines and the certificate of §E7.3.
+7. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
 
 ## 3. Outstanding work
 
@@ -73,6 +75,7 @@ In order. Each is one or more commits.
 | Whole-text copies: `Recompute::run`, `MergeDocument::output`, 8-byte line starts | A measurement that calls for them | §A6.7 |
 | Accessibility gaps: no live announcements, region bands and gutter marks not exposed | gpui-kit | `docs/gpui-kit-issues.md` |
 | gpui-kit 0.9: build, rebase the patch, measure | — | `docs/gpui-kit-issues.md` |
+| Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
 
 ## 4. Risks
 

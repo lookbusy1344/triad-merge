@@ -153,5 +153,5 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | `fixtures/demo` | A 980-line Rust merge with 20 conflicts, from `script/gen-demo`. |
 | `images` | Mark, logo and app icon as SVG, PNG, ICNS and ICO, from `script/gen-images.swift`. |
 | `packaging/linux` | Desktop entry of the Linux packages. |
-| `docs` | Spec, plan, UI style, JSON schema, release checklist, gpui-kit and gix issues, `scroll-debugging.md`, `mark-colours.md`: the mark's colour schemes, geometry and the shapes not taken, and `residue.md`: the files triad and its scripts leave behind. |
+| `docs` | Spec, plan, the diff editor plan (`PLAN-diff-editor.md`, part H), UI style, JSON schema, release checklist, gpui-kit and gix issues, `scroll-debugging.md`, `mark-colours.md`: the mark's colour schemes, geometry and the shapes not taken, and `residue.md`: the files triad and its scripts leave behind. |
 | `vendor/gpui-base` | `gpui-base` 0.8.1 with triad's editor patch, through `[patch.crates-io]`. Outside the workspace: no workspace lints, `cargo fmt` or `jj fix`. See its `PATCHES.md`. |
