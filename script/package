@@ -19,12 +19,12 @@ version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
 readonly name=$bin-$version-$target
 stage=$(mktemp -d)
 
-cargo build --release --locked -p "$bin"
+cargo build --profile dist --locked -p "$bin"
 mkdir -p "$dist"
 rm -f "$dist/$bin"-*
 
 stripped=$stage/$bin
-install -m 755 "${CARGO_TARGET_DIR:-target}/release/$bin" "$stripped"
+install -m 755 "${CARGO_TARGET_DIR:-target}/dist/$bin" "$stripped"
 strip "$stripped"
 
 # Copies the binary and the bundled libraries to $1/$2 and $1/$3. The binary finds them by the
