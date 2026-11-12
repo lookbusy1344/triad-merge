@@ -170,7 +170,7 @@ Zed's split diff gives both editors the same rows through spacer blocks. triad's
 
 Spec §6.2 sets the behaviour. A window ends through the `Finish` global: `merge_app::run` exits the process with the code, since GPUI's quit on macOS exits with 0; tests record the code. Prompts are platform prompts, which tests answer with `simulate_prompt_answer`.
 
-The journal (`merge_session::recovery`) holds the format version, SHA-256 of each input's decoded text, the `MergeOptions`, SHA-256 of the starting alignment and the command log, at `<cache>/journal/<key>.json`. Restore aligns again and refuses a journal whose alignment hash differs, since commands name regions and byte offsets. `JOURNAL_DEBOUNCE` (500 ms) restarts with each command; tests drive it with the executor's fake clock. `Journaling` holds the write tasks and cancels them before the gate closes (§A13.4).
+The journal (`merge_session::recovery`) holds the format version, SHA-256 of each input's decoded text, the `MergeOptions`, SHA-256 of the starting alignment and the command log, at `<cache>/journal/<key>.json`. Restore aligns again and refuses a journal whose alignment hash differs, since commands name regions and byte offsets. `JOURNAL_DEBOUNCE` (500 ms) restarts with each command; tests drive it with the executor's fake clock. `JournalTasks` holds the waiting write and the running write or removal, and cancels them before a flush, a discard or a restore (§A13.4).
 
 `merge_session::ending` decides Save & Exit, Close and the answers to their alerts without GPUI: each step gives a `Next`, and `Journal` says whether the journal is removed, written or left. `Session::apply` refuses every command while a save runs, and the result is read-only until it ends.
 
@@ -279,7 +279,13 @@ A caret, scroll or row position held across a command could fall out of range af
 
 #### A13.4 Recovery gate
 
-`Recovery::retire` calls `Gate::close`, which waits for a running journal write and its sync. If it runs on the UI thread, the window stalls for that long. The plan (PLAN.md §2): measure first and drop the item under one frame; else hand the close to the background executor and start the next whole write only after it completes, so writes land in order. A flag set without waiting cannot give this: a write that has renamed its file cannot be undone. Tests use a barrier, no sleeps; `a_closed_gate_skips_every_write` stays.
+A journal write costs one or two syncs, and on macOS `sync_all` and `sync_data` are `F_FULLFSYNC`, about 4 ms each on an Apple SSD. A whole write (temporary file, sync, rename, directory sync) takes 9.0 ms median and 14 ms max from 1 KB to 1 MB; an append takes 4.0 ms median and 5.2 ms max. A whole write is longer than a 120 Hz frame (8.3 ms), so the UI thread never waits for one.
+
+`Gate` orders the journal's file operations. Every generation of a journal shares one lock, which a write or a removal holds while it runs; each generation has its own open flag. `Recovery::retire` clears the flag without waiting and starts the next generation. A running operation ends before any of the next generation starts, and one of the old generation that starts later skips. A write that has renamed its file cannot be undone, so order comes from the lock, not the flag.
+
+`Recovery::discard` returns a `Removal`, which the window runs on the background executor in the slot of the running write. No write starts until `Recovery::removed` takes its result; then commands made since start a new file. Restore, Start Over and a failed restore take this path. At the end of a session, `Session::flush_journal` and `Session::end_journal` write or remove on the UI thread and wait for a running operation: the window is closing.
+
+Tests hold the lock on a second thread behind a barrier, with no sleeps. A retire that waited would deadlock, and nextest ends it at 30 s.
 
 #### A13.5 Pre-commit gate time
 

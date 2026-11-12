@@ -154,13 +154,16 @@ impl Session {
         }
     }
 
-    /// Remove the journal and keep none from here on. The front end cancels its journal
-    /// tasks first.
+    /// Remove the journal, on this thread, after any write running, and keep none from here
+    /// on. The front end cancels its journal tasks first.
     pub fn end_journal(&mut self) {
-        if let Some(recovery) = &mut self.recovery {
-            recovery.discard();
+        let removal = self.recovery.take().and_then(|mut recovery| recovery.discard());
+        if let Some(removal) = removal
+            && let Err(error) = removal.run()
+        {
+            // The next session for these inputs offers it, and the owner can start over.
+            tracing::warn!(%error, path = %removal.path.display(), "cannot remove the journal");
         }
-        self.recovery = None;
     }
 
     /// Do what the end of a session asks of the journal.

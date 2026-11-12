@@ -32,13 +32,12 @@ Build profiles (root `Cargo.toml`): `release` aborts on panic and strips symbols
 
 In order. Each is one or more commits.
 
-1. **Beta reports.** Each bug starts with a test that reproduces it; README § Report a problem says what testers send.
+1. **Beta reports.** None so far from the owner's own use. Each bug starts with a test that reproduces it; README § Report a problem says what testers send.
 2. **Close M3.** The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
-3. **Recovery gate** (§A13.4). Measure first; drop the item if the stall stays under one frame.
-4. **Review and diff features** (part G): collapse unchanged regions (§G2), diff window first, after a spike on the editor patch; the rest of the comparison filters (§G4), moved code in the two-way diff (§G5); then §G6–§G14.
-5. **More grammars,** one commit each: C, C++, Java and Kotlin; then JSON, YAML, TOML, CSS and Markdown; then Bash, Ruby, PHP and SQL.
-6. **M4b** (§3) once the owner has the machines and the certificate.
-7. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
+3. **Review and diff features** (part G): collapse unchanged regions (§G2), diff window first, after a spike on the editor patch; the rest of the comparison filters (§G4), moved code in the two-way diff (§G5); then §G6–§G14.
+4. **More grammars,** one commit each: C, C++, Java and Kotlin; then JSON, YAML, TOML, CSS and Markdown; then Bash, Ruby, PHP and SQL.
+5. **M4b** (§3) once the owner has the machines and the certificate.
+6. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
 
 ## 3. Outstanding work
 
@@ -50,7 +49,6 @@ In order. Each is one or more commits.
 | Windows: tool runs from `git mergetool`, `git difftool`, `jj resolve` and `jj diff --tool` in a real console; MSI through `cargo-wix`, Authenticode signing, winget manifest; icon resource; rendering, IME and file watching on x64 and ARM64; release checklist and spec §9 | x64 and ARM64 machines, a certificate, permission to install `cargo-wix` | §E7.2 |
 | Windows CI passing | A push | `.github/workflows/triad.yml` |
 | Windows ARM64 in CI (`windows-11-arm`), before version 1.0 | Windows x64 passing | `.github/workflows/triad.yml` |
-| Recovery gate on the UI thread | A measurement | §A13.4 |
 | Per-command scans in `MergeWindow::refresh`: bands, placeholders, status counts; a pick at 1M costs 4.4 / 6.3 ms mean / max | A measurement that calls for them | §A6.7 |
 | Whole-text copies: `Recompute::run`, `MergeDocument::output`, 8-byte line starts | A measurement that calls for them | §A6.7 |
 | `DiffScroll`: the diff window's eight scroll fields in one component, as `PaneScroll` | A diff scroll bug | §A13.3 |

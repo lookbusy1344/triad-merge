@@ -205,6 +205,24 @@ fn start_over_discards_the_journal(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn start_over_journals_the_commands_made_while_the_offer_was_open(cx: &mut TestAppContext) {
+    let session = Session::new();
+    let (window, view, _) = session.open(cx, conflict(MergeOptions::default()));
+    work(cx, window, &view);
+    wait(cx, JOURNAL_DEBOUNCE);
+    assert_eq!(session.journal().expect("written").commands().len(), 2);
+    let (again, after, _) = session.open(cx, conflict(MergeOptions::default()));
+    assert!(cx.has_pending_prompt(), "a restore is offered");
+    set_caret(cx, &after, 0);
+    act(cx, again, |window, cx| window.input("x", cx));
+    // The answer comes before the pause ends, so the removal starts the write.
+    cx.simulate_prompt_answer(START_OVER);
+    cx.run_until_parked();
+    let journal = session.journal().expect("written after the removal");
+    assert_eq!(journal.commands().len(), 1, "only this session's command");
+}
+
+#[gpui_kit::test]
 fn restore_uses_the_journals_options_over_the_current_ones(cx: &mut TestAppContext) {
     let session = Session::new();
     let (window, view, _) = session.open(cx, conflict(MergeOptions::default()));

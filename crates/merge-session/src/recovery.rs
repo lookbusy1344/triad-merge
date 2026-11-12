@@ -4,6 +4,7 @@
 
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, SystemTime};
 
@@ -47,23 +48,37 @@ fn prune_entry(path: &Path, now: SystemTime) -> io::Result<()> {
     Ok(())
 }
 
-/// Lets one journal's writes through until it closes. A write holds the gate while it runs,
-/// so [`Gate::close`] waits for a running write, and no write starts after it.
+/// Lets one generation of a journal's file operations through until it closes, in order with
+/// every other generation's. An operation holds `order`, which all generations share, while
+/// it runs, and runs only while its own generation is open. [`Gate::close`] does not wait: a
+/// running operation ends first, and one that starts later skips.
 #[derive(Clone, Debug)]
-struct Gate(Arc<Mutex<bool>>);
+struct Gate {
+    open: Arc<AtomicBool>,
+    order: Arc<Mutex<()>>,
+}
 
 impl Gate {
     fn new() -> Self {
-        Self(Arc::new(Mutex::new(true)))
+        Self { open: Arc::new(AtomicBool::new(true)), order: Arc::new(Mutex::new(())) }
+    }
+
+    /// The next generation, in order after this one's.
+    fn next(&self) -> Self {
+        Self { open: Arc::new(AtomicBool::new(true)), order: Arc::clone(&self.order) }
     }
 
     fn close(&self) {
-        *self.lock() = false;
+        // The lock orders this store before every operation that starts after a later
+        // generation's, so the flag guards no other data.
+        self.open.store(false, Ordering::Relaxed);
     }
 
-    fn lock(&self) -> MutexGuard<'_, bool> {
-        // The flag stays meaningful after a write panicked holding it.
-        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    /// Wait for the running operation; then whether this generation is still open.
+    fn enter(&self) -> (MutexGuard<'_, ()>, bool) {
+        // The lock guards no data, so a panic holding it leaves nothing broken.
+        let running = self.order.lock().unwrap_or_else(PoisonError::into_inner);
+        (running, self.open.load(Ordering::Relaxed))
     }
 }
 
@@ -99,8 +114,8 @@ impl Write {
     /// The I/O error of a write that fails. An append to a missing file fails with
     /// [`io::ErrorKind::NotFound`].
     pub fn run(&self) -> io::Result<Written> {
-        let open = self.gate.lock();
-        if !*open {
+        let (_running, open) = self.gate.enter();
+        if !open {
             return Ok(Written::Skipped);
         }
         match self.mode {
@@ -120,15 +135,51 @@ impl Write {
     }
 }
 
+/// The removal of the journal file, after any write running.
+#[derive(Debug)]
+pub struct Removal {
+    pub path: PathBuf,
+    gate: Gate,
+}
+
+impl Removal {
+    /// Remove the file, unless the gate has closed. A missing file counts as removed.
+    ///
+    /// # Errors
+    ///
+    /// The I/O error of a removal that fails.
+    pub fn run(&self) -> io::Result<Written> {
+        let (_running, open) = self.gate.enter();
+        if !open {
+            return Ok(Written::Skipped);
+        }
+        match std::fs::remove_file(&self.path) {
+            Ok(()) => Ok(Written::Done),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Written::Done),
+            Err(error) => Err(error),
+        }
+    }
+}
+
+/// What the journal file holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OnDisk {
+    /// Not known, so the next write replaces it whole: before the first write, after a
+    /// restore and after a failed write.
+    Unknown,
+    /// This many commands, which later writes append to.
+    Commands(usize),
+    /// A removal runs, and no write starts until it ends.
+    Removing,
+}
+
 /// This session's journal and its writes.
 pub struct Recovery {
     dir: PathBuf,
     /// The path that names the journal: the output, or what stands in for it (spec §6.2).
     name: Option<PathBuf>,
     log: Log,
-    /// The commands the file holds, which later writes append to. `None` when the file must
-    /// be written whole: before the first write, after a restore and after a failed write.
-    on_disk: Option<usize>,
+    on_disk: OnDisk,
     gate: Gate,
 }
 
@@ -152,7 +203,7 @@ impl Recovery {
             dir,
             name,
             log: Log::Hashing { commands: Vec::new() },
-            on_disk: None,
+            on_disk: OnDisk::Unknown,
             gate: Gate::new(),
         }
     }
@@ -198,7 +249,7 @@ impl Recovery {
     /// The file lacks commands.
     fn behind(&self) -> bool {
         let len = self.len();
-        len > 0 && self.on_disk != Some(len)
+        len > 0 && self.on_disk != OnDisk::Commands(len)
     }
 
     /// The next write and the number of commands the file holds after it: none while the
@@ -212,8 +263,9 @@ impl Recovery {
         }
         let upto = journal.commands().len();
         let (mode, bytes) = match self.on_disk {
-            Some(from) => (WriteMode::Append, journal.lines_from(from)),
-            None => (WriteMode::Whole, journal.to_lines()),
+            OnDisk::Commands(from) => (WriteMode::Append, journal.lines_from(from)),
+            OnDisk::Unknown => (WriteMode::Whole, journal.to_lines()),
+            OnDisk::Removing => return None,
         };
         match bytes {
             Ok(bytes) => {
@@ -231,12 +283,12 @@ impl Recovery {
     pub fn written(&mut self, mode: WriteMode, upto: usize, result: io::Result<Written>) -> bool {
         match result {
             Ok(Written::Done) => {
-                self.on_disk = Some(upto);
+                self.on_disk = OnDisk::Commands(upto);
                 true
             }
             Ok(Written::Skipped) => false,
             Err(error) => {
-                self.on_disk = None;
+                self.on_disk = OnDisk::Unknown;
                 let path = self.path().map(|path| path.display().to_string());
                 if mode == WriteMode::Append {
                     tracing::warn!(%error, ?path, "cannot append to the journal; writing it whole");
@@ -250,8 +302,9 @@ impl Recovery {
         }
     }
 
-    /// Write the journal now, on this thread, hashing the inputs with `hashes` if they are
-    /// still hashing: the session is ending. `start` is the document's.
+    /// Write the journal now, on this thread, after any operation running, hashing the inputs
+    /// with `hashes` if they are still hashing: the session is ending. `start` is the
+    /// document's.
     pub fn flush(&mut self, hashes: impl FnOnce() -> InputHashes, start: Start) {
         self.retire();
         if matches!(self.log, Log::Hashing { .. }) {
@@ -261,7 +314,7 @@ impl Recovery {
             return;
         };
         match write.run() {
-            Ok(Written::Done) => self.on_disk = Some(upto),
+            Ok(Written::Done) => self.on_disk = OnDisk::Commands(upto),
             Ok(Written::Skipped) => {}
             Err(error) => {
                 tracing::warn!(%error, path = %write.path.display(), "cannot write the journal");
@@ -269,20 +322,28 @@ impl Recovery {
         }
     }
 
-    /// Remove the journal, after any write running and with any write still waiting.
-    pub fn discard(&mut self) {
+    /// End the writes so far and return the removal of the file, which runs after any write
+    /// running; none before the inputs are hashed, when this session has written no file. No
+    /// write starts until [`Recovery::removed`] takes the removal's result.
+    pub fn discard(&mut self) -> Option<Removal> {
         self.retire();
-        // Before the inputs are hashed, this session has written no file.
-        let Some(path) = self.path() else {
-            return;
-        };
-        match std::fs::remove_file(path) {
-            Ok(()) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => {
-                tracing::warn!(%error, path = %path.display(), "cannot remove the journal");
-            }
+        let path = self.path()?.to_owned();
+        self.on_disk = OnDisk::Removing;
+        Some(Removal { path, gate: self.gate.clone() })
+    }
+
+    /// Take the result of the removal [`Recovery::discard`] gave. Returns whether the file
+    /// lacks commands a write should carry now.
+    pub fn removed(&mut self, result: io::Result<Written>) -> bool {
+        if let Err(error) = result {
+            // The next write replaces the file whole, so it holds no stale commands.
+            let path = self.path().map(|path| path.display().to_string());
+            tracing::warn!(%error, ?path, "cannot remove the journal");
         }
+        if self.on_disk == OnDisk::Removing {
+            self.on_disk = OnDisk::Unknown;
+        }
+        self.behind()
     }
 
     /// The journal a crashed session left for these inputs, if it has this format and holds
@@ -320,12 +381,12 @@ impl Recovery {
         }
     }
 
-    /// End the writes so far: wait for one running, skip the rest, and write the next one
-    /// whole. The front end cancels its tasks first.
+    /// End the writes so far without waiting: one running ends before any later one starts,
+    /// the rest skip, and the next one writes whole. The front end cancels its tasks first.
     fn retire(&mut self) {
         self.gate.close();
-        self.gate = Gate::new();
-        self.on_disk = None;
+        self.gate = self.gate.next();
+        self.on_disk = OnDisk::Unknown;
     }
 }
 
@@ -337,6 +398,7 @@ mod tests {
     use merge_core::journal::{JOURNAL_VERSION, input_hashes};
     use merge_core::merge3::Inputs;
     use merge_core::testing::three;
+    use std::sync::{Barrier, TryLockError};
 
     const DAY: Duration = Duration::from_secs(SECONDS_PER_DAY);
 
@@ -650,13 +712,20 @@ mod tests {
         assert_eq!(stale.run().expect("no error"), Written::Skipped);
     }
 
+    /// Discard the journal and run its removal, as the window does.
+    fn discard_now(recovery: &mut Recovery) -> bool {
+        let removal = recovery.discard().expect("a named journal");
+        let result = removal.run();
+        recovery.removed(result)
+    }
+
     #[test]
     fn discard_removes_the_file_and_the_next_write_is_whole() {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut recovery = ready(dir.path(), 1);
         assert!(write_next(&mut recovery));
         let path = recovery.path().expect("hashed").to_owned();
-        recovery.discard();
+        assert!(discard_now(&mut recovery), "the file lacks the command");
         assert!(!path.exists());
         recovery.record(clear(RegionIx::new(1)));
         let (write, upto) = recovery.next_write().expect("a write");
@@ -668,10 +737,112 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let other = dir.path().join("other.jsonl");
         std::fs::write(&other, b"h\n").expect("written");
-        Recovery::new(dir.path().to_owned(), None).discard();
-        ready(dir.path(), 1).discard();
+        assert!(Recovery::new(dir.path().to_owned(), None).discard().is_none());
+        let removal = ready(dir.path(), 1).discard().expect("a named journal");
+        assert_eq!(removal.run().expect("no error"), Written::Done);
         assert!(other.exists());
         assert_eq!(std::fs::read_dir(dir.path()).expect("listed").count(), 1);
+    }
+
+    #[test]
+    fn no_write_starts_until_the_removal_ends() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut recovery = ready(dir.path(), 1);
+        assert!(write_next(&mut recovery));
+        let removal = recovery.discard().expect("a named journal");
+        recovery.record(clear(RegionIx::new(1)));
+        assert!(recovery.next_write().is_none(), "the removal would delete it");
+        assert!(recovery.removed(removal.run()));
+        let (write, upto) = recovery.next_write().expect("a write");
+        assert_eq!((write.mode, upto), (WriteMode::Whole, 2));
+        assert!(recovery.written(write.mode, upto, write.run()));
+        assert_eq!(file_commands(&recovery), [clear(RegionIx::new(0)), clear(RegionIx::new(1))]);
+    }
+
+    #[test]
+    fn a_removal_without_new_commands_starts_no_write() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut recovery = ready(dir.path(), 1);
+        assert!(write_next(&mut recovery));
+        let removal = recovery.discard().expect("a named journal");
+        assert!(recovery.removed(removal.run()), "the file lacks the command it held");
+        let (write, upto) = recovery.next_write().expect("a write");
+        assert_eq!((write.mode, upto), (WriteMode::Whole, 1));
+        let mut empty = ready(dir.path(), 0);
+        let removal = empty.discard().expect("a named journal");
+        assert!(!empty.removed(removal.run()), "no commands to write");
+        assert!(empty.next_write().is_none());
+    }
+
+    #[test]
+    fn a_failed_removal_lets_the_next_write_replace_the_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut recovery = ready(dir.path(), 1);
+        assert!(write_next(&mut recovery));
+        let _removal = recovery.discard().expect("a named journal");
+        recovery.record(clear(RegionIx::new(1)));
+        let failed = Err(io::Error::from(io::ErrorKind::PermissionDenied));
+        assert!(recovery.removed(failed));
+        let (write, upto) = recovery.next_write().expect("a write");
+        assert_eq!((write.mode, upto), (WriteMode::Whole, 2));
+    }
+
+    #[test]
+    fn a_removal_taken_before_a_flush_skips_and_keeps_the_flushed_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut recovery = ready(dir.path(), 1);
+        let removal = recovery.discard().expect("a named journal");
+        recovery.record(clear(RegionIx::new(1)));
+        recovery.flush(hashes, start());
+        assert_eq!(removal.run().expect("no error"), Written::Skipped);
+        assert_eq!(file_commands(&recovery), [clear(RegionIx::new(0)), clear(RegionIx::new(1))]);
+    }
+
+    /// Hold the lock that orders the journal's file operations on another thread, as a
+    /// running write does, while `during` runs on this one.
+    fn while_a_write_runs<T: Send>(gate: &Gate, during: impl FnOnce() -> T + Send) -> T {
+        let held = Barrier::new(2);
+        let release = Barrier::new(2);
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                let _running = gate.order.lock().expect("not poisoned");
+                held.wait();
+                release.wait();
+            });
+            held.wait();
+            let result = during();
+            release.wait();
+            result
+        })
+    }
+
+    #[test]
+    fn retiring_does_not_wait_for_a_running_write() {
+        // A retire that waited would deadlock here, and nextest would end the test.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut recovery = ready(dir.path(), 1);
+        let gate = recovery.gate.clone();
+        let next = while_a_write_runs(&gate, || {
+            let removal = recovery.discard().expect("a named journal");
+            recovery.restored(Journal::with_hashes(hashes(), start()));
+            removal
+        });
+        assert_eq!(next.run().expect("no error"), Written::Skipped, "restored retired it");
+    }
+
+    #[test]
+    fn a_write_of_the_next_journal_waits_for_a_running_write() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut recovery = ready(dir.path(), 1);
+        let running = recovery.gate.clone();
+        let (next, removal) = while_a_write_runs(&running, || {
+            let removal = recovery.discard().expect("a named journal");
+            let next = recovery.gate.clone();
+            let blocked = matches!(next.order.try_lock(), Err(TryLockError::WouldBlock));
+            (blocked, matches!(removal.gate.order.try_lock(), Err(TryLockError::WouldBlock)))
+        });
+        assert!(next, "a later write runs after the running one");
+        assert!(removal, "the removal runs after the running write");
     }
 
     #[test]

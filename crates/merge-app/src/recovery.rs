@@ -11,7 +11,7 @@ use merge_session::recovery::{Recovery, WriteMode, Written};
 pub(crate) struct JournalTasks {
     /// The write waiting for a pause. Replacing it cancels it.
     pub(crate) waiting: Option<Task<()>>,
-    /// The write running on a background thread. One runs at a time.
+    /// The write or removal running on a background thread. One runs at a time.
     pub(crate) running: Option<Task<()>>,
 }
 
@@ -27,6 +27,13 @@ impl JournalTasks {
     ) -> bool {
         self.running = None;
         journal.written(mode, upto, result) && self.waiting.is_none()
+    }
+
+    /// Take the result of the running removal into `journal`. Returns whether to start the
+    /// next write now, as [`JournalTasks::written`] does.
+    pub(crate) fn removed(&mut self, journal: &mut Recovery, result: io::Result<Written>) -> bool {
+        self.running = None;
+        journal.removed(result) && self.waiting.is_none()
     }
 
     /// Drop the tasks, which cancels them. A write already on its background thread runs
@@ -76,6 +83,20 @@ mod tests {
         let mut tasks = JournalTasks { waiting: None, running: Some(Task::ready(())) };
         assert!(tasks.written(&mut journal, WriteMode::Whole, 1, Ok(Written::Done)));
         assert!(tasks.running.is_none());
+    }
+
+    #[test]
+    fn a_removal_starts_the_next_write_unless_one_waits_for_a_pause() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut journal = ready(dir.path());
+        let removal = journal.discard().expect("a named journal");
+        let mut tasks = JournalTasks { waiting: None, running: Some(Task::ready(())) };
+        assert!(tasks.removed(&mut journal, removal.run()));
+        assert!(tasks.running.is_none());
+        let removal = journal.discard().expect("a named journal");
+        let mut tasks = JournalTasks { waiting: Some(Task::ready(())), running: None };
+        assert!(!tasks.removed(&mut journal, removal.run()));
+        assert!(journal.next_write().is_some(), "the waiting write carries it");
     }
 
     #[test]

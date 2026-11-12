@@ -1601,11 +1601,26 @@ impl MergeWindow {
         self.session.flush_journal();
     }
 
-    /// Delete the journal's file; later commands start a new one.
-    fn discard_journal(&mut self) {
+    /// Delete the journal's file on a background thread; then commands made since start a
+    /// new one.
+    fn discard_journal(&mut self, cx: &mut Context<Self>) {
         self.journal.cancel();
-        if let Some(recovery) = self.session.recovery_mut() {
-            recovery.discard();
+        let Some(removal) = self.session.recovery_mut().and_then(Recovery::discard) else {
+            self.write_journal(cx);
+            return;
+        };
+        self.journal.running = Some(cx.spawn(async move |this, cx| {
+            let result = cx.background_spawn(async move { removal.run() }).await;
+            ignore_closed_view(this.update(cx, |this, cx| this.removed(result, cx)));
+        }));
+    }
+
+    /// Take the result of the journal's removal.
+    fn removed(&mut self, result: io::Result<Written>, cx: &mut Context<Self>) {
+        if let Some(recovery) = self.session.recovery_mut()
+            && self.journal.removed(recovery, result)
+        {
+            self.write_journal(cx);
         }
     }
 
@@ -1661,9 +1676,7 @@ impl MergeWindow {
                 if restore {
                     this.restore(journal, window, cx);
                 } else {
-                    this.discard_journal();
-                    // Commands made while the offer was open start the new journal.
-                    this.write_journal(cx);
+                    this.discard_journal(cx);
                 }
             }));
         })
@@ -1701,10 +1714,8 @@ impl MergeWindow {
                     let _ = answer.await;
                 })
                 .detach();
-                // It would fail the same way on the next open. Commands made while the offer
-                // was open start the new journal.
-                self.discard_journal();
-                self.write_journal(cx);
+                // It would fail the same way on the next open.
+                self.discard_journal(cx);
                 return;
             }
         };
