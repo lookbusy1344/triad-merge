@@ -183,8 +183,10 @@ fn ending_before_the_inputs_are_hashed_still_keeps_the_latest_journal(cx: &mut T
     let settings = WindowSettings { output: Some(output.clone()), ..session.settings() };
     let (window, view, _) = open_with(cx, conflict(MergeOptions::default()), &settings);
     work(cx, window, &view);
-    // The save fails; the journal is written at once, without the hashes from the background.
+    // The save fails. Its job writes the journal first, hashing the inputs itself.
     press(cx, window, "secondary-s");
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt(), "the save failed");
     let journal = session.journal_for(&output).expect("written before the alert");
     assert_eq!(journal.commands().len(), 2);
 }

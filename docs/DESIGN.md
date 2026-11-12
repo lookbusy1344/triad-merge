@@ -172,7 +172,7 @@ Spec §6.2 sets the behaviour. A window ends through the `Finish` global: `merge
 
 The journal (`merge_session::recovery`) holds the format version, SHA-256 of each input's decoded text, the `MergeOptions`, SHA-256 of the starting alignment and the command log, at `<cache>/journal/<key>.json`. Restore aligns again and refuses a journal whose alignment hash differs, since commands name regions and byte offsets. `JOURNAL_DEBOUNCE` (500 ms) restarts with each command; tests drive it with the executor's fake clock. `JournalTasks` holds the waiting write and the running write or removal, and cancels them before a flush, a discard or a restore (§A13.4).
 
-`merge_session::ending` decides Save & Exit, Close and the answers to their alerts without GPUI: each step gives a `Next`, and `Journal` says whether the journal is removed, written or left. `Session::apply` refuses every command while a save runs, and the result is read-only until it ends.
+`merge_session::ending` decides Save & Exit, Close and the answers to their alerts without GPUI: each step gives a `Next`, and `Journal` says whether the journal is removed, written or left. `Session::apply` and `Session::restore` refuse while a save runs, and the result is read-only until it ends. `Session::start_save` moves the `Recovery` into the `SaveJob`, which writes the journal and then the output on one background thread; `Session::saved` takes it back. The UI thread neither syncs nor hashes the inputs for a save: with the inputs still hashing, the job hashes them, 100 ms per input at 1M lines.
 
 #### A6.5 Two-way diff window
 
@@ -283,7 +283,7 @@ A journal write costs one or two syncs, and on macOS `sync_all` and `sync_data` 
 
 `Gate` orders the journal's file operations. Every generation of a journal shares one lock, which a write or a removal holds while it runs; each generation has its own open flag. `Recovery::retire` clears the flag without waiting and starts the next generation. A running operation ends before any of the next generation starts, and one of the old generation that starts later skips. A write that has renamed its file cannot be undone, so order comes from the lock, not the flag.
 
-`Recovery::discard` returns a `Removal`, which the window runs on the background executor in the slot of the running write. No write starts until `Recovery::removed` takes its result; then commands made since start a new file. Restore, Start Over and a failed restore take this path. At the end of a session, `Session::flush_journal` and `Session::end_journal` write or remove on the UI thread and wait for a running operation: the window is closing.
+`Recovery::discard` returns a `Removal`, which the window runs on the background executor in the slot of the running write. No write starts until `Recovery::removed` takes its result; then commands made since start a new file. Restore, Start Over and a failed restore take this path. Save & Exit writes the journal in its save job (§A6.4). As the window finishes, `Session::finish_journal` writes or removes on the UI thread and waits for a running operation: the window is closing.
 
 Tests hold the lock on a second thread behind a barrier, with no sleeps. A retire that waited would deadlock, and nextest ends it at 30 s.
 

@@ -1595,12 +1595,6 @@ impl MergeWindow {
         }
     }
 
-    /// Write the journal now, on this thread: the session is ending.
-    fn flush_journal(&mut self) {
-        self.journal.cancel();
-        self.session.flush_journal();
-    }
-
     /// Delete the journal's file on a background thread; then commands made since start a
     /// new one.
     fn discard_journal(&mut self, cx: &mut Context<Self>) {
@@ -1719,11 +1713,17 @@ impl MergeWindow {
                 return;
             }
         };
-        self.journal.cancel();
-        if let Some(recovery) = self.session.recovery_mut() {
-            recovery.restored(journal);
+        if let Err(refused) = self.session.accepts() {
+            // The save ends the session with the merge as it stood, or fails and goes on.
+            tracing::info!(%refused, "the restore came during a save and is dropped");
+            return;
         }
-        self.replace(doc, rows, window, cx);
+        self.journal.cancel();
+        if let Err(refused) = self.session.restore(doc, journal) {
+            tracing::warn!(%refused, "the session refused the restore");
+            return;
+        }
+        self.show_restored(rows, window, cx);
         self.open_on_first_target(window, cx);
     }
 
@@ -1739,15 +1739,8 @@ impl MergeWindow {
         self.settings_errors.as_ref()
     }
 
-    /// Show `doc` in place of the session's document.
-    fn replace(
-        &mut self,
-        doc: MergeDocument,
-        rows: RowMap,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.session.replace(doc);
+    /// Show the session's restored document, laid out in `rows`.
+    fn show_restored(&mut self, rows: RowMap, window: &mut Window, cx: &mut Context<Self>) {
         self.rows = rows;
         self.scroll.row_wrap_mut().rows_changed(self.rows.row_count());
         self.highlights = Highlights::new(self.panes);
@@ -2033,7 +2026,8 @@ impl MergeWindow {
             Next::Record(code) => self.record_again(code, window, cx),
             Next::SaveCopyAs => self.save_copy_as(&SaveCopyAs, window, cx),
             Next::Failed { undone, detail } => {
-                self.flush_journal();
+                // The save wrote the journal first; a failed write tries again.
+                self.write_journal(cx);
                 Self::save_failed(undone, detail, window, cx);
             }
             Next::Finish { code, journal } => {
@@ -2149,7 +2143,7 @@ impl MergeWindow {
 
     /// Write the output and record the save off the UI thread, then finish.
     fn write_and_finish(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // The session writes the journal first; its tasks stop.
+        // The save writes the journal first; its tasks stop.
         self.journal.cancel();
         match self.session.start_save() {
             Ok(job) => self.save_in_background(job, window, cx),
@@ -2175,7 +2169,7 @@ impl MergeWindow {
             ignore_closed_view(this.update_in(cx, |this, window, cx| {
                 this.save_task = None;
                 this.set_saving(false, cx);
-                let next = this.session.saved(&saved);
+                let next = this.session.saved(saved);
                 this.step(next, window, cx);
             }));
         }));
