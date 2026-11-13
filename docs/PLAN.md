@@ -32,12 +32,11 @@ Build profiles (root `Cargo.toml`): `release` aborts on panic and strips symbols
 
 In order. Each is one or more commits.
 
-1. **Beta reports.** None so far from the owner's own use. Each bug starts with a test that reproduces it; README § Report a problem says what testers send.
-2. **Close M3.** The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
-3. **Review and diff features** (part G): collapse unchanged regions in the merge window (§G2); the rest of the comparison filters (§G4), moved code in the two-way diff (§G5); then §G6–§G14.
-4. **More grammars,** one commit each: C, C++, Java and Kotlin; then JSON, YAML, TOML, CSS and Markdown; then Bash, Ruby, PHP and SQL.
-5. **M4b** (§3) once the owner has the machines and the certificate.
-6. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
+1. **Close M3.** The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
+2. **Review and diff features** (part G): collapse unchanged regions in the merge window (§G2); the rest of the comparison filters (§G4), moved code in the two-way diff (§G5); then §G6–§G14.
+3. **More grammars,** one commit each: C, C++, Java and Kotlin; then JSON, YAML, TOML, CSS and Markdown; then Bash, Ruby, PHP and SQL.
+4. **M4b** (§3) once the owner has the machines and the certificate.
+5. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
 
 ## 3. Outstanding work
 
