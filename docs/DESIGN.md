@@ -10,7 +10,7 @@ Measurements come from an M4 Pro MacBook Pro (2025), macOS 27.2, 120 Hz display,
 
 AGENTS.md holds the working rules. Two design rules sit here:
 
-- **git and jj parity** (spec §1.2). Shared types follow jj's model: n sides, n − 1 bases, an optional label per term. git fills the same types. A fact only one VCS records is an optional field, never a separate code path in `merge-view` or `merge-app`.
+- **git and jj parity** (spec §1.2). Shared types follow jj's model: n sides, n − 1 bases, an optional label per term. git fills the same types. A fact only one VCS records is an optional field, never a separate code path in `merge-view` or `merge-app`. A jj-native feature, one git cannot have, sits in `vcs-jj`'s own API outside the trait and reaches the front ends through `merge-session` (part I).
 - **Zed first.** Before designing a UI, editor or VCS-integration feature, check how Zed solves it and record what was found and the source. Spec §2.5 sets the licence rule: study the design, never copy GPL code.
 
 ### A2 Workspace layout

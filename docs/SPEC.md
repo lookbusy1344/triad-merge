@@ -1,6 +1,6 @@
 # triad — specification
 
-triad is a native three-way merge and two-way diff tool for single text files. It is built for jj, with full parity for git. It takes base, left and right, and writes a merged output file, with p4merge's merge workflow. It runs as the merge and diff tool of jj and git, and reads repositories through jj-lib and gix to resolve conflicts in place and show where each line came from. macOS 27 on Apple Silicon ships first; Windows 11 and Linux follow the macOS beta.
+triad is a native three-way merge and two-way diff tool for single text files. It is built for jj, with parity for git wherever git has the capability, and features of its own that only jj's model allows. It takes base, left and right, and writes a merged output file, with p4merge's merge workflow. It runs as the merge and diff tool of jj and git, and reads repositories through jj-lib and gix to resolve conflicts in place and show where each line came from. macOS 27 on Apple Silicon ships first; Windows 11 and Linux follow the macOS beta.
 
 ## 1. Scope
 
@@ -15,12 +15,13 @@ triad is a native three-way merge and two-way diff tool for single text files. I
 
 ### 1.2 jj first, git parity
 
-jj leads design, defaults and examples. git has equal support at every stage:
+jj leads design, defaults and examples. git has equal support for every capability the two share:
 
-- Every feature works on both, and ships for both in the same milestone.
+- Every shared feature works on both, and ships for both in the same milestone.
+- A feature built on what only jj records is jj-native and ships for jj alone: conflicts stored in commits, change IDs, the evolog, the operation log, and rewrites that rebase descendants. triad encourages them. In a git repository the command says it needs jj and exits with 3. `docs/PLAN-jj-native.md` (part I) lists them while they are open.
 - The `vcs` types follow the richer of the two models, which is jj's: a conflict has n sides and n − 1 bases, and each term may carry a label. git fills the same types: two sides, one base, and labels from `HEAD`, `MERGE_HEAD` or the rebase state.
 - Facts that only one VCS records, such as jj change IDs, jj's per-term conflict labels and git's staged-versus-`HEAD` distinction, are optional fields. The UI shows them when present and works without them.
-- One conformance suite (§8.8) gates each feature on both backends.
+- One conformance suite (§8.8) gates each shared feature on both backends. A jj-native feature has its own tests on jj and internal jj repositories.
 - Each backend crate holds its VCS's rules behind the `vcs::Repository` trait: revision syntax, which commits an input may come from (§7.3), the conflict style git's config asks for, and the marker length jj recorded for a file it wrote. Merge rules stay in `merge-core`, jj's among them: `merge_core::jj::marker_length` gives the length jj's materialiser writes, from jj-core. Outside the backends, triad branches on the VCS only for the tool protocols of §7, merge semantics, tool config and display; `resolve` takes jj's length for a jj conflict without a record (§7.4). gix and jj-lib appear outside the backends only to read and write tool config (§7.1). `vcs_jj::config` layers jj's config files, for both jj's merge settings and the snapshot options.
 
 Built after release 1:

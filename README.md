@@ -21,7 +21,7 @@ triad 0.1 is an early beta. It is tested on macOS 27 on Apple Silicon. [Releases
 ## Why triad
 
 - **jj first.** triad merges with jj's own rules in a jj repository: jj's diff, its trivial resolution, `merge.same-change` and `merge.hunk-level`, and conflicts with any number of sides. It reads jj's working-copy commit through jj-lib.
-- **Full Git parity.** In a git repository triad merges as `git merge-file` does, byte for byte, and reads conflicts from git's index through gix. Every feature works in both.
+- **Git parity.** In a git repository triad merges as `git merge-file` does, byte for byte, and reads conflicts from git's index through gix. Every feature git can support works in both.
 - **Exact semantics, checked.** Two oracle corpora pin the engine: about 1,950 triples from `git merge-file` and about 1,970 merges from jj-lib. The tests compare triad's output with each.
 - **Fast on large files.** Panes draw only the rows on screen. Scrolling holds the display's refresh rate at 1M lines.
 - **No unsafe code.** The workspace forbids it.
