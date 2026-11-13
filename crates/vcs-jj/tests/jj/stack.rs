@@ -253,3 +253,70 @@ fn a_dry_run_reports_the_effect_and_writes_nothing() {
     assert_eq!(fixture.operation_count(), operations);
     assert_eq!(fixture.held_in(&merge, "a.txt"), Held::Conflict);
 }
+
+fn changed_refusal(result: Result<vcs_jj::Rewrite, VcsError>) -> String {
+    match result {
+        Err(VcsError::Backend { source, .. }) => match source.downcast_ref::<vcs_jj::JjError>() {
+            Some(error @ vcs_jj::JjError::ConflictChanged { .. }) => error.to_string(),
+            _ => panic!("expected ConflictChanged, got {source}"),
+        },
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_conflict_changed_since_it_was_read_is_refused_and_nothing_is_written() {
+    let Stack { fixture, merge, .. } = stack(Fixture::new());
+    // Another writer edits one side of the conflict after triad read it from `merge`.
+    let edited = String::from_utf8(MARKERS.to_vec()).expect("UTF-8").replace("left\n", "LEFT\n");
+    open(&fixture)
+        .write_conflict(&id(&merge), a_txt(), edited.as_bytes(), MARKER_LENGTH, false)
+        .expect("the edit is written");
+    let operations = fixture.operation_count();
+    let refused = changed_refusal(open(&fixture).write_conflict(
+        &id(&merge),
+        a_txt(),
+        MERGED,
+        MARKER_LENGTH,
+        false,
+    ));
+    let change = refused
+        .strip_prefix("a.txt in ")
+        .and_then(|rest| rest.strip_suffix(" changed since triad read it; nothing is written"))
+        .unwrap_or_else(|| panic!("{refused}"));
+    assert!(merge.change_id.starts_with(change), "{change} names {}", merge.change_id);
+    assert_eq!(fixture.held_in(&fixture.latest(&merge), "a.txt"), Held::Conflict);
+    assert_eq!(fixture.operation_count(), operations);
+}
+
+#[test]
+fn a_conflict_resolved_since_it_was_read_is_refused() {
+    let Stack { fixture, merge, .. } = stack(Fixture::new());
+    fixture.amend(&merge, &[("a.txt", b"other\n")]);
+    fixture.check_out_to_disk();
+    let refused = changed_refusal(open(&fixture).write_conflict(
+        &id(&merge),
+        a_txt(),
+        MERGED,
+        MARKER_LENGTH,
+        false,
+    ));
+    assert!(refused.starts_with("a.txt in "), "{refused}");
+    assert_eq!(fixture.held_in(&fixture.latest(&merge), "a.txt"), Held::File(b"other\n".to_vec()));
+}
+
+#[test]
+fn a_commit_rewritten_elsewhere_with_the_conflict_unchanged_takes_the_save() {
+    let Stack { fixture, merge, .. } = stack(Fixture::new());
+    fixture.edit(&merge);
+    fixture.check_out_to_disk();
+    // The snapshot before the write rewrites `merge` with this file; a.txt's conflict stays.
+    fixture.write("c.txt", b"c\n");
+    let rewrite = open(&fixture)
+        .write_conflict(&id(&merge), a_txt(), MERGED, MARKER_LENGTH, false)
+        .expect("the resolution is written");
+    assert!(rewrite.written && rewrite.resolved, "{rewrite:?}");
+    let latest = fixture.latest(&merge);
+    assert_eq!(fixture.held_in(&latest, "a.txt"), Held::File(MERGED.to_vec()));
+    assert_eq!(fixture.held_in(&latest, "c.txt"), Held::File(b"c\n".to_vec()));
+}

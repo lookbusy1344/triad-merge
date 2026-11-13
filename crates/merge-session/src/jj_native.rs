@@ -64,7 +64,8 @@ pub fn diverge(
 }
 
 /// The versions of `path`, relative to `cwd`, in the working-copy commit across the
-/// operation log of the jj repository holding `cwd`, newest first (`history`).
+/// operation log of the jj repository holding `cwd`, newest first, at most `limit` of them
+/// (`history`).
 ///
 /// # Errors
 ///
@@ -73,6 +74,7 @@ pub fn diverge(
 pub fn history(
     cwd: &Path,
     path: &Path,
+    limit: Option<usize>,
     jj_config: Option<ConfigEnv>,
 ) -> Result<(Utf8PathBuf, Vec<FileVersion>), ResolveError> {
     let mut repo = open(cwd, jj_config, "history")?;
@@ -81,7 +83,7 @@ pub fn history(
         .strip_prefix(repo.root())
         .map_err(|_| VcsError::OutsideRepository(file.clone()))?
         .to_owned();
-    let versions = repo.history(&relative)?;
+    let versions = repo.history(&relative, limit)?;
     Ok((relative, versions))
 }
 
@@ -137,7 +139,7 @@ pub fn evolog(
 
 /// The hunks of the working-copy commit of the jj repository holding `cwd`, under `paths`
 /// relative to `cwd`, each with the commit it goes into among `into`; with `apply`, moved
-/// there (`absorb`).
+/// there, at the operation `listed_at` names when given (`absorb`).
 ///
 /// # Errors
 ///
@@ -149,6 +151,7 @@ pub fn absorb(
     into: Option<&str>,
     choices: &[HunkChoice],
     apply: bool,
+    listed_at: Option<&str>,
     jj_config: Option<ConfigEnv>,
 ) -> Result<Absorbed, ResolveError> {
     let mut repo = open(cwd, jj_config, "absorb")?;
@@ -161,5 +164,5 @@ pub fn absorb(
                 .map_err(|_| VcsError::OutsideRepository(file.clone()))
         })
         .collect::<Result<Vec<_>, VcsError>>()?;
-    Ok(repo.absorb(&relative, into, choices, apply)?)
+    Ok(repo.absorb(&relative, into, choices, apply, listed_at)?)
 }

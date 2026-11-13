@@ -273,6 +273,11 @@ mod jj {
         let value: serde_json::Value = serde_json::from_str(&json).expect("JSON");
         assert_eq!(value["versions"][0]["operation"], ops[1].as_str());
         assert_eq!(value["versions"][0]["state"], "file");
+        let args = ["history", "a.txt", "--limit", "1"];
+        let (code, out, _) = outcome(&triad(fixture.root(), &args));
+        assert_eq!(code, Some(RESOLVED));
+        assert_eq!(out.lines().count(), 1, "{out}");
+        assert!(out.starts_with(&short(&ops[1])), "{out}");
     }
 
     /// A change that edits line 4, rebased by an amend of its base at line 1, then
@@ -319,17 +324,19 @@ mod jj {
         std::fs::write(fixture.root().join("b.txt"), b"x\nY\n").expect("written");
         let (code, out, err) = outcome(&triad(fixture.root(), &["absorb"]));
         assert_eq!((code, err.as_str()), (Some(RESOLVED), ""), "{out}");
+        let operation = &fixture.operation_ids()[0][..vcs_jj::SHORT_OPERATION];
         assert_eq!(
             out,
             format!(
-                "1 a.txt left 1..2 right 1..2 -> {} {}\n2 b.txt left 1..2 right 1..2 -> {} {}\n",
+                "at operation {operation}\n\
+                 1 a.txt left 1..2 right 1..2 -> {} {}\n2 b.txt left 1..2 right 1..2 -> {} {}\n",
                 short(&one.change_id),
                 short(&one.commit),
                 short(&two.change_id),
                 short(&two.commit),
             )
         );
-        let args = ["absorb", "--keep", "2", "--apply"];
+        let args = ["absorb", "--keep", "2", "--apply", "--listed-at", operation];
         let (code, out, _) = outcome(&triad(fixture.root(), &args));
         assert_eq!(code, Some(RESOLVED));
         assert_eq!(out.lines().nth(2), Some("absorbed 1 hunks into 1 commits"), "{out}");
@@ -341,6 +348,20 @@ mod jj {
         assert_eq!(
             fixture.held_in(&fixture.working_copy_commit(), "b.txt"),
             Held::File(b"x\nY\n".to_vec())
+        );
+        // The apply moved the repository on: the listing's numbers no longer hold.
+        let (code, out, err) = outcome(&triad(fixture.root(), &args));
+        assert_eq!(
+            (code, out.as_str(), err.as_str()),
+            (
+                Some(ERROR),
+                "",
+                format!(
+                    "triad-merge: checking the listing's operation: the repository changed since \
+                     operation {operation}; list the hunks again\n"
+                )
+                .as_str()
+            )
         );
     }
 

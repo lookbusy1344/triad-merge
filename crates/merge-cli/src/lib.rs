@@ -295,18 +295,20 @@ fn jj_native_batch(
             let (text, code) = jj_native::stack_report(&commits, json)?;
             Ok(report(stdout, &text, code))
         }
-        JjBatch::History { path, json } => {
-            let (path, versions) = merge_session::jj_native::history(cwd, &path, jj_config())?;
+        JjBatch::History { path, limit, json } => {
+            let (path, versions) =
+                merge_session::jj_native::history(cwd, &path, limit, jj_config())?;
             let text = jj_native::history_report(&path, &versions, json)?;
             Ok(report(stdout, &text, ExitCode::Resolved))
         }
-        JjBatch::Absorb { paths, into, choices, apply, json } => {
+        JjBatch::Absorb { paths, into, choices, apply, listed_at, json } => {
             let absorbed = merge_session::jj_native::absorb(
                 cwd,
                 &paths,
                 into.as_deref(),
                 &choices,
                 apply,
+                listed_at.as_deref(),
                 jj_config(),
             )?;
             let text = jj_native::absorb_report(&absorbed, apply, json)?;

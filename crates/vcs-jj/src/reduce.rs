@@ -11,7 +11,7 @@ use jj_lib::repo_path::RepoPathBuf;
 use pollster::FutureExt as _;
 use vcs::{IdKind, VcsError};
 
-use crate::native::{Mutated, Rewrite, pad, visible};
+use crate::native::{Mutated, Rewrite, pad, simplified, visible};
 use crate::{JjError, JjRepository, backend};
 
 /// Terms per side in jj's order: a side, then the base after it.
@@ -36,7 +36,8 @@ pub fn check_pair(path: &Utf8Path, pair: usize, sides: usize) -> Result<(), JjEr
 }
 
 impl JjRepository {
-    /// Replace sides `pair` and `pair + 1`, counted from 1 in jj's order, and base `pair`
+    /// Replace sides `pair` and `pair + 1`, counted from 1 in jj's order after jj simplifies the
+    /// conflict, and base `pair`
     /// between them with `content`, in the conflict at `path` in the change of commit `id`:
     /// the conflict keeps one side fewer, and resolves when one is left. The descendants
     /// rebase; a moved working copy is checked out. On a dry run nothing is written.
@@ -46,7 +47,8 @@ impl JjRepository {
     /// [`VcsError::NotConflicted`] for a resolved path; [`VcsError::Backend`] holding
     /// [`JjError::PairOfTwoSides`] for a conflict of two sides,
     /// [`JjError::PairOutOfRange`] for pair 0 or one past the last side, and
-    /// [`JjError::NotAFileConflict`] for a conflict that holds anything but files; and the
+    /// [`JjError::NotAFileConflict`] for a conflict that holds anything but files,
+    /// [`JjError::ConflictChanged`] when the conflict changed since commit `id`; and the
     /// errors of [`JjRepository::write_conflict`].
     pub fn reduce_pair(
         &mut self,
@@ -63,14 +65,9 @@ impl JjRepository {
         let change_id = named.change_id().clone();
         self.rewrite(dry_run, |this, repo| {
             let commit = visible(repo, &change_id)?;
-            let value = commit
-                .tree()
-                .path_value(&repo_path)
-                .block_on()
-                .map_err(backend("finding a path in a tree"))?;
-            if value.is_resolved() {
-                return Err(VcsError::NotConflicted { path: path.to_owned(), rev: id.to_string() });
-            }
+            let value = this.held_conflict(&named, &commit, &repo_path, path)?;
+            // Sides count as jj shows them: the pair indexes the simplified conflict.
+            let (value, _) = simplified(&value, commit.tree().labels());
             let refused = |error| backend("reducing a conflict")(error);
             check_pair(path, pair, value.num_sides()).map_err(refused)?;
             let executable = value

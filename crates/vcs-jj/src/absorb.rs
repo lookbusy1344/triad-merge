@@ -52,6 +52,9 @@ pub enum HunkChoice {
 /// What `absorb` found, and on `--apply` did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Absorbed {
+    /// The full ID of the operation the hunks were read at, after the snapshot. `--apply`
+    /// with choices names it, so the hunk numbers mean what the listing showed.
+    pub operation: String,
     pub hunks: Vec<AbsorbHunk>,
     /// Paths it cannot split into hunks, with the reason: a conflict, a symlink, a binary.
     pub skipped: Skipped,
@@ -91,12 +94,15 @@ impl JjRepository {
     /// the hunk replaces, or for an insertion the commit holding the lines on both sides.
     /// `choices` override. With `apply`, each commit takes its hunks, the descendants
     /// rebase, and the working copy keeps the rest, in one operation; else nothing is
-    /// written.
+    /// written. `listed_at` names the operation a listing read: the hunks are read only
+    /// when the repository is still at it after the snapshot.
     ///
     /// # Errors
     ///
     /// [`VcsError::Backend`] holding [`JjError::NoHunk`] for a choice of a hunk that does
-    /// not exist and [`JjError::NotADestination`] for a move to a commit outside `into`;
+    /// not exist, [`JjError::NotADestination`] for a move to a commit outside `into`,
+    /// [`JjError::UnknownOperation`] for a `listed_at` jj cannot resolve and
+    /// [`JjError::RepositoryMoved`] when the repository has moved past it;
     /// [`VcsError::Immutable`]; and the errors of a write ([`JjRepository::write_conflict`]).
     pub fn absorb(
         &mut self,
@@ -104,6 +110,7 @@ impl JjRepository {
         into: Option<&str>,
         choices: &[HunkChoice],
         apply: bool,
+        listed_at: Option<&str>,
     ) -> Result<Absorbed, VcsError> {
         let repo_paths = paths
             .iter()
@@ -115,6 +122,10 @@ impl JjRepository {
         let into = into.unwrap_or(DEFAULT_INTO);
         let mut found = None;
         let rewrite = self.rewrite(!apply, |this, repo| {
+            if let Some(op) = listed_at {
+                this.check_at_operation(op)?;
+            }
+            let operation = this.repo.op_id().hex();
             let source = this.working_copy_in(repo)?;
             let parents: Vec<String> = source.parent_ids().iter().map(CommitId::hex).collect();
             let expr = format!("({into}) & ::({})", parents.join(" | "));
@@ -179,7 +190,7 @@ impl JjRepository {
                     })
                 })
                 .collect::<Result<Vec<_>, VcsError>>()?;
-            found = Some((hunks, skipped));
+            found = Some((operation, hunks, skipped));
             Ok(Mutated {
                 description: "absorb in triad".to_owned(),
                 target: source,
@@ -187,8 +198,8 @@ impl JjRepository {
                 roots,
             })
         })?;
-        let (hunks, skipped) = found.unwrap_or_default();
-        Ok(Absorbed { hunks, skipped, rewrite })
+        let (operation, hunks, skipped) = found.unwrap_or_default();
+        Ok(Absorbed { operation, hunks, skipped, rewrite })
     }
 
     /// The hunk `choice` names and the commit it now goes into; none to keep it.

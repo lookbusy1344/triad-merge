@@ -53,7 +53,7 @@ pub enum JjBatch {
     /// List the conflicted commits `revset` names, parents first.
     Stack { revset: Option<String>, json: bool },
     /// The versions of a file across jj's operation log.
-    History { path: PathBuf, json: bool },
+    History { path: PathBuf, limit: Option<usize>, json: bool },
     /// `diff PATH --evolog --inspect`: the regions of a change's file against an earlier
     /// version of the change.
     DiffEvologInspect { evolog: Evolog, json: bool },
@@ -66,6 +66,8 @@ pub enum JjBatch {
         into: Option<String>,
         choices: Vec<HunkChoice>,
         apply: bool,
+        /// The operation the listing read; `apply` with `choices` needs it.
+        listed_at: Option<String>,
         json: bool,
     },
 }
@@ -93,6 +95,10 @@ pub enum UsageError {
     InspectNative,
     #[error("--commands applies to one file: give resolve a PATH")]
     CommandsWithoutPath,
+    #[error(
+        "--move and --keep with --apply need --listed-at OP, the operation the listing printed"
+    )]
+    ChoicesWithoutListing,
 }
 
 /// Parse the arguments, program name first, over the default settings.
@@ -235,6 +241,9 @@ enum Command {
     History {
         #[arg(value_name = "PATH")]
         path: PathBuf,
+        /// List at most N versions, the newest.
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
         #[arg(long)]
         json: bool,
     },
@@ -257,6 +266,10 @@ enum Command {
         /// Move the hunks; without it, only list them.
         #[arg(long)]
         apply: bool,
+        /// The operation the listing printed: --apply refuses when the repository has moved
+        /// past it, so hunk numbers mean what the listing showed.
+        #[arg(long, value_name = "OP", requires = "apply")]
+        listed_at: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -479,7 +492,10 @@ impl Cli {
             Some(Command::Stack { revset, json }) => {
                 Ok(Invocation::Batch(Batch::Jj(JjBatch::Stack { revset, json })))
             }
-            Some(Command::Absorb { paths, into, moves, keeps, apply, json }) => {
+            Some(Command::Absorb { paths, into, moves, keeps, apply, listed_at, json }) => {
+                if apply && listed_at.is_none() && !(moves.is_empty() && keeps.is_empty()) {
+                    return Err(UsageError::ChoicesWithoutListing);
+                }
                 let choices = moves
                     .into_iter()
                     .map(|(hunk, rev)| HunkChoice::Move { hunk, rev })
@@ -490,11 +506,12 @@ impl Cli {
                     into,
                     choices,
                     apply,
+                    listed_at,
                     json,
                 })))
             }
-            Some(Command::History { path, json }) => {
-                Ok(Invocation::Batch(Batch::Jj(JjBatch::History { path, json })))
+            Some(Command::History { path, limit, json }) => {
+                Ok(Invocation::Batch(Batch::Jj(JjBatch::History { path, limit, json })))
             }
             Some(Command::Diverge { change, dry_run, json }) => {
                 Ok(Invocation::Batch(Batch::Jj(JjBatch::Diverge { change, dry_run, json })))
@@ -1148,8 +1165,21 @@ mod tests {
     fn history_takes_a_path_and_diff_takes_an_operation_in_place_of_a_revision() {
         assert_eq!(
             ok(&["history", "a.txt", "--json"]),
-            Invocation::Batch(Batch::Jj(JjBatch::History { path: "a.txt".into(), json: true }))
+            Invocation::Batch(Batch::Jj(JjBatch::History {
+                path: "a.txt".into(),
+                limit: None,
+                json: true
+            }))
         );
+        assert_eq!(
+            ok(&["history", "a.txt", "--limit", "5"]),
+            Invocation::Batch(Batch::Jj(JjBatch::History {
+                path: "a.txt".into(),
+                limit: Some(5),
+                json: false
+            }))
+        );
+        assert_eq!(clap_kind(&["history", "a.txt", "--limit", "x"]), ErrorKind::ValueValidation);
         assert_eq!(clap_kind(&["history"]), ErrorKind::MissingRequiredArgument);
         let Invocation::Window(Window::DiffNative { rev, op, .. }) =
             ok(&["diff", "a.txt", "--op", "abc"])
@@ -1219,6 +1249,8 @@ mod tests {
                 "--move",
                 "1=kx",
                 "--apply",
+                "--listed-at",
+                "abc",
                 "--json"
             ]),
             Invocation::Batch(Batch::Jj(JjBatch::Absorb {
@@ -1229,9 +1261,27 @@ mod tests {
                     HunkChoice::Keep(3)
                 ],
                 apply: true,
+                listed_at: Some("abc".to_owned()),
                 json: true,
             }))
         );
+        assert_eq!(usage(&["absorb", "--keep", "1", "--apply"]), UsageError::ChoicesWithoutListing);
+        assert_eq!(
+            usage(&["absorb", "--move", "1=kx", "--apply"]),
+            UsageError::ChoicesWithoutListing
+        );
+        assert_eq!(
+            clap_kind(&["absorb", "--listed-at", "abc"]),
+            ErrorKind::MissingRequiredArgument
+        );
+        assert!(matches!(
+            ok(&["absorb", "--keep", "1"]),
+            Invocation::Batch(Batch::Jj(JjBatch::Absorb { apply: false, listed_at: None, .. }))
+        ));
+        assert!(matches!(
+            ok(&["absorb", "--apply"]),
+            Invocation::Batch(Batch::Jj(JjBatch::Absorb { apply: true, listed_at: None, .. }))
+        ));
         assert_eq!(
             ok(&["absorb"]),
             Invocation::Batch(Batch::Jj(JjBatch::Absorb {
@@ -1239,6 +1289,7 @@ mod tests {
                 into: None,
                 choices: vec![],
                 apply: false,
+                listed_at: None,
                 json: false
             }))
         );

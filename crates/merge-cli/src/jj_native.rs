@@ -229,9 +229,9 @@ pub fn history_report(
     Ok(text)
 }
 
-/// `absorb`'s report: one line per hunk, its number, path, line ranges and the commit it
-/// goes into or `stays`; then each skipped path; with `apply`, a closing count and the
-/// rebased descendants. Or as JSON.
+/// `absorb`'s report: a listing first names the operation it read; then one line per hunk,
+/// its number, path, line ranges and the commit it goes into or `stays`; then each skipped
+/// path; with `apply`, a closing count and the rebased descendants. Or as JSON.
 ///
 /// # Errors
 ///
@@ -261,11 +261,19 @@ pub fn absorb_report(
             .iter()
             .map(|(path, reason)| json!({"path": path.as_str(), "reason": reason}))
             .collect();
-        let value =
-            json!({"hunks": hunks, "skipped": skipped, "written": absorbed.rewrite.written});
+        let value = json!({
+            "operation": absorbed.operation,
+            "hunks": hunks,
+            "skipped": skipped,
+            "written": absorbed.rewrite.written,
+        });
         return Ok(format!("{}\n", serde_json::to_string_pretty(&value)?));
     }
     let mut text = String::new();
+    if !apply {
+        let short: String = absorbed.operation.chars().take(SHORT_OPERATION).collect();
+        line(&mut text, format_args!("at operation {short}"));
+    }
     for h in &absorbed.hunks {
         let goes = h.target.as_ref().map_or_else(
             || "stays".to_owned(),
@@ -463,6 +471,7 @@ mod tests {
             target,
         };
         Absorbed {
+            operation: "0123456789abcdef0123".to_owned(),
             hunks: vec![
                 hunk(1, Some(change("kkkk", None))),
                 hunk(2, None),
@@ -477,7 +486,8 @@ mod tests {
     fn absorb_lists_each_hunk_with_its_commit_then_the_skipped_paths() {
         assert_eq!(
             absorb_report(&absorbed(), false, false).expect("a report"),
-            "1 a.txt left 2..3 right 2..4 -> kkkk c-kkkk\n\
+            "at operation 0123456789ab\n\
+             1 a.txt left 2..3 right 2..4 -> kkkk c-kkkk\n\
              2 a.txt left 2..3 right 2..4 stays\n\
              3 a.txt left 2..3 right 2..4 -> kkkk c-kkkk\n\
              skipped b.bin: conflicted in the parents\n"
@@ -495,6 +505,7 @@ mod tests {
         assert_eq!(value["hunks"][1]["target"], serde_json::Value::Null);
         assert_eq!(value["skipped"][0]["path"], "b.bin");
         assert_eq!(value["written"], true);
+        assert_eq!(value["operation"], "0123456789abcdef0123");
     }
 
     #[test]

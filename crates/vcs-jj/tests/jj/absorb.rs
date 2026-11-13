@@ -25,7 +25,7 @@ fn stack(a: &[u8], b: &[u8]) -> (Fixture, Committed, Committed) {
 }
 
 fn listed(fixture: &Fixture, choices: &[HunkChoice], apply: bool) -> Absorbed {
-    open(fixture).absorb(&[], None, choices, apply).expect("the hunks are listed")
+    open(fixture).absorb(&[], None, choices, apply, None).expect("the hunks are listed")
 }
 
 /// Each hunk's number, path, line ranges and target's full commit ID prefix.
@@ -151,7 +151,7 @@ fn an_emptied_working_copy_is_replaced_by_a_new_one_on_its_parent() {
 fn paths_limit_the_hunks() {
     let (fixture, _, two) = stack(b"1\n2\nTHREE\n4\n5\n", b"x\nY\nz\n");
     let absorbed = open(&fixture)
-        .absorb(&[Utf8PathBuf::from("b.txt")], None, &[], false)
+        .absorb(&[Utf8PathBuf::from("b.txt")], None, &[], false, None)
         .expect("the hunks are listed");
     assert_eq!(summary(&absorbed), [(1, "b.txt", [1, 2, 1, 2], Some(short(&two)))]);
 }
@@ -159,8 +159,9 @@ fn paths_limit_the_hunks() {
 #[test]
 fn into_limits_the_commits() {
     let (fixture, _, two) = stack(b"1\n2\nTHREE\n4\n5\n", b"x\nY\nz\n");
-    let absorbed =
-        open(&fixture).absorb(&[], Some(&two.commit), &[], false).expect("the hunks are listed");
+    let absorbed = open(&fixture)
+        .absorb(&[], Some(&two.commit), &[], false, None)
+        .expect("the hunks are listed");
     assert_eq!(
         summary(&absorbed),
         [(1, "a.txt", [2, 3, 2, 3], None), (2, "b.txt", [1, 2, 1, 2], Some(short(&two)))]
@@ -188,7 +189,7 @@ fn a_choice_of_a_missing_hunk_or_a_foreign_commit_is_refused_before_any_write() 
             "@ is not a mutable ancestor of the working copy in --into",
         ),
     ] {
-        assert_eq!(refusal(open(&fixture).absorb(&[], None, &[choice], true)), message);
+        assert_eq!(refusal(open(&fixture).absorb(&[], None, &[choice], true, None)), message);
     }
     // The snapshot of the edits is the one operation the refusals leave.
     assert_eq!(fixture.operation_count(), operations + 1);
@@ -196,4 +197,60 @@ fn a_choice_of_a_missing_hunk_or_a_foreign_commit_is_refused_before_any_write() 
         fixture.held_in(&fixture.working_copy_commit(), "b.txt"),
         Held::File(b"x\nY\nz\n".to_vec())
     );
+}
+
+#[test]
+fn a_listing_names_the_operation_it_read_and_apply_at_it_takes_its_choices() {
+    let (fixture, one, two) = stack(b"1\n2\nTHREE\n4\n5\n", b"x\nY\nz\n");
+    let listing = listed(&fixture, &[], false);
+    assert_eq!(listing.operation, fixture.operation_ids()[0], "the snapshot's operation");
+    let applied = open(&fixture)
+        .absorb(&[], None, &[HunkChoice::Keep(2)], true, Some(&listing.operation[..12]))
+        .expect("the hunks move");
+    assert!(applied.rewrite.written);
+    assert_eq!(
+        fixture.held_in(&fixture.latest(&one), "a.txt"),
+        Held::File(b"1\n2\nTHREE\n4\n5\n".to_vec())
+    );
+    assert_eq!(fixture.held_in(&fixture.latest(&two), "b.txt"), Held::File(b"x\ny\nz\n".to_vec()));
+    assert_eq!(
+        fixture.held_in(&fixture.working_copy_commit(), "b.txt"),
+        Held::File(b"x\nY\nz\n".to_vec())
+    );
+}
+
+#[test]
+fn apply_after_the_repository_moved_past_the_listing_is_refused_before_any_write() {
+    let (fixture, one, _) = stack(b"1\n2\nTHREE\n4\n5\n", b"x\nY\nz\n");
+    let listing = listed(&fixture, &[], false);
+    // A new first hunk: the listing's hunk 2 is hunk 3 now.
+    std::fs::write(fixture.root().join("a.txt"), b"ONE\n2\nTHREE\n4\n5\n").expect("written");
+    let operations = fixture.operation_count();
+    let refused = refusal(open(&fixture).absorb(
+        &[],
+        None,
+        &[HunkChoice::Keep(2)],
+        true,
+        Some(&listing.operation),
+    ));
+    assert_eq!(
+        refused,
+        format!(
+            "the repository changed since operation {}; list the hunks again",
+            &listing.operation[..vcs_jj::SHORT_OPERATION]
+        )
+    );
+    // The snapshot of the edit is the one operation the refusal leaves.
+    assert_eq!(fixture.operation_count(), operations + 1);
+    assert_eq!(
+        fixture.held_in(&fixture.latest(&one), "a.txt"),
+        Held::File(b"1\n2\n3\n4\n5\n".to_vec())
+    );
+}
+
+#[test]
+fn apply_at_an_unknown_operation_is_refused() {
+    let (fixture, ..) = stack(b"1\n2\nTHREE\n4\n5\n", b"x\nY\nz\n");
+    let refused = refusal(open(&fixture).absorb(&[], None, &[], true, Some("not-an-op")));
+    assert!(refused.starts_with("no operation not-an-op: "), "{refused}");
 }

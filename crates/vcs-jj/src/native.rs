@@ -6,17 +6,18 @@ use camino::{Utf8Path, Utf8PathBuf};
 use futures::{StreamExt as _, TryStreamExt as _};
 use jj_lib::backend::{ChangeId, CopyId, MergedTreeValue, MergedTreeValueExt as _, TreeValue};
 use jj_lib::commit::Commit;
+use jj_lib::conflict_labels::ConflictLabels;
 use jj_lib::conflicts::{resolve_file_executable, update_from_content};
 use jj_lib::merge::Merge;
 use jj_lib::merged_tree_builder::MergedTreeBuilder;
 use jj_lib::object_id::ObjectId as _;
 use jj_lib::repo::{MutableRepo, Repo as _};
-use jj_lib::repo_path::RepoPathBuf;
+use jj_lib::repo_path::{RepoPath, RepoPathBuf};
 use jj_lib::revset::RevsetAliasesMap;
 use pollster::FutureExt as _;
 use vcs::{ChangeInfo, VcsError};
 
-use crate::{JjRepository, backend, colocated_git, config, export_refs};
+use crate::{JjError, JjRepository, backend, colocated_git, config, export_refs};
 
 /// jj's default revset aliases for what may be rewritten, as jj's own config sets them. The
 /// user's `revset-aliases` replace any of them.
@@ -192,7 +193,9 @@ impl JjRepository {
     /// # Errors
     ///
     /// [`VcsError::Immutable`] for a commit jj would not rewrite and
-    /// [`VcsError::NotConflicted`] for a path resolved there, both before any write;
+    /// [`VcsError::NotConflicted`] for a path resolved there, and [`VcsError::Backend`]
+    /// holding [`JjError::ConflictChanged`] when the change's visible commit holds another
+    /// conflict at the path than commit `id`, all before any write;
     /// [`VcsError::StaleWorkspace`] as for [`vcs::Repository::snapshot`]; and
     /// [`VcsError::Backend`] when the repository cannot be read or written.
     pub fn write_conflict(
@@ -210,14 +213,7 @@ impl JjRepository {
         let change_id = named.change_id().clone();
         self.rewrite(dry_run, |this, repo| {
             let commit = visible(repo, &change_id)?;
-            let value = commit
-                .tree()
-                .path_value(&repo_path)
-                .block_on()
-                .map_err(backend("finding a path in a tree"))?;
-            if value.is_resolved() {
-                return Err(VcsError::NotConflicted { path: path.to_owned(), rev: id.to_string() });
-            }
+            let value = this.held_conflict(&named, &commit, &repo_path, path)?;
             let new_value = parse_back(repo, &repo_path, &value, content, marker_length)?;
             let sides = commit.tree().tree_ids().num_sides();
             let mut builder = MergedTreeBuilder::new(commit.tree());
@@ -249,6 +245,45 @@ impl JjRepository {
                 description,
             })
         })
+    }
+
+    /// The conflict at `path` in `current`, the visible commit of `read`'s change, when it
+    /// is the conflict triad read from `read`, as jj simplifies both.
+    ///
+    /// # Errors
+    ///
+    /// [`VcsError::NotConflicted`] when `read` holds no conflict at `path`, and
+    /// [`VcsError::Backend`] holding [`JjError::ConflictChanged`] when `current` holds
+    /// another value there.
+    pub(crate) fn held_conflict(
+        &self,
+        read: &Commit,
+        current: &Commit,
+        repo_path: &RepoPath,
+        path: &Utf8Path,
+    ) -> Result<MergedTreeValue, VcsError> {
+        let value_in = |commit: &Commit| {
+            commit
+                .tree()
+                .path_value(repo_path)
+                .block_on()
+                .map_err(backend("finding a path in a tree"))
+        };
+        let was = value_in(read)?;
+        if was.is_resolved() {
+            return Err(VcsError::NotConflicted { path: path.to_owned(), rev: read.id().hex() });
+        }
+        let now = value_in(current)?;
+        let same =
+            |value: &MergedTreeValue, commit: &Commit| simplified(value, commit.tree().labels()).0;
+        if same(&was, read) != same(&now, current) {
+            let change = self.change_info(current)?;
+            return Err(backend("writing into the commit")(JjError::ConflictChanged {
+                path: path.to_owned(),
+                change: change.id(vcs::IdKind::Change).to_owned(),
+            }));
+        }
+        Ok(now)
     }
 
     /// Refuse a write to any of `commits` that jj's `immutable()` holds, with the user's
@@ -408,8 +443,9 @@ pub(crate) fn visible(
 }
 
 /// `content` parsed back into `value`'s conflict, as jj does after a merge tool: markers jj
-/// reads keep their hunks conflicted, and content without them resolves the path. Each term
-/// keeps its executable bit; a resolved file takes the bit the terms agree on.
+/// reads with the conflict's sides, simplified, keep their hunks conflicted, and content
+/// without them resolves the path. Each term keeps its executable bit; a resolved file takes
+/// the bit the terms agree on.
 fn parse_back(
     repo: &MutableRepo,
     path: &jj_lib::repo_path::RepoPath,
@@ -426,29 +462,21 @@ fn parse_back(
     let new_ids = update_from_content(&file_ids, repo.store(), path, content, marker_length)
         .block_on()
         .map_err(backend("parsing the conflict back"))?;
-    Ok(match new_ids.into_resolved() {
-        Ok(None) => Merge::absent(),
-        Ok(Some(id)) => Merge::normal(TreeValue::File {
+    match new_ids.into_resolved() {
+        Ok(None) => Ok(Merge::absent()),
+        Ok(Some(id)) => Ok(Merge::normal(TreeValue::File {
             id,
             executable: resolve_file_executable(&executable).unwrap_or_default(),
             copy_id: CopyId::placeholder(),
-        }),
-        Err(ids) if ids.num_sides() == value.num_sides() => value.with_new_file_ids(&ids),
-        Err(ids) => {
-            let simplified = value.simplify();
-            if simplified.num_sides() == ids.num_sides() {
-                simplified.with_new_file_ids(&ids)
-            } else {
-                ids.map(|id| {
-                    id.clone().map(|id| TreeValue::File {
-                        id,
-                        executable: false,
-                        copy_id: CopyId::placeholder(),
-                    })
-                })
-            }
-        }
-    })
+        })),
+        // jj expands a parsed conflict back to the terms it was given.
+        Err(ids) if ids.num_sides() == value.num_sides() => Ok(value.with_new_file_ids(&ids)),
+        Err(ids) => Err(backend("parsing the conflict back")(JjError::SidesChanged {
+            path: Utf8PathBuf::from(path.as_internal_file_string()),
+            before: value.num_sides(),
+            after: ids.num_sides(),
+        })),
+    }
 }
 
 /// `value` with as many sides as a tree of `sides`: each missing side comes as a base and a
@@ -462,6 +490,32 @@ pub(crate) fn pad(value: MergedTreeValue, sides: usize) -> MergedTreeValue {
     let mut terms: Vec<Option<TreeValue>> = value.into_iter().collect();
     terms.extend(std::iter::repeat_n(filler, 2 * missing));
     Merge::from_vec(terms)
+}
+
+/// `value` as jj shows and parses it, with the labels of the terms that stay: simplified by
+/// file contents, as `jj resolve` and `update_from_content` simplify a conflict of files. A
+/// tree keeps every path at its own number of sides; a path that conflicts in fewer has
+/// pairs of terms that cancel.
+pub(crate) fn simplified(
+    value: &MergedTreeValue,
+    labels: &ConflictLabels,
+) -> (MergedTreeValue, ConflictLabels) {
+    let key = |term: &Option<TreeValue>| {
+        term.as_ref().map(|term| match term {
+            TreeValue::File { id, .. } => Ok(id.clone()),
+            other => Err(other.clone()),
+        })
+    };
+    let keys: Vec<_> = value.iter().map(key).collect();
+    let kept = Merge::from_vec((0..keys.len()).collect::<Vec<usize>>()).simplify_by(|&i| &keys[i]);
+    let terms = value.as_slice();
+    let names = labels.as_slice();
+    let labels = if names.is_empty() {
+        ConflictLabels::unlabeled()
+    } else {
+        ConflictLabels::from_vec(kept.iter().map(|&i| names[i].clone()).collect())
+    };
+    (kept.map(|&i| terms[i].clone()), labels)
 }
 
 /// The conflicted paths of `commit`'s tree, in path order.

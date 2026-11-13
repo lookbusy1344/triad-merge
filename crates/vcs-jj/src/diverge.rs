@@ -57,6 +57,7 @@ impl JjRepository {
             let [first, rest @ ..] = copies.as_slice() else {
                 return Err(not_divergent(&change_id));
             };
+            let onto = parent_tree(&*repo, first)?;
             let mut tree = first.tree();
             let mut description = first.description().to_owned();
             let mut description_kept = false;
@@ -65,8 +66,8 @@ impl JjRepository {
                 let base = common_predecessor(&this.repo, first, other)?;
                 tree = MergedTree::merge(Merge::from_vec(vec![
                     (tree, first.conflict_label()),
-                    (base.tree(), base.conflict_label()),
-                    (other.tree(), other.conflict_label()),
+                    (rebased(&*repo, &base, &onto)?, base.conflict_label()),
+                    (rebased(&*repo, other, &onto)?, other.conflict_label()),
                 ]))
                 .block_on()
                 .map_err(backend("merging the copies' trees"))?;
@@ -165,8 +166,26 @@ fn copies_after_snapshot(repo: &dyn Repo, change_id: &ChangeId) -> Result<Vec<Co
         .collect()
 }
 
-/// The nearest predecessor `one` and `two` share in the evolog: the first of `two`'s
-/// predecessors, nearest first, that is also one of `one`'s.
+/// `commit`'s parents' trees merged.
+fn parent_tree(repo: &dyn Repo, commit: &Commit) -> Result<MergedTree, VcsError> {
+    commit.parent_tree(repo.index()).block_on().map_err(backend("merging a commit's parents"))
+}
+
+/// `commit`'s tree rebased onto `onto`, as jj rebases: its parents' tree is the base.
+fn rebased(repo: &dyn Repo, commit: &Commit, onto: &MergedTree) -> Result<MergedTree, VcsError> {
+    let label = commit.conflict_label();
+    MergedTree::merge(Merge::from_vec(vec![
+        (commit.tree(), label.clone()),
+        (parent_tree(repo, commit)?, format!("parents of {label}")),
+        (onto.clone(), "parents of the merged commit".to_owned()),
+    ]))
+    .block_on()
+    .map_err(backend("rebasing a copy"))
+}
+
+/// The nearest predecessor `one` and `two` share in the evolog: the first of `two` and its
+/// predecessors, nearest first, that is `one` or one of `one`'s. A copy rewritten from the
+/// other merges over that copy.
 fn common_predecessor(repo: &ReadonlyRepo, one: &Commit, two: &Commit) -> Result<Commit, VcsError> {
     let evolog = |commit: &Commit| -> Result<Vec<Commit>, VcsError> {
         walk_predecessors(repo, std::slice::from_ref(commit.id()))
@@ -176,15 +195,11 @@ fn common_predecessor(repo: &ReadonlyRepo, one: &Commit, two: &Commit) -> Result
             .map_err(backend("walking the evolog"))
     };
     let own: HashSet<CommitId> = evolog(one)?.into_iter().map(|c| c.id().clone()).collect();
-    evolog(two)?
-        .into_iter()
-        .filter(|commit| commit.id() != one.id() && commit.id() != two.id())
-        .find(|commit| own.contains(commit.id()))
-        .ok_or_else(|| {
-            backend("merging a divergent change")(JjError::NoCommonPredecessor(
-                one.change_id().reverse_hex(),
-            ))
-        })
+    evolog(two)?.into_iter().find(|commit| own.contains(commit.id())).ok_or_else(|| {
+        backend("merging a divergent change")(JjError::NoCommonPredecessor(
+            one.change_id().reverse_hex(),
+        ))
+    })
 }
 
 /// `first` and `other` merged over `base`: the side that changed wins; when both changed it

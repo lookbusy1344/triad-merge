@@ -129,11 +129,11 @@ resolved src/lib.rs in xyz
   pqr: src/lib.rs -> none
 ```
 
-jj refuses a write to an immutable commit, and so does triad, with your `revset-aliases`.
+jj refuses a write to an immutable commit, and so does triad, with your `revset-aliases`. A save is also refused when the conflict in the commit changed after triad read it, for example by a `jj rebase` while the window was open; nothing is written, and you open it again.
 
 ### Resolve a conflict of more than two sides, two sides at a time
 
-A merge of three branches, or a rebase of a conflicted commit, can leave three or more sides. jj orders them side 1, base 1, side 2, base 2, …, side n. `--pair N` opens an ordinary three-way merge of sides N and N + 1 over base N:
+A merge of three branches, or a rebase of a conflicted commit, can leave three or more sides. jj orders them side 1, base 1, side 2, base 2, …, side n. Sides count as jj shows them: jj drops pairs of terms that cancel, so a file the third branch left alone has two sides. `--pair N` opens an ordinary three-way merge of sides N and N + 1 over base N:
 
 ```sh
 triad-merge resolve src/lib.rs --pair 1        # sides 1 and 2
@@ -156,7 +156,7 @@ merged change abc: kept 1a2b3c4d, abandoned 5e6f7a8b over 9c0d1e2f
   conflicted: src/lib.rs
 ```
 
-The first copy keeps its change and parents. The others are rewritten into it, so their descendants, and a working copy on one of them, move onto the merged commit. Files changed two ways stay conflicted in the commit: run `triad-merge resolve PATH -r abc`. The description merges the same way; when both copies changed it, the first copy's stays and the report says so.
+The first copy keeps its change and parents. Each other copy, and the commit it shares with the first, is rebased onto those parents before the merge, as jj rebases, so a copy that only moved to new parents brings no changes from them. When one copy was rewritten from the other, that copy is the base. The others are rewritten into it, so their descendants, and a working copy on one of them, move onto the merged commit. Files changed two ways stay conflicted in the commit: run `triad-merge resolve PATH -r abc`. The description merges the same way; when both copies changed it, the first copy's stays and the report says so.
 
 ### Diff the working copy
 
@@ -187,6 +187,7 @@ jj snapshots the working copy at every jj command, and its operation log keeps e
 
 ```sh
 triad-merge history src/lib.rs           # each version of the file, newest first
+triad-merge history src/lib.rs --limit 20   # the newest 20; stops reading the log there
 triad-merge diff src/lib.rs --op f5a69619a1f9
 ```
 
@@ -220,19 +221,23 @@ triad-merge absorb
 ```
 
 ```
+at operation 6c1e0e2b7f3a
 1 lib.rs left 0..1 right 0..1 -> womuzyvr 9843b8e4
 2 notes.txt left 2..3 right 2..3 -> qpnysvsn 14ede62f
 ```
 
-Each line is a hunk: its number, the path, the lines it replaces and the lines it holds now (from 0, end excluded), then the commit it goes into, or `stays`. Steer it, then apply:
+The first line names the operation the listing read. Each further line is a hunk: its number, the path, the lines it replaces and the lines it holds now (from 0, end excluded), then the commit it goes into, or `stays`. Steer it, then apply:
 
 ```sh
 triad-merge absorb src/                      # only these paths
 triad-merge absorb --into 'trunk()..@'       # only these commits (default mutable())
 triad-merge absorb --keep 2                  # hunk 2 stays in the working copy
 triad-merge absorb --move 1=xyz              # hunk 1 into xyz, a mutable ancestor
-triad-merge absorb --keep 2 --apply          # write
+triad-merge absorb --apply                   # write, as listed
+triad-merge absorb --keep 2 --apply --listed-at 6c1e0e2b7f3a   # write with choices
 ```
+
+Hunk numbers hold only for the listing that printed them. `--move` and `--keep` with `--apply` need `--listed-at`, the listing's operation, and triad refuses when the repository has moved past it: an edit or a jj command since the listing. List again and choose again.
 
 ```
 absorbed 1 hunks into 1 commits

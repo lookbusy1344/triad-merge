@@ -150,3 +150,73 @@ fn a_resolved_path_is_refused() {
         "{refused:?}"
     );
 }
+
+/// A merge of four parents in which only `one`, `three` and `four` change `a.txt`: the tree
+/// has four sides, and `a.txt`'s conflict three once jj simplifies it, `ONE`, `TWO`,
+/// `THREE` over `BASE`. `b.txt` changes in `one` and `three`: two sides.
+fn four_parents(fixture: &Fixture) -> Committed {
+    let base = fixture.commit_on(&[], "base", &[("a.txt", BASE), ("b.txt", BASE)]);
+    let parents: Vec<Committed> =
+        [("one", ONE, ONE), ("two", BASE, BASE), ("three", TWO, TWO), ("four", THREE, BASE)]
+            .into_iter()
+            .map(|(name, a, b)| fixture.commit_on(&[&base], name, &[("a.txt", a), ("b.txt", b)]))
+            .collect();
+    let parents: Vec<&Committed> = parents.iter().collect();
+    fixture.commit_merged(&parents, "merge", &[])
+}
+
+#[test]
+fn a_conflict_reads_with_jj_s_sides_after_simplification() {
+    let fixture = Fixture::new();
+    let merge = four_parents(&fixture);
+    let a = (vec![ONE.to_vec(), TWO.to_vec(), THREE.to_vec()], vec![BASE.to_vec(); 2]);
+    assert_eq!(terms(&fixture, &merge), a);
+    let b = open(&fixture)
+        .conflict_at(&id(&merge), Utf8Path::new("b.txt"))
+        .expect("reads")
+        .expect("a conflict");
+    assert_eq!(
+        (bytes(&b.sides), bytes(&b.bases)),
+        (vec![ONE.to_vec(), TWO.to_vec()], vec![BASE.to_vec()])
+    );
+}
+
+#[test]
+fn a_pair_counts_jj_s_sides_after_simplification() {
+    let fixture = Fixture::new();
+    let merge = four_parents(&fixture);
+    // The tree has four sides; a.txt's conflict has three.
+    let refused = refusal(open(&fixture).reduce_pair(&id(&merge), a_txt(), 3, MERGED, false));
+    assert_eq!(refused, "pair 3 needs sides 3 and 4; the conflict has 3");
+    let rewrite = open(&fixture)
+        .reduce_pair(&id(&merge), a_txt(), 2, MERGED, false)
+        .expect("the pair reduces");
+    assert_eq!(rewrite.sides, Some(2), "{rewrite:?}");
+    assert_eq!(terms(&fixture, &merge), (vec![ONE.to_vec(), MERGED.to_vec()], vec![BASE.to_vec()]));
+    let refused = refusal(open(&fixture).reduce_pair(
+        &id(&fixture.latest(&merge)),
+        Utf8Path::new("b.txt"),
+        1,
+        MERGED,
+        false,
+    ));
+    assert_eq!(refused, "b.txt has two sides; resolve it without --pair");
+}
+
+#[test]
+fn markers_of_jj_s_sides_save_back_into_a_tree_of_more() {
+    let fixture = Fixture::new();
+    let merge = four_parents(&fixture);
+    let markers: &[u8] = b"<<<<<<< side 1\nONE\n||||||| base\na\n=======\ntwo\n>>>>>>> side 2\n";
+    let rewrite = open(&fixture)
+        .write_conflict(&id(&merge), Utf8Path::new("b.txt"), markers, 7, false)
+        .expect("the markers are written");
+    assert!(rewrite.written && !rewrite.resolved, "{rewrite:?}");
+    assert_eq!(rewrite.sides, Some(2));
+    let b = open(&fixture)
+        .conflict_at(&id(&fixture.latest(&merge)), Utf8Path::new("b.txt"))
+        .expect("reads")
+        .expect("b.txt stays conflicted");
+    assert_eq!(bytes(&b.sides), [b"ONE\n".to_vec(), TWO.to_vec()]);
+    assert_eq!(terms(&fixture, &merge).0.len(), 3, "a.txt keeps its three sides");
+}

@@ -32,7 +32,7 @@ fn each_snapshot_of_a_change_is_a_version_newest_first() {
         let one = snapshot(&fixture, Some(b"1\n"));
         let two = snapshot(&fixture, Some(b"2\n"));
         let three = snapshot(&fixture, Some(b"3\n"));
-        let versions = open(&fixture).history("a.txt".into()).expect("the history");
+        let versions = open(&fixture).history("a.txt".into(), None).expect("the history");
         let first_absent = versions.last().expect("versions").operation.clone();
         assert_eq!(
             summary(&versions),
@@ -58,7 +58,7 @@ fn operations_that_keep_the_version_fold_into_the_one_where_it_appeared() {
     let one = snapshot(&fixture, Some(b"1\n"));
     fixture.commit_on(&[], "unrelated", &[("b.txt", b"b\n")]);
     fixture.commit_on(&[], "another", &[("c.txt", b"c\n")]);
-    let versions = open(&fixture).history("a.txt".into()).expect("the history");
+    let versions = open(&fixture).history("a.txt".into(), None).expect("the history");
     assert_eq!(versions.len(), 2, "{versions:?}");
     assert_eq!(
         (versions[0].operation.as_str(), versions[0].state),
@@ -73,7 +73,7 @@ fn a_deleted_file_shows_absent_between_its_versions() {
     let one = snapshot(&fixture, Some(b"1\n"));
     let gone = snapshot(&fixture, None);
     let back = snapshot(&fixture, Some(b"1\n"));
-    let versions = open(&fixture).history("a.txt".into()).expect("the history");
+    let versions = open(&fixture).history("a.txt".into(), None).expect("the history");
     assert_eq!(
         summary(&versions[..3]),
         [(back, VersionState::File), (gone, VersionState::Absent), (one, VersionState::File)]
@@ -86,7 +86,7 @@ fn an_edit_on_disk_is_snapshotted_into_the_newest_version() {
     fixture.check_out_to_disk();
     snapshot(&fixture, Some(b"1\n"));
     std::fs::write(fixture.root().join("a.txt"), b"2\n").expect("a.txt is written");
-    let versions = open(&fixture).history("a.txt".into()).expect("the history");
+    let versions = open(&fixture).history("a.txt".into(), None).expect("the history");
     assert_eq!(versions[0].operation, fixture.operation_ids()[0]);
     assert_eq!(versions.len(), 3, "{versions:?}");
 }
@@ -117,4 +117,21 @@ fn an_unknown_operation_is_refused() {
         ),
         other => panic!("expected a refusal, got {other:?}"),
     }
+}
+
+#[test]
+fn a_limit_keeps_the_newest_versions_each_named_where_it_appeared() {
+    let fixture = Fixture::new();
+    fixture.check_out_to_disk();
+    let one = snapshot(&fixture, Some(b"1\n"));
+    let two = snapshot(&fixture, Some(b"2\n"));
+    // An operation that keeps the newest version: the version still appeared at `two`.
+    fixture.commit_on(&[], "unrelated", &[("b.txt", b"b\n")]);
+    let history = |limit| open(&fixture).history("a.txt".into(), Some(limit)).expect("the history");
+    assert_eq!(
+        summary(&history(2)),
+        [(two.clone(), VersionState::File), (one, VersionState::File)]
+    );
+    assert_eq!(summary(&history(1)), [(two, VersionState::File)]);
+    assert_eq!(summary(&history(0)), []);
 }

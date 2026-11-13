@@ -66,6 +66,68 @@ fn changes_to_different_lines_merge_clean_into_one_commit() {
 }
 
 #[test]
+fn copies_on_different_parents_merge_as_if_rebased_onto_the_kept_copy_s_parents() {
+    const P0: &[u8] = b"p0\n";
+    const P1: &[u8] = b"p1\n";
+    // One copy amended on the old parent, the other only rebased onto a new parent; each
+    // arrangement puts the rebased copy on the other side of the index order.
+    for rebased_first in [true, false] {
+        let fixture = Fixture::new();
+        let old = fixture.commit_on(&[], "old", &[("a.txt", ORIGINAL), ("p.txt", P0)]);
+        let new = fixture.commit_on(&[&old], "new", &[("a.txt", ORIGINAL), ("p.txt", P1)]);
+        let change = fixture.commit_on(
+            &[&old],
+            "change",
+            &[("a.txt", ORIGINAL), ("p.txt", P0), ("c.txt", b"c\n")],
+        );
+        let amended: (&str, &[&Committed], _) =
+            ("change", &[&old], &[("a.txt", FIRST_LINE), ("p.txt", P0), ("c.txt", b"c\n")][..]);
+        let rebased: (&str, &[&Committed], _) =
+            ("change", &[&new], &[("a.txt", ORIGINAL), ("p.txt", P1), ("c.txt", b"c\n")][..]);
+        let copies = if rebased_first { [rebased, amended] } else { [amended, rebased] };
+        fixture.diverge_on(&change, &copies);
+        let merged = open(&fixture).diverge(&change.change_id, false).expect("the copies merge");
+        assert!(merged.rewrite.resolved, "{merged:?}");
+        let [survivor] = <[Committed; 1]>::try_from(fixture.visible(&change)).expect("one commit");
+        let [parent] = <[String; 1]>::try_from(fixture.parents_of(&survivor)).expect("one parent");
+        let (parent_p, at_new) = if parent == new.commit { (P1, "new") } else { (P0, "old") };
+        // The patch is the change's alone: p.txt is the parent's, whichever parent is kept.
+        assert_eq!(fixture.held_in(&survivor, "p.txt"), Held::File(parent_p.to_vec()), "{at_new}");
+        assert_eq!(
+            fixture.held_in(&survivor, "a.txt"),
+            Held::File(FIRST_LINE.to_vec()),
+            "{at_new}"
+        );
+        assert_eq!(fixture.held_in(&survivor, "c.txt"), Held::File(b"c\n".to_vec()), "{at_new}");
+    }
+}
+
+#[test]
+fn a_copy_rewritten_from_the_other_merges_over_that_copy() {
+    // `amended` holds `FIRST_LINE` over the original; `rewritten` comes from `amended` and
+    // changes that line again. Over the original the two would conflict; over `amended`,
+    // their shared predecessor, `rewritten` wins.
+    let fixture = Fixture::new();
+    let base = fixture.commit_on(&[], "base", &[("b.txt", b"b\n")]);
+    let change = fixture.commit_on(&[&base], "change", &[("a.txt", ORIGINAL)]);
+    let amended = fixture.amend(&change, &[("a.txt", FIRST_LINE)]);
+    let rewritten = fixture.rewrite_keeping(&amended, &[("a.txt", OTHER_FIRST_LINE)]);
+    assert_eq!(fixture.visible(&change).len(), 2, "divergent before");
+    let merged = open(&fixture).diverge(&change.change_id, false).expect("the copies merge");
+    assert!(merged.rewrite.resolved, "{merged:?}");
+    let [base] = merged.bases.as_slice() else { panic!("one base: {:?}", merged.bases) };
+    assert!(amended.commit.starts_with(base.id(IdKind::Commit)), "{base:?} is not {amended:?}");
+    let [survivor] = <[Committed; 1]>::try_from(fixture.visible(&change)).expect("one commit");
+    assert_eq!(fixture.held_in(&survivor, "a.txt"), Held::File(OTHER_FIRST_LINE.to_vec()));
+    let mut copies =
+        [merged.rewrite.target.id(IdKind::Commit), merged.abandoned[0].id(IdKind::Commit)];
+    copies.sort_unstable();
+    let mut expected = [&amended.commit[..copies[0].len()], &rewritten.commit[..copies[1].len()]];
+    expected.sort_unstable();
+    assert_eq!(copies, expected, "the two copies merged");
+}
+
+#[test]
 fn the_same_line_changed_two_ways_stays_conflicted_in_the_commit() {
     let fixture = Fixture::new();
     let (change, ..) = divergent(&fixture, ("change", FIRST_LINE), ("change", OTHER_FIRST_LINE));

@@ -2,7 +2,7 @@
 //! `diff --op`, `DESIGN.md` §I5).
 
 use camino::Utf8Path;
-use futures::TryStreamExt as _;
+use futures::StreamExt as _;
 use jj_lib::backend::{MergedTreeValue, TreeValue};
 use jj_lib::object_id::ObjectId as _;
 use jj_lib::op_walk::{resolve_op_with_repo, walk_ancestors};
@@ -44,24 +44,27 @@ pub struct FileVersion {
 impl JjRepository {
     /// The versions of `path` in the working-copy commit, newest first, one per run of
     /// operations that hold the same version, named by the oldest of the run: where it
-    /// appeared. The working copy is snapshotted first.
+    /// appeared. With `limit`, the newest `limit` versions; the walk stops at the operation
+    /// before the oldest of them. The working copy is snapshotted first.
     ///
     /// # Errors
     ///
     /// [`VcsError::OutsideRepository`] for a path outside the root; the errors of a
     /// snapshot; [`VcsError::Backend`] when the operation log cannot be read.
-    pub fn history(&mut self, path: &Utf8Path) -> Result<Vec<FileVersion>, VcsError> {
+    pub fn history(
+        &mut self,
+        path: &Utf8Path,
+        limit: Option<usize>,
+    ) -> Result<Vec<FileVersion>, VcsError> {
         let repo_path = RepoPathBuf::from_relative_path(path)
             .map_err(|_| VcsError::OutsideRepository(path.to_owned()))?;
         self.snapshot()?;
         let head = self.repo.operation().clone();
-        let operations: Vec<Operation> = walk_ancestors(std::slice::from_ref(&head))
-            .try_collect()
-            .block_on()
-            .map_err(backend("walking the operation log"))?;
+        let mut operations = std::pin::pin!(walk_ancestors(std::slice::from_ref(&head)));
         let mut versions: Vec<(MergedTreeValue, FileVersion)> = Vec::new();
         let mut last_commit = None;
-        for op in operations {
+        while let Some(op) = operations.next().block_on() {
+            let op = op.map_err(backend("walking the operation log"))?;
             let view = op.view().block_on().map_err(backend("reading an operation's view"))?;
             let Some(id) = view.get_wc_commit_id(&self.workspace).cloned() else {
                 continue;
@@ -89,7 +92,13 @@ impl JjRepository {
             last_commit = Some(id);
             match versions.last_mut() {
                 Some((last, named)) if *last == value => *named = version,
-                _ => versions.push((value, version)),
+                _ => {
+                    // A version past the limit ends the run of the last one kept.
+                    if limit.is_some_and(|limit| versions.len() == limit) {
+                        break;
+                    }
+                    versions.push((value, version));
+                }
             }
         }
         Ok(versions.into_iter().map(|(_, version)| version).collect())
@@ -104,19 +113,41 @@ impl JjRepository {
     /// cannot resolve, and [`JjError::NoWorkingCopyAt`] for one where this workspace had no
     /// working copy.
     pub fn working_copy_at(&self, op: &str) -> Result<(String, vcs::CommitId), VcsError> {
-        let unknown = |error: jj_lib::op_walk::OpsetEvaluationError| {
-            backend("resolving an operation")(JjError::UnknownOperation {
-                op: op.to_owned(),
-                reason: error.to_string(),
-            })
-        };
-        let operation = resolve_op_with_repo(&self.repo, op).block_on().map_err(unknown)?;
+        let operation = self.operation(op)?;
         let view = operation.view().block_on().map_err(backend("reading an operation's view"))?;
         let short: String = operation.id().hex().chars().take(SHORT_OPERATION).collect();
         let id = view.get_wc_commit_id(&self.workspace).ok_or_else(|| {
             backend("resolving an operation")(JjError::NoWorkingCopyAt(short.clone()))
         })?;
         Ok((short, vcs::CommitId::new(id.hex())))
+    }
+}
+
+impl JjRepository {
+    /// The operation `op` names, as jj resolves an operation.
+    fn operation(&self, op: &str) -> Result<Operation, VcsError> {
+        let unknown = |error: jj_lib::op_walk::OpsetEvaluationError| {
+            backend("resolving an operation")(JjError::UnknownOperation {
+                op: op.to_owned(),
+                reason: error.to_string(),
+            })
+        };
+        resolve_op_with_repo(&self.repo, op).block_on().map_err(unknown)
+    }
+
+    /// Refuse when the repository's head is not the operation `op` names.
+    ///
+    /// # Errors
+    ///
+    /// [`VcsError::Backend`] holding [`JjError::UnknownOperation`] for an operation jj
+    /// cannot resolve and [`JjError::RepositoryMoved`] for one behind or beside the head.
+    pub(crate) fn check_at_operation(&self, op: &str) -> Result<(), VcsError> {
+        let operation = self.operation(op)?;
+        if operation.id() == self.repo.op_id() {
+            return Ok(());
+        }
+        let short: String = operation.id().hex().chars().take(SHORT_OPERATION).collect();
+        Err(backend("checking the listing's operation")(JjError::RepositoryMoved(short)))
     }
 }
 

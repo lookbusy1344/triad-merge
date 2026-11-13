@@ -110,6 +110,17 @@ pub enum JjError {
     /// `absorb --move` to a commit outside the ones a hunk may go into.
     #[error("{0} is not a mutable ancestor of the working copy in --into")]
     NotADestination(String),
+    /// `absorb --apply` at an operation the repository has moved past: the hunk numbers may
+    /// name other hunks now.
+    #[error("the repository changed since operation {0}; list the hunks again")]
+    RepositoryMoved(String),
+    /// A save into a commit whose conflict at the path differs from the one triad read: the
+    /// commit was rewritten while the window was open.
+    #[error("{path} in {change} changed since triad read it; nothing is written")]
+    ConflictChanged { path: camino::Utf8PathBuf, change: String },
+    /// jj parsed a saved conflict back with another number of sides than it holds.
+    #[error("{path}: jj read back a conflict of {after} sides for one of {before}")]
+    SidesChanged { path: camino::Utf8PathBuf, before: usize, after: usize },
 }
 
 /// A jj workspace, read through jj-lib at its head operation.
@@ -436,8 +447,7 @@ impl JjRepository {
         if value.is_resolved() {
             return Ok(None);
         }
-        // The value keeps the tree's terms, so the tree's labels index it.
-        let labels = tree.labels();
+        let (value, labels) = native::simplified(&value, tree.labels());
         let terms = |values: &mut dyn Iterator<Item = &Option<TreeValue>>, side: bool| {
             values
                 .enumerate()

@@ -268,26 +268,78 @@ impl Fixture {
         reason = "called for its effect on the repository; tests often ignore the result"
     )]
     pub fn diverge(&self, commit: &Committed, copies: &[(&str, Files<'_>)]) -> Vec<Committed> {
+        let copies: Vec<_> =
+            copies.iter().map(|&(message, files)| (message, None, files)).collect();
+        self.diverge_copies(commit, &copies)
+    }
+
+    /// Rewrite `commit` once per entry of `copies` as [`Fixture::diverge`] does, each copy on
+    /// its own parents: a divergent change whose copies sit on different parents, as a
+    /// rebase in one jj process and an amend in another leave it.
+    #[expect(
+        clippy::must_use_candidate,
+        reason = "called for its effect on the repository; tests often ignore the result"
+    )]
+    pub fn diverge_on(
+        &self,
+        commit: &Committed,
+        copies: &[(&str, &[&Committed], Files<'_>)],
+    ) -> Vec<Committed> {
+        let copies: Vec<_> = copies
+            .iter()
+            .map(|&(message, parents, files)| (message, Some(parents), files))
+            .collect();
+        self.diverge_copies(commit, &copies)
+    }
+
+    /// Each copy: a description, its parents (the original's when none) and its whole tree.
+    fn diverge_copies(
+        &self,
+        commit: &Committed,
+        copies: &[(&str, Option<&[&Committed]>, Files<'_>)],
+    ) -> Vec<Committed> {
         let repo = self.repo();
         let original = repo.store().get_commit(&commit.id).expect("the commit");
         let mut tx = repo.start_transaction();
         let written = copies
             .iter()
-            .map(|&(message, files)| {
+            .map(|&(message, parents, files)| {
                 let tree = tree_of(&repo, &Entry::files(files));
-                let copy = tx
-                    .repo_mut()
-                    .rewrite_commit(&original)
-                    .set_tree(tree)
-                    .set_description(message)
-                    .write()
-                    .block_on()
-                    .expect("a copy");
-                Committed::of(&copy)
+                let mut rewriter =
+                    tx.repo_mut().rewrite_commit(&original).set_tree(tree).set_description(message);
+                if let Some(parents) = parents {
+                    rewriter = rewriter.set_parents(parents.iter().map(|p| p.id.clone()).collect());
+                }
+                Committed::of(&rewriter.write().block_on().expect("a copy"))
             })
             .collect();
         self.finish(tx, "diverge");
         written
+    }
+
+    /// Rewrite `commit` to hold `files` as its whole tree and keep `commit` visible: a
+    /// divergent change of two copies, one the other's predecessor.
+    #[expect(
+        clippy::must_use_candidate,
+        reason = "called for its effect on the repository; tests often ignore the result"
+    )]
+    pub fn rewrite_keeping(&self, commit: &Committed, files: Files<'_>) -> Committed {
+        let repo = self.repo();
+        let original = repo.store().get_commit(&commit.id).expect("the commit");
+        let tree = tree_of(&repo, &Entry::files(files));
+        let mut tx = repo.start_transaction();
+        let rewritten = tx
+            .repo_mut()
+            .rewrite_commit(&original)
+            .set_tree(tree)
+            .write()
+            .block_on()
+            .expect("the rewritten commit");
+        // The rebase hides the original; adding it back as a head shows it again.
+        tx.repo_mut().rebase_descendants().block_on().expect("descendants rebase");
+        tx.repo_mut().add_head(&original).block_on().expect("the original stays visible");
+        self.finish(tx, "rewrite keeping the original");
+        Committed::of(&rewritten)
     }
 
     /// Rewrite `commit` to hold `files` as its whole tree, as `jj squash` into it does; its
