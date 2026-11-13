@@ -41,6 +41,8 @@ pub struct ScrollSync {
     follower: Option<Follower>,
     /// The next step brings the rows to the result, wherever both stand.
     resync: bool,
+    /// The next step brings the result to the rows, wherever both stand.
+    rows_lead: bool,
 }
 
 impl ScrollSync {
@@ -55,7 +57,13 @@ impl ScrollSync {
     /// holds its top from its next prepaint on, clamped to its own range, and the next step
     /// takes those tops as synced.
     pub fn place(&mut self, rows: f32, result: f32) {
-        *self = Self { rows, result, follower: Some(Follower::Both), resync: false };
+        *self = Self { rows, result, follower: Some(Follower::Both), ..Self::default() };
+    }
+
+    /// Make the next step bring the result to the rows: the rows' display rows changed
+    /// under them, and they kept their place.
+    pub fn bring_result(&mut self) {
+        *self = Self { rows_lead: true, ..Self::default() };
     }
 
     /// The move that keeps the panes together, given their tops now. After [`Self::resync`]
@@ -77,16 +85,18 @@ impl ScrollSync {
             None => {}
         }
         let moved = |now: f32, then: f32| (now - then).abs() > TOP_EPSILON;
-        let rows_moved = moved(rows, self.rows);
+        let rows_moved = std::mem::take(&mut self.rows_lead) || moved(rows, self.rows);
         let result_leads =
             std::mem::take(&mut self.resync) || !rows_moved && moved(result, self.result);
         if result_leads {
             let target = to_rows(result);
-            *self = Self { rows: target, result, follower: Some(Follower::Rows), resync: false };
+            *self =
+                Self { rows: target, result, follower: Some(Follower::Rows), ..Self::default() };
             Some(Follow::Rows(target))
         } else if rows_moved {
             let target = to_result(rows);
-            *self = Self { rows, result: target, follower: Some(Follower::Result), resync: false };
+            *self =
+                Self { rows, result: target, follower: Some(Follower::Result), ..Self::default() };
             Some(Follow::Result(target))
         } else {
             None
@@ -195,6 +205,13 @@ impl<'a> ResultRows<'a> {
         let lines = result_lines(self.doc, region);
         let start = lines.start + before;
         start..start + lines.len() + own
+    }
+
+    /// The rows of `lines`, result lines of `region`.
+    #[must_use]
+    pub fn rows_of_lines(self, region: RegionIx, lines: &Range<usize>) -> Range<usize> {
+        let shift = self.placeholders_before(region);
+        lines.start + shift..lines.end + shift
     }
 
     /// The display rows of each row, in order: `line_rows` for each result line, and one
@@ -417,6 +434,25 @@ mod tests {
         // The rows hold their target from their next prepaint; nothing moved since.
         let unmoved = |_: f32| -> f32 { panic!("no pane moved") };
         assert_eq!(sync.step(RESULT_TOP / RESULT_TO_ROWS, RESULT_TOP, unmoved, unmoved), None);
+    }
+
+    #[test]
+    fn bring_result_makes_the_rows_lead_wherever_both_stand() {
+        const ROWS_TOP: f32 = 40.;
+        const RESULT_TOP: f32 = 90.;
+        const ROWS_TO_RESULT: f32 = 2.;
+        let mut sync = ScrollSync::default();
+        sync.place(ROWS_TOP, RESULT_TOP);
+        let unmoved = |_: f32| -> f32 { panic!("no pane moved") };
+        assert_eq!(sync.step(ROWS_TOP, RESULT_TOP, unmoved, unmoved), None);
+        sync.bring_result();
+        let to_result = |top: f32| top * ROWS_TO_RESULT;
+        let unused = |_: f32| -> f32 { panic!("the result does not lead") };
+        assert_eq!(
+            sync.step(ROWS_TOP, RESULT_TOP, to_result, unused),
+            Some(Follow::Result(ROWS_TOP * ROWS_TO_RESULT))
+        );
+        assert_eq!(sync.step(ROWS_TOP, ROWS_TOP * ROWS_TO_RESULT, unmoved, unmoved), None);
     }
 
     #[test]
@@ -654,6 +690,16 @@ mod tests {
         assert_eq!(to_result(&fixture, 1.5), 1.5);
         assert_eq!(to_result(&fixture, 2.0), 2.0);
         assert_eq!(to_rows(&fixture, 1.5), 1.5);
+    }
+
+    #[test]
+    fn result_lines_after_a_placeholder_take_the_row_after_it() {
+        // Left deletes b. Result rows: a (line 0), the placeholder, c (line 1).
+        let (doc, _) = three("a\nb\nc\n", "a\nc\n", "a\nb\nc\n");
+        let placeholders = placeholder_regions(&doc);
+        let result = ResultRows::new(&doc, &placeholders);
+        assert_eq!(result.rows_of_lines(RegionIx::new(0), &(0..1)), 0..1);
+        assert_eq!(result.rows_of_lines(RegionIx::new(2), &(1..2)), 2..3);
     }
 
     #[test]

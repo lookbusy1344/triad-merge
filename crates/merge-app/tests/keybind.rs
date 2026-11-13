@@ -15,7 +15,7 @@ use merge_core::document::MergeDocument;
 /// The modifier of the default chords.
 const SECONDARY: &str = if cfg!(target_os = "macos") { "cmd" } else { "ctrl" };
 /// The number of commands the menus hold in a window without origins.
-const MENU_COMMANDS: usize = 33;
+const MENU_COMMANDS: usize = 34;
 /// The command of View → Blame, which the menus hold only once origins load (spec §7.3).
 const BLAME_COMMAND: &str = "toggle-origin-column";
 const ACTION_NAMESPACE: &str = "triad::";

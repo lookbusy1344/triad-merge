@@ -964,7 +964,6 @@ impl DiffWindow {
             origins_loaded: self.origin_column.origins().loaded(),
             syntax: self.colouring.shown(),
             soft_wrap: self.wrap.wraps(),
-            collapsible: true,
             collapse_unchanged: self.collapse.on,
             ..crate::ViewTicks::default()
         }

@@ -54,6 +54,7 @@ use merge_view::chunks::Limits;
 use merge_view::heights::Heights;
 use merge_view::highlight::{CellSpans, Highlights};
 use merge_view::marks::{self, Band, Tone};
+use merge_view::merge_fold::{self, MergeFold, MergeOpened};
 use merge_view::nav::{self, Pin, Target};
 use merge_view::origin::hover_text;
 use merge_view::placeholder;
@@ -97,9 +98,9 @@ use crate::{
     NextConflict, NextDifference, PreviousConflict, PreviousDifference, Redo, SaveAndExit,
     SaveCopyAs, SelectAllInput, TakeBase, TakeLeft, TakeLeftAllUnresolved, TakeLeftThenRight,
     TakeRight, TakeRightAllUnresolved, TakeRightThenLeft, TakeSortedUnion, TakeWholeLeft,
-    TakeWholeRight, ToggleBase, ToggleBasePane, ToggleLeft, ToggleOriginColumn, ToggleRight,
-    ToggleScrollSync, ToggleSoftWrap, ToggleSyntax, Typography, Undo, finish, go_to_line,
-    ignore_closed_view, strings,
+    TakeWholeRight, ToggleBase, ToggleBasePane, ToggleCollapseUnchanged, ToggleLeft,
+    ToggleOriginColumn, ToggleRight, ToggleScrollSync, ToggleSoftWrap, ToggleSyntax, Typography,
+    Undo, finish, go_to_line, ignore_closed_view, strings,
 };
 use merge_session::recovery::{FoundJournal, Locator, Recovery, WriteMode, Written, prune};
 use merge_session::session::{CannotSave, Refused, SaveJob, SaveTarget, Session};
@@ -121,6 +122,8 @@ const PICKED: &str = "●";
 const SHOWN: &str = "◐";
 const UNPICKED: &str = "○";
 const PANE_DIVIDER: Pixels = px(1.);
+/// The space before a fold row's text, past the pick and mark columns: 4 px grid.
+const FOLD_ROW_INDENT: Pixels = px(48.);
 /// Pane headings, relative to the text size.
 const HEADING_TEXT_SCALE: f32 = 0.9;
 /// A heading's role chip, relative to the text size.
@@ -202,6 +205,12 @@ pub fn pick_id(pane: usize, row: RowIx) -> ElementId {
 #[must_use]
 pub fn cell_id(pane: usize, row: RowIx) -> ElementId {
     ElementId::Name(format!("cell-{pane}-{row}").into())
+}
+
+/// The fold row that stands in for the hidden rows from `row` on (spec §5).
+#[must_use]
+pub fn fold_row_id(row: RowIx) -> ElementId {
+    ElementId::Name(format!("fold-{row}").into())
 }
 
 /// The text of `pane`'s cell on `row`, which clips and scrolls sideways.
@@ -493,7 +502,38 @@ pub struct MergeWindow {
     measurement: Measurement,
     /// The inputs' line origins and their column.
     origin_column: OriginColumn,
+    /// The collapsed unchanged regions.
+    collapse: Collapse,
     _subscriptions: Vec<Subscription>,
+}
+
+/// The merge window's collapsed unchanged regions (spec §5).
+struct Collapse {
+    on: bool,
+    /// The lines a collapsed region keeps at each end that faces another region.
+    context: usize,
+    opened: MergeOpened,
+    /// The folds the panes show.
+    folds: Vec<MergeFold>,
+    /// The result's current search match when last seen.
+    searched: Option<Range<usize>>,
+}
+
+impl Collapse {
+    fn new(collapsing: crate::diff_window::Collapsing) -> Self {
+        Self {
+            on: collapsing.on,
+            context: collapsing.context_lines,
+            opened: MergeOpened::default(),
+            folds: Vec::new(),
+            searched: None,
+        }
+    }
+
+    /// The folds of `doc` over `rows` while collapsed; none otherwise.
+    fn folds(&self, doc: &MergeDocument, rows: &RowMap) -> Vec<MergeFold> {
+        if self.on { merge_fold::folds(doc, rows, self.context, &self.opened) } else { Vec::new() }
+    }
 }
 
 /// The panes a merge shows at first: left and right, or every side of a wider merge.
@@ -609,14 +649,12 @@ impl MergeWindow {
         let tones = palette.tones(cx.theme().is_dark());
         let bands = marks::bands(&doc);
         let decorations = region_decorations(&bands, tones);
-        let (spacers, notes, placeholders) = result_placeholders(&doc, tones);
         let colouring =
             Colouring::new(language(settings), settings.syntax, settings.syntax_max_lines);
         let (result, result_highlighter) =
             result_editor(&doc, settings, wrap, colouring, &recorded, window, cx);
+        // `show_folds` sets the spacers once the window stands.
         let (regions, highlight, found_flash) = result.update(cx, |state, cx| {
-            state.set_spacers(spacers, cx);
-            state.set_spacer_notes(notes, cx);
             (
                 state.create_range_decorations_collection(decorations, cx),
                 state.create_range_decorations_collection(Vec::new(), cx),
@@ -647,7 +685,7 @@ impl MergeWindow {
             line_ending: settings.line_ending,
             unresolved_save: settings.unresolved_save,
         };
-        Self {
+        let mut this = Self {
             menu_bar: crate::menu_bar::WindowMenu::new(cx),
             status: strings::status(settings.repo, &counts).into(),
             repo: settings.repo,
@@ -669,6 +707,7 @@ impl MergeWindow {
             session: Session::new(doc, target, recovery),
             panes,
             scroll: PaneScroll::new(rows.row_count(), wrap, settings.scroll_sync),
+            collapse: Collapse::new(settings.collapsing),
             rows,
             result,
             regions,
@@ -680,7 +719,7 @@ impl MergeWindow {
             result_steps: SearchSteps::default(),
             found: Flash::default(),
             recorded,
-            placeholders,
+            placeholders: Vec::new(),
             typography: settings.typography.clone(),
             palette,
             settings_errors: None,
@@ -700,7 +739,9 @@ impl MergeWindow {
                 settings.revision_id,
             ),
             _subscriptions: subscriptions,
-        }
+        };
+        this.show_folds(cx);
+        this
     }
 
     /// The recovery journal `settings` asks for, with the inputs' hashes computing.
@@ -1149,7 +1190,8 @@ impl MergeWindow {
                 return false;
             };
             let result = ResultRows::new(self.session.document(), &self.placeholders);
-            let span = result_heights(result, self.scroll.wrap(), state).span(result.span(region));
+            let span = result_heights(result, self.scroll.wrap(), state, &self.collapse.folds)
+                .span(result.span(region));
             (line_h, state.input_bounds().size.height, span)
         };
         let first = self.rows.first_row(region).get();
@@ -1192,11 +1234,14 @@ impl MergeWindow {
             (&self.rows, ResultRows::new(self.session.document(), &self.placeholders));
         let sources = self.panes.sources();
         let wrap = self.scroll.wrap();
+        let folds = &self.collapse.folds;
         // Built only when a pane moved: a wrapped result reads every line's display rows.
         let mapped = |map: fn(&RowMap, ResultRows, Displayed, Geometry, f32) -> f32| {
             move |row_heights: &Heights, top| {
-                let displayed =
-                    Displayed { rows: row_heights, result: &result_heights(result, wrap, state) };
+                let displayed = Displayed {
+                    rows: row_heights,
+                    result: &result_heights(result, wrap, state, folds),
+                };
                 map(rows, result, displayed, geometry, top)
             }
         };
@@ -1232,7 +1277,7 @@ impl MergeWindow {
         let changed = if self.scroll.wrap().wraps() {
             self.wrap_rows(font, cx)
         } else {
-            self.scroll.row_wrap_mut().unwrap(self.rows.row_count())
+            self.scroll.unwrap(self.rows.row_count())
         };
         if changed {
             let result_top = f32::from(-self.result.read(cx).scroll_offset().y);
@@ -1270,7 +1315,7 @@ impl MergeWindow {
                 .collect::<Vec<_>>()
         };
         let mut wrapper = cx.text_system().line_wrapper(font, self.typography.size);
-        self.scroll.row_wrap_mut().fit(fit, cells, |text, width| {
+        self.scroll.fit(fit, cells, |text, width| {
             if width <= Pixels::ZERO {
                 return Vec::new();
             }
@@ -1324,6 +1369,58 @@ impl MergeWindow {
         cx.notify();
     }
 
+    /// Collapse every unchanged region, or show them all (spec §5).
+    fn toggle_collapse_unchanged(
+        &mut self,
+        _: &ToggleCollapseUnchanged,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.collapse.on = !self.collapse.on;
+        self.collapse.opened.clear();
+        self.show_folds(cx);
+        cx.notify();
+    }
+
+    /// Open the region `fold` hides lines of, in every pane.
+    fn open_fold(&mut self, fold: &MergeFold, cx: &mut Context<Self>) {
+        self.collapse.opened.open(self.session.document(), fold);
+        self.show_folds(cx);
+        cx.notify();
+    }
+
+    /// Open the region that hides result line `line`, if one does.
+    fn open_fold_over_line(&mut self, line: usize, cx: &mut Context<Self>) {
+        if let Some(fold) = merge_fold::fold_over_line(&self.collapse.folds, line).cloned() {
+            self.open_fold(&fold, cx);
+        }
+    }
+
+    /// Fold the regions the collapse gives: the result hides their lines behind a spacer row
+    /// each, beside the placeholders, and the top panes their rows behind a fold row each.
+    fn show_folds(&mut self, cx: &mut Context<Self>) {
+        let doc = self.session.document();
+        let folds = self.collapse.folds(doc, &self.rows);
+        let tones = *self.tones(cx);
+        let (spacers, notes, placeholders) =
+            result_spacers(doc, &tones, &folds, cx.theme().muted_foreground);
+        self.placeholders = placeholders;
+        let hidden: Vec<_> = folds.iter().map(|fold| fold.result.clone()).collect();
+        let changed = folds != self.collapse.folds;
+        self.result.update(cx, |state, cx| {
+            if changed {
+                state.set_hidden_lines(hidden, cx);
+            }
+            state.set_spacers(spacers, cx);
+            state.set_spacer_notes(notes, cx);
+        });
+        self.scroll.set_folds(
+            folds.iter().map(|fold| fold.rows.clone()).collect(),
+            f32::from(self.typography.line_height()),
+        );
+        self.collapse.folds = folds;
+    }
+
     /// Turn scroll sync off or on (spec §5). Turned on, it brings the top panes to the
     /// result, down and sideways.
     fn toggle_scroll_sync(
@@ -1357,11 +1454,21 @@ impl MergeWindow {
                 this.input_select.clear();
                 cx.notify();
             }),
-            cx.subscribe_in(result, window, |this, _, event: &InputEvent, window, cx| {
-                if matches!(event, InputEvent::Change) {
-                    this.send_edits(window, cx);
-                }
-            }),
+            cx.subscribe_in(
+                result,
+                window,
+                |this, _, event: &InputEvent, window, cx| match event {
+                    InputEvent::Change => this.send_edits(window, cx),
+                    InputEvent::SpacerClick { line } => {
+                        let fold =
+                            merge_fold::fold_above_line(&this.collapse.folds, *line).cloned();
+                        if let Some(fold) = fold {
+                            this.open_fold(&fold, cx);
+                        }
+                    }
+                    _ => {}
+                },
+            ),
             // The caret moves without a `Change` event, so the badge follows every update.
             cx.observe(result, |this, _, cx| {
                 this.follow_caret(cx);
@@ -1388,8 +1495,8 @@ impl MergeWindow {
             origins_loaded: self.origin_column.origins().loaded(),
             syntax: self.colouring.shown(),
             soft_wrap: self.scroll.wrap().wraps(),
+            collapse_unchanged: self.collapse.on,
             scroll_sync: self.scroll.syncing(),
-            ..crate::ViewTicks::default()
         }
     }
 
@@ -1775,7 +1882,7 @@ impl MergeWindow {
     /// Show the session's restored document, laid out in `rows`.
     fn show_restored(&mut self, rows: RowMap, window: &mut Window, cx: &mut Context<Self>) {
         self.rows = rows;
-        self.scroll.row_wrap_mut().rows_changed(self.rows.row_count());
+        self.scroll.rows_changed(self.rows.row_count());
         self.highlights = Highlights::new(self.panes);
         self.pinned = None;
         self.reload_result(window, cx);
@@ -1786,7 +1893,7 @@ impl MergeWindow {
         self.rows.update(self.session.document(), applied);
         self.highlights.update(applied);
         if applied.regions_changed {
-            self.scroll.row_wrap_mut().rows_changed(self.rows.row_count());
+            self.scroll.rows_changed(self.rows.row_count());
             self.search_inputs_again(cx);
         }
     }
@@ -1814,12 +1921,7 @@ impl MergeWindow {
             self.regions.set(region_decorations(&bands, &tones), cx);
         }
         self.shown_bands = (bands, tones);
-        let (spacers, notes, placeholders) = result_placeholders(self.session.document(), &tones);
-        self.placeholders = placeholders;
-        self.result.update(cx, |state, cx| {
-            state.set_spacers(spacers, cx);
-            state.set_spacer_notes(notes, cx);
-        });
+        self.show_folds(cx);
         self.refresh_result_labels(cx);
         self.counts = status::status(self.session.document(), self.session.line_ending());
         self.ruler = merge_view::ruler::marks(self.session.document()).collect();
@@ -2304,6 +2406,7 @@ impl MergeWindow {
         if let Some(bytes) = self.result_steps.stepped(session) {
             self.start_found(Found::Result(bytes.start, bytes.end), cx);
         }
+        self.open_searched_fold(cx);
         let session = self.result.read(cx).search_session();
         let wanted = (session.is_active() && !session.query.is_empty()).then(|| {
             let case = if session.case_insensitive { Case::Insensitive } else { Case::Sensitive };
@@ -2313,6 +2416,26 @@ impl MergeWindow {
             input_find::Follow::Unchanged => {}
             input_find::Follow::Search => self.search_inputs(Keep::No, cx),
             input_find::Follow::Cleared => cx.notify(),
+        }
+    }
+
+    /// Open the region whose hidden lines hold the result's current search match, once for
+    /// each match, so a collapse after it stays collapsed (spec §5).
+    fn open_searched_fold(&mut self, cx: &mut Context<Self>) {
+        let state = self.result.read(cx);
+        let session = state.search_session();
+        let current = session
+            .is_active()
+            .then(|| session.matcher.current())
+            .flatten()
+            .and_then(|ix| session.matcher.matched_ranges().get(ix).cloned());
+        if current == self.collapse.searched {
+            return;
+        }
+        let line = current.as_ref().map(|bytes| state.text().offset_to_point(bytes.start).row);
+        self.collapse.searched = current;
+        if let Some(line) = line {
+            self.open_fold_over_line(line, cx);
         }
     }
 
@@ -2368,6 +2491,9 @@ impl MergeWindow {
     /// Step pane `pane` to its next or previous match and scroll that row to the middle.
     fn step_input_match(&mut self, pane: usize, step: Step, cx: &mut Context<Self>) {
         if let Some(row) = self.input_find.step(pane, step).map(|hit| hit.row) {
+            if let Some(fold) = merge_fold::fold_at_row(&self.collapse.folds, row.get()).cloned() {
+                self.open_fold(&fold, cx);
+            }
             self.scroll.centre(row);
             self.start_found(Found::Input(pane), cx);
         }
@@ -2428,6 +2554,7 @@ impl MergeWindow {
             return;
         };
         self.close_go_to_line(window, cx);
+        self.open_fold_over_line(line, cx);
         let at = self.session.document().byte_of_line(Line::new(line)).get();
         self.pinned = None;
         self.result.update(cx, |state, cx| {
@@ -2515,7 +2642,9 @@ impl MergeWindow {
                 };
                 let offset = state.scroll_offset();
                 let view = f32::from(state.input_bounds().size.height);
-                let top = merge_view::ruler::centred_top(line, f32::from(line_h), view);
+                // Spacers and folds part display rows from lines.
+                let row = state.display_map().buffer_line_to_display_row(line);
+                let top = merge_view::ruler::centred_top(row, f32::from(line_h), view);
                 state.set_scroll_offset(point(offset.x, px(-top)), cx);
             }),
         }
@@ -2607,9 +2736,10 @@ impl MergeWindow {
         self.panes = panes;
         self.input_select.keep_shown(&panes.sources());
         self.rows = rows;
-        self.scroll.row_wrap_mut().rows_changed(self.rows.row_count());
+        self.scroll.rows_changed(self.rows.row_count());
         self.highlights = Highlights::new(panes);
         self.headings = headings(self.session.document(), panes, &self.file_names);
+        self.show_folds(cx);
         self.search_inputs_again(cx);
         cx.notify();
     }
@@ -2654,14 +2784,21 @@ impl MergeWindow {
                     ROWS_ID,
                     self.scroll.heights().rows(),
                     cx.processor(|this, range: Range<usize>, _window, cx| {
-                        let rows = this.rows_of(range.clone());
-                        this.want_syntax(rows);
-                        let first = range.start;
+                        this.want_syntax(range.clone());
+                        // The first text row on screen measures the panes' text widths.
+                        let mut probe = true;
                         let shown = range
                             .filter_map(|ix| {
                                 let (row, sub) = this.scroll.heights().at(ix)?;
+                                let folded = merge_fold::fold_at_row(&this.collapse.folds, row);
+                                if let Some(fold) = folded.cloned() {
+                                    return Some(
+                                        this.render_fold_row(&fold, cx).into_any_element(),
+                                    );
+                                }
                                 let display = DisplayRow { ix, row: RowIx::new(row), sub };
-                                Some(this.render_row(display, ix == first, cx))
+                                let probed = std::mem::take(&mut probe);
+                                Some(this.render_row(display, probed, cx).into_any_element())
                             })
                             .collect::<Vec<_>>();
                         this.start_parses(cx);
@@ -2776,21 +2913,20 @@ impl MergeWindow {
         RowIx::new(heights.at(display).map_or(0, |(row, _)| row))
     }
 
-    /// The aligned rows display rows `display` show.
-    fn rows_of(&self, display: Range<usize>) -> Range<usize> {
-        let heights = self.scroll.heights();
-        let row = |ix: usize| heights.at(ix).map_or(heights.items(), |(row, _)| row);
-        match display.end.checked_sub(1) {
-            Some(last) if display.start < display.end => row(display.start)..row(last) + 1,
-            _ => 0..0,
-        }
-    }
-
-    /// Rows `rows` show; their lines' chunks parse while the colours are on.
-    fn want_syntax(&mut self, rows: Range<usize>) {
+    /// Display rows `display` show; the lines of their aligned rows parse their chunks while
+    /// the colours are on. A fold row shows no lines.
+    fn want_syntax(&mut self, display: Range<usize>) {
         if self.colouring.language().is_none() {
             return;
         }
+        let heights = self.scroll.heights();
+        let rows: Vec<usize> = display
+            .filter_map(|ix| heights.at(ix))
+            .filter(|&(row, sub)| {
+                sub == 0 && merge_fold::fold_at_row(&self.collapse.folds, row).is_none()
+            })
+            .map(|(row, _)| row)
+            .collect();
         for index in rows {
             let cells = self.rows.row(self.session.document(), RowIx::new(index)).cells;
             for (source, line) in self.panes.sources().into_iter().zip(cells) {
@@ -2953,6 +3089,47 @@ impl MergeWindow {
     }
 }
 
+impl MergeWindow {
+    /// The row that stands in for `fold`'s hidden rows in every top pane: the count of
+    /// lines it hides. A click opens the region in every pane (spec §5).
+    fn render_fold_row(
+        &self,
+        fold: &MergeFold,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let theme = cx.theme();
+        let (filler, muted, border) = (theme.muted, theme.muted_foreground, theme.border);
+        let label: SharedString = strings::unchanged_lines(fold.len()).into();
+        let row = RowIx::new(fold.rows.start);
+        let opened = fold.clone();
+        let cells = (0..self.headings.len()).map(|pane| {
+            div()
+                .flex_1()
+                .h_full()
+                .flex()
+                .items_center()
+                .pl(FOLD_ROW_INDENT)
+                .overflow_hidden()
+                .when(pane > 0, |d| d.border_l(PANE_DIVIDER).border_color(border))
+                .text_color(muted)
+                .whitespace_nowrap()
+                .child(label.clone())
+        });
+        h_flex()
+            .id(fold_row_id(row))
+            .test_support()
+            .role(Role::Row)
+            .aria_row_index(row.get())
+            .aria_label(label.clone())
+            .h(self.typography.line_height())
+            .w_full()
+            .bg(filler)
+            .cursor_pointer()
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open_fold(&opened, cx)))
+            .children(cells)
+    }
+}
+
 /// One of the list's display rows: display row `sub` of aligned row `row`.
 #[derive(Clone, Copy)]
 struct DisplayRow {
@@ -2985,13 +3162,22 @@ impl DisplayRow {
 }
 
 /// The display rows of each of the result's rows, as its editor lays them out under `wrap`.
-fn result_heights(result: ResultRows, wrap: Wrap, state: &EditorState) -> Heights {
-    match wrap {
+/// Each fold's lines take one display row together: its spacer row.
+fn result_heights(
+    result: ResultRows,
+    wrap: Wrap,
+    state: &EditorState,
+    folds: &[MergeFold],
+) -> Heights {
+    let heights = match wrap {
         Wrap::On => result.heights(|line| {
             state.display_map().buffer_line_to_display_row_range(line).map_or(0, |rows| rows.len())
         }),
         Wrap::Off | Wrap::TooLong => Heights::Uniform(result.count()),
-    }
+    };
+    let items: Vec<_> =
+        folds.iter().map(|fold| result.rows_of_lines(fold.region, &fold.result)).collect();
+    heights.fold(&items)
 }
 
 /// A top pane's line number slot: the line's number, [`DELETED_ROW_MARK`] in `deleted`'s colour
@@ -3399,29 +3585,45 @@ fn choice_menu(menu: NativeMenu, items: &[MenuChoice]) -> NativeMenu {
 
 /// One spacer row and its note for each placeholder of the result (`placeholder::placeholders`),
 /// filled, framed and marked as the block it stands for (`marks::placeholder_mark`).
-fn result_placeholders(
+/// The result's spacer rows and their notes: a placeholder for each region with no lines
+/// (§A6.2) and a fold row for each of `folds`, with the region of each placeholder. A
+/// placeholder above hidden lines moves below them; on one line, rows go in region order.
+fn result_spacers(
     doc: &MergeDocument,
     tones: &Tones,
+    folds: &[MergeFold],
+    muted: Hsla,
 ) -> (Vec<(usize, usize)>, Vec<SpacerNote>, Vec<RegionIx>) {
     let colour = tones.deleted();
     let found = placeholder::placeholders(doc);
     let regions = found.iter().map(|p| p.region).collect();
-    let (spacers, notes) = found
+    let shown =
+        |line: usize| merge_fold::fold_over_line(folds, line).map_or(line, |fold| fold.result.end);
+    let fold_rows = folds.iter().map(|fold| {
+        let line = fold.result.end;
+        let note = SpacerNote::new(line, strings::unchanged_lines(fold.len()), muted);
+        (fold.region, (line, 1), note)
+    });
+    let mut rows: Vec<_> = found
         .iter()
         .map(|p| {
             let roles = p.sources.iter().map(|&s| status::role_name(doc, s)).collect::<Vec<_>>();
             let label = strings::placeholder_label(p.lines, roles.iter().map(AsRef::as_ref));
             let look = marks::placeholder_mark(doc, p.region, &p.sources);
-            let note = SpacerNote::new(p.line.get(), label, colour)
+            let line = shown(p.line.get());
+            let note = SpacerNote::new(line, label, colour)
                 .with_fill(tones.band(look.tone))
                 .with_gutter_mark(GutterMark::new(look.mark.label, tones.mark(look.mark.tone)));
             let note = match look.border {
                 Some(tone) => note.with_border(tones.mark(tone)),
                 None => note,
             };
-            ((p.line.get(), placeholder::PLACEHOLDER_ROWS), note)
+            (p.region, (line, placeholder::PLACEHOLDER_ROWS), note)
         })
-        .unzip();
+        .chain(fold_rows)
+        .collect();
+    rows.sort_by_key(|&(region, (line, _), _)| (line, region));
+    let (spacers, notes) = rows.into_iter().map(|(_, spacer, note)| (spacer, note)).unzip();
     (spacers, notes, regions)
 }
 
@@ -3515,6 +3717,7 @@ impl Render for MergeWindow {
             .on_action(cx.listener(Self::toggle_base_pane))
             .on_action(cx.listener(Self::toggle_syntax))
             .on_action(cx.listener(Self::toggle_soft_wrap))
+            .on_action(cx.listener(Self::toggle_collapse_unchanged))
             .on_action(cx.listener(Self::toggle_scroll_sync))
             // Without origins there is nothing to blame, so the Blame key does nothing.
             .when(self.origin_column.origins().loaded(), |root| {

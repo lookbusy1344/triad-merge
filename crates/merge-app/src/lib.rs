@@ -244,8 +244,6 @@ pub(crate) struct ViewTicks {
     pub origins_loaded: bool,
     pub syntax: bool,
     pub soft_wrap: bool,
-    /// Whether the window has unchanged regions to collapse: the diff window.
-    pub collapsible: bool,
     pub collapse_unchanged: bool,
     pub scroll_sync: bool,
 }
@@ -297,7 +295,6 @@ pub(crate) fn menus(ticks: ViewTicks) -> Vec<Menu> {
             MenuItem::action(menu::PREVIOUS_CONFLICT, PreviousConflict),
         ]),
         // Blame shows only in a window with origins: without them there is nothing to blame.
-        // Collapse Unchanged shows only in the diff window.
         Menu::new(menu::VIEW).items(
             [
                 Some(MenuItem::action(menu::BASE_PANE, ToggleBasePane).checked(ticks.base_pane)),
@@ -306,10 +303,10 @@ pub(crate) fn menus(ticks: ViewTicks) -> Vec<Menu> {
                 }),
                 Some(MenuItem::action(menu::SYNTAX, ToggleSyntax).checked(ticks.syntax)),
                 Some(MenuItem::action(menu::SOFT_WRAP, ToggleSoftWrap).checked(ticks.soft_wrap)),
-                ticks.collapsible.then(|| {
+                Some(
                     MenuItem::action(menu::COLLAPSE_UNCHANGED, ToggleCollapseUnchanged)
-                        .checked(ticks.collapse_unchanged)
-                }),
+                        .checked(ticks.collapse_unchanged),
+                ),
                 Some(
                     MenuItem::action(menu::SCROLL_SYNC, ToggleScrollSync)
                         .checked(ticks.scroll_sync),

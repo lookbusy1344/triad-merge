@@ -19,7 +19,7 @@ As of 2026-11-13.
 | M6 native resolution | Done: git stages a resolved save; jj snapshots before the read and after each save | D |
 | M7 syntax highlighting | Done: Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS | F |
 | p4merge parity | Done | E |
-| Review and diff features | Bulk takes (§G3), line endings in comparison (§G4) and collapsed unchanged regions in the diff window (§G2) done; the rest open | G |
+| Review and diff features | Bulk takes (§G3), line endings in comparison (§G4) and collapsed unchanged regions in both windows (§G2) done; the rest open | G |
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
 
 Every spec §9 target is met (§A6.7). Toolchain: stable Rust 1.100, with `rust-version` 1.99. Dependencies: jj-lib and jj-core 0.47.1 on gix 0.90; gpui-kit 0.8.1 with the vendored `gpui-base` patch; gpui-kit 0.9 is not adopted (`docs/gpui-kit-issues.md`).
@@ -33,7 +33,7 @@ Build profiles (root `Cargo.toml`): `release` aborts on panic and strips symbols
 In order. Each is one or more commits.
 
 1. **Close M3.** The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
-2. **Review and diff features** (part G): collapse unchanged regions in the merge window (§G2); the rest of the comparison filters (§G4), moved code in the two-way diff (§G5); then §G6–§G14.
+2. **Review and diff features** (part G): the rest of the comparison filters (§G4), moved code in the two-way diff (§G5); then §G6–§G14.
 3. **More grammars,** one commit each: C, C++, Java and Kotlin; then Markdown; then Bash, Ruby, PHP and SQL.
 4. **M4b** (§3) once the owner has the machines and the certificate.
 5. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
@@ -91,8 +91,8 @@ Out of scope (spec §1.3): image and binary comparison, encodings other than UTF
 The main way to move through a large file with few changes; every tool compared has it. Spec §5 sets the behaviour; `DESIGN.md` §A6.5 holds the design.
 
 - Diff window: done. Settings `collapse-unchanged` and `context-lines`, View → Collapse Unchanged (⌘U), fold rows that open on a click, edits and search matches that open their fold.
-- Merge window: open. The top panes' fold row stands in for a run of aligned rows, so the panes stay level. The result editor hides the same lines with `set_hidden_lines`. Scroll sync counts a fold row as one row in each pane. Go to Line into a fold opens it. `toggle-collapse-unchanged` then runs in both windows.
-- Open: a key that opens the fold next to the caret; ruler marks in display rows while folds are collapsed.
+- Merge window: done. One fold row across the top panes, the result's lines hidden behind a spacer row, folds that open on a click in either pane, on Go to Line, and on a search match in hidden lines; ⌘U and the settings as in the diff window.
+- Open: a key that opens the fold next to the caret; ruler marks in display rows while folds are collapsed; in the merge window, folding the untouched lines of an unchanged region whose result is edited, which needs a line diff of the region.
 
 ### G3 Bulk resolution
 

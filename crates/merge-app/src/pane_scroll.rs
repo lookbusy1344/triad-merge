@@ -2,6 +2,8 @@
 //! lines wrap and sideways through their text; soft wrap; the region `go_to` brings into
 //! view; and the syncs that tie the rows to the result.
 
+use std::ops::Range;
+
 use gpui_kit::{Pixels, ScrollStrategy, UniformListScrollHandle, point, px};
 use merge_core::index::RegionIx;
 use merge_core::merge3::Source;
@@ -9,7 +11,7 @@ use merge_view::heights::Heights;
 use merge_view::rows::RowIx;
 use merge_view::scroll::{Follow, ScrollSync};
 
-use crate::row_wrap::RowWrap;
+use crate::row_wrap::{Fit, RowWrap};
 use crate::sideways::Sideways;
 use crate::wrap::Wrap;
 
@@ -45,6 +47,10 @@ pub(crate) struct PaneScroll {
     sideways: Sideways,
     /// The display rows each aligned row takes: one, more while it wraps.
     row_wrap: RowWrap,
+    /// The aligned rows each collapsed unchanged region hides, sorted (spec §5).
+    folds: Vec<Range<usize>>,
+    /// The display rows each aligned row takes, wrapped and folded.
+    heights: Heights,
     /// Whether the result and the rows wrap long lines.
     wrap: Wrap,
     /// Where the panes stood at the last sync; `None` with scroll sync off.
@@ -60,6 +66,8 @@ impl PaneScroll {
             list: UniformListScrollHandle::new(),
             sideways: Sideways::default(),
             row_wrap: RowWrap::new(rows),
+            folds: Vec::new(),
+            heights: Heights::Uniform(rows),
             wrap,
             syncs: sync.then(ScrollSyncs::default),
             reveal: None,
@@ -83,13 +91,64 @@ impl PaneScroll {
         &self.row_wrap
     }
 
-    pub(crate) fn row_wrap_mut(&mut self) -> &mut RowWrap {
-        &mut self.row_wrap
+    /// The display rows each aligned row takes: more while it wraps, one for each fold's
+    /// rows together.
+    pub(crate) fn heights(&self) -> &Heights {
+        &self.heights
     }
 
-    /// The display rows each aligned row takes.
-    pub(crate) fn heights(&self) -> &Heights {
-        self.row_wrap.heights()
+    /// The rows changed: they wrap again at the next fit, and fold as before until the
+    /// folds are set again.
+    pub(crate) fn rows_changed(&mut self, rows: usize) {
+        self.row_wrap.rows_changed(rows);
+        self.compose();
+    }
+
+    /// Show every row on one display row, apart from the folds. Whether the heights changed.
+    pub(crate) fn unwrap(&mut self, rows: usize) -> bool {
+        let changed = self.row_wrap.unwrap(rows);
+        if changed {
+            self.compose();
+        }
+        changed
+    }
+
+    /// Wrap the rows for `fit`, as [`RowWrap::fit`] does. Whether the heights changed.
+    pub(crate) fn fit<'a, C>(
+        &mut self,
+        fit: Fit,
+        cells: impl Fn(usize) -> C,
+        breaks: impl FnMut(&str, Pixels) -> Vec<usize>,
+    ) -> bool
+    where
+        C: IntoIterator<Item = Option<std::borrow::Cow<'a, str>>>,
+    {
+        let changed = self.row_wrap.fit(fit, cells, breaks);
+        if changed {
+            self.compose();
+        }
+        changed
+    }
+
+    /// Collapse `folds`, ranges of aligned rows, each to one display row. The rows keep the
+    /// aligned row at their top, display rows `row_h` high, and the result follows them.
+    pub(crate) fn set_folds(&mut self, folds: Vec<Range<usize>>, row_h: f32) {
+        if folds == self.folds {
+            return;
+        }
+        let old = self.heights.clone();
+        let old_top = f32::from(self.top());
+        self.folds = folds;
+        self.compose();
+        let item = old.to_items(old_top / row_h);
+        self.set_top(self.heights.to_rows(item) * row_h);
+        if let Some(syncs) = &mut self.syncs {
+            syncs.down.bring_result();
+        }
+    }
+
+    fn compose(&mut self) {
+        self.heights = self.row_wrap.heights().clone().fold(&self.folds);
     }
 
     pub(crate) fn wrap(&self) -> Wrap {
@@ -193,7 +252,7 @@ impl PaneScroll {
         let Some(syncs) = &mut self.syncs else {
             return Synced::default();
         };
-        let heights = self.row_wrap.heights();
+        let heights = &self.heights;
         let follow = syncs.down.step(
             rows_top,
             result_top,
@@ -237,6 +296,10 @@ impl PaneScroll {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::single_range_in_vec_init,
+    reason = "folds are lists of row ranges, some with one range"
+)]
 mod tests {
     use super::*;
 
@@ -363,6 +426,37 @@ mod tests {
         scroll.keep_place(&old, f32::from(ROW_H), 0.);
         assert_eq!(scroll.top(), px(20.));
         assert_eq!(scroll.sync(0., 0., double, half, &SOURCES), Synced::default(), "no follow");
+    }
+
+    #[test]
+    fn folds_keep_the_rows_on_their_aligned_row_and_bring_the_result_to_them() {
+        let mut scroll = PaneScroll::new(100, Wrap::Off, true);
+        assert_eq!(scroll.sync(0., 0., double, half, &SOURCES), Synced::default());
+        // Aligned row 50 at the top, the result settled with it.
+        scroll.set_top(1000.);
+        scroll.sync(0., 0., double, half, &SOURCES);
+        assert_eq!(scroll.sync(2000., 0., double, half, &SOURCES), Synced::default());
+        // Rows 0-39 fold into one display row: row 50 is display row 11.
+        scroll.set_folds(vec![0..40], f32::from(ROW_H));
+        assert_eq!(scroll.heights().rows(), 61);
+        assert_eq!(scroll.top(), px(220.));
+        let synced = scroll.sync(2000., 0., double, half, &SOURCES);
+        assert_eq!(synced, Synced { result_top: Some(440.), ..Synced::default() });
+        // The same folds again change nothing.
+        scroll.set_folds(vec![0..40], f32::from(ROW_H));
+        assert_eq!(scroll.top(), px(220.));
+        assert_eq!(scroll.sync(440., 0., double, half, &SOURCES), Synced::default());
+    }
+
+    #[test]
+    fn folds_stay_while_the_rows_wrap_and_unwrap() {
+        let mut scroll = PaneScroll::new(4, Wrap::On, true);
+        scroll.set_folds(vec![1..3], f32::from(ROW_H));
+        assert_eq!(scroll.heights(), &Heights::Uniform(4).fold(&[1..3]));
+        scroll.rows_changed(4);
+        assert_eq!(scroll.heights().rows(), 3);
+        assert!(!scroll.unwrap(4), "already one row each");
+        assert_eq!(scroll.heights().rows(), 3);
     }
 
     #[test]

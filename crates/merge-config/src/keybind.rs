@@ -160,7 +160,7 @@ impl KeyAction {
     /// Whether the merge window has this command.
     #[must_use]
     pub const fn in_merge_window(self) -> bool {
-        !matches!(self, Self::Save | Self::ToggleCollapseUnchanged)
+        !matches!(self, Self::Save)
     }
 
     /// Whether the diff window has this command.
@@ -689,9 +689,9 @@ mod tests {
     }
 
     #[test]
-    fn the_diff_window_alone_collapses_unchanged_regions() {
+    fn both_windows_collapse_unchanged_regions() {
         assert!(KeyAction::ToggleCollapseUnchanged.in_diff_window());
-        assert!(!KeyAction::ToggleCollapseUnchanged.in_merge_window());
+        assert!(KeyAction::ToggleCollapseUnchanged.in_merge_window());
     }
 
     #[test]

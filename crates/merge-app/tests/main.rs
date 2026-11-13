@@ -8,6 +8,7 @@
 mod a11y;
 mod about;
 mod choices;
+mod collapse;
 mod common;
 mod diff;
 mod input_find;
