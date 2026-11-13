@@ -5627,6 +5627,7 @@ dependencies = [
  "tree-sitter-go",
  "tree-sitter-html",
  "tree-sitter-javascript",
+ "tree-sitter-json",
  "tree-sitter-python",
  "tree-sitter-rust",
  "tree-sitter-swift",

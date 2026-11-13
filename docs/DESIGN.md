@@ -701,14 +701,14 @@ The console and GUI binaries forward as §A4.13 gives. `images/triad.ico` goes i
 ### F1 Goal
 
 - Every pane colours its text by syntax; bands draw under the colours, intra-line marks over them (spec §5).
-- Grammars: Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX.
+- Grammars: Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON.
 - The window never waits for a parse.
 
-Not covered: Razor, which has no grammar that covers its code blocks; styles inside HTML and JavaScript templates tagged `css`, `json`, `sql`, `yaml` or `graphql`, whose grammars triad does not build.
+Not covered: Razor, which has no grammar that covers its code blocks; styles inside HTML and JavaScript templates tagged `css`, `sql`, `yaml` or `graphql`, whose grammars triad does not build.
 
 ### F2 What gpui-component gives
 
-- Grammars as cargo features through `gpui-kit`, each building its C sources. `LanguageRegistry::register` takes grammars from other crates.
+- Grammars as cargo features through `gpui-kit`, each building its C sources. JSON comes with the base `tree-sitter` feature. `LanguageRegistry::register` takes grammars from other crates.
 - C# and Swift come without a highlight query; triad registers them again with their grammar crates' queries. TSX comes with only the lines TypeScript adds to JavaScript's query; triad registers it with gpui-component's TypeScript query and injections.
 - The editors' query puts locals before highlights, so an unstyled local capture (`@local.reference` on a JavaScript identifier) draws plain. The top panes take the same query.
 - The editor's tree-sitter highlighter is crate-private: it parses within 2 ms on the UI thread, else in the background after 150 ms, and always in the background over 256 KiB. `SyntaxHighlighter` is public and `Send`.
@@ -722,9 +722,9 @@ An editor holds one highlighter, and gpui-component's tree-sitter highlighter is
 
 The top panes are rows triad draws, and their texts never change.
 
-- Each input is cut into chunks of about 2 000 lines (`CHUNK_LINES`, `merge_syntax::syntax::chunk_starts`). A chunk ends before the first top-level line at or after its 2 000th: a line at column 0, after a blank line, not starting with `}`, `)`, `]` or `</`; without one, at its 2 000th line. A chunk's spans equal those of the whole parse unless a construct crosses a forced cut. A long HTML document is one element, so the first closing tags after each cut draw plain.
+- Each input is cut into chunks of about 2 000 lines (`CHUNK_LINES`, `merge_syntax::syntax::chunk_starts`). A chunk ends before the first top-level line at or after its 2 000th: a line at column 0, after a blank line, not starting with `}`, `)`, `]` or `</`; without one, at its 2 000th line. A chunk's spans equal those of the whole parse unless a construct crosses a forced cut. A long HTML document is one element and a long JSON document one value, so the first closing tags or brackets after each cut draw plain.
 - A chunk parses alone, off the UI thread, when a row of it shows. A row on screen queues its chunk and one on each side; the nearest parses first; each input runs at most two parses at once; a queued chunk more than two from the screen drops when the rows move. Each input keeps 16 chunks' spans, dropping the farthest. A failed chunk draws plain and does not parse again.
-- Each line keeps capture spans: byte ranges with up to three captures, outermost first. Overlaps follow gpui-component: of two captures of one node the first wins; a capture paints over those starting before it; an injection parses one level deep when its language is built in (Rust macros, HTML scripts, JavaScript `html` templates).
+- Each line keeps capture spans: byte ranges with up to three captures, outermost first. Overlaps follow gpui-component: of two captures of one node the first wins; a capture paints over those starting before it; an injection parses one level deep when its language is built in (Rust macros, HTML scripts, JavaScript `html` and `json` templates).
 
 #### F4.1 The editors past `syntax-whole-file-max-lines`
 

@@ -31,6 +31,7 @@ pub(crate) const fn registry_name(language: Language) -> &'static str {
         Language::JavaScript => "javascript",
         Language::TypeScript => "typescript",
         Language::Tsx => "tsx",
+        Language::Json => "json",
     }
 }
 
@@ -427,7 +428,7 @@ mod tests {
         bytes
     }
 
-    const LANGUAGES: [Language; 9] = [
+    const LANGUAGES: [Language; 10] = [
         Language::Rust,
         Language::Go,
         Language::CSharp,
@@ -437,14 +438,15 @@ mod tests {
         Language::JavaScript,
         Language::TypeScript,
         Language::Tsx,
+        Language::Json,
     ];
     /// Chunks that cut the Go and C# samples only before top-level lines: no shorter than
     /// their longest run of lines without one (34 in Go, 56 in C#), shorter than the sample.
     /// The demo's `mod tests` has none in its last 615 lines, so it parses whole.
     const SAMPLE_CHUNK: usize = 64;
     /// The same for the Python, Swift, JavaScript, TypeScript and TSX samples, whose longest
-    /// run is 28 lines. An HTML document is one element, with no top-level line inside it,
-    /// so it parses whole.
+    /// run is 28 lines. An HTML document is one element, and a JSON document one value,
+    /// with no top-level line inside it, so each parses whole.
     const SHORT_SAMPLE_CHUNK: usize = 32;
 
     #[test]
@@ -458,6 +460,7 @@ mod tests {
         assert_eq!(registry_name(Language::JavaScript), "javascript");
         assert_eq!(registry_name(Language::TypeScript), "typescript");
         assert_eq!(registry_name(Language::Tsx), "tsx");
+        assert_eq!(registry_name(Language::Json), "json");
     }
 
     #[test]
@@ -553,6 +556,11 @@ mod tests {
                 Language::Tsx,
                 include_str!("../../../fixtures/syntax/sample.tsx"),
                 &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
+            ),
+            (
+                Language::Json,
+                include_str!("../../../fixtures/syntax/sample.json"),
+                &[syntax::CHUNK_LINES][..],
             ),
         ];
         for (language, source, chunks) in samples {

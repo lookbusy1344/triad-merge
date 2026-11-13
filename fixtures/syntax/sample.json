@@ -1,0 +1,37 @@
+// A sample that exercises the JSON grammar's highlight captures, as JSON with comments.
+{
+  "name": "triad",
+  "version": "0.1.0",
+  "private": true,
+  "published": false,
+  "homepage": null,
+  "limits": {
+    "lines": 20000,
+    "ratio": 1.5e-3,
+    "offset": -4
+  },
+  /* Escapes in keys and values. */
+  "escapes": {
+    "quote\"key": "a \"quoted\" word",
+    "path": "C:\\tools\\triad",
+    "unicode": "\u00e9t\u00e9",
+    "lines": "one\ntwo\tthree"
+  },
+  "languages": [
+    "rust",
+    "go",
+    "json"
+  ],
+  "matrix": [
+    [1, 2, 3],
+    [],
+    [{}, {"empty": ""}]
+  ],
+  "nested": {
+    "a": {
+      "b": {
+        "c": [true, false, null, 0]
+      }
+    }
+  }
+}

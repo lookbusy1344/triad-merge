@@ -20,10 +20,11 @@ pub enum Language {
     JavaScript,
     TypeScript,
     Tsx,
+    Json,
 }
 
 /// Each language's file extensions, in lowercase.
-const EXTENSIONS: [(&str, Language); 16] = [
+const EXTENSIONS: [(&str, Language); 18] = [
     ("rs", Language::Rust),
     ("go", Language::Go),
     ("cs", Language::CSharp),
@@ -40,6 +41,8 @@ const EXTENSIONS: [(&str, Language); 16] = [
     ("mts", Language::TypeScript),
     ("cts", Language::TypeScript),
     ("tsx", Language::Tsx),
+    ("json", Language::Json),
+    ("jsonc", Language::Json),
 ];
 
 impl Language {
@@ -56,6 +59,7 @@ impl Language {
             Self::JavaScript => tree_sitter_javascript::LANGUAGE,
             Self::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT,
             Self::Tsx => tree_sitter_typescript::LANGUAGE_TSX,
+            Self::Json => tree_sitter_json::LANGUAGE,
         }
         .into()
     }
@@ -113,6 +117,8 @@ mod tests {
         assert_eq!(of("conf.cts"), Some(Language::TypeScript));
         assert_eq!(of("index.d.ts"), Some(Language::TypeScript));
         assert_eq!(of("View.tsx"), Some(Language::Tsx));
+        assert_eq!(of("package.json"), Some(Language::Json));
+        assert_eq!(of("tsconfig.jsonc"), Some(Language::Json));
     }
 
     #[test]
@@ -126,6 +132,8 @@ mod tests {
         assert_eq!(of("APP.JS"), Some(Language::JavaScript));
         assert_eq!(of("App.Ts"), Some(Language::TypeScript));
         assert_eq!(of("VIEW.TSX"), Some(Language::Tsx));
+        assert_eq!(of("A.JSON"), Some(Language::Json));
+        assert_eq!(of("a.JsonC"), Some(Language::Json));
     }
 
     #[test]
@@ -149,10 +157,11 @@ mod tests {
             "a.pyc",
             "a.xhtml",
             "a.swiftmodule",
-            "a.json",
             "a.js.map",
             "a.tsbuildinfo",
-            "a.jsonc",
+            "a.json5",
+            "a.jsonl",
+            "a.json.orig",
         ] {
             assert_eq!(of(name), None, "{name}");
         }
@@ -184,7 +193,7 @@ mod tests {
     }
 
     /// Each language's sample, and the kind of its tree's root.
-    const SAMPLES: [(Language, &str, &str); 9] = [
+    const SAMPLES: [(Language, &str, &str); 10] = [
         (Language::Rust, "fn a() -> u8 { 1 }\n", "source_file"),
         (Language::Go, "package a\nfunc b() {}\n", "source_file"),
         (Language::CSharp, "class A { void B() {} }\n", "compilation_unit"),
@@ -194,6 +203,7 @@ mod tests {
         (Language::JavaScript, "const a = () => 1;\n", "program"),
         (Language::TypeScript, "const a: number = 1;\n", "program"),
         (Language::Tsx, "const a = <div>{b as number}</div>;\n", "program"),
+        (Language::Json, "// c\n{\"a\": [1, true, null]}\n", "document"),
     ];
 
     fn root_kind(language: Language, source: &str) -> (String, bool) {
