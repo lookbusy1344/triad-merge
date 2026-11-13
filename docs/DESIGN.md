@@ -792,3 +792,9 @@ Features git cannot have (spec §1.2, §7.5). `docs/PLAN-jj-native.md` holds the
 - `set_rewritten_commit` maps each further copy to the merged commit. `rebase_descendants` then moves their children onto it and moves a working copy that sat on one; `record_abandoned_commit` would move the children onto the copy's parents instead.
 - The description rule is the three-way rule over whole strings: a line merge of free text would leave markers in a description.
 
+### I4 Two sides of a conflict
+
+- `resolve --pair` loads the commit's conflict as `resolve -r` does and keeps sides N and N + 1 and base N as the merge's inputs. The record carries the pair, so a save goes to `JjRepository::reduce_pair` instead of `write_conflict`, and only a save that exits 0 writes.
+- `reduce_pair` splices the three terms out of the path's `Merge` and puts one file term in their place: `Merge::from_vec` of the result, simplified. A simplified value of one term is written resolved; any other is padded to the tree's arity, as `write_conflict` pads. The executable bit is the one the three terms agree on (`resolve_file_executable`).
+- `Rewrite::sides` is the path's number of sides after the rewrite, simplified, and `Rewrite::resolved` is about the path: a commit may hold other conflicts.
+

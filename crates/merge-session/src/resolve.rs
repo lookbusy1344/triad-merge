@@ -59,6 +59,8 @@ pub struct Record {
 #[derive(Debug, Clone)]
 struct InCommit {
     id: CommitId,
+    /// The pair of sides `resolve --pair` merges, counted from 1; none for the whole conflict.
+    pair: Option<usize>,
     /// The shortest markers jj parses back as this conflict.
     marker_length: usize,
     /// The temporary file the result is saved to.
@@ -107,7 +109,7 @@ impl Record {
             return Ok(());
         };
         if self.commit.is_some() {
-            return self.rewrite(false).map(drop);
+            return self.rewrite(resolved, false).map(drop);
         }
         let run = RunRepository::find([self.root.as_std_path()]);
         let mut run = match &self.jj_config {
@@ -117,29 +119,44 @@ impl Record {
         self.record(run.require_mut()?, resolved)
     }
 
-    /// Write the saved result into the commit `resolve -r` opened, or on a `dry_run` report
-    /// what the write would do. None for the working copy's conflict.
+    /// The pair of sides `resolve --pair` merges, counted from 1.
+    #[must_use]
+    pub fn pair(&self) -> Option<usize> {
+        self.commit.as_ref().and_then(|commit| commit.pair)
+    }
+
+    /// Write the saved result, `resolved` or not, into the commit `resolve -r` or
+    /// `resolve --pair` opened, or on a `dry_run` report what the write would do. None for
+    /// the working copy's conflict, and for a pair's result that keeps conflicts: only a
+    /// resolved pair replaces its terms.
     ///
     /// # Errors
     ///
     /// [`VcsError`] when the result cannot be read, or the repository refuses the write
-    /// ([`JjRepository::write_conflict`]).
-    pub fn rewrite(&self, dry_run: bool) -> Result<Option<Rewrite>, VcsError> {
+    /// ([`JjRepository::write_conflict`], [`JjRepository::reduce_pair`]).
+    pub fn rewrite(&self, resolved: bool, dry_run: bool) -> Result<Option<Rewrite>, VcsError> {
         let Some(commit) = &self.commit else {
             return Ok(None);
         };
+        if commit.pair.is_some() && !resolved {
+            return Ok(None);
+        }
         let content = std::fs::read(&commit.file).map_err(|source| VcsError::Backend {
             context: "reading the saved result",
             source: Box::new(source),
         })?;
         let config = self.jj_config.clone().unwrap_or_else(ConfigEnv::from_process);
-        let rewrite = JjRepository::discover(&self.root)?.with_config(config).write_conflict(
-            &commit.id,
-            &self.path,
-            &content,
-            commit.marker_length,
-            dry_run,
-        )?;
+        let mut repo = JjRepository::discover(&self.root)?.with_config(config);
+        let rewrite = match commit.pair {
+            Some(pair) => repo.reduce_pair(&commit.id, &self.path, pair, &content, dry_run)?,
+            None => repo.write_conflict(
+                &commit.id,
+                &self.path,
+                &content,
+                commit.marker_length,
+                dry_run,
+            )?,
+        };
         tracing::info!(path = %self.path, commit = %commit.id, ?rewrite, "wrote the result into the commit");
         Ok(Some(rewrite))
     }
@@ -258,6 +275,9 @@ pub enum ResolveError {
     NeedsJj(&'static str),
     #[error("cannot make a temporary file for the result: {0}")]
     Temporary(std::io::Error),
+    /// `resolve --pair` on a conflict with no such pair.
+    #[error(transparent)]
+    Pair(vcs_jj::JjError),
 }
 
 impl ResolveError {
@@ -395,17 +415,21 @@ pub fn load(
 /// The conflict at `path`, relative to `cwd`, in the one commit `rev` names in the jj
 /// repository holding `cwd`, without checking it out (`resolve -r`, `docs/PLAN-jj-native.md`
 /// §I2). The result saves to a temporary file; each save writes it back into the commit.
+/// With `pair`, the inputs are sides `pair` and `pair + 1` and the base between them, and
+/// only a resolved save writes (`resolve --pair`, §I4).
 ///
 /// # Errors
 ///
 /// [`ResolveError::NeedsJj`] outside a jj repository; [`ResolveError::Vcs`] when `rev` names
 /// no commit or several, or the conflict cannot be read; [`ResolveError::NotConflicted`] when
 /// the path is resolved there; the term errors of [`load`]; and [`ResolveError::Temporary`]
-/// when the temporary file cannot be made.
+/// when the temporary file cannot be made; [`ResolveError::Pair`] for a conflict with no
+/// pair `pair`.
 pub fn load_at_commit(
     cwd: &Path,
     rev: &str,
     path: &Path,
+    pair: Option<usize>,
     jj_config: Option<ConfigEnv>,
 ) -> Result<Loaded, ResolveError> {
     let repo = crate::jj_native::open(cwd, jj_config.clone(), "resolve -r")?;
@@ -422,8 +446,16 @@ pub fn load_at_commit(
     if conflict.sides.iter().all(|side| side.content == TermContent::Absent) {
         return Err(ResolveError::DeletedEverywhere(relative));
     }
-    let (sides, side_labels) = decode(&relative, "side", conflict.sides)?;
-    let (bases, base_labels) = decode(&relative, "base", conflict.bases)?;
+    let (mut sides, mut side_labels) = decode(&relative, "side", conflict.sides)?;
+    let (mut bases, mut base_labels) = decode(&relative, "base", conflict.bases)?;
+    if let Some(pair) = pair {
+        vcs_jj::check_pair(&relative, pair, sides.len()).map_err(ResolveError::Pair)?;
+        let first = pair - 1;
+        sides = window(sides, first, PAIR_SIDES);
+        side_labels = window(side_labels, first, PAIR_SIDES);
+        bases = window(bases, first, 1);
+        base_labels = window(base_labels, first, 1);
+    }
     let inputs = Inputs::new(sides, bases)
         .map_err(|source| ResolveError::Shape { path: relative.clone(), source })?;
     let marker_length = merge_core::jj::marker_length(&inputs);
@@ -433,7 +465,7 @@ pub fn load_at_commit(
         .map_err(ResolveError::Temporary)?;
     let name = relative.file_name().unwrap_or(relative.as_str());
     let temporary = Utf8PathBuf::from_path_buf(dir.path().join(name)).map_err(VcsError::NotUtf8)?;
-    let commit = InCommit { id, marker_length, file: temporary.clone(), _dir: Arc::new(dir) };
+    let commit = InCommit { id, pair, marker_length, file: temporary.clone(), _dir: Arc::new(dir) };
     Ok(Loaded {
         record: Some(Record { root, path: relative.clone(), jj_config, commit: Some(commit) }),
         path: relative,
@@ -443,6 +475,14 @@ pub fn load_at_commit(
         repo: Some(RepoKind::Jj),
         marker_length: Some(marker_length),
     })
+}
+
+/// The sides of a pair.
+const PAIR_SIDES: usize = 2;
+
+/// The `len` items of `items` from `start`.
+fn window<T>(items: Vec<T>, start: usize, len: usize) -> Vec<T> {
+    items.into_iter().skip(start).take(len).collect()
 }
 
 /// Each term's text and title, `role` and its position naming a term in an error.

@@ -5,12 +5,14 @@
 pub mod config;
 mod diverge;
 mod native;
+mod reduce;
 #[cfg(feature = "testing")]
 pub mod testing;
 pub mod tool_config;
 
 pub use diverge::Divergence;
 pub use native::{DescendantEffect, Rewrite, StackCommit, StackPath};
+pub use reduce::{MIN_PAIR_SIDES, check_pair};
 
 use std::collections::HashMap;
 use std::error::Error;
@@ -75,6 +77,15 @@ pub enum JjError {
     /// same change ID by hand.
     #[error("the copies of change {0} share no predecessor")]
     NoCommonPredecessor(String),
+    /// `resolve --pair` on a conflict of two sides, where the pair is the whole conflict.
+    #[error("{0} has two sides; resolve it without --pair")]
+    PairOfTwoSides(camino::Utf8PathBuf),
+    /// `resolve --pair N` past the conflict's last pair.
+    #[error("pair {pair} needs sides {pair} and {next}; the conflict has {sides}", next = pair + 1)]
+    PairOutOfRange { pair: usize, sides: usize },
+    /// A conflict with a symlink, submodule or directory among its terms.
+    #[error("{0} is not a conflict of files")]
+    NotAFileConflict(camino::Utf8PathBuf),
 }
 
 /// A jj workspace, read through jj-lib at its head operation.

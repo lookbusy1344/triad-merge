@@ -92,6 +92,13 @@ fn descendant_lines(text: &mut String, descendants: &[DescendantEffect]) {
     }
 }
 
+/// What `resolve --pair` prints when the pair's merge keeps conflicts, and nothing is
+/// written.
+#[must_use]
+pub fn pair_unresolved(path: &Utf8Path, pair: usize) -> String {
+    format!("{path} is unchanged: pair {pair} has conflicts\n")
+}
+
 /// `paths` joined by commas, or `none`.
 fn list(paths: &[camino::Utf8PathBuf]) -> String {
     if paths.is_empty() {
@@ -244,6 +251,7 @@ mod tests {
         Rewrite {
             target: change("kkkk", Some("merge")),
             resolved,
+            sides: Some(if resolved { 1 } else { 2 }),
             descendants: vec![DescendantEffect {
                 change: change("llll", None),
                 before: vec!["a.txt".into(), "b.txt".into()],

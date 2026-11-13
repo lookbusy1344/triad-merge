@@ -148,6 +148,7 @@ fn markers_saved_back_unchanged_keep_the_conflict_and_write_no_operation() {
             .write_conflict(&id(&merge), a_txt(), MARKERS, MARKER_LENGTH, false)
             .expect("the markers are written");
         assert!(!rewrite.written && !rewrite.resolved, "{store}: {rewrite:?}");
+        assert_eq!(rewrite.sides, Some(2), "{store}");
         assert_eq!(fixture.held_in(&fixture.latest(&merge), "a.txt"), Held::Conflict, "{store}");
         assert_eq!(fixture.operation_count(), operations, "{store}");
     }
@@ -168,6 +169,21 @@ fn markers_with_one_side_edited_stay_a_conflict_with_the_edit() {
     let sides: Vec<_> = conflict.sides.iter().map(|side| side.content.clone()).collect();
     let file = |bytes: &[u8]| vcs::TermContent::File { bytes: bytes.to_vec(), executable: false };
     assert_eq!(sides, [file(b"LEFT\n"), file(RIGHT)]);
+}
+
+#[test]
+fn a_path_resolved_beside_another_conflict_reports_resolved() {
+    let fixture = Fixture::new();
+    let base = fixture.commit_on(&[], "base", &[("a.txt", BASE), ("c.txt", BASE)]);
+    let left = fixture.commit_on(&[&base], "left", &[("a.txt", LEFT), ("c.txt", LEFT)]);
+    let right = fixture.commit_on(&[&base], "right", &[("a.txt", RIGHT), ("c.txt", RIGHT)]);
+    let merge = fixture.commit_merged(&[&left, &right], "merge", &[]);
+    let rewrite = open(&fixture)
+        .write_conflict(&id(&merge), a_txt(), MERGED, MARKER_LENGTH, false)
+        .expect("the resolution is written");
+    assert!(rewrite.written && rewrite.resolved, "{rewrite:?}");
+    assert_eq!(rewrite.sides, Some(1));
+    assert_eq!(fixture.held_in(&fixture.latest(&merge), "c.txt"), Held::Conflict);
 }
 
 #[test]

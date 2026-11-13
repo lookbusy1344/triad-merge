@@ -223,7 +223,7 @@ fn batch_form(
             if targets.is_empty() {
                 return Ok(ExitCode::Resolved);
             }
-            if let (Some(rev), Some(path)) = (&resolve.rev, &resolve.path) {
+            if let (Some(rev), Some(path)) = (resolve.in_commit(), &resolve.path) {
                 return resolve_in_commit(
                     &resolve,
                     rev,
@@ -327,7 +327,13 @@ fn resolve_in_commit(
     env: &Env,
     stdout: &mut impl Write,
 ) -> Result<ExitCode, CliError> {
-    let loaded = resolve::load_at_commit(cwd, rev, path, Some(jj_config::snapshot_config(env)))?;
+    let loaded = resolve::load_at_commit(
+        cwd,
+        rev,
+        path,
+        resolve.pair,
+        Some(jj_config::snapshot_config(env)),
+    )?;
     let mut opened = loaded.open(resolve.options).map_err(SessionError::from)?;
     if let Some(commands) = &resolve.commands {
         replay::apply_file(&mut opened.doc, commands)?;
@@ -337,12 +343,22 @@ fn resolve_in_commit(
     let rewrite = opened
         .record
         .as_ref()
-        .map(|record| record.rewrite(resolve.dry_run))
+        .map(|record| record.rewrite(code == ExitCode::Resolved, resolve.dry_run))
         .transpose()
         .map_err(|source| CliError::Rewrite { path: opened.path.clone(), source })?
         .flatten();
-    if let Some(rewrite) = rewrite {
-        report(stdout, &jj_native::rewrite_report(&opened.path, &rewrite, resolve.dry_run), code);
+    match (rewrite, resolve.pair) {
+        (Some(rewrite), _) => {
+            report(
+                stdout,
+                &jj_native::rewrite_report(&opened.path, &rewrite, resolve.dry_run),
+                code,
+            );
+        }
+        (None, Some(pair)) => {
+            report(stdout, &jj_native::pair_unresolved(&opened.path, pair), code);
+        }
+        (None, None) => {}
     }
     Ok(code)
 }

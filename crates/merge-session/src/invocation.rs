@@ -127,8 +127,23 @@ pub struct Resolve {
     pub semantics: SemanticsFlags,
     /// `-r`: the jj revision whose commit holds the conflict; none for the working copy.
     pub rev: Option<String>,
+    /// `--pair N`: merge sides N and N + 1 of a jj conflict of more than two sides, counted
+    /// from 1.
+    pub pair: Option<usize>,
     /// `--dry-run`: report what writing into the commit would do, and write nothing.
     pub dry_run: bool,
+}
+
+/// The revision `resolve --pair` reads without `-r`: the working copy's commit.
+pub const WORKING_COPY_REV: &str = "@";
+
+impl Resolve {
+    /// The revision whose commit `resolve` writes into: `-r`'s, or the working copy's for
+    /// `--pair`. None for a conflict on disk.
+    #[must_use]
+    pub fn in_commit(&self) -> Option<&str> {
+        self.rev.as_deref().or(self.pair.map(|_| WORKING_COPY_REV))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

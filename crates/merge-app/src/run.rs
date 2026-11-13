@@ -167,13 +167,13 @@ fn run_native_diff(
 
 /// The merge window on the conflict `resolve` names, read from the repository (spec §7.4).
 fn run_resolve(
-    resolve: Resolve,
+    mut resolve: Resolve,
     mut repo: RunRepository,
     base: WindowSettings,
     errors: Vec<String>,
     bindings: KeyBindings,
 ) -> ExitCode {
-    let Some(target) = resolve.target else {
+    let Some(target) = resolve.target.take() else {
         return report("resolve has no file to open");
     };
     let cwd = working_dir(base.cwd.as_deref());
@@ -188,10 +188,14 @@ fn run_resolve(
             Ok(())
         });
     }
-    let loaded = match &resolve.rev {
-        Some(rev) => {
-            merge_session::resolve::load_at_commit(&cwd, rev, &target, repo.jj_config().cloned())
-        }
+    let loaded = match resolve.in_commit() {
+        Some(rev) => merge_session::resolve::load_at_commit(
+            &cwd,
+            rev,
+            &target,
+            resolve.pair,
+            repo.jj_config().cloned(),
+        ),
         None => merge_session::resolve::load(&mut repo, &cwd, &target, Snapshot::Take),
     };
     let opened = match loaded

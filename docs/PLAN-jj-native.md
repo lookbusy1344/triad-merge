@@ -42,6 +42,8 @@ Done: spec §7.5.2, `DESIGN.md` §I3.
 
 ## I4 Step 3: reduce a conflict of more than two sides
 
+Done: spec §7.5.3, `DESIGN.md` §I4.
+
 - jj orders a conflict's terms as side 1, base 1, side 2, base 2, …, side n. `triad-merge resolve PATH --pair N` merges sides N and N + 1 over base N as a three-way merge, in the merge window or `--headless`. A resolved save replaces the three terms with the result: the conflict keeps n − 1 sides. A save with markers writes nothing.
 - Works with `-r REV` (§I2). Refused for a conflict of two sides, where it is plain `resolve`, and for an `N` out of range.
 - Tests: a three-sided conflict reduced at each pair holds the expected two sides and base; a reduction that leaves one side resolves the file; out-of-range and two-sided refusals.

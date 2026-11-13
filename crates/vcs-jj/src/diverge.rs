@@ -96,6 +96,7 @@ impl JjRepository {
                     change.id(IdKind::Change)
                 ),
                 target: first.clone(),
+                path: None,
                 roots: copies.clone(),
             })
         })?;

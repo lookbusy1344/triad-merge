@@ -313,6 +313,7 @@ triad-merge diff PATH [--rev REV]                        # working copy against 
 triad-merge diff --inspect LEFT RIGHT [--diff-algorithm A] [--ignore-whitespace W] [--json]   # print two-way regions; no window
 triad-merge resolve [PATH] [--headless [--commands FILE]] # resolve in the working copy (§7.4)
 triad-merge resolve PATH -r REV [--headless [--commands FILE] [--dry-run]]   # resolve in a jj commit (§7.5.1)
+triad-merge resolve PATH --pair N [-r REV] [--headless [--commands FILE] [--dry-run]]   # merge two sides of a jj conflict (§7.5.3)
 triad-merge stack [REVSET] [--json]                       # jj's conflicted commits, parents first (§7.5.1)
 triad-merge diverge CHANGE [--dry-run] [--json]           # merge a divergent jj change into one commit (§7.5.2)
 triad-merge install --git | --jj [--config FILE]          # register as merge and diff tool (§7.1)
@@ -691,6 +692,13 @@ Commands built on what only jj records (§1.2). In a git repository each exits w
 - The description merges the same way: the copy that changed it wins; when both changed it differently, the first copy's stays and the report says so.
 - The further copies are rewritten into the merged commit, so their descendants and a working copy on one of them move onto it. The merged commit's predecessors are all the copies. One operation: `merge divergent change CHANGE in triad`.
 - The report: `merged change CHANGE: kept COMMIT, abandoned COMMIT over BASE`, then `  conflicted: PATHS` when the merge left conflicts, the description note, and the descendants as `resolve -r` lists them. `--dry-run` starts `would merge` and writes nothing. `--json` prints `{change_id, kept, abandoned, bases, conflicted, description_kept, written, descendants: [{change_id, before, after}]}`. Exit 0 when the merged commit is resolved, 1 with conflicts.
+
+#### 7.5.3 Two sides of a conflict
+
+- jj orders a conflict's terms side 1, base 1, side 2, base 2, …, side n. `resolve PATH --pair N` merges sides N and N + 1 over base N as a three-way merge, in the merge window or `--headless`, in the working copy's commit or with `-r REV` in another, as §7.5.1 does.
+- A resolved save replaces the three terms with the result: the conflict keeps n − 1 sides, simplified as jj simplifies, and resolves when one side is left. The operation is `reduce PATH in CHANGE in triad`. A save with markers writes nothing; `--headless` then prints `PATH is unchanged: pair N has conflicts` and exits 1.
+- The report is §7.5.1's: `resolved PATH in CHANGE` when the path resolved, else `saved with conflicts PATH in CHANGE`, then the descendants.
+- Refused before anything opens: a conflict of two sides (`PATH has two sides; resolve it without --pair`), and a pair out of range (`pair N needs sides N and N + 1; the conflict has n`).
 
 ## 8. Testing
 

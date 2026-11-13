@@ -66,8 +66,11 @@ pub struct StackPath {
 pub struct Rewrite {
     /// The commit rewritten, as it was.
     pub target: ChangeInfo,
-    /// The rewrite left the commit's path resolved.
+    /// The rewrite left its path resolved in the commit; without a path, the whole commit.
     pub resolved: bool,
+    /// The number of sides the path's conflict has after the rewrite, simplified: 1 when it
+    /// is resolved. None for a rewrite of no one path.
+    pub sides: Option<usize>,
     /// Each descendant the rewrite rebased, parents first.
     pub descendants: Vec<DescendantEffect>,
     /// The rewrite is written: false on a dry run.
@@ -88,6 +91,9 @@ pub struct DescendantEffect {
 /// description.
 pub(crate) struct Mutated {
     pub target: Commit,
+    /// The one path the rewrite is about, whose state the report gives; none for a rewrite
+    /// of the whole commit.
+    pub path: Option<RepoPathBuf>,
     pub roots: Vec<Commit>,
     pub description: String,
 }
@@ -224,14 +230,24 @@ impl JjRepository {
                 format!("resolve {path} in {} in triad", change.id(vcs::IdKind::Change));
             // Markers that read back as the conflict jj holds leave the commit as it is.
             if tree.tree_ids_and_labels() == commit.tree().tree_ids_and_labels() {
-                return Ok(Mutated { target: commit, roots: Vec::new(), description });
+                return Ok(Mutated {
+                    target: commit,
+                    path: Some(repo_path),
+                    roots: Vec::new(),
+                    description,
+                });
             }
             repo.rewrite_commit(&commit)
                 .set_tree(tree)
                 .write()
                 .block_on()
                 .map_err(backend("rewriting the commit"))?;
-            Ok(Mutated { roots: vec![commit.clone()], target: commit, description })
+            Ok(Mutated {
+                roots: vec![commit.clone()],
+                target: commit,
+                path: Some(repo_path),
+                description,
+            })
         })
     }
 
@@ -294,14 +310,24 @@ impl JjRepository {
         let old_wc = self.working_copy_commit()?;
         let mut tx = repo.start_transaction();
         tx.set_workspace_name(&self.workspace);
-        let Mutated { target, roots, description } = mutate(self, tx.repo_mut())?;
+        let Mutated { target, path, roots, description } = mutate(self, tx.repo_mut())?;
         self.check_mutable(&roots)?;
         let before = self.descendants(repo.as_ref(), &roots)?;
         tx.repo_mut()
             .rebase_descendants()
             .block_on()
             .map_err(backend("rebasing the descendants"))?;
-        let resolved = !visible(tx.repo(), target.change_id())?.has_conflict();
+        let now = visible(tx.repo(), target.change_id())?;
+        let sides = path
+            .map(|path| {
+                now.tree()
+                    .path_value(&path)
+                    .block_on()
+                    .map(|value| value.simplify().num_sides())
+                    .map_err(backend("finding a path in a tree"))
+            })
+            .transpose()?;
+        let resolved = sides.map_or(!now.has_conflict(), |sides| sides == 1);
         let target = self.change_info(&target)?;
         let descendants = before
             .into_iter()
@@ -317,7 +343,7 @@ impl JjRepository {
             })
             .collect::<Result<Vec<_>, VcsError>>()?;
         if dry_run || !tx.repo().has_changes() {
-            return Ok(Rewrite { target, resolved, descendants, written: false });
+            return Ok(Rewrite { target, resolved, sides, descendants, written: false });
         }
         let new_wc_id = tx
             .repo()
@@ -350,7 +376,7 @@ impl JjRepository {
                 .map_err(backend("checking out the working copy"))?;
         }
         self.repo = repo;
-        Ok(Rewrite { target, resolved, descendants, written: true })
+        Ok(Rewrite { target, resolved, sides, descendants, written: true })
     }
 }
 
