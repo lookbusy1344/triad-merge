@@ -1,6 +1,6 @@
 # triad — plan
 
-Where the project stands and what comes next. [SPEC.md](SPEC.md) sets the behaviour, [DESIGN.md](DESIGN.md) holds the design of what is built (parts A–F), [PLAN-diff-editor.md](PLAN-diff-editor.md) holds part H and [PLAN-jj-native.md](PLAN-jj-native.md) part I while they are open. Part G is below. A reference such as §B5.8 names part B, section 5.8, in whichever file holds that part. jj holds the history.
+Where the project stands and what comes next. [SPEC.md](SPEC.md) sets the behaviour, [DESIGN.md](DESIGN.md) holds the design of what is built (parts A–F), [PLAN-diff-editor.md](PLAN-diff-editor.md) holds part H while it is open; part I, the jj-native features, is in `DESIGN.md`. Part G is below. A reference such as §B5.8 names part B, section 5.8, in whichever file holds that part. jj holds the history.
 
 ## 1. Status
 
@@ -21,7 +21,7 @@ As of 2026-11-13.
 | p4merge parity | Done | E |
 | Review and diff features | Bulk takes (§G3), line endings in comparison (§G4) and collapsed unchanged regions in both windows (§G2) done; the rest open | G |
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
-| jj-native features | Conflicts across a stack (`stack`, `resolve -r`), divergent changes (`diverge`), pair reduction (`resolve --pair`) operation-log history (`history`, `diff --op`) and the evolog patch diff (`diff --evolog`) done; absorb by hunk open | I |
+| jj-native features | Done: conflicts across a stack (`stack`, `resolve -r`), divergent changes (`diverge`), pair reduction (`resolve --pair`), operation-log history (`history`, `diff --op`), the evolog patch diff (`diff --evolog`) and absorb by hunk (`absorb`); their windows open | I |
 
 Every spec §9 target is met (§A6.7). Toolchain: stable Rust 1.100, with `rust-version` 1.99. Dependencies: jj-lib and jj-core 0.47.1 on gix 0.90; gpui-kit 0.8.1 with the vendored `gpui-base` patch; gpui-kit 0.9 is not adopted (`docs/gpui-kit-issues.md`).
 
@@ -33,12 +33,11 @@ Build profiles (root `Cargo.toml`): `release` aborts on panic and strips symbols
 
 In order. Each is one or more commits.
 
-1. **jj-native features** (part I), in the order of §I8: `absorb` next, the last step.
-2. **Close M3.** The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
-3. **Review and diff features** (part G): the rest of the comparison filters (§G4), moved code in the two-way diff (§G5); then §G6–§G14.
-4. **More grammars,** one commit each: C, C++, Java and Kotlin; then Markdown; then Bash, Ruby, PHP and SQL.
-5. **M4b** (§3) once the owner has the machines and the certificate.
-6. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
+1. **Close M3.** The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
+2. **Review and diff features** (part G): the rest of the comparison filters (§G4), moved code in the two-way diff (§G5); then §G6–§G14.
+3. **More grammars,** one commit each: C, C++, Java and Kotlin; then Markdown; then Bash, Ruby, PHP and SQL.
+4. **M4b** (§3) once the owner has the machines and the certificate.
+5. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
 
 ## 3. Outstanding work
 
@@ -65,7 +64,10 @@ In order. Each is one or more commits.
 | A key that opens the fold next to the caret | — | §G2 |
 | Review and diff features, §G4–§G14 | Owner's choices on §G15's open points | G |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
-| jj-native features, §I7 | — | `PLAN-jj-native.md` |
+| A window for `stack`: the conflicted commits beside the merge window, and a resolution's effect on the descendants before it is saved | — | §I2 |
+| The number of sides per region in the merge window, after jj's simplification | — | §I4 |
+| A window for `history`: a timeline of versions to compare and restore from | — | §I5 |
+| A window for `absorb`: hunks dragged onto commits | Part H's selection model | §I7 |
 
 ## 4. Risks
 

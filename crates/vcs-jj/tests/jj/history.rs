@@ -1,5 +1,5 @@
 //! `history` and `working_copy_at` on jj: a file's versions in the working-copy commit
-//! across the operation log (`docs/PLAN-jj-native.md` §I5).
+//! across the operation log (spec §7.5.4).
 
 use vcs::{Repository as _, VcsError};
 use vcs_jj::config::ConfigEnv;

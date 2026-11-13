@@ -413,10 +413,10 @@ pub fn load(
 }
 
 /// The conflict at `path`, relative to `cwd`, in the one commit `rev` names in the jj
-/// repository holding `cwd`, without checking it out (`resolve -r`, `docs/PLAN-jj-native.md`
-/// §I2). The result saves to a temporary file; each save writes it back into the commit.
-/// With `pair`, the inputs are sides `pair` and `pair + 1` and the base between them, and
-/// only a resolved save writes (`resolve --pair`, §I4).
+/// repository holding `cwd`, without checking it out (`resolve -r`, spec §7.5.1). The result
+/// saves to a temporary file; each save writes it back into the commit. With `pair`, the
+/// inputs are sides `pair` and `pair + 1` and the base between them, and only a resolved
+/// save writes (`resolve --pair`, spec §7.5.3).
 ///
 /// # Errors
 ///

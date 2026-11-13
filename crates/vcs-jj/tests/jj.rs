@@ -5,6 +5,8 @@
 )]
 #![expect(clippy::panic, reason = "test helpers outside `#[test]` panic on a failed check")]
 
+#[path = "jj/absorb.rs"]
+mod absorb;
 #[path = "jj/diverge.rs"]
 mod diverge;
 #[path = "jj/evolog.rs"]

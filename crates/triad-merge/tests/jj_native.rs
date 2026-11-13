@@ -1,4 +1,4 @@
-//! The jj-native commands end to end (`docs/PLAN-jj-native.md`): what they print, what
+//! The jj-native commands end to end (spec §7.5): what they print, what
 //! they write into the repository, and their refusal outside jj.
 
 use std::process::{Command, Output};
@@ -60,6 +60,11 @@ fn a_jj_native_command_in_a_git_repository_says_it_needs_jj() {
             String::new(),
             "triad-merge: diff --evolog needs a jj repository\n".to_owned()
         )
+    );
+    let absorb = triad(fixture.root(), &["absorb"]);
+    assert_eq!(
+        outcome(&absorb),
+        (Some(ERROR), String::new(), "triad-merge: absorb needs a jj repository\n".to_owned())
     );
     let diverge = triad(fixture.root(), &["diverge", "HEAD"]);
     assert_eq!(
@@ -300,6 +305,53 @@ mod jj {
         assert_eq!(
             (code, out.as_str()),
             (Some(RESOLVED), "unchanged left 0..5 right 0..5\nchanges: 0\n")
+        );
+    }
+
+    #[test]
+    fn absorb_lists_then_applies_the_hunks() {
+        let fixture = Fixture::new();
+        let one = fixture.commit_on(&[], "one", &[("a.txt", b"1\n2\n3\n")]);
+        let two = fixture.commit_merged(&[&one], "two", &[("b.txt", b"x\ny\n")]);
+        fixture.check_out(&[&two]);
+        fixture.check_out_to_disk();
+        std::fs::write(fixture.root().join("a.txt"), b"1\nTWO\n3\n").expect("written");
+        std::fs::write(fixture.root().join("b.txt"), b"x\nY\n").expect("written");
+        let (code, out, err) = outcome(&triad(fixture.root(), &["absorb"]));
+        assert_eq!((code, err.as_str()), (Some(RESOLVED), ""), "{out}");
+        assert_eq!(
+            out,
+            format!(
+                "1 a.txt left 1..2 right 1..2 -> {} {}\n2 b.txt left 1..2 right 1..2 -> {} {}\n",
+                short(&one.change_id),
+                short(&one.commit),
+                short(&two.change_id),
+                short(&two.commit),
+            )
+        );
+        let args = ["absorb", "--keep", "2", "--apply"];
+        let (code, out, _) = outcome(&triad(fixture.root(), &args));
+        assert_eq!(code, Some(RESOLVED));
+        assert_eq!(out.lines().nth(2), Some("absorbed 1 hunks into 1 commits"), "{out}");
+        assert_eq!(
+            fixture.held_in(&fixture.latest(&one), "a.txt"),
+            Held::File(b"1\nTWO\n3\n".to_vec())
+        );
+        assert_eq!(fixture.held_in(&fixture.latest(&two), "b.txt"), Held::File(b"x\ny\n".to_vec()));
+        assert_eq!(
+            fixture.held_in(&fixture.working_copy_commit(), "b.txt"),
+            Held::File(b"x\nY\n".to_vec())
+        );
+    }
+
+    #[test]
+    fn absorb_refuses_a_missing_hunk() {
+        let fixture = Fixture::new();
+        fixture.check_out_to_disk();
+        let (code, out, err) = outcome(&triad(fixture.root(), &["absorb", "--keep", "1"]));
+        assert_eq!(
+            (code, out.as_str(), err.as_str()),
+            (Some(ERROR), "", "triad-merge: choosing a hunk: no hunk 1; there are 0\n")
         );
     }
 

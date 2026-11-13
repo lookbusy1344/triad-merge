@@ -1,5 +1,5 @@
 //! `diverge` on jj: the copies of a divergent change merged over their shared predecessor
-//! (`docs/PLAN-jj-native.md` §I3).
+//! (spec §7.5.2).
 
 use vcs::{IdKind, VcsError};
 use vcs_jj::config::ConfigEnv;

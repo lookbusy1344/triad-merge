@@ -1,5 +1,5 @@
 //! `stack` and `write_conflict` on jj: conflicts in commits other than the working copy's,
-//! listed parents first and resolved in place (`docs/PLAN-jj-native.md` §I2).
+//! listed parents first and resolved in place (spec §7.5.1).
 
 use camino::Utf8Path;
 use vcs::{IdKind, VcsError};

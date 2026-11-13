@@ -18,7 +18,7 @@ triad is a native three-way merge and two-way diff tool for single text files. I
 jj leads design, defaults and examples. git has equal support for every capability the two share:
 
 - Every shared feature works on both, and ships for both in the same milestone.
-- A feature built on what only jj records is jj-native and ships for jj alone: conflicts stored in commits, change IDs, the evolog, the operation log, and rewrites that rebase descendants. triad encourages them. In a git repository the command says it needs jj and exits with 3. `docs/PLAN-jj-native.md` (part I) lists them while they are open.
+- A feature built on what only jj records is jj-native and ships for jj alone: conflicts stored in commits, change IDs, the evolog, the operation log, and rewrites that rebase descendants. triad encourages them. In a git repository the command says it needs jj and exits with 3. §7.5 sets them; `DESIGN.md` part I holds their design.
 - The `vcs` types follow the richer of the two models, which is jj's: a conflict has n sides and n − 1 bases, and each term may carry a label. git fills the same types: two sides, one base, and labels from `HEAD`, `MERGE_HEAD` or the rebase state.
 - Facts that only one VCS records, such as jj change IDs, jj's per-term conflict labels and git's staged-versus-`HEAD` distinction, are optional fields. The UI shows them when present and works without them.
 - One conformance suite (§8.8) gates each shared feature on both backends. A jj-native feature has its own tests on jj and internal jj repositories.
@@ -319,6 +319,7 @@ triad-merge resolve PATH --pair N [-r REV] [--headless [--commands FILE] [--dry-
 triad-merge stack [REVSET] [--json]                       # jj's conflicted commits, parents first (§7.5.1)
 triad-merge diverge CHANGE [--dry-run] [--json]           # merge a divergent jj change into one commit (§7.5.2)
 triad-merge history PATH [--json]                         # a file's versions across jj's operation log (§7.5.4)
+triad-merge absorb [PATH...] [--into REVSET] [--move N=REV]... [--keep N]... [--apply] [--json]   # the working copy's hunks into the jj commits that wrote their lines (§7.5.6)
 triad-merge install --git | --jj [--config FILE]          # register as merge and diff tool (§7.1)
 triad-merge show-config [--default] [--docs]            # print the settings in effect (§6.4)
 ```
@@ -717,6 +718,14 @@ Commands built on what only jj records (§1.2). In a git repository each exits w
 - Both sides are read-only and carry no line origins: the left side is no commit's file. The left pane is titled `CHANGE COMMIT rebased`, the right `CHANGE COMMIT`. A side whose path holds no file is empty, its title ending in "(no file)". A rebase that conflicts at `PATH` shows jj's conflict markers, in jj's default `diff` style, on the left; a conflicted change shows them on the right.
 - `--inspect` prints the regions as `diff --inspect` does, and exits 0 when the sides are equal, 1 when they differ.
 - `--evolog` applies only to `diff PATH`, and does not combine with `--op`, `--readonly-left` or `--readonly-right`. `--from` needs `--evolog`.
+
+#### 7.5.6 Absorb by hunk
+
+- `absorb` snapshots the working copy, then lists each hunk of the working-copy commit against its parents, under `PATH`s when given, in path order then line order, numbered from 1. Each line: the number, the path, the lines the hunk replaces in the parents' file and the lines it holds now, from 0 with the end excluded as `diff --inspect` gives them, then `-> CHANGE COMMIT` for the commit it goes into or `stays`. Exit 0.
+- A hunk goes into the one commit that last changed every line it replaces, among the mutable ancestors of the working copy's parents that `--into` names (default `mutable()`), as jj's annotation finds it. An insertion goes into the commit whose lines hold it; one where one commit's lines end and another's start stays. A hunk over two commits' lines stays, a deletion included. A file new in the working copy has no commit to go into and is not listed. A path conflicted, or not a file, on either side is listed as `skipped PATH: REASON`.
+- `--move N=REV` sends hunk N into the one commit REV names, which must be among the commits `--into` allows; `--keep N` keeps it in the working copy. Moves apply first, then keeps. A choice of a hunk that does not exist, or of another commit, is refused before anything is written: `no hunk N; there are M`, `REV is not a mutable ancestor of the working copy in --into`.
+- `--apply` writes, as jj's `absorb` does: each commit takes its hunks, merged over the parents' file, its descendants rebase, and the working copy keeps the rest. A working copy left empty, without a description, is abandoned for a new one on its parent. One operation: `absorb in triad`. The report ends `absorbed N hunks into M commits`, then the rebased descendants as `resolve -r` lists them.
+- `--json` prints `{hunks: [{hunk, path, left, right, target: {commit, change_id} | null}], skipped: [{path, reason}], written}`.
 
 ## 8. Testing
 

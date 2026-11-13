@@ -13,7 +13,7 @@ You have skills for Rust development and jj version control.
 triad is built for jj. git comes second, with parity wherever git has the capability.
 
 - jj leads design, defaults, examples, docs and test fixtures. Design each VCS feature for jj, then give git the same feature, never a lesser one, when git has what it needs.
-- jj-native features are encouraged. A feature built on what only jj records ships for jj alone: conflicts stored in commits, change IDs, the evolog, the operation log, rewrites that rebase descendants (spec §1.2, `docs/PLAN-jj-native.md`). In a git repository its command says it needs jj and exits with 3.
+- jj-native features are encouraged. A feature built on what only jj records ships for jj alone: conflicts stored in commits, change IDs, the evolog, the operation log, rewrites that rebase descendants (spec §1.2 and §7.5, `DESIGN.md` part I). In a git repository its command says it needs jj and exits with 3.
 - The `vcs` types follow jj's model: n sides, n − 1 bases, optional labels (spec §1.2). git fills the same types. A jj-native feature lives in `vcs-jj`'s own API, outside the `vcs::Repository` trait.
 - Every shared VCS feature passes the conformance suite on jj, internal jj and git repositories. A jj-native feature passes its tests on jj and internal jj repositories.
 - The product reaches jj and git only through jj-lib and gix, never their executables.
@@ -157,5 +157,5 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | `fixtures/demo` | A 980-line Rust merge with 20 conflicts, from `script/gen-demo`. |
 | `images` | Mark, logo and app icon as SVG, PNG, ICNS and ICO, from `script/gen-images.swift`. |
 | `packaging/linux` | Desktop entry of the Linux packages. |
-| `docs` | Spec, plan, design notes, the diff editor plan (`PLAN-diff-editor.md`, part H), the jj-native features plan (`PLAN-jj-native.md`, part I), UI style, JSON schema, release checklist, gpui-kit and gix issues, `scroll-debugging.md`, `mark-colours.md`: the mark's colour schemes, geometry and the shapes not taken, and `residue.md`: the files triad and its scripts leave behind. |
+| `docs` | Spec, plan, design notes, the diff editor plan (`PLAN-diff-editor.md`, part H), UI style, JSON schema, release checklist, gpui-kit and gix issues, `scroll-debugging.md`, `mark-colours.md`: the mark's colour schemes, geometry and the shapes not taken, and `residue.md`: the files triad and its scripts leave behind. |
 | `vendor/gpui-base` | `gpui-base` 0.8.1 with triad's editor patch, through `[patch.crates-io]`. Outside the workspace: no workspace lints, `cargo fmt` or `jj fix`. See its `PATCHES.md`. |

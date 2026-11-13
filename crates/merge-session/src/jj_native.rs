@@ -1,13 +1,13 @@
-//! The session side of the jj-native commands (spec §1.2, `docs/PLAN-jj-native.md`): each
+//! The session side of the jj-native commands (spec §7.5): each
 //! opens the jj repository holding the working directory and refuses any other.
 
 use std::path::Path;
 
-use camino::Utf8PathBuf;
+use camino::{Utf8Path, Utf8PathBuf};
 use merge_core::text::Text;
 use vcs::{IdKind, RepoKind, Repository as _, VcsError};
 use vcs_jj::config::ConfigEnv;
-use vcs_jj::{Divergence, FileVersion, JjRepository, StackCommit};
+use vcs_jj::{Absorbed, Divergence, FileVersion, HunkChoice, JjRepository, StackCommit};
 
 use crate::resolve::ResolveError;
 
@@ -133,4 +133,33 @@ pub fn evolog(
     let (left, left_title) = side(diff.left, format!("{} rebased", name(&diff.predecessor)))?;
     let (right, right_title) = side(diff.right, name(&diff.change))?;
     Ok(EvologTexts { left, right, left_title, right_title })
+}
+
+/// The hunks of the working-copy commit of the jj repository holding `cwd`, under `paths`
+/// relative to `cwd`, each with the commit it goes into among `into`; with `apply`, moved
+/// there (`absorb`).
+///
+/// # Errors
+///
+/// As [`open`]; [`ResolveError::Vcs`] for a path outside the repository and as
+/// [`JjRepository::absorb`] fails.
+pub fn absorb(
+    cwd: &Path,
+    paths: &[std::path::PathBuf],
+    into: Option<&str>,
+    choices: &[HunkChoice],
+    apply: bool,
+    jj_config: Option<ConfigEnv>,
+) -> Result<Absorbed, ResolveError> {
+    let mut repo = open(cwd, jj_config, "absorb")?;
+    let relative = paths
+        .iter()
+        .map(|path| {
+            let file = crate::resolve::absolute(&cwd.join(path))?;
+            file.strip_prefix(repo.root())
+                .map(Utf8Path::to_owned)
+                .map_err(|_| VcsError::OutsideRepository(file.clone()))
+        })
+        .collect::<Result<Vec<_>, VcsError>>()?;
+    Ok(repo.absorb(&relative, into, choices, apply)?)
 }

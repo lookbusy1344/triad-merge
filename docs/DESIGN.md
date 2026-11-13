@@ -768,7 +768,18 @@ The rows on screen colour 110–185 ms after the first frame at any length; a ch
 
 ## I. jj-native features
 
-Features git cannot have (spec §1.2, §7.5). `docs/PLAN-jj-native.md` holds the open steps.
+Features git cannot have (spec §1.2, §7.5). Each rests on something jj records and git does not:
+
+| Command | jj fact it rests on |
+|---|---|
+| `stack`, `resolve -r REV PATH` | Conflicts in commits; descendants rebase on a rewrite |
+| `diverge CHANGE` | Change IDs; the evolog's predecessors |
+| `resolve PATH --pair N` | Conflicts of more than two sides |
+| `history PATH`, `diff PATH --op OP` | The operation log's working-copy snapshots |
+| `diff PATH --evolog` | The evolog |
+| `absorb` | Annotation; descendants rebase on a rewrite |
+
+Each ships a command line with `--json`, `--headless` or `--inspect` for scripts, tests and agents. A command that fits a window triad has opens it; new kinds of window are open work (`PLAN.md` §3). In a git repository each refuses with `needs a jj repository` and exits with 3.
 
 ### I1 Rewrites
 
@@ -810,4 +821,11 @@ Features git cannot have (spec §1.2, §7.5). `docs/PLAN-jj-native.md` holds the
 - The default earlier version needs the rebased file of each predecessor, nearest first, so the search stops at the first that differs. A change rewritten often costs one tree merge per predecessor up to that one.
 - A conflict, on either side, is materialised with `materialize_merge_result_to_bytes` in jj's `diff` marker style, the default `jj` writes to a working copy, with the marker length jj picks for the content.
 - `diff_settings` takes the line-origin lookup as an `Option`: the evolog window has none.
+
+### I7 Absorb by hunk
+
+- `JjRepository::absorb` follows jj-lib's `split_hunks_to_trees`, which gives no per-hunk control, then hands the result to jj-lib's `absorb_hunks`. It diffs the working copy's tree against its parents' merged tree, annotates each changed file's parent text with `FileAnnotator` over `(INTO) & ::parents`, and splits the file with `ContentDiff::by_line`. Hunk ranges are byte ranges; the report counts newlines for line numbers.
+- The rule for a hunk is jj's for one that is not a pure deletion: the first compacted annotation range that ends at or past the hunk must start at or before it, and an insertion at the seam of two ranges stays. A pure deletion takes the same rule, so a deletion over two commits' lines stays where jj would split it.
+- Choices rewrite the plan before any tree is built. Each target commit gets the parents' tree with its hunks spliced into each file; `absorb_hunks` merges that over the parents' tree into the target, rewrites descendants in topological order and abandons an emptied working copy.
+- Listing and `--apply` run the same code inside `JjRepository::rewrite`: a listing is a dry run, which snapshots and drops the transaction. An abandoned working copy leaves its change with no visible commit; the rewrite then counts the target as resolved.
 

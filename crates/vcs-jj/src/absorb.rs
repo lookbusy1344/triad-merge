@@ -1,0 +1,416 @@
+//! `absorb`: each hunk of the working-copy commit against its parents, with the ancestor it
+//! goes into, moved there on request (`DESIGN.md` §I7).
+
+use std::collections::BTreeMap;
+use std::ops::Range;
+
+use camino::Utf8PathBuf;
+use futures::StreamExt as _;
+use jj_lib::absorb::{AbsorbSource, absorb_hunks};
+use jj_lib::annotate::FileAnnotator;
+use jj_lib::backend::{CommitId, CopyId, TreeValue};
+use jj_lib::commit::Commit;
+use jj_lib::diff::{ContentDiff, DiffHunkKind};
+use jj_lib::matchers::{EverythingMatcher, Matcher, PrefixMatcher};
+use jj_lib::merged_tree_builder::MergedTreeBuilder;
+use jj_lib::object_id::ObjectId as _;
+use jj_lib::repo::{MutableRepo, Repo};
+use jj_lib::repo_path::RepoPathBuf;
+use pollster::FutureExt as _;
+use vcs::{ChangeInfo, VcsError};
+
+use crate::native::{Mutated, Rewrite};
+use crate::{JjError, JjRepository, backend};
+
+/// The commits a hunk may go into without `--into`: the mutable ancestors of the working
+/// copy's parents.
+pub const DEFAULT_INTO: &str = "mutable()";
+
+/// One hunk of the working-copy commit against its parents.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AbsorbHunk {
+    /// The hunk's number, from 1, in path order then line order.
+    pub number: usize,
+    pub path: Utf8PathBuf,
+    /// The lines it replaces in the parents' file, from 0, end excluded.
+    pub left: Range<usize>,
+    /// The lines it holds in the working copy's file.
+    pub right: Range<usize>,
+    /// The commit it goes into; none when it stays in the working copy.
+    pub target: Option<ChangeInfo>,
+}
+
+/// A choice that overrides where a hunk goes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HunkChoice {
+    /// Send hunk `hunk` into the one commit `rev` names.
+    Move { hunk: usize, rev: String },
+    /// Keep hunk `hunk` in the working copy.
+    Keep(usize),
+}
+
+/// What `absorb` found, and on `--apply` did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Absorbed {
+    pub hunks: Vec<AbsorbHunk>,
+    /// Paths it cannot split into hunks, with the reason: a conflict, a symlink, a binary.
+    pub skipped: Skipped,
+    pub rewrite: Rewrite,
+}
+
+/// Paths `absorb` cannot split, each with the reason.
+type Skipped = Vec<(Utf8PathBuf, String)>;
+
+/// A hunk's byte range in the parents' file and in the working copy's.
+type RangePair = (Range<usize>, Range<usize>);
+
+/// A hunk with what it takes to write it.
+struct Planned {
+    path: RepoPathBuf,
+    /// The index into `files`.
+    file: usize,
+    left: Range<usize>,
+    right: Range<usize>,
+    target: Option<CommitId>,
+}
+
+/// One changed file: the parents' text and the working copy's.
+struct ChangedFile {
+    path: RepoPathBuf,
+    left: Vec<u8>,
+    right: Vec<u8>,
+    deleted: bool,
+    executable: bool,
+    copy_id: CopyId,
+}
+
+impl JjRepository {
+    /// Split the working-copy commit's changes to `paths`, all without any, into hunks
+    /// against its parents, each with the commit it goes into: the one commit in `into`,
+    /// default [`DEFAULT_INTO`], among the parents' ancestors that last changed every line
+    /// the hunk replaces, or for an insertion the commit holding the lines on both sides.
+    /// `choices` override. With `apply`, each commit takes its hunks, the descendants
+    /// rebase, and the working copy keeps the rest, in one operation; else nothing is
+    /// written.
+    ///
+    /// # Errors
+    ///
+    /// [`VcsError::Backend`] holding [`JjError::NoHunk`] for a choice of a hunk that does
+    /// not exist and [`JjError::NotADestination`] for a move to a commit outside `into`;
+    /// [`VcsError::Immutable`]; and the errors of a write ([`JjRepository::write_conflict`]).
+    pub fn absorb(
+        &mut self,
+        paths: &[Utf8PathBuf],
+        into: Option<&str>,
+        choices: &[HunkChoice],
+        apply: bool,
+    ) -> Result<Absorbed, VcsError> {
+        let repo_paths = paths
+            .iter()
+            .map(|path| {
+                RepoPathBuf::from_relative_path(path)
+                    .map_err(|_| VcsError::OutsideRepository(path.clone()))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let into = into.unwrap_or(DEFAULT_INTO);
+        let mut found = None;
+        let rewrite = self.rewrite(!apply, |this, repo| {
+            let source = this.working_copy_in(repo)?;
+            let parents: Vec<String> = source.parent_ids().iter().map(CommitId::hex).collect();
+            let expr = format!("({into}) & ::({})", parents.join(" | "));
+            let aliases = this.aliases()?;
+            let destinations = this.evaluate(repo, &expr, &aliases)?;
+            let domain = this.resolve_expression(repo, &expr, &aliases)?.into_inner().0;
+            let parent_tree = source
+                .parent_tree(repo.index())
+                .block_on()
+                .map_err(backend("merging the parents"))?;
+            let matcher: Box<dyn Matcher> = if repo_paths.is_empty() {
+                Box::new(EverythingMatcher)
+            } else {
+                Box::new(PrefixMatcher::new(&repo_paths))
+            };
+            let (files, skipped) =
+                this.changed_files(&parent_tree, &source.tree(), matcher.as_ref())?;
+            let mut planned = plan(repo, &source, &files, &domain)?;
+            for choice in choices {
+                let (number, target) = this.chosen(repo, choice, &destinations, &aliases)?;
+                let count = planned.len();
+                let hunk =
+                    number.checked_sub(1).and_then(|index| planned.get_mut(index)).ok_or_else(
+                        || backend("choosing a hunk")(JjError::NoHunk { hunk: number, count }),
+                    )?;
+                hunk.target = target;
+            }
+            let trees = target_trees(repo, &files, &planned, &parent_tree)?;
+            let mut roots = vec![source.clone()];
+            for id in trees.keys() {
+                roots.push(repo.store().get_commit(id).map_err(backend("reading a commit"))?);
+            }
+            if !trees.is_empty() {
+                let absorb_source =
+                    AbsorbSource::from_tree(source.clone(), source.tree(), parent_tree.clone())
+                        .block_on()
+                        .map_err(backend("reading the working copy's parents"))?;
+                absorb_hunks(repo, &absorb_source, trees.into_iter().collect())
+                    .block_on()
+                    .map_err(backend("absorbing the hunks"))?;
+            }
+            let hunks = planned
+                .iter()
+                .enumerate()
+                .map(|(index, hunk)| {
+                    let file = &files[hunk.file];
+                    let target = hunk
+                        .target
+                        .as_ref()
+                        .map(|id| {
+                            let commit =
+                                repo.store().get_commit(id).map_err(backend("reading a commit"))?;
+                            this.change_info(&commit)
+                        })
+                        .transpose()?;
+                    Ok(AbsorbHunk {
+                        number: index + 1,
+                        path: Utf8PathBuf::from(hunk.path.as_internal_file_string()),
+                        left: lines(&file.left, &hunk.left),
+                        right: lines(&file.right, &hunk.right),
+                        target,
+                    })
+                })
+                .collect::<Result<Vec<_>, VcsError>>()?;
+            found = Some((hunks, skipped));
+            Ok(Mutated {
+                description: "absorb in triad".to_owned(),
+                target: source,
+                path: None,
+                roots,
+            })
+        })?;
+        let (hunks, skipped) = found.unwrap_or_default();
+        Ok(Absorbed { hunks, skipped, rewrite })
+    }
+
+    /// The hunk `choice` names and the commit it now goes into; none to keep it.
+    fn chosen(
+        &self,
+        repo: &MutableRepo,
+        choice: &HunkChoice,
+        destinations: &[Commit],
+        aliases: &jj_lib::revset::RevsetAliasesMap,
+    ) -> Result<(usize, Option<CommitId>), VcsError> {
+        match choice {
+            HunkChoice::Keep(number) => Ok((*number, None)),
+            HunkChoice::Move { hunk, rev } => {
+                let [commit] = <[Commit; 1]>::try_from(self.evaluate(repo, rev, aliases)?)
+                    .map_err(|_| VcsError::AmbiguousRevision(rev.clone()))?;
+                if !destinations.iter().any(|d| d.id() == commit.id()) {
+                    return Err(backend("choosing a hunk's commit")(JjError::NotADestination(
+                        rev.clone(),
+                    )));
+                }
+                Ok((*hunk, Some(commit.id().clone())))
+            }
+        }
+    }
+
+    /// The working-copy commit in `repo`.
+    fn working_copy_in(&self, repo: &MutableRepo) -> Result<Commit, VcsError> {
+        let id = repo
+            .view()
+            .get_wc_commit_id(&self.workspace)
+            .ok_or_else(|| VcsError::NoWorkingCopy(self.root.clone()))?;
+        repo.store().get_commit(id).map_err(backend("reading the working-copy commit"))
+    }
+
+    /// The files `matcher` takes that changed from `parent` to `source` and were files on
+    /// both sides, or deleted; and the paths skipped, with the reason. A file new in the
+    /// working copy has no commit to go into, and stays.
+    fn changed_files(
+        &self,
+        parent: &jj_lib::merged_tree::MergedTree,
+        source: &jj_lib::merged_tree::MergedTree,
+        matcher: &dyn Matcher,
+    ) -> Result<(Vec<ChangedFile>, Skipped), VcsError> {
+        let mut files = Vec::new();
+        let mut skipped = Vec::new();
+        let mut stream = parent.diff(source, matcher);
+        while let Some(entry) = stream.next().block_on() {
+            let values = entry.values.map_err(backend("comparing the trees"))?;
+            let shown = || Utf8PathBuf::from(entry.path.as_internal_file_string());
+            let (left_id, executable, copy_id) = match values.before.as_resolved() {
+                Some(None) => continue,
+                Some(Some(TreeValue::File { id, executable, copy_id })) => {
+                    (id.clone(), *executable, copy_id.clone())
+                }
+                Some(Some(_)) => {
+                    skipped.push((shown(), "not a file in the parents".to_owned()));
+                    continue;
+                }
+                None => {
+                    skipped.push((shown(), "conflicted in the parents".to_owned()));
+                    continue;
+                }
+            };
+            let (right, deleted) = match values.after.as_resolved() {
+                Some(None) => (Vec::new(), true),
+                Some(Some(TreeValue::File { id, .. })) => (self.read_file(&entry.path, id)?, false),
+                Some(Some(_)) => {
+                    skipped.push((shown(), "not a file in the working copy".to_owned()));
+                    continue;
+                }
+                None => {
+                    skipped.push((shown(), "conflicted in the working copy".to_owned()));
+                    continue;
+                }
+            };
+            let left = self.read_file(&entry.path, &left_id)?;
+            files.push(ChangedFile { path: entry.path, left, right, deleted, executable, copy_id });
+        }
+        Ok((files, skipped))
+    }
+}
+
+/// Each file's hunks, each with the commit its annotation over `domain` gives.
+fn plan(
+    repo: &MutableRepo,
+    source: &Commit,
+    files: &[ChangedFile],
+    domain: &std::sync::Arc<jj_lib::revset::ResolvedRevsetExpression>,
+) -> Result<Vec<Planned>, VcsError> {
+    let mut planned = Vec::new();
+    for (index, file) in files.iter().enumerate() {
+        let mut annotator = FileAnnotator::with_file_content(source, &file.path, file.left.clone());
+        annotator.compute(repo, domain).block_on().map_err(backend("annotating a file"))?;
+        let annotation = annotator.to_annotation();
+        let ranges: Vec<(CommitId, Range<usize>)> = annotation
+            .compact_line_ranges()
+            .filter_map(|(commit, range)| Some((commit.ok()?.id().clone(), range)))
+            .collect();
+        let diff = ContentDiff::by_line([&file.left, &file.right]);
+        for hunk in diff.hunk_ranges().filter(|hunk| hunk.kind == DiffHunkKind::Different) {
+            let (left, right) = (hunk.ranges[0].clone(), hunk.ranges[1].clone());
+            planned.push(Planned {
+                path: file.path.clone(),
+                file: index,
+                target: target(&ranges, &left),
+                left,
+                right,
+            });
+        }
+    }
+    Ok(planned)
+}
+
+/// For each commit a hunk goes into, the parents' tree with that commit's hunks applied.
+fn target_trees(
+    repo: &MutableRepo,
+    files: &[ChangedFile],
+    planned: &[Planned],
+    parent_tree: &jj_lib::merged_tree::MergedTree,
+) -> Result<BTreeMap<CommitId, MergedTreeBuilder>, VcsError> {
+    let mut selected: BTreeMap<(CommitId, usize), Vec<RangePair>> = BTreeMap::new();
+    for hunk in planned {
+        if let Some(target) = &hunk.target {
+            selected
+                .entry((target.clone(), hunk.file))
+                .or_default()
+                .push((hunk.left.clone(), hunk.right.clone()));
+        }
+    }
+    let mut trees: BTreeMap<CommitId, MergedTreeBuilder> = BTreeMap::new();
+    for ((commit, index), ranges) in selected {
+        let file = &files[index];
+        let text = combine(&file.left, &file.right, &ranges);
+        let value = if text.is_empty() && file.deleted {
+            None
+        } else {
+            let id = repo
+                .store()
+                .write_file(&file.path, &mut text.as_slice())
+                .block_on()
+                .map_err(backend("writing a hunk's file"))?;
+            Some(TreeValue::File { id, executable: file.executable, copy_id: file.copy_id.clone() })
+        };
+        trees
+            .entry(commit)
+            .or_insert_with(|| MergedTreeBuilder::new(parent_tree.clone()))
+            .set_or_remove(file.path.clone(), value);
+    }
+    Ok(trees)
+}
+
+/// The commit a hunk replacing `left` goes into, from the parents' file's annotation
+/// `ranges`, compacted: the one range that holds `left`; for an insertion, the range it
+/// sits in or ends, unless another range starts where it sits.
+fn target(ranges: &[(CommitId, Range<usize>)], left: &Range<usize>) -> Option<CommitId> {
+    let at = ranges.iter().position(|(_, range)| range.end >= left.end)?;
+    let (commit, range) = &ranges[at];
+    let between = left.is_empty()
+        && range.end == left.start
+        && ranges.get(at + 1).is_some_and(|(_, next)| next.start == left.start);
+    (range.start <= left.start && !between).then(|| commit.clone())
+}
+
+/// `left` with each `(left, right)` byte range pair replaced by `right`'s bytes.
+fn combine(left: &[u8], right: &[u8], ranges: &[RangePair]) -> Vec<u8> {
+    let mut text = Vec::with_capacity(right.len());
+    let mut at = 0;
+    for (from, to) in ranges {
+        text.extend_from_slice(&left[at..from.start]);
+        text.extend_from_slice(&right[to.clone()]);
+        at = from.end;
+    }
+    text.extend_from_slice(&left[at..]);
+    text
+}
+
+/// The line range, from 0, of the byte range `bytes` of `text`, which starts and ends at
+/// line starts.
+#[expect(
+    clippy::naive_bytecount,
+    reason = "once per hunk in the report, over one file; not worth a dependency"
+)]
+fn lines(text: &[u8], bytes: &Range<usize>) -> Range<usize> {
+    let line = |end: usize| text[..end].iter().filter(|&&byte| byte == b'\n').count();
+    line(bytes.start)..line(bytes.end)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn id(byte: u8) -> CommitId {
+        CommitId::new(vec![byte])
+    }
+
+    #[test]
+    fn a_hunk_inside_one_range_goes_to_its_commit_and_one_across_two_stays() {
+        let ranges = [(id(1), 0..10), (id(2), 10..20)];
+        assert_eq!(target(&ranges, &(2..4)), Some(id(1)));
+        assert_eq!(target(&ranges, &(12..20)), Some(id(2)));
+        assert_eq!(target(&ranges, &(8..12)), None);
+    }
+
+    #[test]
+    fn an_insertion_goes_to_the_range_around_it_and_between_two_stays() {
+        let ranges = [(id(1), 0..10), (id(2), 10..20)];
+        assert_eq!(target(&ranges, &(4..4)), Some(id(1)));
+        assert_eq!(target(&ranges, &(10..10)), None);
+        assert_eq!(target(&ranges, &(20..20)), Some(id(2)));
+        assert_eq!(target(&ranges, &(0..0)), Some(id(1)));
+    }
+
+    #[test]
+    fn combine_replaces_each_selected_range() {
+        assert_eq!(combine(b"abcdef", b"aXcdYf", &[(1..2, 1..2), (4..5, 4..5)]), b"aXcdYf");
+        assert_eq!(combine(b"abcdef", b"aXcdYf", &[(4..5, 4..5)]), b"abcdYf");
+        assert_eq!(combine(b"ab", b"aZZb", &[(1..1, 1..3)]), b"aZZb");
+    }
+
+    #[test]
+    fn lines_count_newlines_before_each_end() {
+        assert_eq!(lines(b"a\nb\nc\n", &(2..4)), 1..2);
+        assert_eq!(lines(b"a\nb\nc\n", &(6..6)), 3..3);
+    }
+}

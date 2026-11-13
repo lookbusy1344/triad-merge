@@ -1,4 +1,4 @@
-//! Reports of the jj-native commands (spec §1.2, `docs/PLAN-jj-native.md`).
+//! Reports of the jj-native commands (spec §7.5).
 
 use std::fmt::Write as _;
 
@@ -6,7 +6,8 @@ use camino::Utf8Path;
 use serde_json::json;
 use vcs::IdKind;
 use vcs_jj::{
-    DescendantEffect, Divergence, FileVersion, Rewrite, SHORT_OPERATION, StackCommit, VersionState,
+    Absorbed, DescendantEffect, Divergence, FileVersion, Rewrite, SHORT_OPERATION, StackCommit,
+    VersionState,
 };
 
 use crate::ExitCode;
@@ -228,6 +229,74 @@ pub fn history_report(
     Ok(text)
 }
 
+/// `absorb`'s report: one line per hunk, its number, path, line ranges and the commit it
+/// goes into or `stays`; then each skipped path; with `apply`, a closing count and the
+/// rebased descendants. Or as JSON.
+///
+/// # Errors
+///
+/// [`serde_json::Error`] when the JSON cannot be written.
+pub fn absorb_report(
+    absorbed: &Absorbed,
+    apply: bool,
+    json: bool,
+) -> Result<String, serde_json::Error> {
+    let range = |r: &std::ops::Range<usize>| [r.start, r.end];
+    if json {
+        let hunks: Vec<_> = absorbed
+            .hunks
+            .iter()
+            .map(|h| {
+                json!({
+                    "hunk": h.number,
+                    "path": h.path.as_str(),
+                    "left": range(&h.left),
+                    "right": range(&h.right),
+                    "target": h.target.as_ref().map(|t| json!({"commit": t.commit, "change_id": t.change_id})),
+                })
+            })
+            .collect();
+        let skipped: Vec<_> = absorbed
+            .skipped
+            .iter()
+            .map(|(path, reason)| json!({"path": path.as_str(), "reason": reason}))
+            .collect();
+        let value =
+            json!({"hunks": hunks, "skipped": skipped, "written": absorbed.rewrite.written});
+        return Ok(format!("{}\n", serde_json::to_string_pretty(&value)?));
+    }
+    let mut text = String::new();
+    for h in &absorbed.hunks {
+        let goes = h.target.as_ref().map_or_else(
+            || "stays".to_owned(),
+            |t| format!("-> {} {}", t.id(IdKind::Change), t.id(IdKind::Commit)),
+        );
+        line(
+            &mut text,
+            format_args!(
+                "{} {} left {}..{} right {}..{} {goes}",
+                h.number, h.path, h.left.start, h.left.end, h.right.start, h.right.end
+            ),
+        );
+    }
+    for (path, reason) in &absorbed.skipped {
+        line(&mut text, format_args!("skipped {path}: {reason}"));
+    }
+    if apply {
+        let moved: Vec<&vcs::ChangeInfo> =
+            absorbed.hunks.iter().filter_map(|h| h.target.as_ref()).collect();
+        let mut commits: Vec<&str> = moved.iter().map(|t| t.commit.as_str()).collect();
+        commits.sort_unstable();
+        commits.dedup();
+        line(
+            &mut text,
+            format_args!("absorbed {} hunks into {} commits", moved.len(), commits.len()),
+        );
+        descendant_lines(&mut text, &absorbed.rewrite.descendants);
+    }
+    Ok(text)
+}
+
 /// Append `args` and a newline to `text`.
 fn line(text: &mut String, args: std::fmt::Arguments<'_>) {
     // Writing to a `String` cannot fail.
@@ -383,6 +452,49 @@ mod tests {
         assert_eq!(value["versions"][1]["operation"], "fedcba9876543210");
         assert_eq!(value["versions"][1]["state"], "absent");
         assert_eq!(value["versions"][2]["commit"], "cccc");
+    }
+
+    fn absorbed() -> Absorbed {
+        let hunk = |number, target| vcs_jj::AbsorbHunk {
+            number,
+            path: "a.txt".into(),
+            left: 2..3,
+            right: 2..4,
+            target,
+        };
+        Absorbed {
+            hunks: vec![
+                hunk(1, Some(change("kkkk", None))),
+                hunk(2, None),
+                hunk(3, Some(change("kkkk", None))),
+            ],
+            skipped: vec![("b.bin".into(), "conflicted in the parents".to_owned())],
+            rewrite: rewrite(true, true),
+        }
+    }
+
+    #[test]
+    fn absorb_lists_each_hunk_with_its_commit_then_the_skipped_paths() {
+        assert_eq!(
+            absorb_report(&absorbed(), false, false).expect("a report"),
+            "1 a.txt left 2..3 right 2..4 -> kkkk c-kkkk\n\
+             2 a.txt left 2..3 right 2..4 stays\n\
+             3 a.txt left 2..3 right 2..4 -> kkkk c-kkkk\n\
+             skipped b.bin: conflicted in the parents\n"
+        );
+        let applied = absorb_report(&absorbed(), true, false).expect("a report");
+        assert_eq!(
+            applied.lines().skip(4).collect::<Vec<_>>(),
+            ["absorbed 2 hunks into 1 commits", "  llll: a.txt, b.txt -> none"]
+        );
+        let value: serde_json::Value =
+            serde_json::from_str(&absorb_report(&absorbed(), false, true).expect("a report"))
+                .expect("JSON");
+        assert_eq!(value["hunks"][0]["left"], json!([2, 3]));
+        assert_eq!(value["hunks"][0]["target"]["commit"], "c-kkkk");
+        assert_eq!(value["hunks"][1]["target"], serde_json::Value::Null);
+        assert_eq!(value["skipped"][0]["path"], "b.bin");
+        assert_eq!(value["written"], true);
     }
 
     #[test]

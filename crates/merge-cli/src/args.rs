@@ -15,6 +15,7 @@ use merge_config::settings::{Choice, HunkLevelArg, SameChangeArg};
 use merge_session::invocation::{
     Diff, DiffFlags, Evolog, Merge, MergeFiles, Resolve, SemanticsFlags, Window,
 };
+use vcs_jj::HunkChoice;
 
 /// What the command line asks for.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,15 +43,31 @@ pub enum Batch {
     DiffInspect { left: PathBuf, right: PathBuf, diff: DiffOptions, json: bool },
     /// Write the merge and diff tool entries to `vcs`'s user config, or to `config`.
     Install { vcs: RepoKind, config: Option<PathBuf> },
-    /// List the conflicted commits `revset` names, parents first (jj only).
+    /// A jj-native form (spec §7.5).
+    Jj(JjBatch),
+}
+
+/// A jj-native form that runs without a window (spec §7.5): each refuses a git repository.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JjBatch {
+    /// List the conflicted commits `revset` names, parents first.
     Stack { revset: Option<String>, json: bool },
-    /// The versions of a file across jj's operation log (jj only).
+    /// The versions of a file across jj's operation log.
     History { path: PathBuf, json: bool },
     /// `diff PATH --evolog --inspect`: the regions of a change's file against an earlier
-    /// version of the change (jj only).
+    /// version of the change.
     DiffEvologInspect { evolog: Evolog, json: bool },
-    /// Merge the visible commits of a divergent change into one (jj only).
+    /// Merge the visible commits of a divergent change into one.
     Diverge { change: String, dry_run: bool, json: bool },
+    /// The working copy's hunks, each with the ancestor it goes into; moved there with
+    /// `apply`.
+    Absorb {
+        paths: Vec<PathBuf>,
+        into: Option<String>,
+        choices: Vec<HunkChoice>,
+        apply: bool,
+        json: bool,
+    },
 }
 
 /// A command line that parses but asks for no valid form.
@@ -121,6 +138,16 @@ const MIN_MARKER_LENGTH: usize = 1;
 const MAX_MARKER_LENGTH: usize = 65_536;
 
 /// A conflict marker length: a whole number from [`MIN_MARKER_LENGTH`] to [`MAX_MARKER_LENGTH`].
+/// `--move N=REV`: a hunk's number and a revision.
+fn hunk_move(value: &str) -> Result<(usize, String), String> {
+    let (hunk, rev) = value.split_once('=').ok_or_else(|| "expected N=REV".to_owned())?;
+    if rev.is_empty() {
+        return Err("expected N=REV".to_owned());
+    }
+    let hunk = hunk.parse::<usize>().map_err(|error| error.to_string())?;
+    Ok((hunk, rev.to_owned()))
+}
+
 fn marker_length(value: &str) -> Result<usize, String> {
     match value.parse::<usize>() {
         Ok(n) if n < MIN_MARKER_LENGTH => Err(format!("must be at least {MIN_MARKER_LENGTH}")),
@@ -208,6 +235,28 @@ enum Command {
     History {
         #[arg(value_name = "PATH")]
         path: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+    /// List the working copy's hunks, each with the commit that wrote its lines; move them
+    /// there with --apply (jj only).
+    Absorb {
+        /// Only the hunks under these paths.
+        #[arg(value_name = "PATH")]
+        paths: Vec<PathBuf>,
+        /// The commits a hunk may go into; default `mutable()`, among the working copy's
+        /// ancestors.
+        #[arg(long, value_name = "REVSET")]
+        into: Option<String>,
+        /// Send hunk N into the commit REV names.
+        #[arg(long = "move", value_name = "N=REV", value_parser = hunk_move)]
+        moves: Vec<(usize, String)>,
+        /// Keep hunk N in the working copy.
+        #[arg(long = "keep", value_name = "N")]
+        keeps: Vec<usize>,
+        /// Move the hunks; without it, only list them.
+        #[arg(long)]
+        apply: bool,
         #[arg(long)]
         json: bool,
     },
@@ -428,13 +477,27 @@ impl Cli {
             Some(Command::Resolve(resolve)) => resolve.invocation(settings),
             Some(Command::Install(install)) => Ok(install.invocation()),
             Some(Command::Stack { revset, json }) => {
-                Ok(Invocation::Batch(Batch::Stack { revset, json }))
+                Ok(Invocation::Batch(Batch::Jj(JjBatch::Stack { revset, json })))
+            }
+            Some(Command::Absorb { paths, into, moves, keeps, apply, json }) => {
+                let choices = moves
+                    .into_iter()
+                    .map(|(hunk, rev)| HunkChoice::Move { hunk, rev })
+                    .chain(keeps.into_iter().map(HunkChoice::Keep))
+                    .collect();
+                Ok(Invocation::Batch(Batch::Jj(JjBatch::Absorb {
+                    paths,
+                    into,
+                    choices,
+                    apply,
+                    json,
+                })))
             }
             Some(Command::History { path, json }) => {
-                Ok(Invocation::Batch(Batch::History { path, json }))
+                Ok(Invocation::Batch(Batch::Jj(JjBatch::History { path, json })))
             }
             Some(Command::Diverge { change, dry_run, json }) => {
-                Ok(Invocation::Batch(Batch::Diverge { change, dry_run, json }))
+                Ok(Invocation::Batch(Batch::Jj(JjBatch::Diverge { change, dry_run, json })))
             }
             Some(Command::ShowConfig { defaults, docs }) => {
                 Ok(Invocation::ShowConfig { defaults, docs })
@@ -498,7 +561,7 @@ impl DiffCli {
                 title: self.title,
             };
             return Ok(if self.inspect {
-                Invocation::Batch(Batch::DiffEvologInspect { evolog, json: self.json })
+                Invocation::Batch(Batch::Jj(JjBatch::DiffEvologInspect { evolog, json: self.json }))
             } else {
                 Invocation::Window(Window::DiffEvolog(evolog))
             });
@@ -1085,7 +1148,7 @@ mod tests {
     fn history_takes_a_path_and_diff_takes_an_operation_in_place_of_a_revision() {
         assert_eq!(
             ok(&["history", "a.txt", "--json"]),
-            Invocation::Batch(Batch::History { path: "a.txt".into(), json: true })
+            Invocation::Batch(Batch::Jj(JjBatch::History { path: "a.txt".into(), json: true }))
         );
         assert_eq!(clap_kind(&["history"]), ErrorKind::MissingRequiredArgument);
         let Invocation::Window(Window::DiffNative { rev, op, .. }) =
@@ -1126,10 +1189,10 @@ mod tests {
                 "--inspect",
                 "--json"
             ]),
-            Invocation::Batch(Batch::DiffEvologInspect {
+            Invocation::Batch(Batch::Jj(JjBatch::DiffEvologInspect {
                 evolog: evolog(Some("kx"), Some("abc")),
                 json: true
-            })
+            }))
         );
         assert_eq!(usage(&["diff", "l", "r", "--evolog"]), UsageError::EvologWithTwoFiles);
         assert_eq!(
@@ -1143,24 +1206,72 @@ mod tests {
     }
 
     #[test]
+    fn absorb_takes_paths_a_revset_and_its_choices_moves_first() {
+        assert_eq!(
+            ok(&[
+                "absorb",
+                "a.txt",
+                "src",
+                "--into",
+                "mutable()",
+                "--keep",
+                "3",
+                "--move",
+                "1=kx",
+                "--apply",
+                "--json"
+            ]),
+            Invocation::Batch(Batch::Jj(JjBatch::Absorb {
+                paths: vec!["a.txt".into(), "src".into()],
+                into: Some("mutable()".to_owned()),
+                choices: vec![
+                    HunkChoice::Move { hunk: 1, rev: "kx".to_owned() },
+                    HunkChoice::Keep(3)
+                ],
+                apply: true,
+                json: true,
+            }))
+        );
+        assert_eq!(
+            ok(&["absorb"]),
+            Invocation::Batch(Batch::Jj(JjBatch::Absorb {
+                paths: vec![],
+                into: None,
+                choices: vec![],
+                apply: false,
+                json: false
+            }))
+        );
+        for bad in ["1", "x=kx", "1="] {
+            assert_eq!(clap_kind(&["absorb", "--move", bad]), ErrorKind::ValueValidation, "{bad}");
+        }
+    }
+
+    #[test]
     fn diverge_takes_a_change_and_its_flags() {
         assert_eq!(
             ok(&["diverge", "kx", "--dry-run", "--json"]),
-            Invocation::Batch(Batch::Diverge {
+            Invocation::Batch(Batch::Jj(JjBatch::Diverge {
                 change: "kx".to_owned(),
                 dry_run: true,
                 json: true
-            })
+            }))
         );
         assert_eq!(clap_kind(&["diverge"]), ErrorKind::MissingRequiredArgument);
     }
 
     #[test]
     fn stack_takes_an_optional_revset_and_json() {
-        assert_eq!(ok(&["stack"]), Invocation::Batch(Batch::Stack { revset: None, json: false }));
+        assert_eq!(
+            ok(&["stack"]),
+            Invocation::Batch(Batch::Jj(JjBatch::Stack { revset: None, json: false }))
+        );
         assert_eq!(
             ok(&["stack", "::@", "--json"]),
-            Invocation::Batch(Batch::Stack { revset: Some("::@".to_owned()), json: true })
+            Invocation::Batch(Batch::Jj(JjBatch::Stack {
+                revset: Some("::@".to_owned()),
+                json: true
+            }))
         );
         assert_eq!(clap_kind(&["stack", "a", "b"]), ErrorKind::UnknownArgument);
     }

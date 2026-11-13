@@ -1,5 +1,5 @@
 //! `evolog_diff` on jj: a change's file against an earlier version of the change rebased
-//! onto its parents now (`docs/PLAN-jj-native.md` §I6).
+//! onto its parents now (spec §7.5.5).
 
 use camino::Utf8Path;
 use vcs::{IdKind, VcsError};

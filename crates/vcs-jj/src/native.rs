@@ -101,7 +101,7 @@ pub(crate) struct Mutated {
 impl JjRepository {
     /// The user's revset aliases over jj's defaults for `trunk()`, `immutable_heads()`,
     /// `immutable()` and `mutable()`.
-    fn aliases(&self) -> Result<RevsetAliasesMap, VcsError> {
+    pub(crate) fn aliases(&self) -> Result<RevsetAliasesMap, VcsError> {
         let env = self.config.clone().unwrap_or_else(config::ConfigEnv::from_process);
         let loaded =
             config::load(&env, self.root.as_std_path()).map_err(backend("reading jj's config"))?;
@@ -317,17 +317,24 @@ impl JjRepository {
             .rebase_descendants()
             .block_on()
             .map_err(backend("rebasing the descendants"))?;
-        let now = visible(tx.repo(), target.change_id())?;
-        let sides = path
-            .map(|path| {
-                now.tree()
-                    .path_value(&path)
-                    .block_on()
-                    .map(|value| value.simplify().num_sides())
-                    .map_err(backend("finding a path in a tree"))
-            })
-            .transpose()?;
-        let resolved = sides.map_or(!now.has_conflict(), |sides| sides == 1);
+        let (resolved, sides) = match visible(tx.repo(), target.change_id()) {
+            Ok(now) => {
+                let sides = path
+                    .map(|path| {
+                        now.tree()
+                            .path_value(&path)
+                            .block_on()
+                            .map(|value| value.simplify().num_sides())
+                            .map_err(backend("finding a path in a tree"))
+                    })
+                    .transpose()?;
+                (sides.map_or(!now.has_conflict(), |sides| sides == 1), sides)
+            }
+            // `absorb` abandons a working-copy commit it empties; an abandoned commit holds
+            // no conflict.
+            Err(VcsError::UnknownRevision(_)) => (true, None),
+            Err(error) => return Err(error),
+        };
         let target = self.change_info(&target)?;
         let descendants = before
             .into_iter()
@@ -392,10 +399,12 @@ pub(crate) fn visible(
         .map_err(backend("looking up a change"))?
         .ok_or_else(|| VcsError::UnknownRevision(named()))?;
     let mut visible = targets.visible_with_offsets().map(|(_, id)| id);
-    let (Some(id), None) = (visible.next(), visible.next()) else {
-        return Err(VcsError::AmbiguousRevision(named()));
-    };
-    repo.store().get_commit(id).map_err(backend("reading a commit"))
+    match (visible.next(), visible.next()) {
+        (Some(id), None) => repo.store().get_commit(id).map_err(backend("reading a commit")),
+        // Every commit of the change is hidden: abandoned.
+        (None, _) => Err(VcsError::UnknownRevision(named())),
+        (Some(_), Some(_)) => Err(VcsError::AmbiguousRevision(named())),
+    }
 }
 
 /// `content` parsed back into `value`'s conflict, as jj does after a merge tool: markers jj

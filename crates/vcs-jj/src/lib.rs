@@ -2,6 +2,7 @@
 //! working-copy snapshots of `resolve` (spec §7.4): concurrent operations are refused, not
 //! reconciled.
 
+mod absorb;
 pub mod config;
 mod diverge;
 mod evolog;
@@ -12,6 +13,7 @@ mod reduce;
 pub mod testing;
 pub mod tool_config;
 
+pub use absorb::{AbsorbHunk, Absorbed, DEFAULT_INTO, HunkChoice};
 pub use diverge::Divergence;
 pub use evolog::EvologDiff;
 pub use history::{FileVersion, SHORT_OPERATION, VersionState};
@@ -102,6 +104,12 @@ pub enum JjError {
     /// A path that holds a symlink, submodule or directory where a file is read.
     #[error("{0} is not a file")]
     NotAFile(camino::Utf8PathBuf),
+    /// `absorb --move` or `--keep` of a hunk that does not exist.
+    #[error("no hunk {hunk}; there are {count}")]
+    NoHunk { hunk: usize, count: usize },
+    /// `absorb --move` to a commit outside the ones a hunk may go into.
+    #[error("{0} is not a mutable ancestor of the working copy in --into")]
+    NotADestination(String),
 }
 
 /// A jj workspace, read through jj-lib at its head operation.
@@ -308,6 +316,23 @@ impl JjRepository {
         expr: &str,
         aliases: &RevsetAliasesMap,
     ) -> Result<Vec<Commit>, VcsError> {
+        self.resolve_expression(repo, expr, aliases)?
+            .evaluate()
+            .map_err(backend("evaluating a revision"))?
+            .stream()
+            .commits(repo.store())
+            .try_collect()
+            .block_on()
+            .map_err(backend("reading a revision's commits"))
+    }
+
+    /// `expr` parsed with `aliases` and resolved in `repo`, unevaluated.
+    fn resolve_expression<'a>(
+        &self,
+        repo: &'a dyn jj_lib::repo::Repo,
+        expr: &str,
+        aliases: &RevsetAliasesMap,
+    ) -> Result<jj_lib::revset::ResolvedRevset<'a>, VcsError> {
         let path_converter = RepoPathUiConverter::Fs {
             cwd: self.root.clone().into(),
             base: self.root.clone().into(),
@@ -333,14 +358,7 @@ impl JjRepository {
         let resolver = SymbolResolver::new(repo, &no_extensions);
         expression
             .resolve_user_expression(repo, &resolver)
-            .map_err(|error| resolution_error(expr, error))?
-            .evaluate()
-            .map_err(backend("evaluating a revision"))?
-            .stream()
-            .commits(repo.store())
-            .try_collect()
-            .block_on()
-            .map_err(backend("reading a revision's commits"))
+            .map_err(|error| resolution_error(expr, error))
     }
 
     fn read_file(&self, path: &RepoPath, id: &FileId) -> Result<Vec<u8>, VcsError> {

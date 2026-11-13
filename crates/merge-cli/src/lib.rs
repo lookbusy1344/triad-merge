@@ -24,7 +24,7 @@ use merge_session::{
 
 pub use merge_session::{ExitCode, WindowForm};
 
-use crate::args::{Batch, Invocation, ParseError, parse_with};
+use crate::args::{Batch, Invocation, JjBatch, ParseError, parse_with};
 
 /// What the binary does next.
 #[derive(Debug)]
@@ -254,51 +254,66 @@ fn batch_form(
             let (text, code) = inspect::diff_inspect(&left, &right, diff, json)?;
             Ok(report(stdout, &text, code))
         }
-        Batch::DiffEvologInspect { evolog, json } => {
+        Batch::Install { vcs, config } => {
+            let message = install::run(vcs, config.as_deref())?;
+            Ok(report(stdout, &message, ExitCode::Resolved))
+        }
+        Batch::Jj(jj) => {
             let cwd = cwd.ok_or(CliError::NoWorkingDirectory)?;
+            jj_native_batch(jj, cwd, env, stdout)
+        }
+    }
+}
+
+/// Run a jj-native form that needs no window (spec §7.5), with its report on `stdout`.
+///
+/// # Errors
+///
+/// [`CliError`] when the form fails.
+fn jj_native_batch(
+    batch: JjBatch,
+    cwd: &Path,
+    env: &Env,
+    stdout: &mut impl Write,
+) -> Result<ExitCode, CliError> {
+    let jj_config = || Some(jj_config::snapshot_config(env));
+    match batch {
+        JjBatch::DiffEvologInspect { evolog, json } => {
             let texts = merge_session::jj_native::evolog(
                 cwd,
                 &evolog.path,
                 evolog.rev.as_deref(),
                 evolog.from.as_deref(),
-                Some(jj_config::snapshot_config(env)),
+                jj_config(),
             )?;
             let (text, code) =
                 inspect::diff_inspect_texts(&texts.left, &texts.right, evolog.diff, json)?;
             Ok(report(stdout, &text, code))
         }
-        Batch::Install { vcs, config } => {
-            let message = install::run(vcs, config.as_deref())?;
-            Ok(report(stdout, &message, ExitCode::Resolved))
-        }
-        Batch::Stack { revset, json } => {
-            let cwd = cwd.ok_or(CliError::NoWorkingDirectory)?;
-            let commits = merge_session::jj_native::stack(
-                cwd,
-                revset.as_deref(),
-                Some(jj_config::snapshot_config(env)),
-            )?;
+        JjBatch::Stack { revset, json } => {
+            let commits = merge_session::jj_native::stack(cwd, revset.as_deref(), jj_config())?;
             let (text, code) = jj_native::stack_report(&commits, json)?;
             Ok(report(stdout, &text, code))
         }
-        Batch::History { path, json } => {
-            let cwd = cwd.ok_or(CliError::NoWorkingDirectory)?;
-            let (path, versions) = merge_session::jj_native::history(
-                cwd,
-                &path,
-                Some(jj_config::snapshot_config(env)),
-            )?;
+        JjBatch::History { path, json } => {
+            let (path, versions) = merge_session::jj_native::history(cwd, &path, jj_config())?;
             let text = jj_native::history_report(&path, &versions, json)?;
             Ok(report(stdout, &text, ExitCode::Resolved))
         }
-        Batch::Diverge { change, dry_run, json } => {
-            let cwd = cwd.ok_or(CliError::NoWorkingDirectory)?;
-            let divergence = merge_session::jj_native::diverge(
+        JjBatch::Absorb { paths, into, choices, apply, json } => {
+            let absorbed = merge_session::jj_native::absorb(
                 cwd,
-                &change,
-                dry_run,
-                Some(jj_config::snapshot_config(env)),
+                &paths,
+                into.as_deref(),
+                &choices,
+                apply,
+                jj_config(),
             )?;
+            let text = jj_native::absorb_report(&absorbed, apply, json)?;
+            Ok(report(stdout, &text, ExitCode::Resolved))
+        }
+        JjBatch::Diverge { change, dry_run, json } => {
+            let divergence = merge_session::jj_native::diverge(cwd, &change, dry_run, jj_config())?;
             let (text, code) = jj_native::divergence_report(&divergence, dry_run, json)?;
             Ok(report(stdout, &text, code))
         }
