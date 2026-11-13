@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use merge_config::settings::{self, Settings};
 use merge_core::document::OutputEnding;
 use merge_session::env::Env;
-use merge_session::invocation::{Merge, Resolve, Window};
+use merge_session::invocation::{Merge, Resolve, SemanticsFlags, Stack, Window};
 use merge_session::repository::RunRepository;
 use merge_session::{
     EncodedOutput, SaveError, SessionError, choose_marker_style, choose_semantics, jj_config, load,
@@ -195,6 +195,23 @@ fn window_form(
         }
         Window::DiffEvolog(evolog) => (Window::DiffEvolog(evolog), RunRepository::none()),
         Window::OpenDialog => (Window::OpenDialog, RunRepository::none()),
+        Window::Stack(mut stack) => {
+            let result = cwd
+                .as_deref()
+                .ok_or(CliError::NoWorkingDirectory)
+                .and_then(|cwd| stack_prepare(&mut stack, &settings, cwd, env));
+            match result {
+                Ok(Some(repo)) => (Window::Stack(stack), repo),
+                Ok(None) => return Outcome::Exit(ExitCode::Resolved),
+                Err(error) => {
+                    return Outcome::Exit(report(
+                        stderr,
+                        &format!("{PROGRAM}: {error}\n"),
+                        ExitCode::Error,
+                    ));
+                }
+            }
+        }
     };
     Outcome::Window(Box::new(WindowForm { window, settings, settings_errors, cwd, repo }))
 }
@@ -349,6 +366,35 @@ fn resolve_prepare(
         resolve.options.marker_style = choose_marker_style(mode.semantics, settings, &mut repo);
     }
     Ok((targets, repo))
+}
+
+/// Settle `stack`'s merge options before its window opens, in the jj repository holding
+/// `cwd`, and give that repository. None when `stack`'s revset names no conflicted commit:
+/// no window opens, and the run exits with 0, as `stack --list` does.
+///
+/// # Errors
+///
+/// [`CliError`] outside a jj repository, when the revset does not resolve, or when the
+/// semantics settings are invalid.
+fn stack_prepare(
+    stack: &mut Stack,
+    settings: &Settings,
+    cwd: &Path,
+    env: &Env,
+) -> Result<Option<RunRepository>, CliError> {
+    let config = jj_config::snapshot_config(env);
+    let listed =
+        merge_session::jj_native::stack(cwd, stack.revset.as_deref(), Some(config.clone()))?;
+    if listed.is_empty() {
+        return Ok(None);
+    }
+    let mut repo = RunRepository::of_resolve(cwd, None).with_jj_config(config);
+    let mode = choose_semantics(SemanticsFlags::default(), settings, &repo, None, Some(cwd), env)?;
+    stack.options.semantics = mode.semantics;
+    stack.options.same_change = mode.same_change;
+    stack.options.hunk_level = mode.hunk_level;
+    stack.options.marker_style = choose_marker_style(mode.semantics, settings, &mut repo);
+    Ok(Some(repo))
 }
 
 /// `resolve -r REV PATH --headless`: the automatic merge of the conflict in `rev`'s commit,

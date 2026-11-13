@@ -104,7 +104,7 @@ use crate::{
     Undo, finish, go_to_line, ignore_closed_view, strings,
 };
 use merge_session::recovery::{FoundJournal, Locator, Recovery, WriteMode, Written, prune};
-use merge_session::session::{CannotSave, Refused, SaveJob, SaveTarget, Session};
+use merge_session::session::{CannotSave, PreviewJob, Refused, SaveJob, SaveTarget, Session};
 
 /// One row of the side panes at the default text size: an editor line, so the rows and the
 /// result stay level. [`Typography::line_height`] gives it for other sizes.
@@ -970,6 +970,13 @@ impl MergeWindow {
     #[must_use]
     pub fn output(&self) -> Option<&Path> {
         self.session.output()
+    }
+
+    /// A dry run of Save & Exit into the jj commit the merge came from, as it stands; none
+    /// for a merge whose saves go to no commit (spec §7.5.1).
+    #[must_use]
+    pub fn preview_job(&self) -> Option<PreviewJob> {
+        self.session.preview()
     }
 
     #[must_use]

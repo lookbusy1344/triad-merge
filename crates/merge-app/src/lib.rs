@@ -31,6 +31,7 @@ pub mod settings_banner;
 mod settings_file;
 mod sideways;
 mod split_menu;
+pub mod stack_window;
 mod strings;
 mod syntax;
 mod syntax_colours;

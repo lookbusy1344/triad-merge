@@ -47,7 +47,29 @@ pub fn stack(
     revset: Option<&str>,
     jj_config: Option<ConfigEnv>,
 ) -> Result<Vec<StackCommit>, ResolveError> {
-    Ok(open(cwd, jj_config, "stack")?.stack(revset)?)
+    Ok(stacked(cwd, revset, jj_config)?.commits)
+}
+
+/// [`stack`]'s commits, and the root of the repository their paths are relative to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stacked {
+    pub root: Utf8PathBuf,
+    pub commits: Vec<StackCommit>,
+}
+
+/// As [`stack`], with the repository's root (the stack window).
+///
+/// # Errors
+///
+/// As [`stack`].
+pub fn stacked(
+    cwd: &Path,
+    revset: Option<&str>,
+    jj_config: Option<ConfigEnv>,
+) -> Result<Stacked, ResolveError> {
+    let repo = open(cwd, jj_config, "stack")?;
+    let commits = repo.stack(revset)?;
+    Ok(Stacked { root: repo.root().to_owned(), commits })
 }
 
 /// Merge the copies of the divergent change `change` in the jj repository holding `cwd`

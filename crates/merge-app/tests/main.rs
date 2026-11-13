@@ -28,6 +28,7 @@ mod save;
 mod save_copy;
 mod scroll;
 mod scrollbars;
+mod stack;
 mod syntax;
 mod tools;
 mod window;

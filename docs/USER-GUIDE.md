@@ -110,12 +110,15 @@ Without a window: `triad-merge resolve --headless src/lib.rs` writes the automat
 jj records conflicts in commits, so a rebase never stops halfway. triad resolves them where they sit, without `jj edit`.
 
 ```sh
-triad-merge stack                     # conflicted mutable commits, parents first
+triad-merge stack                     # a window of the conflicted mutable commits, parents first
 triad-merge stack 'trunk()..@'        # any revset
+triad-merge stack --list              # print the list instead
 triad-merge resolve src/lib.rs -r xyz # resolve in commit xyz; @ stays where it is
 ```
 
-`stack` prints each commit's change, commit and summary, then its conflicted paths. `(inherited)` marks a path whose parent holds a conflict there too: resolve the parent first and the child often clears with it. It exits 0 when nothing is conflicted, 1 otherwise.
+`stack` opens a window that lists each commit's change, commit and summary, then its conflicted paths. `(inherited)` marks a path whose parent holds a conflict there too: resolve the parent first and the child often clears with it. Click a path to open its conflict in the merge window, as `resolve -r` does. One merge window is open at a time. Each save lists the commits again and says what it did. With a merge window open, Preview Save shows what saving its result would do to each descendant's conflicts, and writes nothing. Closing the stack window ends the run: 0 when no conflicted commit is left, 1 otherwise. With nothing conflicted, `stack` opens no window and exits 0.
+
+`stack --list` prints the same list and exits the same way.
 
 Each save to `-r` rewrites the commit and rebases its descendants, as any jj rewrite does. The headless report lists each descendant with its conflicted paths before and after:
 
@@ -341,6 +344,7 @@ triad-merge diff --inspect --json LEFT RIGHT                       # the diff's 
 triad-merge resolve PATH -r REV --headless --commands FILE --dry-run   # jj: picks applied in a commit, reported, not written
 triad-merge resolve PATH --pair N --headless                       # jj: the automatic merge of one pair
 triad-merge diff PATH --evolog --inspect --json
+triad-merge stack --list
 triad-merge stack --json
 triad-merge history PATH --json
 triad-merge absorb --json
@@ -365,6 +369,6 @@ Bind a key with `keybind = CHORD=ACTION`, for example `keybind = cmd+j=next-conf
 | Code | Merge, `resolve` | `diff --inspect` | `stack` | Other commands |
 |---|---|---|---|---|
 | 0 | All resolved | Equal | No conflicted commit | Done |
-| 1 | Conflicts left | Different | Conflicted commits listed | `diverge`: the merged commit holds conflicts |
+| 1 | Conflicts left | Different | Conflicted commits listed or left | `diverge`: the merged commit holds conflicts |
 | 2 | Cancelled | — | — | — |
 | 3 | Error, or a jj-only command in git | Error | Error | Error |

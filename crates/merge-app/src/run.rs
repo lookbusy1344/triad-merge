@@ -21,6 +21,7 @@ use crate::assets::AppAssets;
 use crate::diff_window::{self, DiffFile, DiffLookup, DiffSettings, Origin};
 use crate::measure::{self, Measure};
 use crate::resolve_queue::{self, Queue};
+use crate::stack_window::{self, StackStart};
 use crate::window::{OpenError, OriginLookup, WindowSettings};
 use crate::{ExitCode, Finish, Typography, open_dialog, strings};
 
@@ -112,6 +113,19 @@ pub fn run(form: WindowForm) -> ExitCode {
             run_native_diff(window, repo, base, errors, bindings)
         }
         Window::DiffEvolog(evolog) => run_evolog_diff(evolog, base, errors, bindings),
+        Window::Stack(stack) => {
+            let start = StackStart {
+                cwd: working_dir(dir),
+                revset: stack.revset,
+                options: stack.options,
+                jj_config: repo.jj_config().cloned(),
+                settings: base,
+            };
+            launch(bindings, move |cx| {
+                stack_window::start(start, |code, _| exit(code), cx).map(drop)?;
+                Ok(())
+            })
+        }
     }
 }
 

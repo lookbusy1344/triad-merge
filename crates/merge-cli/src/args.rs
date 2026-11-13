@@ -13,7 +13,7 @@ use merge_config::named::Named;
 use merge_config::settings::{Algorithm, Settings, Whitespace};
 use merge_config::settings::{Choice, HunkLevelArg, SameChangeArg};
 use merge_session::invocation::{
-    Diff, DiffFlags, Evolog, Merge, MergeFiles, Resolve, SemanticsFlags, Window,
+    Diff, DiffFlags, Evolog, Merge, MergeFiles, Resolve, SemanticsFlags, Stack, Window,
 };
 use vcs_jj::HunkChoice;
 
@@ -290,11 +290,15 @@ enum Command {
     Resolve(ResolveCli),
     /// Register triad as git's or jj's merge and diff tool.
     Install(InstallCli),
-    /// List the conflicted commits, parents first (jj only).
+    /// The conflicted commits, parents first, in a window to resolve them in (jj only).
     Stack {
         /// The commits to list; default `conflicts() & mutable()`.
         #[arg(value_name = "REVSET")]
         revset: Option<String>,
+        /// Print the list instead of opening the window.
+        #[arg(long)]
+        list: bool,
+        /// Print the list as JSON instead of opening the window.
         #[arg(long)]
         json: bool,
     },
@@ -489,9 +493,12 @@ impl Cli {
             Some(Command::Diff(diff)) => diff.invocation(settings),
             Some(Command::Resolve(resolve)) => resolve.invocation(settings),
             Some(Command::Install(install)) => Ok(install.invocation()),
-            Some(Command::Stack { revset, json }) => {
-                Ok(Invocation::Batch(Batch::Jj(JjBatch::Stack { revset, json })))
-            }
+            Some(Command::Stack { revset, list, json }) => Ok(if list || json {
+                Invocation::Batch(Batch::Jj(JjBatch::Stack { revset, json }))
+            } else {
+                let options = DiffFlags::default().merge_options(settings, MergeOptions::default());
+                Invocation::Window(Window::Stack(Stack { revset, options }))
+            }),
             Some(Command::Absorb { paths, into, moves, keeps, apply, listed_at, json }) => {
                 if apply && listed_at.is_none() && !(moves.is_empty() && keeps.is_empty()) {
                     return Err(UsageError::ChoicesWithoutListing);
@@ -1312,9 +1319,22 @@ mod tests {
     }
 
     #[test]
-    fn stack_takes_an_optional_revset_and_json() {
+    fn stack_opens_a_window_on_an_optional_revset() {
+        let Invocation::Window(Window::Stack(stack)) = ok(&["stack"]) else {
+            panic!("the stack window");
+        };
+        assert_eq!(stack.revset, None);
+        let Invocation::Window(Window::Stack(stack)) = ok(&["stack", "::@"]) else {
+            panic!("the stack window");
+        };
+        assert_eq!(stack.revset.as_deref(), Some("::@"));
+        assert_eq!(clap_kind(&["stack", "a", "b"]), ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn stack_prints_its_list_with_list_or_json() {
         assert_eq!(
-            ok(&["stack"]),
+            ok(&["stack", "--list"]),
             Invocation::Batch(Batch::Jj(JjBatch::Stack { revset: None, json: false }))
         );
         assert_eq!(
@@ -1324,7 +1344,10 @@ mod tests {
                 json: true
             }))
         );
-        assert_eq!(clap_kind(&["stack", "a", "b"]), ErrorKind::UnknownArgument);
+        assert_eq!(
+            ok(&["stack", "--list", "--json"]),
+            Invocation::Batch(Batch::Jj(JjBatch::Stack { revset: None, json: true }))
+        );
     }
 
     #[test]

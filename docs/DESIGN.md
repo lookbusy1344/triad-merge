@@ -779,7 +779,7 @@ Features git cannot have (spec §1.2, §7.5). Each rests on something jj records
 | `diff PATH --evolog` | The evolog |
 | `absorb` | Annotation; descendants rebase on a rewrite |
 
-Each ships a command line with `--json`, `--headless` or `--inspect` for scripts, tests and agents. A command that fits a window triad has opens it; new kinds of window are open work (`PLAN.md` §3). In a git repository each refuses with `needs a jj repository` and exits with 3.
+Each ships a command line with `--json`, `--headless` or `--inspect` for scripts, tests and agents. A command that fits a window triad has opens it; `stack` has a window of its own (§I2). The other new kinds of window are open work (`PLAN.md` §3). In a git repository each refuses with `needs a jj repository` and exits with 3.
 
 ### I1 Rewrites
 
@@ -792,6 +792,7 @@ Each ships a command line with `--json`, `--headless` or `--inspect` for scripts
 ### I2 Conflicts in commits
 
 - `stack` evaluates the revset with those aliases. jj's revset stream gives children first; the list reverses it. A path is inherited when any parent's tree holds a conflict at it.
+- The stack window (`merge-app::stack_window`) lists through `jj_native::stacked`, which also gives the repository root the paths are relative to. It takes over the app's `Finish`, as the resolve queue does, so a merge window's end comes back to it: the window closes, the note says how it ended, and the list loads again. `merge-cli` lists once before the window opens, so an empty list, a git repository or a bad revset exits without one. Listing, loading a path and the preview run off the UI thread; each opens the repository afresh, so a save between them is always seen. Preview takes `MergeWindow::preview_job`, the same dry run the save's confirmation runs.
 - A tree holds every path at the tree's number of sides; a path that conflicts in fewer carries pairs of terms that cancel. `native::simplified` drops them as jj does for a conflict of files, keyed by file ID so an executable bit alone keeps no term, and keeps the labels of the terms that stay. `conflict_in`, and so every read of a conflict, `@`'s included, goes through it: the sides are jj's, and markers triad writes have the arity `update_from_content` parses, which simplifies the same way. Without it a path of two sides in a tree of three opens with a phantom third side, and its markers save as a resolved file with the markers in it.
 - `resolve -r` loads through `resolve::load_at_commit`: the commit's conflict, decoded as `load` decodes `@`'s, with jj's marker length from `merge_core::jj::marker_length`. The `Record` carries the commit, the marker length and a temporary file whose directory lives as long as the record. Both front ends save through `Record`, so the window and `--headless` write the same way.
 - The write parses the result back with jj-lib's `update_from_content` over the path's file IDs, which returns the terms it was given, so a conflict keeps each term's bit; a result of another arity is refused (`JjError::SidesChanged`). A resolved file takes the executable bit the terms agree on (`resolve_file_executable`). A value of fewer sides than the commit's tree, from `--pair`, is padded with cancelling pairs, since `MergedTreeBuilder` takes a conflict only at the tree's arity; `write_tree` simplifies them away.

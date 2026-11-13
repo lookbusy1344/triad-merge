@@ -5,7 +5,8 @@ use merge_core::diff::{Comparison, LineEndingRule, Whitespace};
 use merge_core::index::RegionIx;
 use merge_core::merge3::{HunkLevel, Semantics};
 use merge_core::text::{Encoding, LineEnding};
-use merge_session::jj_native::DescendantEffect;
+use merge_session::ExitCode;
+use merge_session::jj_native::{DescendantEffect, Rewrite, StackCommit, StackPath};
 use merge_view::nav::Sides;
 use merge_view::status::{Divergence, Status};
 use vcs::{IdKind, RepoKind};
@@ -178,6 +179,57 @@ fn path_list(paths: &[impl AsRef<str>]) -> String {
 
 /// A descendant's conflicted paths when it has none.
 const NO_PATHS: &str = "none";
+
+/// The stack window's title (spec §7.5.1).
+pub(crate) const STACK_TITLE: &str = "Conflicted commits";
+pub(crate) const STACK_EMPTY: &str = "No conflicted commits.";
+pub(crate) const STACK_REFRESH: &str = "Refresh";
+pub(crate) const STACK_PREVIEW: &str = "Preview Save";
+pub(crate) const PREVIEW_RUNNING: &str = "Working out what the save would do…";
+
+/// A listed commit's heading, as `stack --list` prints it: its change, commit and summary.
+pub(crate) fn stack_commit(commit: &StackCommit) -> String {
+    let ids = format!("{} {}", commit.change.id(IdKind::Change), commit.change.id(IdKind::Commit));
+    match &commit.change.summary {
+        Some(summary) => format!("{ids} {summary}"),
+        None => ids,
+    }
+}
+
+/// A listed path, marked when a parent holds a conflict there too.
+pub(crate) fn stack_path(path: &StackPath) -> String {
+    if path.inherited { format!("{} (inherited)", path.path) } else { path.path.to_string() }
+}
+
+/// What the stack window says after the merge window on `path` in `change` finished with
+/// `code`; nothing after a cancel.
+pub(crate) fn stack_note(code: ExitCode, path: &str, change: &str) -> Option<String> {
+    match code {
+        ExitCode::Resolved => Some(format!("Resolved {path} in {change}.")),
+        ExitCode::Conflicts => Some(format!("Saved {path} in {change} with conflicts.")),
+        ExitCode::Cancelled => None,
+        ExitCode::Error => Some(format!("The merge of {path} in {change} ended with an error.")),
+    }
+}
+
+/// What saving the open merge window would do: whether the path resolves, and each
+/// descendant's conflicts before and after. `None` when the save would write nothing.
+pub(crate) fn stack_preview(rewrite: Option<&Rewrite>) -> String {
+    let Some(rewrite) = rewrite else {
+        return "Saving writes nothing: the pair keeps conflicts.".to_owned();
+    };
+    let change = rewrite.target.id(IdKind::Change);
+    let outcome = if rewrite.resolved {
+        format!("Saving resolves the path in {change}.")
+    } else {
+        format!("Saving keeps conflicts in {change}.")
+    };
+    if rewrite.descendants.is_empty() {
+        format!("{outcome}\nNo descendant is rebased.")
+    } else {
+        format!("{outcome}\n{}", descendant_effects(&rewrite.descendants))
+    }
+}
 
 /// The open dialog's window title on `mode`'s tab.
 pub(crate) fn open_title(mode: Mode) -> &'static str {
@@ -794,6 +846,72 @@ mod tests {
         let mut effect = effect("unused", &[], &["a.txt"]);
         effect.change.change_id = None;
         assert_eq!(descendant_effects([&effect]), "c0ffee12: none -> a.txt");
+    }
+
+    fn rewrite(resolved: bool, descendants: Vec<DescendantEffect>) -> Rewrite {
+        Rewrite {
+            target: vcs::ChangeInfo {
+                commit: "1a2b3c4d".to_owned(),
+                change_id: Some("qpvuntsm".to_owned()),
+                summary: None,
+            },
+            resolved,
+            sides: None,
+            descendants,
+            written: false,
+        }
+    }
+
+    #[test]
+    fn the_preview_says_whether_the_path_resolves_and_lists_each_descendant() {
+        let effects = vec![effect("kmzzmxvq", &["a.txt"], &[])];
+        assert_eq!(
+            stack_preview(Some(&rewrite(true, effects))),
+            "Saving resolves the path in qpvuntsm.\nkmzzmxvq: a.txt -> none"
+        );
+        assert_eq!(
+            stack_preview(Some(&rewrite(false, Vec::new()))),
+            "Saving keeps conflicts in qpvuntsm.\nNo descendant is rebased."
+        );
+        assert_eq!(stack_preview(None), "Saving writes nothing: the pair keeps conflicts.");
+    }
+
+    #[test]
+    fn a_listed_commit_reads_change_commit_and_summary() {
+        let mut commit = StackCommit {
+            id: vcs::CommitId::new("1a2b3c4d5e6f".to_owned()),
+            change: vcs::ChangeInfo {
+                commit: "1a2b3c4d".to_owned(),
+                change_id: Some("qpvuntsm".to_owned()),
+                summary: Some("merge".to_owned()),
+            },
+            paths: Vec::new(),
+        };
+        assert_eq!(stack_commit(&commit), "qpvuntsm 1a2b3c4d merge");
+        commit.change.summary = None;
+        assert_eq!(stack_commit(&commit), "qpvuntsm 1a2b3c4d");
+    }
+
+    #[test]
+    fn an_inherited_path_is_marked() {
+        let path = |inherited| StackPath { path: "src/a.rs".into(), inherited };
+        assert_eq!(stack_path(&path(false)), "src/a.rs");
+        assert_eq!(stack_path(&path(true)), "src/a.rs (inherited)");
+    }
+
+    #[test]
+    fn the_note_after_a_merge_window_says_how_it_ended() {
+        let note = |code| stack_note(code, "a.txt", "qpvuntsm");
+        assert_eq!(note(ExitCode::Resolved).as_deref(), Some("Resolved a.txt in qpvuntsm."));
+        assert_eq!(
+            note(ExitCode::Conflicts).as_deref(),
+            Some("Saved a.txt in qpvuntsm with conflicts.")
+        );
+        assert_eq!(note(ExitCode::Cancelled), None);
+        assert_eq!(
+            note(ExitCode::Error).as_deref(),
+            Some("The merge of a.txt in qpvuntsm ended with an error.")
+        );
     }
 
     #[test]

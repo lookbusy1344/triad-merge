@@ -21,7 +21,7 @@ As of 2026-11-13.
 | p4merge parity | Done | E |
 | Review and diff features | Bulk takes (§G3), line endings in comparison (§G4) and collapsed unchanged regions in both windows (§G2) done; the rest open | G |
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
-| jj-native features | Done: conflicts across a stack (`stack`, `resolve -r`), divergent changes (`diverge`), pair reduction (`resolve --pair`), operation-log history (`history`, `diff --op`), the evolog patch diff (`diff --evolog`) and absorb by hunk (`absorb`); the conflict badge names the sides a conflict keeps; windows for `stack`, `history` and `absorb` open | I |
+| jj-native features | Done: conflicts across a stack (`stack`, `resolve -r`), divergent changes (`diverge`), pair reduction (`resolve --pair`), operation-log history (`history`, `diff --op`), the evolog patch diff (`diff --evolog`) and absorb by hunk (`absorb`); the stack window, with a preview of a save's effect on the descendants and a confirmation before a save changes them; the conflict badge names the sides a conflict keeps; windows for `history` and `absorb` open | I |
 
 Every spec §9 target is met (§A6.7). Toolchain: stable Rust 1.100, with `rust-version` 1.99. Dependencies: jj-lib and jj-core 0.47.1 on gix 0.90; gpui-kit 0.8.1 with the vendored `gpui-base` patch; gpui-kit 0.9 is not adopted (`docs/gpui-kit-issues.md`).
 
@@ -64,7 +64,6 @@ In order. Each is one or more commits.
 | A key that opens the fold next to the caret | — | §G2 |
 | Review and diff features, §G4–§G14 | Owner's choices on §G15's open points | G |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
-| A window for `stack`: the conflicted commits beside the merge window, and a resolution's effect on the descendants before it is saved | — | §I2 |
 | A window for `history`: a timeline of versions to compare and restore from | — | §I5 |
 | A window for `absorb`: hunks dragged onto commits | Part H's selection model | §I7 |
 

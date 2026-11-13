@@ -103,7 +103,7 @@ mod jj {
     fn stack_lists_the_conflicted_commits_parents_first() {
         let (fixture, merge, child) = stacked();
         let wc = fixture.working_copy_commit();
-        let (code, out, err) = outcome(&triad(fixture.root(), &["stack"]));
+        let (code, out, err) = outcome(&triad(fixture.root(), &["stack", "--list"]));
         let expected = format!(
             "{} {} merge\n  a.txt\n{} {} child\n  a.txt (inherited)\n{} {}\n  a.txt (inherited)\n",
             short(&merge.change_id),
@@ -119,6 +119,25 @@ mod jj {
         assert_eq!(code, Some(CONFLICTS));
         assert_eq!(listed[0]["commit"], merge.commit.as_str());
         assert_eq!(listed[2]["paths"][0]["inherited"], true);
+    }
+
+    #[test]
+    fn stack_without_conflicted_commits_opens_no_window_and_exits_0() {
+        let fixture = Fixture::new();
+        fixture.commit("one", &[("a.txt", b"a\n")]);
+        fixture.check_out_to_disk();
+        assert_eq!(
+            outcome(&triad(fixture.root(), &["stack"])),
+            (Some(RESOLVED), String::new(), String::new())
+        );
+    }
+
+    #[test]
+    fn stack_with_a_revset_jj_cannot_resolve_fails_before_any_window() {
+        let (fixture, ..) = stacked();
+        let (code, out, err) = outcome(&triad(fixture.root(), &["stack", "no_such_function()"]));
+        assert_eq!((code, out.as_str()), (Some(ERROR), ""));
+        assert!(err.starts_with("triad-merge: "), "{err}");
     }
 
     #[test]

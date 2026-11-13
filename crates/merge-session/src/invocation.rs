@@ -34,6 +34,18 @@ pub enum Window {
     Resolve(Resolve),
     /// `diff PATH --evolog`: a jj change's file against an earlier version of the change.
     DiffEvolog(Evolog),
+    /// `stack [REVSET]`: the conflicted jj commits, each conflict opening in the merge window.
+    Stack(Stack),
+}
+
+/// `stack [REVSET]` in a window (spec §7.5.1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stack {
+    /// The commits to list; none for `conflicts() & mutable()`.
+    pub revset: Option<String>,
+    /// The options each conflict merges with; the semantics are settled before the window
+    /// opens.
+    pub options: MergeOptions,
 }
 
 /// `diff PATH --evolog`: `path` in the change `rev` names, `@` without one, against an
