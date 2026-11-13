@@ -5,6 +5,7 @@ use merge_core::diff::{Comparison, LineEndingRule, Whitespace};
 use merge_core::index::RegionIx;
 use merge_core::merge3::{HunkLevel, Semantics};
 use merge_core::text::{Encoding, LineEnding};
+use merge_view::nav::Sides;
 use merge_view::status::{Divergence, Status};
 use vcs::RepoKind;
 
@@ -298,14 +299,20 @@ pub(crate) fn pick_label(
 }
 
 /// The toolbar's conflict count: how many conflicts are unresolved out of all of them,
-/// led by the current conflict's `number` when the caret is in one. `None` for a merge
-/// without conflicts.
-pub(crate) fn conflict_badge(status: &Status, number: Option<usize>) -> Option<String> {
+/// led by the current conflict's `number` when the caret is in one, and the `sides` that
+/// conflict keeps in a merge of more than two. `None` for a merge without conflicts.
+pub(crate) fn conflict_badge(
+    status: &Status,
+    number: Option<usize>,
+    sides: Option<Sides>,
+) -> Option<String> {
     let Status { conflicts, unresolved, .. } = *status;
+    let sides =
+        sides.map_or_else(String::new, |Sides { kept, of }| format!(" · {kept} of {of} sides"));
     match (conflicts, unresolved, number) {
         (0, _, _) => None,
-        (all, 0, Some(n)) => Some(format!("Conflict {n} of {all} · all resolved")),
-        (all, left, Some(n)) => Some(format!("Conflict {n} of {all} · {left} unresolved")),
+        (all, 0, Some(n)) => Some(format!("Conflict {n} of {all}{sides} · all resolved")),
+        (all, left, Some(n)) => Some(format!("Conflict {n} of {all}{sides} · {left} unresolved")),
         (1, 0, None) => Some("Conflict resolved".to_owned()),
         (all, 0, None) => Some(format!("All {all} resolved")),
         (all, left, None) => Some(format!("{left} of {all} unresolved")),
@@ -717,7 +724,29 @@ mod tests {
     }
 
     fn conflict_badge_at(number: Option<usize>, status: &Status) -> Option<String> {
-        conflict_badge(status, number)
+        conflict_badge(status, number, None)
+    }
+
+    #[test]
+    fn a_conflict_of_more_than_two_sides_shows_the_sides_jj_keeps() {
+        let sides = Some(Sides { kept: 2, of: 3 });
+        assert_eq!(
+            conflict_badge(&with(25, 20, 5), Some(3), sides).as_deref(),
+            Some("Conflict 3 of 20 · 2 of 3 sides · 5 unresolved")
+        );
+        assert_eq!(
+            conflict_badge(&with(25, 20, 0), Some(3), sides).as_deref(),
+            Some("Conflict 3 of 20 · 2 of 3 sides · all resolved")
+        );
+    }
+
+    #[test]
+    fn the_sides_show_only_while_the_caret_is_in_a_conflict() {
+        let sides = Some(Sides { kept: 3, of: 4 });
+        assert_eq!(
+            conflict_badge(&with(25, 20, 5), None, sides).as_deref(),
+            Some("5 of 20 unresolved")
+        );
     }
 
     #[test]

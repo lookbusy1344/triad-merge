@@ -4,7 +4,7 @@
 
 use merge_core::document::{MergeDocument, Resolution};
 use merge_core::index::{ByteOffset, RegionIx};
-use merge_core::merge3::Kind;
+use merge_core::merge3::{Kind, simplified_sides};
 
 /// The region navigation or a pick last made current, and the caret it left. While the caret
 /// stays there, that region is current: an empty region holds no byte, so the caret alone
@@ -93,11 +93,33 @@ pub fn conflict_number(doc: &MergeDocument, region: RegionIx) -> Option<usize> {
         .then(|| regions[..=region].iter().filter(|r| r.kind == Kind::Conflict).count())
 }
 
+/// How many sides a conflict keeps after jj's simplification, out of the merge's sides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Sides {
+    pub kept: usize,
+    pub of: usize,
+}
+
+/// The sides conflict `region` keeps once jj drops each pair of a side and a base that hold
+/// the same lines there (spec §7.5.3). `None` in a three-way merge, where every conflict has
+/// two, and for a region that is not a conflict or is past the last.
+#[must_use]
+pub fn conflict_sides(doc: &MergeDocument, region: RegionIx) -> Option<Sides> {
+    let of = doc.inputs().sides().len();
+    let region = doc.regions().get(region.get())?;
+    (of > THREE_WAY_SIDES && region.kind == Kind::Conflict)
+        .then(|| Sides { kept: simplified_sides(doc.inputs(), region, doc.options().diff), of })
+}
+
+/// The sides of a three-way merge.
+const THREE_WAY_SIDES: usize = 2;
+
 #[cfg(test)]
 mod tests {
+    use merge_core::document::Labels;
     use merge_core::document::{Command, EditBatch, MergeOptions, TextPatch};
-    use merge_core::merge3::Source;
-    use merge_core::testing::{doc, doc_with};
+    use merge_core::merge3::{Inputs, Source};
+    use merge_core::testing::{doc, doc_with, text};
 
     use super::*;
 
@@ -231,6 +253,38 @@ mod tests {
         let caret = ByteOffset::new(d.text().len() + 1);
         let pin = Pin { region: RegionIx::new(99), caret };
         assert_eq!(held_region(&d, Some(pin), caret), RegionIx::new(6));
+    }
+
+    /// A merge of three sides in jj's order s0 b0 s1 b1 s2. Regions: 0 a, 1 conflict, 2 c.
+    fn three_sides(s0: &str, b0: &str, s1: &str, b1: &str, s2: &str) -> MergeDocument {
+        let inputs = Inputs::new(vec![text(s0), text(s1), text(s2)], vec![text(b0), text(b1)])
+            .expect("three sides, two bases");
+        MergeDocument::new(inputs, MergeOptions::default(), Labels::none()).expect("no labels")
+    }
+
+    #[test]
+    fn a_conflict_of_three_sides_counts_the_sides_jj_keeps() {
+        // s1 = b0 = b cancel: X and Y are left over b.
+        let abc = "a\nb\nc\n";
+        let d = three_sides("a\nX\nc\n", abc, abc, abc, "a\nY\nc\n");
+        assert_eq!(d.regions()[1].kind, Kind::Conflict);
+        assert_eq!(conflict_sides(&d, RegionIx::new(1)), Some(Sides { kept: 2, of: 3 }));
+    }
+
+    #[test]
+    fn a_conflict_whose_sides_all_changed_keeps_every_side() {
+        let d = three_sides("a\nX\nc\n", "a\nb\nc\n", "a\nY\nc\n", "a\nd\nc\n", "a\nZ\nc\n");
+        assert_eq!(conflict_sides(&d, RegionIx::new(1)), Some(Sides { kept: 3, of: 3 }));
+    }
+
+    #[test]
+    fn only_a_conflict_of_more_than_two_sides_counts_its_sides() {
+        let abc = "a\nb\nc\n";
+        let d = three_sides("a\nX\nc\n", abc, abc, abc, "a\nY\nc\n");
+        assert_eq!(conflict_sides(&d, RegionIx::new(0)), None);
+        assert_eq!(conflict_sides(&d, RegionIx::new(3)), None);
+        let d = two_conflicts();
+        assert_eq!(conflict_sides(&d, RegionIx::new(1)), None);
     }
 
     #[test]

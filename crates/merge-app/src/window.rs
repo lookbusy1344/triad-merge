@@ -55,7 +55,7 @@ use merge_view::heights::Heights;
 use merge_view::highlight::{CellSpans, Highlights};
 use merge_view::marks::{self, Band, Tone};
 use merge_view::merge_fold::{self, MergeFold, MergeOpened};
-use merge_view::nav::{self, Pin, Target};
+use merge_view::nav::{self, Pin, Sides, Target};
 use merge_view::origin::hover_text;
 use merge_view::placeholder;
 use merge_view::rows::{self, PaneError, PaneSet, RowIx, RowMap};
@@ -91,7 +91,7 @@ use crate::sideways;
 use crate::strings::prompt;
 use crate::syntax::{self, Colouring, InputSyntax};
 use crate::tones::{Palette, Tones};
-use crate::toolbar::{self, GROUPS, Labels};
+use crate::toolbar::{self, Badge, GROUPS, Labels};
 use crate::wrap::Wrap;
 use crate::{
     Cancel, CarryMovedEdit, ClearChoice, CopyInput, ExitCode, Find, GoToLine, LINE_HEIGHT,
@@ -473,8 +473,10 @@ pub struct MergeWindow {
     ruler_drag: ruler::Dragging,
     /// When the rows' bar shows (spec §6.4).
     scrollbar_mode: ScrollbarMode,
-    /// The number of the conflict holding the caret, for the conflict badge.
+    /// The number of the conflict holding the caret, and the sides it keeps in a merge of
+    /// more than two, for the conflict badge.
     conflict_number: Option<usize>,
+    conflict_sides: Option<Sides>,
     /// The panes' scroll, soft wrap, scroll sync and the region `go_to` brings into view.
     scroll: PaneScroll,
     /// The region of each result placeholder, in order, for scroll sync's result rows.
@@ -695,6 +697,7 @@ impl MergeWindow {
             ruler_drag: ruler::Dragging::default(),
             scrollbar_mode,
             conflict_number: None,
+            conflict_sides: None,
             highlights: Highlights::new(panes),
             syntax,
             colouring,
@@ -1544,14 +1547,15 @@ impl MergeWindow {
         }
         let region = self.current_region(cx);
         let number = nav::conflict_number(self.session.document(), region);
+        let sides = nav::conflict_sides(self.session.document(), region);
         let highlighted = (self.session.document().region(region).kind != Kind::Unchanged)
             .then(|| (region, self.session.document().region_bytes(region)));
         if highlighted != self.highlighted {
             self.highlighted = highlighted;
             self.paint_highlight(cx);
         }
-        if number != self.conflict_number {
-            self.conflict_number = number;
+        if (number, sides) != (self.conflict_number, self.conflict_sides) {
+            (self.conflict_number, self.conflict_sides) = (number, sides);
             cx.notify();
         }
     }
@@ -2650,10 +2654,17 @@ impl MergeWindow {
         }
     }
 
+    /// What the conflict badge can show: the sides a conflict keeps only in a merge of more
+    /// than two.
+    fn badge(&self) -> Badge {
+        if self.session.document().inputs().is_three_way() { Badge::Counts } else { Badge::Sides }
+    }
+
     /// The toolbar, with labels when `window` is wide enough for them.
     fn render_toolbar(&self, window: &Window, cx: &App) -> impl IntoElement + use<> {
         let (tones, dark) = (self.tones(cx), cx.theme().is_dark());
-        let badge = strings::conflict_badge(&self.counts, self.conflict_number).map(|text| {
+        let text = strings::conflict_badge(&self.counts, self.conflict_number, self.conflict_sides);
+        let badge = text.map(|text| {
             let text = SharedString::from(text);
             div()
                 .id(CONFLICT_BADGE_ID)
@@ -2673,7 +2684,7 @@ impl MergeWindow {
             dark,
             Labels::for_width(
                 window.viewport_size().width,
-                toolbar::labels_min_width(self.typography.toolbar_size, window),
+                toolbar::labels_min_width(self.typography.toolbar_size, self.badge(), window),
             ),
             self.typography.toolbar_size,
         )

@@ -11,13 +11,13 @@ use common::{act, caret, doc, open, set_caret, texts};
 use gpui_kit::test::TestWindowExt;
 use gpui_kit::{AnyWindowHandle, Entity, OwnedMenuItem, TestAppContext};
 use merge_app::toolbar::{
-    BOTH_ID, BOTH_MENU_LEFT_THEN_RIGHT, BOTH_MENU_RIGHT_THEN_LEFT, COMPACT_MIN_WIDTH,
+    BOTH_ID, BOTH_MENU_LEFT_THEN_RIGHT, BOTH_MENU_RIGHT_THEN_LEFT, Badge, COMPACT_MIN_WIDTH,
     LABELS_MIN_WIDTH, MENU_TRIGGER_ID, POPUP_MENU_ID, Tool, labels_min_width,
 };
 use merge_app::window::{CONFLICT_BADGE_ID, GO_TO_LINE_ID, RESULT_ID, TOOLBAR_ID, cell_id};
 use merge_app::{Find, MergeWindow, Typography, WindowSettings};
-use merge_core::document::{MergeDocument, Resolution};
-use merge_core::merge3::Source;
+use merge_core::document::{Labels, MergeDocument, MergeOptions, Resolution};
+use merge_core::merge3::{Inputs, Source};
 use merge_view::rows::PaneSet;
 
 fn press(cx: &mut TestAppContext, window: AnyWindowHandle, key: &str) {
@@ -536,6 +536,60 @@ fn the_labelled_toolbar_fits_from_its_minimum_width(cx: &mut TestAppContext) {
     assert!(tools_fit(cx, window));
 }
 
+/// Twelve conflicts of three sides, in jj's order s0 b0 s1 b1 s2. Side 1 holds base 1's line,
+/// so jj drops that pair and each conflict keeps two of its three sides.
+fn twelve_three_side_conflicts() -> MergeDocument {
+    const CONFLICTS: usize = 12;
+    let mut terms: [String; 5] = Default::default();
+    for n in 0..CONFLICTS {
+        for (term, line) in terms.iter_mut().zip(["x", "b", "c", "c", "y"]) {
+            writeln!(term, "{line}{n}\nkeep{n}").expect("a String takes any write");
+        }
+    }
+    let [s0, b0, s1, b1, s2] = terms.map(|term| common::text(&term));
+    let inputs = Inputs::new(vec![s0, s1, s2], vec![b0, b1]).expect("three sides, two bases");
+    MergeDocument::new(inputs, MergeOptions::default(), Labels::none()).expect("no labels")
+}
+
+fn badge_label(cx: &mut TestAppContext, window: AnyWindowHandle) -> Option<String> {
+    let mut badge = None;
+    act(cx, window, |window, _| {
+        badge = window.find(CONFLICT_BADGE_ID).label().map(str::to_owned);
+    });
+    badge
+}
+
+#[gpui_kit::test]
+fn the_badge_shows_the_sides_jj_keeps_in_a_conflict_of_more_than_two(cx: &mut TestAppContext) {
+    let (window, _) = in_result(cx, twelve_three_side_conflicts());
+    assert_eq!(
+        badge_label(cx, window).as_deref(),
+        Some("Conflict 1 of 12 · 2 of 3 sides · 12 unresolved")
+    );
+}
+
+#[gpui_kit::test]
+fn the_labelled_toolbar_fits_the_badge_with_its_sides(cx: &mut TestAppContext) {
+    let (window, _) = in_result(cx, twelve_three_side_conflicts());
+    for _ in 0..TO_CONFLICT_TEN {
+        click(cx, window, Tool::NextConflict.id());
+    }
+    assert_eq!(
+        badge_label(cx, window).as_deref(),
+        Some("Conflict 10 of 12 · 2 of 3 sides · 12 unresolved")
+    );
+    let mut threshold = gpui_kit::Pixels::ZERO;
+    act(cx, window, |window, _| {
+        threshold = labels_min_width(DEFAULT_TOOLBAR_TEXT, Badge::Sides, window);
+    });
+    assert!(threshold > LABELS_MIN_WIDTH, "{threshold:?}");
+    resize(cx, window, threshold - gpui_kit::px(1.));
+    assert!(!label_shown(cx, window, Tool::Left));
+    resize(cx, window, threshold);
+    assert!(label_shown(cx, window, Tool::Left));
+    assert!(tools_fit(cx, window));
+}
+
 #[gpui_kit::test]
 fn a_narrower_window_drops_every_label_and_the_tools_fit(cx: &mut TestAppContext) {
     let (window, _) = in_result(cx, twelve_conflicts());
@@ -625,7 +679,7 @@ fn labels_min_width_at(
 ) -> gpui_kit::Pixels {
     let mut width = gpui_kit::Pixels::ZERO;
     act(cx, window, |window, _| {
-        width = labels_min_width(size, window);
+        width = labels_min_width(size, Badge::Counts, window);
     });
     width
 }

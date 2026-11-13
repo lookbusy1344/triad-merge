@@ -178,6 +178,11 @@ pub(crate) fn classify<T: Eq + Hash>(sides: &[T], bases: &[T], same_change: Same
     }
 }
 
+/// The number of sides jj's `Merge::simplify` leaves of `sides` over `bases`.
+pub(crate) fn simplified_sides<T: PartialEq + Clone>(sides: &[T], bases: &[T]) -> usize {
+    Merge::from_removes_adds(bases, sides).simplify().num_sides()
+}
+
 /// The conflict marker length jj's materialiser writes a conflict of `inputs` with, and the
 /// shortest markers it parses back: four past the longest marker-like line of any input, and
 /// at least seven (spec §4.4).

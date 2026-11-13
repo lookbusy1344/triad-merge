@@ -140,6 +140,8 @@ triad-merge resolve src/lib.rs --pair 1        # sides 1 and 2
 triad-merge resolve src/lib.rs --pair 1 -r xyz # in another commit
 ```
 
+Opened without `--pair`, the merge window shows one top pane per side. The conflict badge in the toolbar names the sides the current conflict keeps once jj drops the cancelling pairs: `Conflict 3 of 10 · 2 of 3 sides · 5 unresolved`.
+
 A resolved save replaces those three terms with the result, so the conflict keeps one side fewer. Repeat until one side is left and the file resolves. A save with conflicts in the pair writes nothing.
 
 ### Merge a divergent change
