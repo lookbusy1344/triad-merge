@@ -42,7 +42,7 @@ jj has no commit hooks. Run the gate before `jj commit`, `jj describe` (finalisi
 script/pre-commit              # from the repo root
 ```
 
-**The gate takes under 35 s on a warm build.** An edit to `merge-app` takes 12 s, one to `merge-core` 16 s. A run over 35 s is a defect, not a slow run. Stop, report it to the owner with the time of each step, and fix the cause before going on. Never wait it out or raise a limit. Check the object count under `target/debug/build` first: a huge file count there slows every rustc run (`DESIGN.md` §A13.5).
+**The gate takes under 35 s on a warm build.** An edit to `merge-app` takes 12 s, one to `merge-core` 16 s. An edit under `vendor/` has a 60 s limit; it takes 45 s (`DESIGN.md` §A13.5). A run over its limit is a defect, not a slow run. Stop, report it to the owner with the time of each step, and fix the cause before going on. Never wait it out or raise a limit. Check the object count under `target/debug/build` first: a huge file count there slows every rustc run (`DESIGN.md` §A13.5).
 
 The gate reads the changes in `@` (jj) or against `HEAD` (git). It skips the checks when no build file changed: `.rs`, `Cargo.toml`, `Cargo.lock`, `deny.toml`, `.cargo/config.toml`, toolchain and format config, `script/`, `fixtures/`. Otherwise it runs `script/checks --quick` on the changed paths:
 

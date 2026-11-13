@@ -1,5 +1,6 @@
 // Modified for Triad: full-line fills and gutter marks for range decorations,
-// spacer rows and their notes, line labels, and tests of the editor's tab stops.
+// spacer rows and their notes, line labels, tests of hidden lines and the spacer
+// click, and tests of the editor's tab stops.
 // See PATCHES.md.
 use crate::input::{InputExtras as _, InputModeKind};
 use gpui::Corners;
@@ -4327,9 +4328,11 @@ mod tests {
     use super::*;
     use crate::input::display_map::BufferPoint;
     use crate::input::{
-        EditorMode, EditorState, FoldRange, GutterMark, LineLabel, LineLabels, MoveDown, MoveUp,
-        Position, RangeDecoration, Redo, SpacerNote, Undo,
+        EditorMode, EditorState, FoldRange, GutterMark, InputEvent, LineLabel, LineLabels, MoveDown,
+        MoveLeft, MoveRight, MoveUp, Position, RangeDecoration, Redo, SpacerNote, Undo,
     };
+    use gpui::{Modifiers, MouseButton};
+    use std::{cell::RefCell, rc::Rc};
     use gpui::{
         AppContext as _, Context, EntityInputHandler as _, ListAlignment, ListOffset, ListState,
         Render, TestAppContext, VisualTestContext, div, list, prelude::FluentBuilder as _,
@@ -6905,6 +6908,195 @@ mod tests {
                 "scrolled to the end, spacers included"
             );
         });
+    }
+
+    // Triad: hidden lines.
+
+    /// "a" to "e", one per line, in an editor with folding off, as triad's
+    /// are, with `hidden` lines and `spacers`, laid out. Line n starts at
+    /// offset 2n.
+    fn hidden_lines_editor(
+        cx: &mut TestAppContext,
+        hidden: Vec<std::ops::Range<usize>>,
+        spacers: Vec<(usize, usize)>,
+    ) -> (Entity<EditorState>, VisualTestContext) {
+        cx.update(crate::init);
+        let mut editor = None;
+        let window = cx.open_window(size(px(240.), px(140.)), |window, cx| {
+            let state = cx.new(|cx| {
+                EditorState::new(window, cx)
+                    .folding(false)
+                    .default_value("a\nb\nc\nd\ne")
+            });
+            editor = Some(state.clone());
+            DecorationHarness(state)
+        });
+        let editor = editor.unwrap();
+        let mut cx = VisualTestContext::from_window(window.into(), cx);
+        cx.update(|window, cx| {
+            editor.update(cx, |state, cx| {
+                state.set_spacers(spacers, cx);
+                state.set_hidden_lines(hidden, cx);
+            });
+            window.draw(cx).clear(cx);
+        });
+        (editor, cx)
+    }
+
+    #[gpui::test]
+    fn hidden_lines_draw_no_rows_and_drop_their_spacers(cx: &mut TestAppContext) {
+        // b and c hidden; the spacer above d stands for them.
+        let (editor, mut cx) = hidden_lines_editor(cx, vec![1..3], vec![(1, 1), (3, 1)]);
+        cx.update(|_, cx| {
+            let state = editor.read(cx);
+            let map = &state.display_map;
+            // a, the spacer, d, e.
+            assert_eq!(map.display_row_count(), 4);
+            assert_eq!(
+                (0..5).map(|line| map.is_buffer_line_hidden(line)).collect::<Vec<_>>(),
+                [false, true, true, false, false]
+            );
+            assert_eq!(map.buffer_line_to_display_row(3), 2);
+            assert_eq!(map.display_row_to_buffer_line(2), 3);
+            assert!(map.is_spacer_row(1));
+            assert_eq!(map.spacer_rows_above(1), 0, "a hidden line keeps no spacer");
+            assert_eq!(map.spacer_rows_above(3), 1);
+            assert_eq!(map.spacers(), [(1, 1), (3, 1)], "kept for when they show");
+            let layout = state.last_layout.as_ref().unwrap();
+            assert_eq!(layout.visible_buffer_lines, [0, 3, 4]);
+            assert_eq!(
+                layout.visible_spacers,
+                [px(0.), layout.line_height, px(0.)]
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn hidden_lines_at_the_start_and_the_end(cx: &mut TestAppContext) {
+        // a, b and d, e hidden: a spacer above c, a trailing spacer after it.
+        let (editor, mut cx) =
+            hidden_lines_editor(cx, vec![0..2, 3..5], vec![(2, 1), (5, 1)]);
+        cx.update(|_, cx| {
+            let state = editor.read(cx);
+            let map = &state.display_map;
+            assert_eq!(map.display_row_count(), 3);
+            assert_eq!(map.buffer_line_to_display_row(2), 1);
+            assert_eq!(map.trailing_spacer_rows(), 1);
+            assert_eq!(
+                (0..3).map(|row| map.is_spacer_row(row)).collect::<Vec<_>>(),
+                [true, false, true]
+            );
+            let layout = state.last_layout.as_ref().unwrap();
+            assert_eq!(layout.visible_buffer_lines, [2]);
+        });
+    }
+
+    #[gpui::test]
+    fn hidden_line_ranges_merge_clip_and_replace(cx: &mut TestAppContext) {
+        let (editor, mut cx) =
+            hidden_lines_editor(cx, vec![3..4, 1..3, 2..2, 0..0], Vec::new());
+        cx.update(|window, cx| {
+            let map = &editor.read(cx).display_map;
+            assert_eq!(map.hidden_lines(), [1..4]);
+            assert_eq!(map.display_row_count(), 2, "a and e");
+
+            editor.update(cx, |state, cx| state.set_hidden_lines(vec![3..9], cx));
+            window.draw(cx).clear(cx);
+            let map = &editor.read(cx).display_map;
+            assert_eq!(map.display_row_count(), 3, "lines past the end hide nothing more");
+
+            editor.update(cx, |state, cx| state.set_hidden_lines(vec![7..9], cx));
+            window.draw(cx).clear(cx);
+            assert_eq!(editor.read(cx).display_map.display_row_count(), 5);
+
+            editor.update(cx, |state, cx| state.set_hidden_lines(Vec::new(), cx));
+            window.draw(cx).clear(cx);
+            let map = &editor.read(cx).display_map;
+            assert!(map.hidden_lines().is_empty());
+            assert_eq!(map.display_row_count(), 5);
+        });
+    }
+
+    #[gpui::test]
+    fn an_edit_moves_hidden_lines_or_shows_those_it_touches(cx: &mut TestAppContext) {
+        let (editor, mut cx) = hidden_lines_editor(cx, vec![2..4], Vec::new());
+        cx.update(|window, cx| {
+            editor.update(cx, |state, cx| {
+                // A new line above them moves them down one.
+                state.replace_text_in_range(Some(0..0), "x\n", window, cx);
+                assert_eq!(state.display_map.hidden_lines(), [3..5]);
+                // An edit on the line just above, or after them, leaves them.
+                state.replace_text_in_range(Some(4..4), "y", window, cx);
+                state.replace_text_in_range(Some(12..12), "z", window, cx);
+                assert_eq!(state.display_map.hidden_lines(), [3..5]);
+                assert_eq!(state.display_map.display_row_count(), 4);
+                // An edit at the start of the first hidden line shows them all.
+                state.replace_text_in_range(Some(7..7), "w", window, cx);
+                assert!(state.display_map.hidden_lines().is_empty());
+                assert_eq!(state.display_map.display_row_count(), 6);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn the_caret_passes_over_hidden_lines(cx: &mut TestAppContext) {
+        let (editor, mut cx) = hidden_lines_editor(cx, vec![1..3], Vec::new());
+        cx.update(|window, cx| {
+            editor.update(cx, |state, cx| {
+                state.set_cursor_position(Position::new(0, 1), window, cx);
+                state.right(&MoveRight, window, cx);
+                assert_eq!(state.cursor(), 6, "right from the end of a: the start of d");
+                state.left(&MoveLeft, window, cx);
+                assert_eq!(state.cursor(), 1, "left from d: the end of a");
+                state.set_cursor_position(Position::new(0, 0), window, cx);
+                state.down(&MoveDown, window, cx);
+                assert_eq!(state.cursor(), 6, "down from a lands on d");
+                state.up(&MoveUp, window, cx);
+                assert_eq!(state.cursor(), 0, "up from d lands on a");
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn the_caret_stays_out_of_hidden_lines_at_either_end(cx: &mut TestAppContext) {
+        let (editor, mut cx) = hidden_lines_editor(cx, vec![0..2, 3..5], Vec::new());
+        cx.update(|window, cx| {
+            editor.update(cx, |state, cx| {
+                state.set_cursor_position(Position::new(2, 0), window, cx);
+                state.left(&MoveLeft, window, cx);
+                assert_eq!(state.cursor(), 4, "nothing shows before c");
+                state.set_cursor_position(Position::new(2, 1), window, cx);
+                state.right(&MoveRight, window, cx);
+                assert_eq!(state.cursor(), 5, "nothing shows after c");
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn a_click_on_a_spacer_row_names_the_line_below(cx: &mut TestAppContext) {
+        // a, the spacer above d, d, e, a trailing spacer.
+        let (editor, mut cx) = hidden_lines_editor(cx, vec![1..3], vec![(3, 1), (5, 1)]);
+        let clicks = Rc::new(RefCell::new(Vec::new()));
+        let seen = clicks.clone();
+        let _subscription = cx.update(|_, cx| {
+            cx.subscribe(&editor, move |_, event: &InputEvent, _| {
+                if let InputEvent::SpacerClick { line } = event {
+                    seen.borrow_mut().push(*line);
+                }
+            })
+        });
+        let at_row = cx.update(|_, cx| {
+            let state = editor.read(cx);
+            let layout = state.last_layout.as_ref().unwrap();
+            let origin = state.last_bounds.unwrap().origin;
+            let (gutter, line_height) = (layout.line_number_width, layout.line_height);
+            move |row: f32| origin + point(gutter + px(2.), line_height * row)
+        });
+        for row in [0.5, 1.5, 2.5, 4.5] {
+            cx.simulate_mouse_down(at_row(row), MouseButton::Left, Modifiers::default());
+            cx.simulate_mouse_up(at_row(row), MouseButton::Left, Modifiers::default());
+        }
+        assert_eq!(*clicks.borrow(), [3, 5]);
     }
 
     // Triad: tab stops.

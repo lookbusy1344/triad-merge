@@ -137,7 +137,7 @@ A plain-Rust view model with no GPUI. Every lookup is by index or offset, in O(l
 
 #### A6.1 Vendored editor
 
-`vendor/gpui-base` is gpui-base 0.8.1 with triad's patch, through `[patch.crates-io]`, with Apache-2.0 notices; `PATCHES.md` lists every change. The main ones: full-line fills and gutter marks, the edit observer (§F3), spacer rows (§A6.5), line labels (§C5.4), one-pass line layout, a resting caret, and tab stops. The vendored crate sits outside the workspace; `script/checks` runs its unit tests.
+`vendor/gpui-base` is gpui-base 0.8.1 with triad's patch, through `[patch.crates-io]`, with Apache-2.0 notices; `PATCHES.md` lists every change. The main ones: full-line fills and gutter marks, the edit observer (§F3), spacer rows and their click event, hidden lines (§A6.5), line labels (§C5.4), one-pass line layout, a resting caret, and tab stops. The vendored crate sits outside the workspace; `script/checks` runs its unit tests.
 
 Zed paints row highlights and diff hunk backgrounds as quads across the text area and hunk status as a gutter strip. triad does the same and adds a letter, since colour is never the only signal (spec §6.5).
 
@@ -178,7 +178,7 @@ The journal (`merge_session::recovery`) holds the format version, SHA-256 of eac
 
 - Two editor panes over `DiffDocument`, edits through the core as in the merge window, per-side undo, a background recompute after 100 ms (`DIFF_DEBOUNCE_MS`). gpui-component's `Editor` sets the read-only flag on each render, so read-only goes on the element.
 - File watching: `notify` watches each file's directory and calls `DiffWindow::disk_changed`; the watcher has no headless test, since its events come on another thread. `OwnWrites` holds each side's writes from their start, so a change the watcher reports before the save's result arrives is still the window's own.
-- **Alignment: spacer rows, as Zed does.** Zed's split diff keeps both sides editable and aligns them with spacer rows from its block map. The vendored editor has a `SpacerMap` layer between `FoldMap` and `DisplayMap` (`EditorState::set_spacers`): sorted runs of inserted rows, mapped by binary search, painted hatched, skipped by cursor movement, selection and hit testing. A spacer row is a display row, and line painting places each line at its own display row. `merge_view::diff::spacers` gives each changed region's shorter side the difference in rows. Between a keystroke and the recompute, spacers stay on their line numbers.
+- **Alignment: spacer rows, as Zed does.** Zed's split diff keeps both sides editable and aligns them with spacer rows from its block map. The vendored editor has a `SpacerMap` layer between `FoldMap` and `DisplayMap` (`EditorState::set_spacers`): sorted runs of inserted rows, mapped by binary search, painted hatched, skipped by cursor movement, selection and hit testing. A spacer row is a display row, and line painting places each line at its own display row. `merge_view::diff::spacers` gives each changed region's shorter side the difference in rows. Between a keystroke and the recompute, spacers stay on their line numbers. `EditorState::set_hidden_lines` hides whole lines through `FoldMap`, apart from tree-sitter's folds and with folding off; a hidden line's spacers drop out, and a left press on a spacer row emits `InputEvent::SpacerClick` with the line below it. These carry the fold rows of §G2.
 - Spacers give both panes the same rows, so they share one scroll top. The left pane, laid out first, takes a move a frame late.
 - Copy buttons: a 28 px column between the panes holds → and ← on each changed region's first row. None show while regions lag the text, since a recompute can renumber regions. A copy is an ordinary edit, so undo on that side reverses it.
 - A jump or ruler click blinks a 2 px frame round the region (`merge_app::blink`). The vendored editor paints fills over the active line and borders last.
@@ -290,6 +290,8 @@ Tests hold the lock on a second thread behind a barrier, with no sleeps. A retir
 #### A13.5 Pre-commit gate time
 
 Limit: 35 s on a warm build (AGENTS.md). The gate takes 12 s after an edit to `merge-app` and 16 s after one to `merge-core`.
+
+An edit under `vendor/` has a 60 s limit. It takes 45 s: the 107k-line `gpui-base` compiles three times, for clippy (7 s), for the workspace tests with `merge-app` and `triad-merge` (20 s), and for its own unit tests in `target/vendor`, with test features and debug info (8 s). The next run takes 10 s.
 
 - **Object files.** With debug info, rustc on macOS keeps every build's `*.rcgu.o` beside its output under `target/debug/build`, and rustc lists the directories it links from: 1.26 million objects in one directory cost 10 s a listing. `[profile.dev] debug = false` stops them; panics keep their locations, and `CARGO_PROFILE_DEV_DEBUG=line-tables-only` turns debug info on. A `target/` built with debug info needs `find target/debug/build -name '*.rcgu.o' -delete` once.
 - **Optimised dependencies.** `[profile.dev.package."*"] opt-level = 1`: merge-app's tests take 75 s of CPU against 130 s at 0; the highlighter comparison 1.3 s against 4.6 s. A change to the setting rebuilds every dependency, 84 s cold.

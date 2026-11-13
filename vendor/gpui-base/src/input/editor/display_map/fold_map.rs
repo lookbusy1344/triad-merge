@@ -1,3 +1,4 @@
+// Modified for Triad: adds hidden lines, folds the application sets. See PATCHES.md.
 /// FoldMap: Folding projection layer (Wrap rows → Display rows).
 ///
 /// This module manages code folding by:
@@ -47,6 +48,10 @@ pub(super) struct FoldMap {
     /// Subset of candidates, sorted by start_line
     folded: Vec<FoldRange>,
 
+    /// Triad: buffer line ranges the application hides whole, apart from the
+    /// candidates: sorted and disjoint.
+    hidden_lines: Vec<Range<usize>>,
+
     /// Flag indicating if the fold projection needs rebuilding
     /// Used for lazy evaluation to avoid expensive rebuilds on every text change
     needs_rebuild: bool,
@@ -64,6 +69,7 @@ impl FoldMap {
             projected_wrap_row_count: 0,
             candidates: Vec::new(),
             folded: Vec::new(),
+            hidden_lines: Vec::new(),
             needs_rebuild: true,
             cached_wrap_row_count: 0,
         }
@@ -76,9 +82,14 @@ impl FoldMap {
         self.cached_wrap_row_count = wrap_row_count;
     }
 
+    /// Triad: whether anything is hidden, by a fold or by hidden lines.
+    pub(super) fn hides_rows(&self) -> bool {
+        !self.folded.is_empty() || !self.hidden_lines.is_empty()
+    }
+
     /// Get total number of visible display rows
     pub(super) fn display_row_count(&self) -> usize {
-        if self.folded.is_empty() {
+        if !self.hides_rows() {
             return self.cached_wrap_row_count;
         }
         self.projected_wrap_row_count - self.total_hidden
@@ -94,7 +105,7 @@ impl FoldMap {
     /// Convert wrap_row to display_row
     /// Returns None if the wrap_row is hidden by folding
     pub(super) fn wrap_row_to_display_row(&self, wrap_row: usize) -> Option<usize> {
-        if self.folded.is_empty() {
+        if !self.hides_rows() {
             return if wrap_row < self.cached_wrap_row_count {
                 Some(wrap_row)
             } else {
@@ -119,7 +130,7 @@ impl FoldMap {
 
     /// Convert display_row to wrap_row
     pub(super) fn display_row_to_wrap_row(&self, display_row: usize) -> Option<usize> {
-        if self.folded.is_empty() {
+        if !self.hides_rows() {
             return if display_row < self.cached_wrap_row_count {
                 Some(display_row)
             } else {
@@ -137,7 +148,7 @@ impl FoldMap {
 
     /// Find the nearest visible display_row for a given wrap_row
     pub(super) fn nearest_visible_display_row(&self, wrap_row: usize) -> usize {
-        if self.folded.is_empty() {
+        if !self.hides_rows() {
             return wrap_row.min(self.cached_wrap_row_count.saturating_sub(1));
         }
 
@@ -248,6 +259,29 @@ impl FoldMap {
         self.folded.clear();
     }
 
+    /// Triad: hide whole buffer lines, `[start, end)` each, in place of the
+    /// lines hidden before. Ranges may overlap and come in any order; empty
+    /// ones are dropped.
+    pub(super) fn set_hidden_lines(&mut self, mut ranges: Vec<Range<usize>>) {
+        ranges.retain(|range| !range.is_empty());
+        ranges.sort_unstable_by_key(|range| range.start);
+        let mut merged: Vec<Range<usize>> = Vec::with_capacity(ranges.len());
+        for range in ranges {
+            match merged.last_mut() {
+                Some(last) if range.start <= last.end => last.end = last.end.max(range.end),
+                _ => merged.push(range),
+            }
+        }
+        self.hidden_lines = merged;
+        self.needs_rebuild = true;
+    }
+
+    /// Triad: the hidden line ranges, sorted and disjoint.
+    #[inline]
+    pub(super) fn hidden_lines(&self) -> &[Range<usize>] {
+        &self.hidden_lines
+    }
+
     /// Adjust folds and candidates after a text edit.
     ///
     /// - Folds/candidates overlapping the edited line range are removed
@@ -271,6 +305,20 @@ impl FoldMap {
                     if fold.start_line > edit_end_line {
                         fold.start_line = (fold.start_line as isize + line_delta).max(0) as usize;
                         fold.end_line = (fold.end_line as isize + line_delta).max(0) as usize;
+                    }
+                }
+            }
+        }
+
+        // Triad: hidden lines an edit touches show again; later ones move.
+        if !self.hidden_lines.is_empty() {
+            self.hidden_lines
+                .retain(|range| range.end <= edit_start_line || range.start > edit_end_line);
+            if line_delta != 0 {
+                for range in &mut self.hidden_lines {
+                    if range.start > edit_end_line {
+                        range.start = range.start.saturating_add_signed(line_delta);
+                        range.end = range.end.saturating_add_signed(line_delta);
                     }
                 }
             }
@@ -307,7 +355,7 @@ impl FoldMap {
 
         self.cached_wrap_row_count = wrap_row_count;
 
-        if self.folded.is_empty() {
+        if !self.hides_rows() {
             // Fast path: no folds, all wrap rows are visible
             self.set_hidden_rows(wrap_row_count, Vec::new());
             self.needs_rebuild = false;
@@ -337,6 +385,20 @@ impl FoldMap {
             if start_wrap_row < end_wrap_row {
                 hidden_ranges.push(start_wrap_row..end_wrap_row);
             }
+        }
+        // Triad: hidden lines hide every row of each line.
+        let buffer_lines = wrap_map.buffer_line_count();
+        for range in &self.hidden_lines {
+            if range.start >= buffer_lines {
+                break;
+            }
+            let start_wrap_row = wrap_map.buffer_line_to_first_wrap_row(range.start);
+            let end_wrap_row = if range.end < buffer_lines {
+                wrap_map.buffer_line_to_first_wrap_row(range.end)
+            } else {
+                wrap_row_count
+            };
+            hidden_ranges.push(start_wrap_row..end_wrap_row);
         }
 
         self.set_hidden_rows(wrap_row_count, hidden_ranges);

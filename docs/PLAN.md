@@ -19,7 +19,7 @@ As of 2026-11-13.
 | M6 native resolution | Done: git stages a resolved save; jj snapshots before the read and after each save | D |
 | M7 syntax highlighting | Done: Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX | F |
 | p4merge parity | Done | E |
-| Review and diff features | Bulk takes (§G3) and line endings in comparison (§G4) done; the rest open | G |
+| Review and diff features | Bulk takes (§G3) and line endings in comparison (§G4) done; the editor patch for §G2 done; the rest open | G |
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
 
 Every spec §9 target is met (§A6.7). Toolchain: stable Rust 1.100, with `rust-version` 1.99. Dependencies: jj-lib and jj-core 0.47.1 on gix 0.90; gpui-kit 0.8.1 with the vendored `gpui-base` patch; gpui-kit 0.9 is not adopted (`docs/gpui-kit-issues.md`).
@@ -34,7 +34,7 @@ In order. Each is one or more commits.
 
 1. **Beta reports.** None so far from the owner's own use. Each bug starts with a test that reproduces it; README § Report a problem says what testers send.
 2. **Close M3.** The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
-3. **Review and diff features** (part G): collapse unchanged regions (§G2), diff window first, after a spike on the editor patch; the rest of the comparison filters (§G4), moved code in the two-way diff (§G5); then §G6–§G14.
+3. **Review and diff features** (part G): collapse unchanged regions (§G2), diff window first; the rest of the comparison filters (§G4), moved code in the two-way diff (§G5); then §G6–§G14.
 4. **More grammars,** one commit each: C, C++, Java and Kotlin; then JSON, YAML, TOML, CSS and Markdown; then Bash, Ruby, PHP and SQL.
 5. **M4b** (§3) once the owner has the machines and the certificate.
 6. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
@@ -91,10 +91,10 @@ The main way to move through a large file with few changes; every tool compared 
 
 - An `Unchanged` region shows `context-lines` lines (default 3) at each end that faces a change and hides the rest behind one fold row, `N unchanged lines`. The first and last regions keep context only on the side facing a change. A region folds only when it would hide two or more lines.
 - A click on the fold row, or a key, expands it. View → Collapse Unchanged folds and expands all. Settings: `collapse-unchanged` (`false`), `context-lines` (0–100).
-- Merge window: the top panes' fold row stands in for a run of aligned rows, so the panes stay level. The result editor folds the same lines through gpui-base's `FoldMap`, which is off there now (§A6.2). Scroll sync counts a fold row as one row in each pane.
-- Diff window: both editors fold. The spacer layer sits after `FoldMap` (§A6.5), so its row counts must take folded rows.
+- Merge window: the top panes' fold row stands in for a run of aligned rows, so the panes stay level. The result editor hides the same lines with `set_hidden_lines`. Scroll sync counts a fold row as one row in each pane.
+- Diff window: both editors hide their side's lines. Equal unchanged runs hide the same count on each side, so the panes stay level.
 - A jump, a search step or a go-to-line into a fold expands it; so does an edit it touches. Line numbers keep the file's numbers.
-- The vendored patch grows (§A6.1). `FoldMap` folds tree-sitter's ranges, which the gutter chevrons toggle, and draws no row for what it hides. The fold row is a spacer row with a spacer note, above the first line after the hidden run, which is not folded and so keeps its spacer. The patch adds folds the application sets, apart from tree-sitter's; a click handler on a spacer row; and spacer counts that leave out spacers inside a fold. A spike checks this before the work starts.
+- The editor patch is in place (§A6.1, §A6.5). `EditorState::set_hidden_lines` hides whole lines with folding off; spacers above hidden lines drop out; the caret steps over them; an edit that touches a range shows it again, and the application reads that from the edit observer to drop the fold. The fold row is one spacer row with a spacer note above the first line after the hidden run, or after the last line for a run at the end. A press on it emits `InputEvent::SpacerClick { line }`; the application expands the fold whose row sits above `line`.
 - Tests: fold boundaries at `2 × context` and `2 × context + 2` lines; first and last regions; a file with no changes; `context-lines = 0`; a jump into a fold; an edit inside a fold; scroll sync across a fold.
 
 ### G3 Bulk resolution

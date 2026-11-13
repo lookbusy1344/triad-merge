@@ -1,5 +1,6 @@
-// Modified for Triad: adds the `gutter_marks` switch, spacer rows, line labels and the edit
-// observer, with a test that rounding does not stretch the scroll edge. See PATCHES.md.
+// Modified for Triad: adds the `gutter_marks` switch, spacer rows, the spacer click, hidden
+// lines, line labels and the edit observer, with a test that rounding does not stretch the
+// scroll edge. See PATCHES.md.
 //! A text input field that allows the user to enter text.
 //!
 //! Based on the `Input` example from the `gpui` crate.
@@ -136,6 +137,10 @@ pub enum InputEvent {
     PressEnter { secondary: bool, shift: bool },
     Focus,
     Blur,
+    /// Triad: a left click on a spacer row. `line` is the buffer line the
+    /// spacer sits above, or the line count for a spacer after the last line.
+    /// The click then places the caret as on any spacer.
+    SpacerClick { line: usize },
 }
 
 pub(super) const CONTEXT: &str = "Input";
@@ -767,6 +772,14 @@ impl<M: InputModeKind> InputBaseState<M> {
     /// earlier spacers. See [`DisplayMap::set_spacers`].
     pub fn set_spacers(&mut self, spacers: Vec<(usize, usize)>, cx: &mut Context<Self>) {
         self.display_map.set_spacers(spacers);
+        cx.notify();
+    }
+
+    /// Triad: hide whole buffer lines, `[start, end)` each, in place of the
+    /// lines hidden before, whether or not folding is on. See
+    /// [`DisplayMap::set_hidden_lines`].
+    pub fn set_hidden_lines(&mut self, ranges: Vec<Range<usize>>, cx: &mut Context<Self>) {
+        self.display_map.set_hidden_lines(ranges);
         cx.notify();
     }
 
@@ -2736,6 +2749,12 @@ impl<M: InputModeKind> InputBaseState<M> {
             }
         }
 
+        if event.button == MouseButton::Left
+            && let Some(line) = self.spacer_line_at(event.position)
+        {
+            cx.emit(InputEvent::SpacerClick { line });
+        }
+
         self.selecting = true;
         let (offset, line_end_affinity, columns_past_line_end) =
             self.resolve_mouse_position(event.position);
@@ -3589,6 +3608,33 @@ impl<M: InputModeKind> InputBaseState<M> {
     /// end of that row rather than at the start of the next one. Callers that place or extend a
     /// selection must pass it on, or clicking past the last glyph of a wrapped row leaves a
     /// caret one row below the pointer.
+    /// Triad: the buffer line below the spacer row under `position`, or the
+    /// line count for a spacer after the last line. `None` off the spacers.
+    fn spacer_line_at(&self, position: Point<Pixels>) -> Option<usize> {
+        let (bounds, last_layout) = (self.last_bounds.as_ref()?, self.last_layout.as_ref()?);
+        let y = position.y - bounds.origin.y;
+        let mut top = last_layout.visible_top;
+        for (vi, (line_layout, &line)) in last_layout
+            .lines
+            .iter()
+            .zip(&last_layout.visible_buffer_lines)
+            .enumerate()
+        {
+            let spacer = last_layout.spacer_above(vi);
+            if y >= top && y < top + spacer {
+                return Some(line);
+            }
+            top += spacer + line_layout.size(last_layout.line_height).height;
+            let line_count = self.display_map.buffer_line_count();
+            if line + 1 == line_count {
+                let trailing =
+                    last_layout.line_height * self.display_map.trailing_spacer_rows() as f32;
+                return (y >= top && y < top + trailing).then_some(line_count);
+            }
+        }
+        None
+    }
+
     pub(crate) fn index_for_mouse_position(&self, position: Point<Pixels>) -> (usize, bool) {
         let (offset, line_end_affinity, _) = self.resolve_mouse_position(position);
         (offset, line_end_affinity)
@@ -3868,8 +3914,33 @@ impl<M: InputModeKind> InputBaseState<M> {
                     return self.text.line_end_offset(fold.start_line);
                 }
             }
+            // Triad: hidden lines go to the end of the line before them, or
+            // with none, to the start of the line after.
+            if let Some(range) = self.hidden_range_at(line) {
+                return match range.start.checked_sub(1) {
+                    Some(before) => self.text.line_end_offset(before),
+                    None => self.line_start_after(range, offset),
+                };
+            }
         }
         offset
+    }
+
+    /// Triad: the hidden line range that holds `line`.
+    fn hidden_range_at(&self, line: usize) -> Option<&Range<usize>> {
+        let hidden = self.display_map.hidden_lines();
+        let ix = hidden.partition_point(|range| range.end <= line);
+        hidden.get(ix).filter(|range| range.start <= line)
+    }
+
+    /// Triad: the start of the line after hidden `range`, or `offset` when
+    /// none follows.
+    fn line_start_after(&self, range: &Range<usize>, offset: usize) -> usize {
+        if range.end < self.text.lines_len() {
+            self.text.line_start_offset(range.end)
+        } else {
+            offset
+        }
     }
 
     /// If offset falls on a hidden (folded) line, clamp forward to the start of
@@ -3881,6 +3952,18 @@ impl<M: InputModeKind> InputBaseState<M> {
                 if line > fold.start_line && line <= fold.end_line {
                     return self.text.line_start_offset(fold.end_line);
                 }
+            }
+            // Triad: hidden lines go to the start of the line after them, or
+            // with none, to the end of the line before.
+            if let Some(range) = self.hidden_range_at(line) {
+                return if range.end < self.text.lines_len() {
+                    self.text.line_start_offset(range.end)
+                } else {
+                    range
+                        .start
+                        .checked_sub(1)
+                        .map_or(offset, |before| self.text.line_end_offset(before))
+                };
             }
         }
         offset

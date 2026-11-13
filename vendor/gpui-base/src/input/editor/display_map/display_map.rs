@@ -1,4 +1,4 @@
-// Modified for Triad: display rows include spacer rows. See PATCHES.md.
+// Modified for Triad: display rows include spacer rows; hidden lines. See PATCHES.md.
 /// DisplayMap: Public facade for Editor/Input display mapping.
 ///
 /// This combines WrapMap and FoldMap to provide a unified API:
@@ -182,6 +182,20 @@ impl DisplayMap {
         self.rebuild_fold_projection();
     }
 
+    /// Triad: hide whole buffer lines, `[start, end)` each, in place of the
+    /// lines hidden before. They draw no row, and their spacers drop out while
+    /// they stay hidden. An edit that touches a range shows its lines again.
+    pub fn set_hidden_lines(&mut self, ranges: Vec<Range<usize>>) {
+        self.fold_map.set_hidden_lines(ranges);
+        self.rebuild_fold_projection();
+    }
+
+    /// Triad: the hidden line ranges, merged and sorted.
+    #[inline]
+    pub fn hidden_lines(&self) -> &[Range<usize>] {
+        self.fold_map.hidden_lines()
+    }
+
     // ==================== Text and Layout Updates ====================
 
     /// Adjust folds and candidates for a text edit before updating the wrap map.
@@ -189,7 +203,10 @@ impl DisplayMap {
     /// Must be called with the OLD text (before replacement) and the edit range/new_text
     /// so we can compute which old lines were affected.
     pub fn adjust_folds_for_edit(&mut self, old_text: &Rope, range: &Range<usize>, new_text: &str) {
-        if self.fold_map.folded_ranges().is_empty() && self.fold_map.fold_candidates().is_empty() {
+        if self.fold_map.folded_ranges().is_empty()
+            && self.fold_map.fold_candidates().is_empty()
+            && self.fold_map.hidden_lines().is_empty()
+        {
             return;
         }
 
@@ -290,7 +307,7 @@ impl DisplayMap {
     /// Rebuild fold projection after wrap_map or fold state changes
     /// Only rebuilds if there are actually folded ranges
     fn rebuild_fold_projection(&mut self) {
-        if !self.fold_map.folded_ranges().is_empty() {
+        if self.fold_map.hides_rows() {
             self.fold_map.rebuild(&self.wrap_map);
         } else {
             // No active folds: identity mapping (wrap_row == display_row).
