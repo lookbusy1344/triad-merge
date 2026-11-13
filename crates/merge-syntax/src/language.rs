@@ -22,10 +22,11 @@ pub enum Language {
     Tsx,
     Json,
     Yaml,
+    Toml,
 }
 
 /// Each language's file extensions, in lowercase.
-const EXTENSIONS: [(&str, Language); 20] = [
+const EXTENSIONS: [(&str, Language); 21] = [
     ("rs", Language::Rust),
     ("go", Language::Go),
     ("cs", Language::CSharp),
@@ -46,6 +47,7 @@ const EXTENSIONS: [(&str, Language); 20] = [
     ("jsonc", Language::Json),
     ("yaml", Language::Yaml),
     ("yml", Language::Yaml),
+    ("toml", Language::Toml),
 ];
 
 impl Language {
@@ -64,6 +66,7 @@ impl Language {
             Self::Tsx => tree_sitter_typescript::LANGUAGE_TSX,
             Self::Json => tree_sitter_json::LANGUAGE,
             Self::Yaml => tree_sitter_yaml::LANGUAGE,
+            Self::Toml => tree_sitter_toml_ng::LANGUAGE,
         }
         .into()
     }
@@ -125,6 +128,8 @@ mod tests {
         assert_eq!(of("tsconfig.jsonc"), Some(Language::Json));
         assert_eq!(of("ci.yaml"), Some(Language::Yaml));
         assert_eq!(of(".github/workflows/triad.yml"), Some(Language::Yaml));
+        assert_eq!(of("Cargo.toml"), Some(Language::Toml));
+        assert_eq!(of("rust-toolchain.toml"), Some(Language::Toml));
     }
 
     #[test]
@@ -142,6 +147,7 @@ mod tests {
         assert_eq!(of("a.JsonC"), Some(Language::Json));
         assert_eq!(of("A.YAML"), Some(Language::Yaml));
         assert_eq!(of("b.Yml"), Some(Language::Yaml));
+        assert_eq!(of("CARGO.TOML"), Some(Language::Toml));
     }
 
     #[test]
@@ -172,6 +178,9 @@ mod tests {
             "a.json.orig",
             "a.yaml.orig",
             "a.ymlx",
+            "Cargo.lock",
+            "a.toml.orig",
+            "a.tml",
         ] {
             assert_eq!(of(name), None, "{name}");
         }
@@ -203,7 +212,7 @@ mod tests {
     }
 
     /// Each language's sample, and the kind of its tree's root.
-    const SAMPLES: [(Language, &str, &str); 11] = [
+    const SAMPLES: [(Language, &str, &str); 12] = [
         (Language::Rust, "fn a() -> u8 { 1 }\n", "source_file"),
         (Language::Go, "package a\nfunc b() {}\n", "source_file"),
         (Language::CSharp, "class A { void B() {} }\n", "compilation_unit"),
@@ -215,6 +224,7 @@ mod tests {
         (Language::Tsx, "const a = <div>{b as number}</div>;\n", "program"),
         (Language::Json, "// c\n{\"a\": [1, true, null]}\n", "document"),
         (Language::Yaml, "# c\na: [1, true]\nb:\n  - c\n", "stream"),
+        (Language::Toml, "# c\n[a]\nb = [1, true]\n", "document"),
     ];
 
     fn root_kind(language: Language, source: &str) -> (String, bool) {

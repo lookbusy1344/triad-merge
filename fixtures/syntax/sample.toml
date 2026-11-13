@@ -1,0 +1,47 @@
+# A sample that exercises the TOML grammar's highlight captures.
+title = "triad"
+version = '0.1.0'
+enabled = true
+disabled = false
+
+[limits]
+lines = 20_000
+ratio = 1.5e-3
+offset = -4
+hex = 0xDEAD_BEEF
+octal = 0o755
+binary = 0b1101
+infinite = inf
+missing = nan
+
+[strings]
+basic = "a \"quoted\" word\n"
+literal = 'C:\tools\triad'
+multiline = """
+first line
+second line"""
+raw_multiline = '''
+no \escapes here'''
+
+[dates]
+offset = 1979-05-27T07:32:00-08:00
+local = 1979-05-27T07:32:00
+day = 1979-05-27
+time = 07:32:00.999
+
+[nested.table]
+"quoted key" = 1
+dotted.key.path = "value"
+inline = { name = "toml", extensions = ["toml"] }
+
+[[languages]]
+name = "rust"
+grammar = { crate = "tree-sitter-rust", pin = "0.24.2" }
+
+[[languages]]
+name = "toml"
+arrays = [
+  [1, 2, 3],
+  ["a", "b"],
+  [],
+]
