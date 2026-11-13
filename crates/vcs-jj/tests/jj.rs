@@ -7,6 +7,8 @@
 
 #[path = "jj/snapshot.rs"]
 mod snapshot;
+#[path = "jj/stack.rs"]
+mod stack;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use vcs::testing::Entry;

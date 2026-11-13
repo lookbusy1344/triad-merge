@@ -125,6 +125,10 @@ pub struct Resolve {
     pub flags: DiffFlags,
     /// As [`Merge::semantics`].
     pub semantics: SemanticsFlags,
+    /// `-r`: the jj revision whose commit holds the conflict; none for the working copy.
+    pub rev: Option<String>,
+    /// `--dry-run`: report what writing into the commit would do, and write nothing.
+    pub dry_run: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

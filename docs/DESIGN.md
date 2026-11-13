@@ -765,3 +765,22 @@ The rows on screen colour 110–185 ms after the first frame at any length; a ch
 4. triad sets its own light colours for captures under 3:1 on a band (owner, 2026-11-03).
 5. The top panes parse only the chunks on screen and their neighbours, and keep 16 per input (owner, 2026-11-04).
 6. Past `syntax-whole-file-max-lines` the editors parse a chunk at a time with triad's highlighter (owner, 2026-11-04).
+
+## I. jj-native features
+
+Features git cannot have (spec §1.2, §7.5). `docs/PLAN-jj-native.md` holds the open steps.
+
+### I1 Rewrites
+
+- `vcs-jj` holds them in its own API on `JjRepository` (`native.rs`), outside the `vcs::Repository` trait: git has no implementation to give. `merge-session::jj_native` opens the repository and refuses git with `ResolveError::NeedsJj`.
+- `JjRepository::rewrite` is the one path every write takes. It snapshots the working copy, loads the workspace with the user's config, and reads the head repository through that workspace: the checkout compares trees by their store's address, so a repository from a second load panics in jj-core. The closure rewrites in one transaction and names its target and the commits it rewrote. `rebase_descendants` then moves the rest. A transaction with no changes commits nothing, so a save that reads back as the held conflict writes no operation.
+- The report pairs each strict descendant of the rewritten commits with its change's visible commit after the rebase, so a descendant shows its conflicted paths before and after. A dry run builds the same transaction and drops it.
+- A moved `@` is checked out with `Workspace::check_out`, against the tree the snapshot recorded. In a colocated repository `git::reset_head` moves git's `HEAD` to the new `@-` before the operation commits, and the refs export, as jj does after a command.
+- Immutability follows jj's CLI: jj-lib has no `immutable()`. `DEFAULT_ALIASES` carries jj's defaults for `trunk()`, `builtin_immutable_heads()`, `immutable_heads()`, `immutable()` and `mutable()`; the user's `revset-aliases` table replaces any of them. The target is checked before the snapshot, so a refusal writes no operation, and every rewritten commit again inside the transaction.
+
+### I2 Conflicts in commits
+
+- `stack` evaluates the revset with those aliases. jj's revset stream gives children first; the list reverses it. A path is inherited when any parent's tree holds a conflict at it.
+- `resolve -r` loads through `resolve::load_at_commit`: the commit's conflict, decoded as `load` decodes `@`'s, with jj's marker length from `merge_core::jj::marker_length`. The `Record` carries the commit, the marker length and a temporary file whose directory lives as long as the record. Both front ends save through `Record`, so the window and `--headless` write the same way.
+- The write parses the result back with jj-lib's `update_from_content` over the path's file IDs. A result of fewer sides than the commit's tree is padded with cancelling pairs, since `MergedTreeBuilder` takes a conflict only at the tree's arity; `write_tree` simplifies them away. A resolved file takes the executable bit the terms agree on (`resolve_file_executable`); a conflict keeps each term's bit.
+

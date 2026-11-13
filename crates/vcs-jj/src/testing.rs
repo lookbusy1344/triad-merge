@@ -298,6 +298,66 @@ impl Fixture {
         Committed::of(&commit)
     }
 
+    /// Commit on `parents` the merge of their trees, with `files` written over it, as `jj new`
+    /// on several parents followed by edits does. A merge whose trees conflict holds the
+    /// conflict. The working copy stays where it is.
+    #[expect(
+        clippy::must_use_candidate,
+        reason = "called for its effect on the repository; tests often ignore the result"
+    )]
+    pub fn commit_merged(
+        &self,
+        parents: &[&Committed],
+        message: &str,
+        files: &[(&str, &[u8])],
+    ) -> Committed {
+        let repo = self.repo();
+        let store = repo.store();
+        let parent_commits: Vec<Commit> = parents
+            .iter()
+            .map(|parent| store.get_commit(&parent.id).expect("the parent"))
+            .collect();
+        let merged = jj_lib::rewrite::merge_commit_trees(repo.as_ref(), &parent_commits)
+            .block_on()
+            .expect("the parents' trees merge");
+        let mut builder = MergedTreeBuilder::new(merged);
+        for &(path, mut bytes) in files {
+            let path = RepoPathBuf::from_internal_string(path).expect("a repository path");
+            let id = store.write_file(&path, &mut bytes).block_on().expect("a file");
+            builder.set_or_remove(
+                path,
+                Some(TreeValue::File { id, executable: false, copy_id: CopyId::placeholder() }),
+            );
+        }
+        let tree = builder.write_tree().block_on().expect("a tree");
+        let mut tx = repo.start_transaction();
+        let commit = tx
+            .repo_mut()
+            .new_commit(parents.iter().map(|parent| parent.id.clone()).collect(), tree)
+            .set_description(message)
+            .write()
+            .block_on()
+            .expect("a commit");
+        self.finish(tx, "commit");
+        Committed::of(&commit)
+    }
+
+    /// Point tag `name` at `commit`, as `jj tag set` does; jj's default `immutable_heads()`
+    /// holds it.
+    pub fn set_tag(&self, name: &str, commit: &Committed) {
+        let repo = self.repo();
+        let mut tx = repo.start_transaction();
+        tx.repo_mut()
+            .set_local_tag_target(RefName::new(name), RefTarget::normal(commit.id.clone()));
+        self.finish(tx, "set tag");
+    }
+
+    /// The operations recorded so far, from the head back to the root.
+    #[must_use]
+    pub fn operation_count(&self) -> usize {
+        self.operations().len()
+    }
+
     /// Commit `base`, then `left` and `right` on it, each holding `path` alone, and check
     /// out their merge. Returns the base, left and right commits.
     #[expect(

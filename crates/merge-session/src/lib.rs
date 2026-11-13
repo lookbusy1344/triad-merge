@@ -10,6 +10,7 @@ pub mod install;
 pub mod invocation;
 pub mod io;
 pub mod jj_config;
+pub mod jj_native;
 pub mod native;
 pub mod origin;
 pub mod recovery;

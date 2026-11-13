@@ -42,6 +42,8 @@ pub enum Batch {
     DiffInspect { left: PathBuf, right: PathBuf, diff: DiffOptions, json: bool },
     /// Write the merge and diff tool entries to `vcs`'s user config, or to `config`.
     Install { vcs: RepoKind, config: Option<PathBuf> },
+    /// List the conflicted commits `revset` names, parents first (jj only).
+    Stack { revset: Option<String>, json: bool },
 }
 
 /// A command line that parses but asks for no valid form.
@@ -196,6 +198,14 @@ enum Command {
     Resolve(ResolveCli),
     /// Register triad as git's or jj's merge and diff tool.
     Install(InstallCli),
+    /// List the conflicted commits, parents first (jj only).
+    Stack {
+        /// The commits to list; default `conflicts() & mutable()`.
+        #[arg(value_name = "REVSET")]
+        revset: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
     /// Print the settings in effect, in the config file's form.
     ShowConfig {
         /// Print the defaults instead.
@@ -218,6 +228,12 @@ struct ResolveCli {
     /// line, before writing.
     #[arg(long, value_name = "FILE", requires = "headless")]
     commands: Option<PathBuf>,
+    /// Resolve PATH in the commit REV names, without checking it out (jj only).
+    #[arg(short = 'r', long = "revision", value_name = "REV", requires = "path")]
+    revision: Option<String>,
+    /// With --headless and --revision: report what the save would do; write nothing.
+    #[arg(long, requires_all = ["headless", "revision"])]
+    dry_run: bool,
     #[command(flatten)]
     diff: DiffArgs,
     #[command(flatten)]
@@ -244,6 +260,8 @@ impl ResolveCli {
             options: flags.merge_options(settings, chosen),
             flags,
             semantics: self.semantics.flags(),
+            rev: self.revision,
+            dry_run: self.dry_run,
         };
         Ok(if self.headless {
             Invocation::Batch(Batch::Resolve(resolve))
@@ -362,6 +380,9 @@ impl Cli {
             Some(Command::Diff(diff)) => diff.invocation(settings),
             Some(Command::Resolve(resolve)) => resolve.invocation(settings),
             Some(Command::Install(install)) => Ok(install.invocation()),
+            Some(Command::Stack { revset, json }) => {
+                Ok(Invocation::Batch(Batch::Stack { revset, json }))
+            }
             Some(Command::ShowConfig { defaults, docs }) => {
                 Ok(Invocation::ShowConfig { defaults, docs })
             }
@@ -892,6 +913,8 @@ mod tests {
                 options: MergeOptions::default(),
                 flags: DiffFlags::default(),
                 semantics: SemanticsFlags::default(),
+                rev: None,
+                dry_run: false,
             }))
         );
         let args = [
@@ -928,8 +951,45 @@ mod tests {
                     same_change: Some(SameChange::Keep),
                     hunk_level: Some(HunkLevel::Word),
                 },
+                rev: None,
+                dry_run: false,
             }))
         );
+    }
+
+    #[test]
+    fn resolve_in_a_revision_needs_a_path_and_a_dry_run_needs_headless() {
+        let Invocation::Batch(Batch::Resolve(resolve)) =
+            ok(&["resolve", "a.txt", "-r", "kx", "--headless", "--dry-run"])
+        else {
+            panic!("a headless resolve");
+        };
+        assert_eq!((resolve.rev.as_deref(), resolve.dry_run), (Some("kx"), true));
+        let Invocation::Window(Window::Resolve(resolve)) =
+            ok(&["resolve", "a.txt", "--revision", "kx"])
+        else {
+            panic!("a resolve window");
+        };
+        assert_eq!((resolve.rev.as_deref(), resolve.dry_run), (Some("kx"), false));
+        assert_eq!(clap_kind(&["resolve", "-r", "kx"]), ErrorKind::MissingRequiredArgument);
+        assert_eq!(
+            clap_kind(&["resolve", "a.txt", "-r", "kx", "--dry-run"]),
+            ErrorKind::MissingRequiredArgument
+        );
+        assert_eq!(
+            clap_kind(&["resolve", "a.txt", "--headless", "--dry-run"]),
+            ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn stack_takes_an_optional_revset_and_json() {
+        assert_eq!(ok(&["stack"]), Invocation::Batch(Batch::Stack { revset: None, json: false }));
+        assert_eq!(
+            ok(&["stack", "::@", "--json"]),
+            Invocation::Batch(Batch::Stack { revset: Some("::@".to_owned()), json: true })
+        );
+        assert_eq!(clap_kind(&["stack", "a", "b"]), ErrorKind::UnknownArgument);
     }
 
     #[test]

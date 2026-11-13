@@ -2,6 +2,7 @@
 //! file's conflict markers (spec §7.4).
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use merge_core::boundaries::Boundaries;
@@ -11,8 +12,9 @@ use merge_core::merge3::{Inputs, Semantics, ShapeError};
 use merge_core::text::{DecodeError, Text};
 use merge_syntax::boundaries::SyntaxBoundaries;
 use merge_syntax::language::Language;
-use vcs::{ConflictTerm, EntryKind, RepoKind, Repository, TermContent, VcsError};
+use vcs::{CommitId, ConflictTerm, EntryKind, RepoKind, Repository, TermContent, VcsError};
 use vcs_jj::config::ConfigEnv;
+use vcs_jj::{JjRepository, Rewrite};
 
 use crate::repository::RunRepository;
 use crate::{ExitCode, SaveError};
@@ -47,6 +49,22 @@ pub struct Record {
     /// The conflicted path, relative to the root.
     path: Utf8PathBuf,
     jj_config: Option<ConfigEnv>,
+    /// A conflict in a commit other than the working copy's (`resolve -r`): each save goes
+    /// back into the commit. None for the working copy's conflict.
+    commit: Option<InCommit>,
+}
+
+/// A jj commit's conflict that `resolve -r` opened: the result goes to a temporary file,
+/// and each save writes it into the commit (spec §7.4).
+#[derive(Debug, Clone)]
+struct InCommit {
+    id: CommitId,
+    /// The shortest markers jj parses back as this conflict.
+    marker_length: usize,
+    /// The temporary file the result is saved to.
+    file: Utf8PathBuf,
+    /// The directory holding `file`, removed when the last copy of the record goes.
+    _dir: Arc<tempfile::TempDir>,
 }
 
 impl Record {
@@ -59,6 +77,9 @@ impl Record {
     /// [`VcsError::OutsideRepository`] when `run` holds another repository than the
     /// conflict's, before any write; [`VcsError`] when `run` holds none or cannot be written.
     pub fn saved_in(&self, run: &mut RunRepository, code: ExitCode) -> Result<(), VcsError> {
+        if self.commit.is_some() {
+            return self.saved(code);
+        }
         let Some(resolved) = resolved_by(code) else {
             return Ok(());
         };
@@ -85,12 +106,42 @@ impl Record {
         let Some(resolved) = resolved_by(code) else {
             return Ok(());
         };
+        if self.commit.is_some() {
+            return self.rewrite(false).map(drop);
+        }
         let run = RunRepository::find([self.root.as_std_path()]);
         let mut run = match &self.jj_config {
             Some(config) => run.with_jj_config(config.clone()),
             None => run,
         };
         self.record(run.require_mut()?, resolved)
+    }
+
+    /// Write the saved result into the commit `resolve -r` opened, or on a `dry_run` report
+    /// what the write would do. None for the working copy's conflict.
+    ///
+    /// # Errors
+    ///
+    /// [`VcsError`] when the result cannot be read, or the repository refuses the write
+    /// ([`JjRepository::write_conflict`]).
+    pub fn rewrite(&self, dry_run: bool) -> Result<Option<Rewrite>, VcsError> {
+        let Some(commit) = &self.commit else {
+            return Ok(None);
+        };
+        let content = std::fs::read(&commit.file).map_err(|source| VcsError::Backend {
+            context: "reading the saved result",
+            source: Box::new(source),
+        })?;
+        let config = self.jj_config.clone().unwrap_or_else(ConfigEnv::from_process);
+        let rewrite = JjRepository::discover(&self.root)?.with_config(config).write_conflict(
+            &commit.id,
+            &self.path,
+            &content,
+            commit.marker_length,
+            dry_run,
+        )?;
+        tracing::info!(path = %self.path, commit = %commit.id, ?rewrite, "wrote the result into the commit");
+        Ok(Some(rewrite))
     }
 
     /// Record again a save whose output is written with `code`, after a [`SaveError::Record`],
@@ -202,6 +253,11 @@ pub enum ResolveError {
     Markers { path: Utf8PathBuf, source: MarkerError },
     #[error("{path}: {source}")]
     Shape { path: Utf8PathBuf, source: ShapeError },
+    /// A jj-native command run outside a jj repository (spec §1.2).
+    #[error("{0} needs a jj repository")]
+    NeedsJj(&'static str),
+    #[error("cannot make a temporary file for the result: {0}")]
+    Temporary(std::io::Error),
 }
 
 impl ResolveError {
@@ -293,7 +349,12 @@ pub fn load(
         return from_markers(relative, file, Some(repo.kind()));
     };
     let recorded = repo.recorded(&relative)?;
-    let record = Some(Record { root: repo.root().to_owned(), path: relative.clone(), jj_config });
+    let record = Some(Record {
+        root: repo.root().to_owned(),
+        path: relative.clone(),
+        jj_config,
+        commit: None,
+    });
     if conflict.sides.iter().all(|side| side.content == TermContent::Absent) {
         return Err(ResolveError::DeletedEverywhere(relative));
     }
@@ -301,15 +362,8 @@ pub fn load(
     if working.as_ref().is_some_and(|text| !markers::has_conflict_start(text.content())) {
         return Err(ResolveError::ResolvedInWorkingTree(relative));
     }
-    let decode = |role: &str, terms: Vec<ConflictTerm>| -> Result<_, ResolveError> {
-        terms
-            .into_iter()
-            .enumerate()
-            .map(|(i, term)| text(&relative, &format!("{role} {}", i + 1), term))
-            .collect::<Result<(Vec<Text>, Vec<String>), _>>()
-    };
-    let (sides, side_labels) = decode("side", conflict.sides)?;
-    let (bases, base_labels) = decode("base", conflict.bases)?;
+    let (sides, side_labels) = decode(&relative, "side", conflict.sides)?;
+    let (bases, base_labels) = decode(&relative, "base", conflict.bases)?;
     let inputs = Inputs::new(sides, bases)
         .map_err(|source| ResolveError::Shape { path: relative.clone(), source })?;
     // A VCS without a record of the working-tree file, such as git, cannot say whether it
@@ -336,6 +390,72 @@ pub fn load(
         marker_length,
         record,
     })
+}
+
+/// The conflict at `path`, relative to `cwd`, in the one commit `rev` names in the jj
+/// repository holding `cwd`, without checking it out (`resolve -r`, `docs/PLAN-jj-native.md`
+/// §I2). The result saves to a temporary file; each save writes it back into the commit.
+///
+/// # Errors
+///
+/// [`ResolveError::NeedsJj`] outside a jj repository; [`ResolveError::Vcs`] when `rev` names
+/// no commit or several, or the conflict cannot be read; [`ResolveError::NotConflicted`] when
+/// the path is resolved there; the term errors of [`load`]; and [`ResolveError::Temporary`]
+/// when the temporary file cannot be made.
+pub fn load_at_commit(
+    cwd: &Path,
+    rev: &str,
+    path: &Path,
+    jj_config: Option<ConfigEnv>,
+) -> Result<Loaded, ResolveError> {
+    let repo = crate::jj_native::open(cwd, jj_config.clone(), "resolve -r")?;
+    let root = repo.root().to_owned();
+    let file = absolute(&cwd.join(path))?;
+    let relative =
+        file.strip_prefix(&root).map_err(|_| VcsError::OutsideRepository(file.clone()))?.to_owned();
+    let Ok([id]) = <[CommitId; 1]>::try_from(repo.commits(rev)?) else {
+        return Err(VcsError::AmbiguousRevision(rev.to_owned()).into());
+    };
+    let conflict = repo
+        .conflict_at(&id, &relative)?
+        .ok_or_else(|| ResolveError::NotConflicted(relative.clone()))?;
+    if conflict.sides.iter().all(|side| side.content == TermContent::Absent) {
+        return Err(ResolveError::DeletedEverywhere(relative));
+    }
+    let (sides, side_labels) = decode(&relative, "side", conflict.sides)?;
+    let (bases, base_labels) = decode(&relative, "base", conflict.bases)?;
+    let inputs = Inputs::new(sides, bases)
+        .map_err(|source| ResolveError::Shape { path: relative.clone(), source })?;
+    let marker_length = merge_core::jj::marker_length(&inputs);
+    let dir = tempfile::Builder::new()
+        .prefix("triad-resolve-")
+        .tempdir()
+        .map_err(ResolveError::Temporary)?;
+    let name = relative.file_name().unwrap_or(relative.as_str());
+    let temporary = Utf8PathBuf::from_path_buf(dir.path().join(name)).map_err(VcsError::NotUtf8)?;
+    let commit = InCommit { id, marker_length, file: temporary.clone(), _dir: Arc::new(dir) };
+    Ok(Loaded {
+        record: Some(Record { root, path: relative.clone(), jj_config, commit: Some(commit) }),
+        path: relative,
+        file: temporary,
+        inputs,
+        labels: Labels::new(side_labels, base_labels),
+        repo: Some(RepoKind::Jj),
+        marker_length: Some(marker_length),
+    })
+}
+
+/// Each term's text and title, `role` and its position naming a term in an error.
+fn decode(
+    path: &Utf8Path,
+    role: &str,
+    terms: Vec<ConflictTerm>,
+) -> Result<(Vec<Text>, Vec<String>), ResolveError> {
+    terms
+        .into_iter()
+        .enumerate()
+        .map(|(i, term)| text(path, &format!("{role} {}", i + 1), term))
+        .collect()
 }
 
 /// The working-tree `file` of a conflict with `sides` as text, when the VCS wrote markers

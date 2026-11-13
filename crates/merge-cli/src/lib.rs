@@ -5,6 +5,7 @@ pub mod args;
 pub mod forward;
 pub mod inspect;
 pub mod install;
+pub mod jj_native;
 pub mod logging;
 
 use std::ffi::OsString;
@@ -59,6 +60,9 @@ pub enum CliError {
     Save(#[from] SaveError),
     #[error("cannot find the working directory")]
     NoWorkingDirectory,
+    /// The result is written, but the repository refused it.
+    #[error("{path}: {source}")]
+    Rewrite { path: camino::Utf8PathBuf, source: vcs::VcsError },
 }
 
 /// [`choose_semantics`] and [`choose_marker_style`] for `merge`, set in its options, reading
@@ -219,6 +223,17 @@ fn batch_form(
             if targets.is_empty() {
                 return Ok(ExitCode::Resolved);
             }
+            if let (Some(rev), Some(path)) = (&resolve.rev, &resolve.path) {
+                return resolve_in_commit(
+                    &resolve,
+                    rev,
+                    path,
+                    settings.line_ending,
+                    cwd,
+                    env,
+                    stdout,
+                );
+            }
             resolve_headless(&resolve, settings.line_ending, cwd, &targets, &mut repo, stderr)
         }
         Batch::Inspect { files, options, semantics, json } => {
@@ -241,6 +256,16 @@ fn batch_form(
         Batch::Install { vcs, config } => {
             let message = install::run(vcs, config.as_deref())?;
             Ok(report(stdout, &message, ExitCode::Resolved))
+        }
+        Batch::Stack { revset, json } => {
+            let cwd = cwd.ok_or(CliError::NoWorkingDirectory)?;
+            let commits = merge_session::jj_native::stack(
+                cwd,
+                revset.as_deref(),
+                Some(jj_config::snapshot_config(env)),
+            )?;
+            let (text, code) = jj_native::stack_report(&commits, json)?;
+            Ok(report(stdout, &text, code))
         }
     }
 }
@@ -272,6 +297,43 @@ fn resolve_prepare(
         resolve.options.marker_style = choose_marker_style(mode.semantics, settings, &mut repo);
     }
     Ok((targets, repo))
+}
+
+/// `resolve -r REV PATH --headless`: the automatic merge of the conflict in `rev`'s commit,
+/// with `resolve`'s commands applied, written into the commit; on a dry run, only reported.
+/// The report goes to `stdout`: 0 when the save resolves the conflict, else 1.
+///
+/// # Errors
+///
+/// [`CliError`] when the conflict cannot be loaded or changed by its commands, the result
+/// cannot be written, or the repository refuses it.
+fn resolve_in_commit(
+    resolve: &Resolve,
+    rev: &str,
+    path: &Path,
+    ending: OutputEnding,
+    cwd: &Path,
+    env: &Env,
+    stdout: &mut impl Write,
+) -> Result<ExitCode, CliError> {
+    let loaded = resolve::load_at_commit(cwd, rev, path, Some(jj_config::snapshot_config(env)))?;
+    let mut opened = loaded.open(resolve.options).map_err(SessionError::from)?;
+    if let Some(commands) = &resolve.commands {
+        replay::apply_file(&mut opened.doc, commands)?;
+    }
+    let output = EncodedOutput::new(&opened.doc, ending);
+    let code = output.write(opened.file.as_std_path()).map_err(SaveError::from)?;
+    let rewrite = opened
+        .record
+        .as_ref()
+        .map(|record| record.rewrite(resolve.dry_run))
+        .transpose()
+        .map_err(|source| CliError::Rewrite { path: opened.path.clone(), source })?
+        .flatten();
+    if let Some(rewrite) = rewrite {
+        report(stdout, &jj_native::rewrite_report(&opened.path, &rewrite, resolve.dry_run), code);
+    }
+    Ok(code)
 }
 
 /// Write each target's automatic merge, with `resolve`'s commands applied, to its

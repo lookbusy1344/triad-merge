@@ -188,7 +188,13 @@ fn run_resolve(
             Ok(())
         });
     }
-    let opened = match merge_session::resolve::load(&mut repo, &cwd, &target, Snapshot::Take)
+    let loaded = match &resolve.rev {
+        Some(rev) => {
+            merge_session::resolve::load_at_commit(&cwd, rev, &target, repo.jj_config().cloned())
+        }
+        None => merge_session::resolve::load(&mut repo, &cwd, &target, Snapshot::Take),
+    };
+    let opened = match loaded
         .map_err(|e| e.to_string())
         .and_then(|loaded| loaded.open(resolve.options).map_err(|e| e.to_string()))
     {

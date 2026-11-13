@@ -9,6 +9,7 @@ mod forward;
 mod gui;
 mod headless;
 mod inspect;
+mod jj_native;
 mod resolve;
 mod semantics;
 mod tool_integration;

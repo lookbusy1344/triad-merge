@@ -311,6 +311,9 @@ triad-merge diff LEFT RIGHT [--diff-algorithm A] [--ignore-whitespace W] [--titl
                 [--readonly-left] [--readonly-right]    # two-way diff window
 triad-merge diff PATH [--rev REV]                        # working copy against its parent revision
 triad-merge diff --inspect LEFT RIGHT [--diff-algorithm A] [--ignore-whitespace W] [--json]   # print two-way regions; no window
+triad-merge resolve [PATH] [--headless [--commands FILE]] # resolve in the working copy (§7.4)
+triad-merge resolve PATH -r REV [--headless [--commands FILE] [--dry-run]]   # resolve in a jj commit (§7.5.1)
+triad-merge stack [REVSET] [--json]                       # jj's conflicted commits, parents first (§7.5.1)
 triad-merge install --git | --jj [--config FILE]          # register as merge and diff tool (§7.1)
 triad-merge show-config [--default] [--docs]            # print the settings in effect (§6.4)
 ```
@@ -668,6 +671,17 @@ A file the VCS holds no conflict for, or one outside any repository, opens from 
 - `resolve` refuses a binary conflict, a conflict that holds a symlink, submodule or directory, a conflict with every side absent, and a file whose markers do not parse, naming the path and the reason. git's `ort` strategy leaves the last kind at the old name of a file renamed two ways; it resolves by deleting the file, which `resolve` leaves to the VCS. With a path, a refusal exits with 3. Without one, `resolve` skips the file, prints the reason on stderr, and counts the file as unresolved. Neither git nor jj leaves a conflict in the executable bit alone; each term of a content conflict carries its own bit.
 
 The core model must support more than two sides from the start. Git conflicts and two-sided jj conflicts use the three-pane layout. jj conflicts with more than two sides get one top pane per side.
+
+### 7.5 jj-native features
+
+Commands built on what only jj records (§1.2). In a git repository each exits with 3: `COMMAND needs a jj repository`. Each opens the jj repository holding the working directory, with the user's jj config, as `resolve` does. A write snapshots the working copy first, as in §7.4, rewrites in one operation, rebases the descendants, and checks out a working-copy commit the rewrite moved; in a jj repository colocated with git it moves git's `HEAD` with `@-` and exports jj's refs. A write to a commit that jj's `immutable()` holds is refused before anything is written, with the user's `revset-aliases` over jj's defaults for `trunk()`, `immutable_heads()`, `immutable()` and `mutable()`.
+
+#### 7.5.1 Conflicts across a stack
+
+- `stack [REVSET]` lists the commits `REVSET` names that hold conflicts, parents first; default `conflicts() & mutable()`. Each commit shows its change ID, commit ID and summary, then its conflicted paths, a path marked `(inherited)` when a parent holds a conflict at the same path. `--json` prints an array of `{commit, change_id, summary, paths: [{path, inherited}]}`, with the full commit ID. Exit 0 when no commit is listed, 1 otherwise.
+- `resolve PATH -r REV` opens the conflict at `PATH` in the one commit `REV` names, without checking it out. `REV` naming several commits is an error. A path resolved there is refused: `PATH is not conflicted`. The terms and labels come from the commit's tree, as §7.4 reads `@`'s; the markers are at least jj's length for the conflict.
+- The result saves to a temporary file. Each save writes it into the commit as `jj resolve -r` does: markers jj parses back keep their hunks conflicted, with fewer sides when the result resolves some, and content without markers resolves the path. A save that reads back as the conflict the commit holds writes nothing. Otherwise the operation is `resolve PATH in CHANGE in triad`, and `jj undo` reverts it.
+- `--headless` writes the automatic merge, with `--commands` applied, into the commit and reports: `resolved PATH in CHANGE`, `saved with conflicts PATH in CHANGE`, or `PATH in CHANGE is unchanged`, then one line per rebased descendant, parents first, with its conflicted paths before and after: `  CHANGE: a.txt, b.txt -> none`. `--dry-run` reports what the write would do, its first line starting `would`, and writes nothing. Exit 0 when the result is resolved, 1 with conflicts.
 
 ## 8. Testing
 

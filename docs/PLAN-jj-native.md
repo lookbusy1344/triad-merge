@@ -21,7 +21,9 @@ Every step ships a command line with `--json` or `--headless` for scripts, tests
 
 ## I2 Step 1: conflicts across a stack
 
-- `triad-merge stack [REVSET] [--json]` lists the conflicted commits in `REVSET`, parents first, each with its conflicted paths. Default revset: `conflicts() & mutable()`. A path is *inherited* when a parent in the list holds a conflict at the same path; resolving the first commit often clears it. Exit 0 with no conflicted commit, 1 with some.
+Done: spec §7.5.1, `DESIGN.md` §I1–§I2.
+
+- `triad-merge stack [REVSET] [--json]` lists the conflicted commits in `REVSET`, parents first, each with its conflicted paths. Default revset: `conflicts() & mutable()`. A path is *inherited* when a parent holds a conflict at the same path; resolving the first commit often clears it. Exit 0 with no conflicted commit, 1 with some.
 - `triad-merge resolve -r REV PATH` reads the conflict at `PATH` in the commit `REV` names, without checking it out. The merge window opens on it, or `--headless` applies `--commands`. The result goes to a temporary file; each save writes it into the commit, as `jj resolve -r` does: markers jj parses back stay a conflict. The descendants rebase; a moved `@` is checked out to disk. One operation per save: `resolve PATH in CHANGE in triad`.
 - The working copy is snapshotted first, as in spec §7.4, so no edit on disk is lost.
 - An immutable commit is refused before anything is written. `immutable_heads()` comes from the user's jj config, else jj's default.
