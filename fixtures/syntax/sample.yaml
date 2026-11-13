@@ -1,0 +1,53 @@
+# A sample that exercises the YAML grammar's highlight captures.
+%YAML 1.2
+---
+name: triad
+version: "0.1.0"
+private: true
+published: false
+homepage: null
+empty: ~
+
+limits:
+  lines: 20000
+  ratio: 1.5e-3
+  offset: -4
+  hex: 0x1f
+  octal: 0o17
+  infinite: .inf
+
+strings:
+  plain: a plain scalar
+  single: 'it''s quoted'
+  double: "a \"quoted\" word\n"
+  literal: |
+    first line
+    second line
+  folded: >-
+    folded into
+    one line
+
+languages:
+  - rust
+  - go
+  - { name: yaml, extensions: [yaml, yml] }
+
+anchors:
+  base: &defaults
+    retries: 3
+    timeout: 30s
+  derived:
+    <<: *defaults
+    retries: 5
+
+tagged:
+  set: !!set { a, b }
+  binary: !!binary aGVsbG8=
+  custom: !local value
+
+"quoted key": 1
+? complex key
+: complex value
+...
+---
+second: document

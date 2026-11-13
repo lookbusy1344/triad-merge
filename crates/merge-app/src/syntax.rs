@@ -32,6 +32,7 @@ pub(crate) const fn registry_name(language: Language) -> &'static str {
         Language::TypeScript => "typescript",
         Language::Tsx => "tsx",
         Language::Json => "json",
+        Language::Yaml => "yaml",
     }
 }
 
@@ -428,7 +429,7 @@ mod tests {
         bytes
     }
 
-    const LANGUAGES: [Language; 10] = [
+    const LANGUAGES: [Language; 11] = [
         Language::Rust,
         Language::Go,
         Language::CSharp,
@@ -439,6 +440,7 @@ mod tests {
         Language::TypeScript,
         Language::Tsx,
         Language::Json,
+        Language::Yaml,
     ];
     /// Chunks that cut the Go and C# samples only before top-level lines: no shorter than
     /// their longest run of lines without one (34 in Go, 56 in C#), shorter than the sample.
@@ -461,6 +463,7 @@ mod tests {
         assert_eq!(registry_name(Language::TypeScript), "typescript");
         assert_eq!(registry_name(Language::Tsx), "tsx");
         assert_eq!(registry_name(Language::Json), "json");
+        assert_eq!(registry_name(Language::Yaml), "yaml");
     }
 
     #[test]
@@ -562,9 +565,14 @@ mod tests {
                 include_str!("../../../fixtures/syntax/sample.json"),
                 &[syntax::CHUNK_LINES][..],
             ),
+            (
+                Language::Yaml,
+                include_str!("../../../fixtures/syntax/sample.yaml"),
+                &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
+            ),
         ];
         for (language, source, chunks) in samples {
-            // Each sample opens with a `//` comment, so a grammar that styles nothing fails.
+            // Each sample opens with a line comment, so a grammar that styles nothing fails.
             let first = source.lines().next().unwrap_or_default();
             let text = text(source);
             let syntax = chunked(language, Source::Base(0), &text, syntax::CHUNK_LINES);
