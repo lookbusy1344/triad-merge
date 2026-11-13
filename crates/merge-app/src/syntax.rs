@@ -32,6 +32,7 @@ pub(crate) const fn registry_name(language: Language) -> &'static str {
         Language::TypeScript => "typescript",
         Language::Tsx => "tsx",
         Language::Json => "json",
+        Language::Css => "css",
         Language::Toml => "toml",
         Language::Yaml => "yaml",
     }
@@ -430,7 +431,7 @@ mod tests {
         bytes
     }
 
-    const LANGUAGES: [Language; 12] = [
+    const LANGUAGES: [Language; 13] = [
         Language::Rust,
         Language::Go,
         Language::CSharp,
@@ -443,6 +444,7 @@ mod tests {
         Language::Json,
         Language::Yaml,
         Language::Toml,
+        Language::Css,
     ];
     /// Chunks that cut the Go and C# samples only before top-level lines: no shorter than
     /// their longest run of lines without one (34 in Go, 56 in C#), shorter than the sample.
@@ -467,6 +469,7 @@ mod tests {
         assert_eq!(registry_name(Language::Json), "json");
         assert_eq!(registry_name(Language::Yaml), "yaml");
         assert_eq!(registry_name(Language::Toml), "toml");
+        assert_eq!(registry_name(Language::Css), "css");
     }
 
     #[test]
@@ -578,6 +581,11 @@ mod tests {
                 include_str!("../../../fixtures/syntax/sample.toml"),
                 &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
             ),
+            (
+                Language::Css,
+                include_str!("../../../fixtures/syntax/sample.css"),
+                &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
+            ),
         ];
         for (language, source, chunks) in samples {
             // Each sample opens with a line comment, so a grammar that styles nothing fails.
@@ -597,6 +605,19 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn an_html_style_element_takes_the_css_colours() {
+        let theme = HighlightTheme::default_light();
+        let html = text("<style>\n  a { color: red; }\n</style>\n");
+        let syntax = chunked(Language::Html, Source::Base(0), &html, syntax::CHUNK_LINES);
+        let line = syntax.line(Source::Base(0), 1, &theme);
+        let color = 6..11;
+        assert!(
+            line.contains(&(color, style(&theme, "property"))),
+            "`color` is a CSS property: {line:?}"
+        );
     }
 
     #[test]

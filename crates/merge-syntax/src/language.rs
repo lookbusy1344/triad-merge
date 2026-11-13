@@ -23,10 +23,11 @@ pub enum Language {
     Json,
     Yaml,
     Toml,
+    Css,
 }
 
 /// Each language's file extensions, in lowercase.
-const EXTENSIONS: [(&str, Language); 21] = [
+const EXTENSIONS: [(&str, Language); 22] = [
     ("rs", Language::Rust),
     ("go", Language::Go),
     ("cs", Language::CSharp),
@@ -48,6 +49,7 @@ const EXTENSIONS: [(&str, Language); 21] = [
     ("yaml", Language::Yaml),
     ("yml", Language::Yaml),
     ("toml", Language::Toml),
+    ("css", Language::Css),
 ];
 
 impl Language {
@@ -67,6 +69,7 @@ impl Language {
             Self::Json => tree_sitter_json::LANGUAGE,
             Self::Yaml => tree_sitter_yaml::LANGUAGE,
             Self::Toml => tree_sitter_toml_ng::LANGUAGE,
+            Self::Css => tree_sitter_css::LANGUAGE,
         }
         .into()
     }
@@ -130,6 +133,7 @@ mod tests {
         assert_eq!(of(".github/workflows/triad.yml"), Some(Language::Yaml));
         assert_eq!(of("Cargo.toml"), Some(Language::Toml));
         assert_eq!(of("rust-toolchain.toml"), Some(Language::Toml));
+        assert_eq!(of("style.css"), Some(Language::Css));
     }
 
     #[test]
@@ -148,6 +152,7 @@ mod tests {
         assert_eq!(of("A.YAML"), Some(Language::Yaml));
         assert_eq!(of("b.Yml"), Some(Language::Yaml));
         assert_eq!(of("CARGO.TOML"), Some(Language::Toml));
+        assert_eq!(of("STYLE.CSS"), Some(Language::Css));
     }
 
     #[test]
@@ -181,6 +186,9 @@ mod tests {
             "Cargo.lock",
             "a.toml.orig",
             "a.tml",
+            "a.scss",
+            "a.less",
+            "a.css.map",
         ] {
             assert_eq!(of(name), None, "{name}");
         }
@@ -212,7 +220,7 @@ mod tests {
     }
 
     /// Each language's sample, and the kind of its tree's root.
-    const SAMPLES: [(Language, &str, &str); 12] = [
+    const SAMPLES: [(Language, &str, &str); 13] = [
         (Language::Rust, "fn a() -> u8 { 1 }\n", "source_file"),
         (Language::Go, "package a\nfunc b() {}\n", "source_file"),
         (Language::CSharp, "class A { void B() {} }\n", "compilation_unit"),
@@ -225,6 +233,7 @@ mod tests {
         (Language::Json, "// c\n{\"a\": [1, true, null]}\n", "document"),
         (Language::Yaml, "# c\na: [1, true]\nb:\n  - c\n", "stream"),
         (Language::Toml, "# c\n[a]\nb = [1, true]\n", "document"),
+        (Language::Css, "/* c */\na > b { color: #fff; }\n", "stylesheet"),
     ];
 
     fn root_kind(language: Language, source: &str) -> (String, bool) {

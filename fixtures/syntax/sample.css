@@ -1,0 +1,56 @@
+/* A sample that exercises the CSS grammar's highlight captures. */
+@charset "utf-8";
+@import url("theme.css") screen;
+@namespace svg url(http://www.w3.org/2000/svg);
+
+:root {
+  --band-left: #2f6fd0;
+  --band-right: rgb(208 111 47 / 80%);
+  --gap: calc(4px * 2);
+}
+
+html,
+body {
+  margin: 0;
+  font: 12px/1.5 -apple-system, "Segoe UI", sans-serif;
+}
+
+.pane > .row + .row ~ .marker {
+  color: var(--band-left, #000);
+  border: 1px solid transparent !important;
+}
+
+#result:hover::before,
+a[href^="https://"]:not(.local) {
+  content: "\2192";
+  transition: opacity 150ms ease-in-out;
+}
+
+@media (prefers-color-scheme: dark) and (min-width: 600px) {
+  .pane {
+    background: hsl(220deg 13% 18%);
+  }
+}
+
+@keyframes pulse {
+  from {
+    opacity: 0;
+  }
+  50% {
+    opacity: 0.5;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@supports (display: grid) {
+  .layout {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+svg|rect {
+  fill: currentColor;
+}
