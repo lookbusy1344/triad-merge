@@ -129,6 +129,8 @@ resolved src/lib.rs in xyz
   pqr: src/lib.rs -> none
 ```
 
+In the window, Save & Exit first works out what the save would do, writing nothing. When it changes the conflicts of any descendant, it asks first, and lists each such descendant as above: Save writes, Keep Editing writes nothing.
+
 jj refuses a write to an immutable commit, and so does triad, with your `revset-aliases`. A save is also refused when the conflict in the commit changed after triad read it, for example by a `jj rebase` while the window was open; nothing is written, and you open it again.
 
 ### Resolve a conflict of more than two sides, two sides at a time

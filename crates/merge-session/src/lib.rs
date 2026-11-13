@@ -241,6 +241,12 @@ impl EncodedOutput {
         Self { bytes, code }
     }
 
+    /// The bytes a save writes.
+    #[must_use]
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
     /// The exit code a save of this output ends the merge with.
     #[must_use]
     pub fn code(&self) -> ExitCode {

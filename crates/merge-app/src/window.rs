@@ -44,6 +44,7 @@ use merge_core::suggest::{self, EditSuggestion};
 use merge_core::text::Text;
 use merge_session::ending::{self, Closing, Next, SaveFailed, Undone, UnresolvedSave};
 use merge_session::io::WriteError;
+use merge_session::jj_native::DescendantEffect;
 use merge_session::origin::{self, find_merge};
 use merge_session::repository::Handoff;
 use merge_session::resolve::Record;
@@ -2161,7 +2162,7 @@ impl MergeWindow {
             }
             Next::ConfirmClose => Self::confirm_close(window, cx),
             Next::SaveAndExit => self.save_and_exit(&SaveAndExit, window, cx),
-            Next::Write => self.write_and_finish(window, cx),
+            Next::Write => self.check_descendants(window, cx),
             Next::Record(code) => self.record_again(code, window, cx),
             Next::SaveCopyAs => self.save_copy_as(&SaveCopyAs, window, cx),
             Next::Failed { undone, detail } => {
@@ -2276,6 +2277,67 @@ impl MergeWindow {
         cx.spawn_in(window, async move |_, cx| {
             copying.await;
             ignore_closed_view(cx.update(|_, cx| finish(code, cx)));
+        })
+        .detach();
+    }
+
+    /// Before a save into a jj commit, preview it off the UI thread, and ask first when it
+    /// changes the conflicts of a descendant (spec §7.5.1). Any other save writes at once.
+    /// The result stays locked while the preview runs, so the save writes what it showed.
+    fn check_descendants(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.save_task.is_some() {
+            return;
+        }
+        let Some(job) = self.session.preview() else {
+            return self.write_and_finish(window, cx);
+        };
+        self.set_saving(true, cx);
+        self.save_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let previewed = cx.background_spawn(async move { job.run() }).await;
+            ignore_closed_view(this.update_in(cx, |this, window, cx| {
+                this.save_task = None;
+                this.set_saving(false, cx);
+                let changed: Vec<DescendantEffect> = match previewed {
+                    Ok(rewrite) => rewrite
+                        .into_iter()
+                        .flat_map(|rewrite| rewrite.descendants)
+                        .filter(|effect| effect.before != effect.after)
+                        .collect(),
+                    Err(error) => {
+                        // The save meets the same refusal and reports it.
+                        tracing::warn!(%error, "cannot preview the save into the commit");
+                        Vec::new()
+                    }
+                };
+                if changed.is_empty() {
+                    this.write_and_finish(window, cx);
+                } else {
+                    Self::confirm_descendants(&changed, window, cx);
+                }
+            }));
+        }));
+    }
+
+    /// Ask before a save that changes the conflicts of the descendants in `changed`.
+    fn confirm_descendants(
+        changed: &[DescendantEffect],
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let answer = window.prompt(
+            PromptLevel::Info,
+            &prompt::descendants_changed(changed.len()),
+            Some(&strings::descendant_effects(changed)),
+            &[prompt::SAVE, prompt::KEEP_EDITING],
+            cx,
+        );
+        cx.spawn_in(window, async move |this, cx| {
+            let save = answer.await == Ok(GO_AHEAD);
+            ignore_closed_view(this.update_in(cx, |this, window, cx| {
+                if save {
+                    this.write_and_finish(window, cx);
+                }
+            }));
         })
         .detach();
     }

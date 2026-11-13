@@ -7,7 +7,9 @@ use camino::{Utf8Path, Utf8PathBuf};
 use merge_core::text::Text;
 use vcs::{IdKind, RepoKind, Repository as _, VcsError};
 use vcs_jj::config::ConfigEnv;
-use vcs_jj::{Absorbed, Divergence, FileVersion, HunkChoice, JjRepository, StackCommit};
+use vcs_jj::{Absorbed, Divergence, FileVersion, HunkChoice, JjRepository};
+/// The reports the front ends show.
+pub use vcs_jj::{DescendantEffect, Rewrite, StackCommit, StackPath};
 
 use crate::resolve::ResolveError;
 

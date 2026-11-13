@@ -5,9 +5,10 @@ use merge_core::diff::{Comparison, LineEndingRule, Whitespace};
 use merge_core::index::RegionIx;
 use merge_core::merge3::{HunkLevel, Semantics};
 use merge_core::text::{Encoding, LineEnding};
+use merge_session::jj_native::DescendantEffect;
 use merge_view::nav::Sides;
 use merge_view::status::{Divergence, Status};
-use vcs::RepoKind;
+use vcs::{IdKind, RepoKind};
 
 use crate::choice::{Choice, MenuAction};
 use crate::open_dialog::{Mode, Slot};
@@ -118,6 +119,15 @@ pub(crate) mod prompt {
     pub(crate) const RELOAD: &str = "Reload";
     pub(crate) const KEEP_MINE: &str = "Keep Mine";
 
+    /// The question before a save into a jj commit that changes the conflicts of
+    /// `descendants` of its descendants (spec §7.5.1).
+    pub(crate) fn descendants_changed(descendants: usize) -> String {
+        match descendants {
+            1 => "Saving changes the conflicts of 1 descendant.".to_owned(),
+            n => format!("Saving changes the conflicts of {n} descendants."),
+        }
+    }
+
     /// The question when a file with unsaved edits changes on disk.
     pub(crate) fn changed_on_disk(name: &str) -> String {
         format!("{name} changed on disk.")
@@ -141,6 +151,33 @@ pub(crate) mod prompt {
         }
     }
 }
+
+/// Each descendant's change ID and its conflicted paths before and after a rewrite, one line
+/// each, as `resolve -r --headless` reports them: `abc12345: a.txt, b.txt -> none`.
+pub(crate) fn descendant_effects<'a>(
+    effects: impl IntoIterator<Item = &'a DescendantEffect>,
+) -> String {
+    effects
+        .into_iter()
+        .map(|effect| {
+            let change = effect.change.id(IdKind::Change);
+            format!("{change}: {} -> {}", path_list(&effect.before), path_list(&effect.after))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// `paths` joined by commas, or [`NO_PATHS`].
+fn path_list(paths: &[impl AsRef<str>]) -> String {
+    if paths.is_empty() {
+        NO_PATHS.to_owned()
+    } else {
+        paths.iter().map(AsRef::as_ref).collect::<Vec<_>>().join(", ")
+    }
+}
+
+/// A descendant's conflicted paths when it has none.
+const NO_PATHS: &str = "none";
 
 /// The open dialog's window title on `mode`'s tab.
 pub(crate) fn open_title(mode: Mode) -> &'static str {
@@ -725,6 +762,47 @@ mod tests {
 
     fn conflict_badge_at(number: Option<usize>, status: &Status) -> Option<String> {
         conflict_badge(status, number, None)
+    }
+
+    fn effect(change: &str, before: &[&str], after: &[&str]) -> DescendantEffect {
+        let paths = |paths: &[&str]| paths.iter().map(|&p| p.into()).collect();
+        DescendantEffect {
+            change: vcs::ChangeInfo {
+                commit: "c0ffee12".to_owned(),
+                change_id: Some(change.to_owned()),
+                summary: None,
+            },
+            before: paths(before),
+            after: paths(after),
+        }
+    }
+
+    #[test]
+    fn each_descendant_shows_its_conflicts_before_and_after() {
+        let effects = [
+            effect("kmzzmxvq", &["a.txt", "b.txt"], &[]),
+            effect("vruxwmqv", &["a.txt"], &["b.txt"]),
+        ];
+        assert_eq!(
+            descendant_effects(&effects),
+            "kmzzmxvq: a.txt, b.txt -> none\nvruxwmqv: a.txt -> b.txt"
+        );
+    }
+
+    #[test]
+    fn a_descendant_without_a_change_id_shows_its_commit() {
+        let mut effect = effect("unused", &[], &["a.txt"]);
+        effect.change.change_id = None;
+        assert_eq!(descendant_effects([&effect]), "c0ffee12: none -> a.txt");
+    }
+
+    #[test]
+    fn the_descendants_question_counts_them() {
+        assert_eq!(prompt::descendants_changed(1), "Saving changes the conflicts of 1 descendant.");
+        assert_eq!(
+            prompt::descendants_changed(3),
+            "Saving changes the conflicts of 3 descendants."
+        );
     }
 
     #[test]

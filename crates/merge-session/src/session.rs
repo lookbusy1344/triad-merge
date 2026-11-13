@@ -12,6 +12,8 @@ use crate::ending::{self, Journal, Next, UnresolvedSave};
 use crate::recovery::Recovery;
 use crate::resolve::Record;
 use crate::{EncodedOutput, ExitCode, SaveError};
+use vcs::VcsError;
+use vcs_jj::Rewrite;
 
 /// Why the session did not apply a command.
 #[derive(Debug, thiserror::Error)]
@@ -105,6 +107,26 @@ impl SaveJob {
             }
         };
         Saved { outcome, recovery }
+    }
+}
+
+/// A dry run of a save into a jj commit ([`Session::preview`]). It holds no borrow of the
+/// session.
+pub struct PreviewJob {
+    encoded: EncodedOutput,
+    record: Record,
+}
+
+impl PreviewJob {
+    /// What the save would do, written nothing: the rewrite's report. None when the save
+    /// would write nothing, as a pair's result with conflicts does.
+    ///
+    /// # Errors
+    ///
+    /// [`VcsError`] when the repository refuses the write.
+    pub fn run(self) -> Result<Option<Rewrite>, VcsError> {
+        let resolved = self.encoded.code() == ExitCode::Resolved;
+        self.record.preview(self.encoded.bytes(), resolved)
     }
 }
 
@@ -283,6 +305,16 @@ impl Session {
         ending::saved(&saved.outcome)
     }
 
+    /// What a save would write into the jj commit `resolve -r` opened, to run on a thread of
+    /// its own: the save's output and its record. None for a merge whose saves go to no
+    /// commit (spec §7.5.1).
+    #[must_use]
+    pub fn preview(&self) -> Option<PreviewJob> {
+        let record = self.target.record.clone().filter(Record::in_commit)?;
+        let encoded = EncodedOutput::new(&self.doc, self.target.line_ending);
+        Some(PreviewJob { encoded, record })
+    }
+
     /// The output as Save Copy As writes it, and the conflicts it holds as markers.
     #[must_use]
     pub fn copy(&self) -> (EncodedOutput, usize) {
@@ -323,6 +355,12 @@ mod tests {
         let doc = conflict();
         recovery.hashed(input_hashes(doc.inputs()), doc.start());
         Session::new(doc, target(Some(dir.join("out")), UnresolvedSave::Write), Some(recovery))
+    }
+
+    #[test]
+    fn a_merge_saved_to_no_commit_has_no_preview() {
+        let session = Session::new(conflict(), SaveTarget::default(), None);
+        assert!(session.preview().is_none());
     }
 
     fn journal_commands(session: &Session) -> usize {

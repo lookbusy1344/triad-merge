@@ -92,6 +92,13 @@ impl Record {
         self.record(repo, resolved)
     }
 
+    /// The conflict is in a jj commit other than the working copy's, which each save
+    /// rewrites (`resolve -r`, `resolve --pair`).
+    #[must_use]
+    pub fn in_commit(&self) -> bool {
+        self.commit.is_some()
+    }
+
     /// The conflicted path, relative to the repository root.
     #[must_use]
     pub fn path(&self) -> &Utf8Path {
@@ -138,24 +145,44 @@ impl Record {
         let Some(commit) = &self.commit else {
             return Ok(None);
         };
-        if commit.pair.is_some() && !resolved {
-            return Ok(None);
-        }
         let content = std::fs::read(&commit.file).map_err(|source| VcsError::Backend {
             context: "reading the saved result",
             source: Box::new(source),
         })?;
+        self.write_into(commit, &content, resolved, dry_run)
+    }
+
+    /// What writing `content`, `resolved` or not, into the commit `resolve -r` or
+    /// `resolve --pair` opened would do, without writing it: the stack window's preview
+    /// (spec §7.5.1). None as for [`Record::rewrite`].
+    ///
+    /// # Errors
+    ///
+    /// [`VcsError`] when the repository refuses the write.
+    pub fn preview(&self, content: &[u8], resolved: bool) -> Result<Option<Rewrite>, VcsError> {
+        match &self.commit {
+            Some(commit) => self.write_into(commit, content, resolved, DRY_RUN),
+            None => Ok(None),
+        }
+    }
+
+    fn write_into(
+        &self,
+        commit: &InCommit,
+        content: &[u8],
+        resolved: bool,
+        dry_run: bool,
+    ) -> Result<Option<Rewrite>, VcsError> {
+        if commit.pair.is_some() && !resolved {
+            return Ok(None);
+        }
         let config = self.jj_config.clone().unwrap_or_else(ConfigEnv::from_process);
         let mut repo = JjRepository::discover(&self.root)?.with_config(config);
         let rewrite = match commit.pair {
-            Some(pair) => repo.reduce_pair(&commit.id, &self.path, pair, &content, dry_run)?,
-            None => repo.write_conflict(
-                &commit.id,
-                &self.path,
-                &content,
-                commit.marker_length,
-                dry_run,
-            )?,
+            Some(pair) => repo.reduce_pair(&commit.id, &self.path, pair, content, dry_run)?,
+            None => {
+                repo.write_conflict(&commit.id, &self.path, content, commit.marker_length, dry_run)?
+            }
         };
         tracing::info!(path = %self.path, commit = %commit.id, ?rewrite, "wrote the result into the commit");
         Ok(Some(rewrite))
@@ -476,6 +503,9 @@ pub fn load_at_commit(
         marker_length: Some(marker_length),
     })
 }
+
+/// [`Record::preview`] writes nothing.
+const DRY_RUN: bool = true;
 
 /// The sides of a pair.
 const PAIR_SIDES: usize = 2;
