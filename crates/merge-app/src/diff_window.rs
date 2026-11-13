@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use async_channel::Receiver;
 use gpui_kit::base::ScrollbarMode;
-use gpui_kit::base::input::InputHighlighterFactory;
+use gpui_kit::base::input::{InputHighlighterFactory, SpacerNote};
 use gpui_kit::component::input::{
     Editor, EditorState, InputEvent, RangeDecoration, RangeDecorationCollection,
     RangeDecorationStyle, RopeExt as _,
@@ -28,14 +28,15 @@ use gpui_kit::component::input::{
 use gpui_kit::component::{ActiveTheme as _, h_flex, v_flex};
 use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, Bounds, ClickEvent, Context, Div, ElementId, Entity,
-    Focusable as _, InteractiveElement as _, IntoElement, ParentElement as _, Pixels, PromptLevel,
-    Render, Role, SharedString, Size, StatefulInteractiveElement as _, Styled as _, Subscription,
-    Task, TestSupportExt as _, Window, WindowOptions, canvas, div, point,
+    Focusable as _, Hsla, InteractiveElement as _, IntoElement, ParentElement as _, Pixels,
+    PromptLevel, Render, Role, SharedString, Size, StatefulInteractiveElement as _, Styled as _,
+    Subscription, Task, TestSupportExt as _, Window, WindowOptions, canvas, div, point,
     prelude::FluentBuilder as _, px,
 };
 use merge_config::settings::{Colours, DEFAULT_COLOURS, Scrollbars};
 use merge_core::diff::DiffOptions;
 use merge_core::diff2::{DiffDocument, Edited, Kind2, Region2, Rope, Side};
+use merge_core::edit::TextPatch;
 use merge_core::index::RegionIx;
 use merge_core::merge3::Source;
 use merge_core::text::{Encoding, Text};
@@ -45,8 +46,9 @@ use merge_session::repository::Handoff;
 use merge_syntax::language::Language;
 use merge_view::diff::{
     self, Pin, changed_bytes, differences, first_change, held_region, next_change, previous_change,
-    region_bytes, region_rows_by, spacers, spacers_by,
+    region_bytes, spacers, spacers_by,
 };
+use merge_view::fold::{self, Fold, FoldRow, LineEdit, Opened};
 use merge_view::scroll::{Follow, ScrollSync};
 use vcs::{Annotation, IdKind, RepoKind, VcsError};
 
@@ -69,8 +71,9 @@ use crate::window::{
 };
 use crate::wrap::Wrap;
 use crate::{
-    Cancel, ExitCode, Find, NextDifference, PreviousDifference, Redo, Save, ToggleOriginColumn,
-    ToggleSoftWrap, ToggleSyntax, Typography, Undo, finish, ignore_closed_view,
+    Cancel, ExitCode, Find, NextDifference, PreviousDifference, Redo, Save,
+    ToggleCollapseUnchanged, ToggleOriginColumn, ToggleSoftWrap, ToggleSyntax, Typography, Undo,
+    finish, ignore_closed_view,
 };
 
 /// How long edits must pause before the regions are recomputed (spec §4.6).
@@ -219,6 +222,8 @@ pub struct DiffSettings {
     pub syntax_max_lines: usize,
     /// The panes open with soft wrap, for sides of up to [`SOFT_WRAP_MAX_LINES`] lines.
     pub soft_wrap: bool,
+    /// Whether the panes open with their unchanged regions collapsed (spec §5).
+    pub collapsing: Collapsing,
     /// When the panes show their scrollbars (spec §6.4).
     pub scrollbars: Scrollbars,
     /// The run's working directory, which relative paths resolve against; none when the
@@ -243,6 +248,7 @@ impl Default for DiffSettings {
             syntax: Syntax::Highlighted,
             syntax_max_lines: merge_config::settings::DEFAULT_SYNTAX_MAX_LINES,
             soft_wrap: false,
+            collapsing: Collapsing::default(),
             scrollbars: Scrollbars::Always,
             cwd: None,
         }
@@ -371,6 +377,8 @@ pub struct DiffWindow {
     wrap_fit: Option<WrapFit>,
     /// The region `go_to` moved to, which both panes scroll into view once laid out.
     reveal: Option<RegionIx>,
+    /// The collapsed unchanged regions.
+    collapse: Collapse,
     /// How far the left pane's first row sits below the top of the copy buttons' column.
     gutter_offset: Pixels,
     typography: Typography,
@@ -380,6 +388,74 @@ pub struct DiffWindow {
     colouring: Colouring,
     _watch: Option<Watch>,
     _subscriptions: Vec<Subscription>,
+}
+
+/// How the diff window collapses unchanged regions when it opens (spec §5, §6.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Collapsing {
+    /// The window opens with its unchanged regions collapsed.
+    pub on: bool,
+    /// The lines a collapsed region keeps at each end that faces a change.
+    pub context_lines: usize,
+}
+
+impl Default for Collapsing {
+    fn default() -> Self {
+        Self { on: false, context_lines: merge_config::settings::DEFAULT_CONTEXT_LINES }
+    }
+}
+
+/// The diff window's collapsed unchanged regions (spec §5).
+struct Collapse {
+    on: bool,
+    /// The lines a collapsed region keeps at each end that faces a change.
+    context: usize,
+    /// The regions the user opened.
+    opened: Opened,
+    /// The folds the panes show.
+    folds: Vec<Fold>,
+    /// Each pane's current search match when last seen, left then right.
+    searched: [Option<Range<usize>>; 2],
+}
+
+impl Collapse {
+    fn new(collapsing: Collapsing) -> Self {
+        Self {
+            on: collapsing.on,
+            context: collapsing.context_lines,
+            opened: Opened::default(),
+            folds: Vec::new(),
+            searched: [None, None],
+        }
+    }
+
+    /// Move the opened regions past `patches` to `side`, and open the folds they touch.
+    /// `line_start` gives the line of a byte of the text the patches apply to and the byte
+    /// where that line starts; `slice` gives a run of its bytes.
+    fn note_edits(
+        &mut self,
+        side: Side,
+        patches: &[TextPatch],
+        line_start: impl Fn(usize) -> (usize, usize),
+        slice: impl Fn(Range<usize>) -> String,
+    ) {
+        if !self.on {
+            return;
+        }
+        // The last patch first, so the lines of the ones before it stay put.
+        for patch in patches.iter().rev() {
+            let (line, head) = line_start(patch.range.start);
+            // A copy of the patched lines, from the start of the first, to find the lines
+            // that differ: a replace-all patches the whole text at once.
+            let old = slice(head..patch.range.end);
+            let new = [&old[..patch.range.start - head], patch.text.as_str()].concat();
+            let edit = LineEdit::new(&old, &new, line);
+            for touched in fold::folds_over(&self.folds, side, edit.lines.clone()) {
+                self.opened.open(touched);
+            }
+            self.opened.shift(side, &edit);
+        }
+    }
 }
 
 /// A step to the next or previous difference, from `side`'s current region.
@@ -418,7 +494,12 @@ pub fn open(
         // Keys reach the window only through a focused element.
         let left = view.read(cx).panes[0].editor.clone();
         left.update(cx, |state, cx| state.focus(window, cx));
-        view.update(cx, |this, cx| this.open_on_first_difference(window, cx));
+        view.update(cx, |this, cx| {
+            if this.collapse.on {
+                this.set_spacers(cx);
+            }
+            this.open_on_first_difference(window, cx);
+        });
         let this = view.downgrade();
         window.on_window_should_close(cx, move |window, cx| {
             ignore_closed_view(this.update(cx, |this, cx| this.close(window, cx)));
@@ -471,10 +552,10 @@ impl DiffWindow {
             subscriptions.push(cx.subscribe_in(
                 &pane.editor,
                 window,
-                move |this, _, event: &InputEvent, window, cx| {
-                    if matches!(event, InputEvent::Change) {
-                        this.send_edits(side, window, cx);
-                    }
+                move |this, _, event: &InputEvent, window, cx| match event {
+                    InputEvent::Change => this.send_edits(side, window, cx),
+                    InputEvent::SpacerClick { line } => this.open_fold_above(side, *line, cx),
+                    InputEvent::PressEnter { .. } | InputEvent::Focus | InputEvent::Blur => {}
                 },
             ));
             subscriptions.push(cx.observe(&pane.editor, move |this, _, cx| {
@@ -522,6 +603,7 @@ impl DiffWindow {
             wrap,
             wrap_fit: None,
             reveal: None,
+            collapse: Collapse::new(settings.collapsing),
             gutter_offset: Pixels::ZERO,
             typography: settings.typography.clone(),
             palette,
@@ -672,6 +754,16 @@ impl DiffWindow {
         let Some(batch) = editor_sync::take_batch(&pane.editor, &pane.recorded, core, cx) else {
             return;
         };
+        let text = self.doc.text(side);
+        self.collapse.note_edits(
+            side,
+            &batch.0,
+            |byte| {
+                let line = text.byte_to_line(byte);
+                (line, text.line_to_byte(line))
+            },
+            |bytes| text.byte_slice(bytes).to_string(),
+        );
         let before = self.doc.version();
         match self.doc.edit(side, batch) {
             Ok(edited) => self.follow(before, &edited, Caret::Follow, window, cx),
@@ -693,6 +785,16 @@ impl DiffWindow {
         cx: &mut Context<Self>,
     ) {
         let side = edited.side;
+        let text = self.panes[index(side)].editor.read(cx).text();
+        self.collapse.note_edits(
+            side,
+            &edited.patches,
+            |byte| {
+                let line = text.offset_to_point(byte).row;
+                (line, text.line_start_offset(line))
+            },
+            |bytes| text.slice(bytes).to_string(),
+        );
         let pane = self.pane(side);
         editor_sync::apply_patches(
             &pane.editor,
@@ -809,6 +911,43 @@ impl DiffWindow {
         self.set_spacers(cx);
     }
 
+    /// Collapse every unchanged region, or show them all (spec §5).
+    fn toggle_collapse_unchanged(
+        &mut self,
+        _: &ToggleCollapseUnchanged,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.collapse.on = !self.collapse.on;
+        self.collapse.opened.clear();
+        self.set_spacers(cx);
+        cx.notify();
+    }
+
+    /// Open the fold whose row sits above `line` of `side`, if any.
+    fn open_fold_above(&mut self, side: Side, line: usize, cx: &mut Context<Self>) {
+        let Some(above) = fold::fold_above(&self.collapse.folds, side, line) else {
+            return;
+        };
+        self.collapse.opened.open(above);
+        self.set_spacers(cx);
+        cx.notify();
+    }
+
+    /// Open the folds that hide `line` of `side`. The editor scrolls its caret into view
+    /// when it next lays out.
+    fn open_folds_at(&mut self, side: Side, line: usize, cx: &mut Context<Self>) {
+        let over: Vec<_> = fold::folds_over(&self.collapse.folds, side, line..line + 1).collect();
+        if over.is_empty() {
+            return;
+        }
+        for fold in over {
+            self.collapse.opened.open(fold);
+        }
+        self.set_spacers(cx);
+        cx.notify();
+    }
+
     /// Turn both panes' syntax colours off or on (spec §6.4).
     fn toggle_syntax(&mut self, _: &ToggleSyntax, _: &mut Window, cx: &mut Context<Self>) {
         self.colouring.toggle();
@@ -825,6 +964,8 @@ impl DiffWindow {
             origins_loaded: self.origin_column.origins().loaded(),
             syntax: self.colouring.shown(),
             soft_wrap: self.wrap.wraps(),
+            collapsible: true,
+            collapse_unchanged: self.collapse.on,
             ..crate::ViewTicks::default()
         }
     }
@@ -835,6 +976,7 @@ impl DiffWindow {
         for side in SIDES {
             self.refresh_bands(side, cx);
         }
+        self.collapse.opened.renew(&self.doc);
         self.set_spacers(cx);
         self.status =
             strings::diff_status(self.repo, differences(&self.doc), self.whitespace).into();
@@ -842,17 +984,36 @@ impl DiffWindow {
     }
 
     /// Give each pane the spacer rows that level it with the other (spec §5): by lines, or
-    /// under soft wrap by the display rows each pane's lines wrap to.
+    /// under soft wrap by the display rows each pane's lines wrap to. With unchanged regions
+    /// collapsed, each pane hides its folds' lines and shows a fold row for each. While the
+    /// regions lag the text, the folds stay as they are, as the spacers do.
     fn set_spacers(&mut self, cx: &mut Context<Self>) {
         self.wrap_fit = None;
+        if self.doc.regions_current() {
+            self.collapse.folds = if self.collapse.on {
+                fold::folds(&self.doc, self.collapse.context, &self.collapse.opened)
+            } else {
+                Vec::new()
+            };
+            for side in SIDES {
+                let hidden = self.collapse.folds.iter().map(|fold| fold.lines(side)).collect();
+                self.editor(side).update(cx, |state, cx| state.set_hidden_lines(hidden, cx));
+            }
+        }
         let wrapped = self.wrap.wraps();
+        let colour = cx.theme().muted_foreground;
         for side in SIDES {
             let rows: Vec<_> = if wrapped {
                 spacers_by(&self.doc, side, self.line_rows(cx)).collect()
             } else {
                 spacers(&self.doc, side).collect()
             };
-            self.editor(side).update(cx, |state, cx| state.set_spacers(rows, cx));
+            let (rows, fold_rows) = fold::fold_spacers(rows, &self.collapse.folds, side);
+            let notes = fold_notes(&fold_rows, colour);
+            self.editor(side).update(cx, |state, cx| {
+                state.set_spacers(rows, cx);
+                state.set_spacer_notes(notes, cx);
+            });
         }
         if wrapped {
             self.wrap_fit = Some(self.wrap_fit(cx));
@@ -1030,7 +1191,21 @@ impl DiffWindow {
     /// Blink the match `side`'s search stepped to, if it stepped.
     fn follow_search_step(&mut self, side: Side, cx: &mut Context<Self>) {
         let pane = &mut self.panes[index(side)];
-        let reached = pane.steps.stepped(pane.editor.read(cx).search_session());
+        let session = pane.editor.read(cx).search_session();
+        let reached = pane.steps.stepped(session);
+        let current = session
+            .is_active()
+            .then(|| session.matcher.current())
+            .flatten()
+            .and_then(|ix| session.matcher.matched_ranges().get(ix).cloned());
+        // The current match opens its fold once, so a collapse after it stays collapsed.
+        if current != self.collapse.searched[index(side)] {
+            self.collapse.searched[index(side)].clone_from(&current);
+            if let Some(bytes) = current {
+                let line = self.pane(side).editor.read(cx).text().offset_to_point(bytes.start).row;
+                self.open_folds_at(side, line, cx);
+            }
+        }
         if let Some(bytes) = reached {
             let target = (side, bytes.start, bytes.end);
             Flash::start(self, target, |this| &mut this.found, Self::paint_found, cx);
@@ -1411,7 +1586,7 @@ impl DiffWindow {
         };
         let view = state.input_bounds().size.height;
         let top = merge_view::scroll::reveal_top(
-            region_rows_by(&self.doc, region, self.line_rows(cx)),
+            self.region_display_rows(region, cx),
             f32::from(line_h),
             f32::from(view),
         );
@@ -1462,6 +1637,17 @@ impl DiffWindow {
             self.gutter_offset = offset;
             cx.notify();
         }
+    }
+
+    /// The display rows `region` spans in either pane: from the row where it starts, as many
+    /// as its taller side takes. Rows above it count fold rows and leave out folded lines.
+    fn region_display_rows(&self, region: RegionIx, cx: &App) -> Range<usize> {
+        let region = &self.doc.regions()[region.get()];
+        let rows = self.line_rows(cx);
+        let start = self.region_row(region, cx);
+        start
+            ..start
+                + rows(Side::Left, region.left.clone()).max(rows(Side::Right, region.right.clone()))
     }
 
     /// The display row where `region` starts. The side with more lines has no spacers of
@@ -1595,7 +1781,9 @@ impl DiffWindow {
                     return;
                 };
                 let view = f32::from(state.input_bounds().size.height);
-                let top = merge_view::ruler::centred_top(line, f32::from(line_h), view);
+                // Spacers and folds part display rows from lines.
+                let row = state.display_map().buffer_line_to_display_row(line);
+                let top = merge_view::ruler::centred_top(row, f32::from(line_h), view);
                 self.scroll_to(Side::Right, px(top), cx);
             }
         }
@@ -1784,6 +1972,18 @@ struct Look<'a> {
     chunked: Option<InputHighlighterFactory>,
 }
 
+/// The notes of `rows`: blank notes on the spacer rows above each fold row, then the fold
+/// row's count of hidden lines.
+fn fold_notes(rows: &[FoldRow], colour: Hsla) -> Vec<SpacerNote> {
+    rows.iter()
+        .flat_map(|row| {
+            let blank = std::iter::repeat_n(SpacerNote::new(row.line, "", colour), row.before);
+            let note = SpacerNote::new(row.line, strings::unchanged_lines(row.hidden), colour);
+            blank.chain(std::iter::once(note))
+        })
+        .collect()
+}
+
 fn new_pane(
     doc: &DiffDocument,
     side: Side,
@@ -1872,6 +2072,7 @@ impl DiffWindow {
         })
         .on_action(cx.listener(Self::toggle_syntax))
         .on_action(cx.listener(Self::toggle_soft_wrap))
+        .on_action(cx.listener(Self::toggle_collapse_unchanged))
     }
 }
 

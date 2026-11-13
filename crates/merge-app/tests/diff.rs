@@ -1,4 +1,8 @@
 //! Headless tests of the two-way diff window (spec §6.1; DESIGN.md §A6.5).
+#![expect(
+    clippy::single_range_in_vec_init,
+    reason = "expected values are lists of hidden line ranges, some with one range"
+)]
 
 use crate::common;
 use merge_core::index::RegionIx;
@@ -16,7 +20,8 @@ use gpui_kit::{
 };
 use merge_app::ExitCode;
 use merge_app::diff_window::{
-    DIFF_DEBOUNCE, DIFF_RULER_ID, DiffFile, DiffSettings, DiffWindow, Origin, copy_id, pane_id,
+    Collapsing, DIFF_DEBOUNCE, DIFF_RULER_ID, DiffFile, DiffSettings, DiffWindow, Origin, copy_id,
+    pane_id,
 };
 use merge_app::toolbar::Tool;
 use merge_app::window::TOOLBAR_ID;
@@ -1633,6 +1638,20 @@ fn the_ruler_goes_to_a_marked_region_and_scrolls_elsewhere(cx: &mut TestAppConte
     assert_eq!(carets(cx, &o.view).1, 0);
 }
 
+#[gpui_kit::test]
+fn the_ruler_scrolls_to_a_line_past_folds(cx: &mut TestAppContext) {
+    // 100 lines of context round the change at 500: 0..400 and 601..1000 fold.
+    let o = open_collapsed(cx, &Files::new(&thousand(false), &thousand(true)), 100);
+    focus_at(cx, &o, Side::Right, 0);
+    click_ruler(cx, &o, 550.5);
+    let (top, view) = cx.read(|cx| {
+        let state = o.view.read(cx).editor(Side::Right).read(cx);
+        (-state.scroll_offset().y, f32::from(state.input_bounds().size.height))
+    });
+    // A fold row, 400..500, 500, 501..551: line 550 is row 151, in the middle of the view.
+    assert_eq!(top, px(151. * DIFF_LINE_HEIGHT - view / 2.));
+}
+
 /// Inside the left pane's vertical bar: its thumb is 6 px wide, 4 px in from the pane's edge.
 const BAR_FROM_RIGHT: Pixels = px(7.);
 
@@ -2145,6 +2164,7 @@ fn the_view_menu_ticks_what_the_diff_window_shows(cx: &mut TestAppContext) {
             ("Base Pane", false),
             ("Syntax Highlighting", syntax),
             ("Soft Wrap", wrap),
+            ("Collapse Unchanged", false),
             ("Sync Result Scrolling", false),
         ]
         .map(|(name, ticked)| (name.to_owned(), ticked))
@@ -2343,4 +2363,287 @@ fn closing_with_save_exits_once_the_write_lands(cx: &mut TestAppContext) {
     cx.simulate_prompt_answer(SAVE);
     cx.run_until_parked();
     assert_eq!(at_exit.borrow().as_deref(), Some("xa\n"));
+}
+
+// Collapsed unchanged regions (spec §5).
+
+/// Typed: `jj-core`'s regex dependencies add `PartialEq<Span>` impls for `Range`.
+const NO_LINES: [Range<usize>; 0] = [];
+const NO_NOTES: [(usize, String); 0] = [];
+
+/// `n` lines, `l00` to `l{n-1}`, each ending in a newline.
+fn numbered_lines(n: usize) -> Vec<String> {
+    (0..n).map(|i| format!("l{i:02}\n")).collect()
+}
+
+/// `numbered_lines(n)` on the left, with line `changed` replaced on the right.
+fn one_change(n: usize, changed: usize) -> Files {
+    let left = numbered_lines(n);
+    let mut right = left.clone();
+    "changed\n".clone_into(&mut right[changed]);
+    Files::new(&left.concat(), &right.concat())
+}
+
+fn collapsed(context_lines: usize) -> DiffSettings {
+    DiffSettings { collapsing: Collapsing { on: true, context_lines }, ..DiffSettings::default() }
+}
+
+fn open_collapsed(cx: &mut TestAppContext, files: &Files, context_lines: usize) -> Opened {
+    open_set(cx, files, &collapsed(context_lines))
+}
+
+/// The lines `side`'s editor hides.
+fn hidden(cx: &mut TestAppContext, view: &Entity<DiffWindow>, side: Side) -> Vec<Range<usize>> {
+    cx.read(|cx| view.read(cx).editor(side).read(cx).display_map().hidden_lines().to_vec())
+}
+
+/// The fold rows' notes on `side`: the line each sits above, and its text.
+fn fold_notes(
+    cx: &mut TestAppContext,
+    view: &Entity<DiffWindow>,
+    side: Side,
+) -> Vec<(usize, String)> {
+    cx.read(|cx| {
+        view.read(cx)
+            .editor(side)
+            .read(cx)
+            .spacer_notes()
+            .iter()
+            .filter(|note| !note.text().is_empty())
+            .map(|note| (note.line(), note.text().to_string()))
+            .collect()
+    })
+}
+
+/// The display row of each fold row on `side`: the last spacer row above its line.
+fn fold_row_rows(cx: &mut TestAppContext, view: &Entity<DiffWindow>, side: Side) -> Vec<usize> {
+    let lines: Vec<usize> = fold_notes(cx, view, side).into_iter().map(|(line, _)| line).collect();
+    cx.read(|cx| {
+        let map = view.read(cx).editor(side).read(cx).display_map();
+        lines
+            .into_iter()
+            .map(|line| {
+                if line < map.buffer_line_count() {
+                    map.buffer_line_to_display_row(line) - 1
+                } else {
+                    map.display_row_count() - 1
+                }
+            })
+            .collect()
+    })
+}
+
+fn display_rows(cx: &mut TestAppContext, view: &Entity<DiffWindow>) -> [usize; 2] {
+    cx.read(|cx| {
+        SIDES_OF_TEST
+            .map(|side| view.read(cx).editor(side).read(cx).display_map().display_row_count())
+    })
+}
+
+fn toggle_collapse(cx: &mut TestAppContext, o: &Opened) {
+    act(cx, o.window, |window, cx| {
+        window.dispatch_action(Box::new(merge_app::ToggleCollapseUnchanged), cx);
+    });
+    act(cx, o.window, TestWindowExt::render_frame);
+}
+
+/// A press on the spacer row above `line` of `side`, as the editor reports it.
+fn click_spacer(cx: &mut TestAppContext, o: &Opened, side: Side, line: usize) {
+    act(cx, o.window, |_, cx| {
+        o.view.read(cx).editor(side).clone().update(cx, |_, cx| {
+            cx.emit(gpui_kit::component::input::InputEvent::SpacerClick { line });
+        });
+    });
+    act(cx, o.window, TestWindowExt::render_frame);
+}
+
+#[gpui_kit::test]
+fn the_panes_open_whole_by_default(cx: &mut TestAppContext) {
+    let o = open(cx, &one_change(20, 10));
+    for side in SIDES_OF_TEST {
+        assert_eq!(hidden(cx, &o.view, side), NO_LINES, "{side:?}");
+        assert_eq!(fold_notes(cx, &o.view, side), NO_NOTES, "{side:?}");
+    }
+}
+
+#[gpui_kit::test]
+fn the_setting_collapses_unchanged_regions_to_their_context(cx: &mut TestAppContext) {
+    // 0..10 unchanged, 10 changed, 11..20 unchanged; three lines of context face the change.
+    let o = open_collapsed(cx, &one_change(20, 10), 3);
+    for side in SIDES_OF_TEST {
+        assert_eq!(hidden(cx, &o.view, side), [0..7, 14..20], "{side:?}");
+        assert_eq!(
+            fold_notes(cx, &o.view, side),
+            [(7, "7 unchanged lines".to_owned()), (20, "6 unchanged lines".to_owned())],
+            "{side:?}"
+        );
+    }
+    // 21 editor lines, the last empty: 13 hidden, two fold rows.
+    assert_eq!(display_rows(cx, &o.view), [10, 10]);
+}
+
+#[gpui_kit::test]
+fn the_context_lines_setting_sets_what_stays(cx: &mut TestAppContext) {
+    let o = open_collapsed(cx, &one_change(20, 10), 5);
+    assert_eq!(hidden(cx, &o.view, Side::Left), [0..5, 16..20]);
+}
+
+#[gpui_kit::test]
+fn with_no_context_the_panes_stay_level_round_a_deletion(cx: &mut TestAppContext) {
+    // Left line 1 is gone on the right; the right's filler row sits above a hidden line.
+    let left = numbered_lines(10);
+    let mut right = left.clone();
+    right.remove(1);
+    let o = open_collapsed(cx, &Files::new(&left.concat(), &right.concat()), 0);
+    assert_eq!(hidden(cx, &o.view, Side::Left), [2..10]);
+    assert_eq!(hidden(cx, &o.view, Side::Right), [1..9]);
+    assert_eq!(display_rows(cx, &o.view), [4, 4]);
+    // l00, then the deleted line or its filler, then the fold row.
+    assert_eq!(fold_row_rows(cx, &o.view, Side::Left), [2]);
+    assert_eq!(fold_row_rows(cx, &o.view, Side::Right), [2]);
+}
+
+#[gpui_kit::test]
+fn the_action_collapses_and_expands_every_region(cx: &mut TestAppContext) {
+    let o = open(cx, &one_change(20, 10));
+    toggle_collapse(cx, &o);
+    assert_eq!(hidden(cx, &o.view, Side::Right), [0..7, 14..20]);
+    click_spacer(cx, &o, Side::Right, 7);
+    assert_eq!(hidden(cx, &o.view, Side::Right), [14..20]);
+    toggle_collapse(cx, &o);
+    assert_eq!(hidden(cx, &o.view, Side::Right), NO_LINES);
+    assert_eq!(fold_notes(cx, &o.view, Side::Right), NO_NOTES);
+    toggle_collapse(cx, &o);
+    assert_eq!(hidden(cx, &o.view, Side::Right), [0..7, 14..20], "every region folds again");
+}
+
+#[gpui_kit::test]
+fn a_click_on_a_fold_row_expands_its_fold_in_both_panes(cx: &mut TestAppContext) {
+    let o = open_collapsed(cx, &one_change(20, 10), 3);
+    click_spacer(cx, &o, Side::Left, 20);
+    for side in SIDES_OF_TEST {
+        assert_eq!(hidden(cx, &o.view, side), [0..7], "{side:?}");
+        assert_eq!(fold_notes(cx, &o.view, side), [(7, "7 unchanged lines".to_owned())]);
+    }
+    // A spacer that is no fold row opens nothing.
+    click_spacer(cx, &o, Side::Left, 3);
+    assert_eq!(hidden(cx, &o.view, Side::Left), [0..7]);
+}
+
+#[gpui_kit::test]
+fn an_opened_region_stays_open_after_an_edit_above_it(cx: &mut TestAppContext) {
+    let o = open_collapsed(cx, &one_change(20, 10), 3);
+    click_spacer(cx, &o, Side::Left, 20);
+    // A new line at the start of the changed left line 10, which shows.
+    type_at(cx, &o, Side::Left, "l00\n".len() * 10, "x\n");
+    wait(cx, DIFF_DEBOUNCE);
+    // Left: 0..10 unchanged, 10..12 changed, 12..21 unchanged and open.
+    for side in SIDES_OF_TEST {
+        assert_eq!(hidden(cx, &o.view, side), [0..7], "{side:?}");
+    }
+}
+
+#[gpui_kit::test]
+fn an_edit_inside_a_fold_opens_it(cx: &mut TestAppContext) {
+    // 0..30 unchanged, 30 changed, 31..40 unchanged: the first fold hides 0..27.
+    let o = open_collapsed(cx, &one_change(40, 30), 3);
+    assert_eq!(hidden(cx, &o.view, Side::Right), [0..27, 34..40]);
+    // Replace l05, a hidden line, on the right.
+    act(cx, o.window, |window, cx| {
+        o.view.read(cx).editor(Side::Right).clone().update(cx, |state, cx| {
+            state.set_search_query("l05", false, cx);
+            state.replace_all_search_matches("L05", window, cx);
+        });
+    });
+    wait(cx, DIFF_DEBOUNCE);
+    // The regions round the new change share lines with the opened fold, so neither folds.
+    for side in SIDES_OF_TEST {
+        assert_eq!(hidden(cx, &o.view, side), [34..40], "{side:?}");
+    }
+}
+
+#[gpui_kit::test]
+fn a_search_step_into_a_fold_opens_it_and_shows_the_match(cx: &mut TestAppContext) {
+    // 200 lines, line 10 changed: the last fold hides 14..200.
+    let o = open_collapsed(cx, &one_change(200, 10), 3);
+    focus_at(cx, &o, Side::Right, 0);
+    press(cx, &o, "secondary-f");
+    search_for(cx, &o, Side::Right, "l150");
+    next_match(cx, &o, Side::Right);
+    for _ in 0..SETTLE_FRAMES {
+        act(cx, o.window, TestWindowExt::render_frame);
+    }
+    for side in SIDES_OF_TEST {
+        assert_eq!(hidden(cx, &o.view, side), [0..7], "{side:?}");
+    }
+    assert_row_shows(cx, &o, Side::Right, 150);
+}
+
+#[gpui_kit::test]
+fn collapse_all_after_a_search_keeps_the_match_folded(cx: &mut TestAppContext) {
+    let o = open_collapsed(cx, &one_change(200, 10), 3);
+    focus_at(cx, &o, Side::Right, 0);
+    press(cx, &o, "secondary-f");
+    search_for(cx, &o, Side::Right, "l150");
+    next_match(cx, &o, Side::Right);
+    toggle_collapse(cx, &o);
+    toggle_collapse(cx, &o);
+    assert_eq!(hidden(cx, &o.view, Side::Right), [0..7, 14..200]);
+}
+
+#[gpui_kit::test]
+fn an_opened_region_that_turns_into_a_change_and_back_folds_again(cx: &mut TestAppContext) {
+    let o = open_collapsed(cx, &one_change(20, 10), 3);
+    click_spacer(cx, &o, Side::Right, 20);
+    // Right lines 11..20 become changed: the opened region is gone.
+    act(cx, o.window, |window, cx| {
+        o.view.read(cx).editor(Side::Right).clone().update(cx, |state, cx| {
+            state.focus(window, cx);
+            state.set_search_query("l1", false, cx);
+            state.replace_all_search_matches("X", window, cx);
+        });
+    });
+    wait(cx, DIFF_DEBOUNCE);
+    assert_eq!(hidden(cx, &o.view, Side::Right), [0..7]);
+    press(cx, &o, "secondary-z");
+    wait(cx, DIFF_DEBOUNCE);
+    assert_eq!(hidden(cx, &o.view, Side::Right), [0..7, 14..20], "a new region folds");
+}
+
+/// Assert that `line` of `side` lies wholly inside its pane's view.
+fn assert_row_shows(cx: &mut TestAppContext, o: &Opened, side: Side, line: usize) {
+    let (row, top, height, line_height) = cx.read(|cx| {
+        let state = o.view.read(cx).editor(side).read(cx);
+        (
+            state.display_map().buffer_line_to_display_row(line),
+            -state.scroll_offset().y,
+            state.input_bounds().size.height,
+            state.line_height().expect("laid out"),
+        )
+    });
+    let row_top = line_height * u16::try_from(row).map(f32::from).expect("a test row fits u16");
+    assert!(
+        row_top >= top && row_top + line_height <= top + height,
+        "row {row} at {row_top:?} outside {top:?} + {height:?}"
+    );
+}
+
+#[gpui_kit::test]
+fn a_jump_scrolls_to_the_difference_past_folds(cx: &mut TestAppContext) {
+    // Changes at 100 and 300 of 400 lines: folds above each.
+    let left = numbered_lines(400);
+    let mut right = left.clone();
+    "x\n".clone_into(&mut right[100]);
+    "y\n".clone_into(&mut right[300]);
+    let o = open_collapsed(cx, &Files::new(&left.concat(), &right.concat()), 3);
+    press(cx, &o, "secondary-down");
+    for _ in 0..SETTLE_FRAMES {
+        act(cx, o.window, TestWindowExt::render_frame);
+    }
+    let row = cx.read(|cx| {
+        o.view.read(cx).editor(Side::Right).read(cx).display_map().buffer_line_to_display_row(300)
+    });
+    // A fold row, 97..100, 100, 101..104, a fold row, 297..300: line 300 is row 12.
+    assert_eq!(row, 12);
+    assert_row_shows(cx, &o, Side::Right, 300);
 }

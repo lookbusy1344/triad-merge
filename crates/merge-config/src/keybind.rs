@@ -67,6 +67,7 @@ const DEFAULT_BINDINGS: &[(&str, KeyAction)] = &[
     ("cmd+i", KeyAction::ToggleOriginColumn),
     ("cmd+y", KeyAction::ToggleSyntax),
     ("cmd+r", KeyAction::ToggleSoftWrap),
+    ("cmd+u", KeyAction::ToggleCollapseUnchanged),
     ("cmd+k", KeyAction::ToggleScrollSync),
     ("cmd+f", KeyAction::Find),
     ("cmd+l", KeyAction::GoToLine),
@@ -143,6 +144,7 @@ pub enum KeyAction {
     ToggleOriginColumn,
     ToggleSyntax,
     ToggleSoftWrap,
+    ToggleCollapseUnchanged,
     ToggleScrollSync,
     Find,
     GoToLine,
@@ -158,7 +160,7 @@ impl KeyAction {
     /// Whether the merge window has this command.
     #[must_use]
     pub const fn in_merge_window(self) -> bool {
-        !matches!(self, Self::Save)
+        !matches!(self, Self::Save | Self::ToggleCollapseUnchanged)
     }
 
     /// Whether the diff window has this command.
@@ -174,6 +176,7 @@ impl KeyAction {
                 | Self::ToggleOriginColumn
                 | Self::ToggleSyntax
                 | Self::ToggleSoftWrap
+                | Self::ToggleCollapseUnchanged
                 | Self::Save
                 | Self::Cancel
                 | Self::OpenSettings
@@ -610,6 +613,7 @@ mod tests {
             ("take-left-then-right", KeyAction::TakeLeftThenRight),
             ("toggle-origin-column", KeyAction::ToggleOriginColumn),
             ("toggle-soft-wrap", KeyAction::ToggleSoftWrap),
+            ("toggle-collapse-unchanged", KeyAction::ToggleCollapseUnchanged),
         ] {
             assert_eq!(KeyAction::from_name(name), Some(action));
         }
@@ -636,7 +640,8 @@ mod tests {
         assert_eq!(actions_of(&bindings, "cmd+q"), [KeyAction::Cancel]);
         assert_eq!(actions_of(&bindings, "cmd+w"), [KeyAction::Cancel]);
         assert_eq!(actions_of(&bindings, "cmd+s"), [KeyAction::SaveAndExit, KeyAction::Save]);
-        assert_eq!(bindings.bound().len(), 29);
+        assert_eq!(actions_of(&bindings, "cmd+u"), [KeyAction::ToggleCollapseUnchanged]);
+        assert_eq!(bindings.bound().len(), 30);
         assert_eq!(bindings.unbound().count(), 0);
     }
 
@@ -681,6 +686,12 @@ mod tests {
             actions_of(&KeyBindings::for_platform(MacOs), "cmd+k"),
             [KeyAction::ToggleScrollSync]
         );
+    }
+
+    #[test]
+    fn the_diff_window_alone_collapses_unchanged_regions() {
+        assert!(KeyAction::ToggleCollapseUnchanged.in_diff_window());
+        assert!(!KeyAction::ToggleCollapseUnchanged.in_merge_window());
     }
 
     #[test]

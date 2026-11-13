@@ -253,6 +253,7 @@ pub(crate) fn diff_settings(
         syntax: base.syntax,
         syntax_max_lines: base.syntax_max_lines,
         soft_wrap: base.soft_wrap,
+        collapsing: base.collapsing,
         scrollbars: base.scrollbars,
         cwd: base.cwd,
     }
@@ -305,6 +306,10 @@ fn window_settings(stored: &Stored) -> WindowSettings {
         syntax: stored.syntax.into(),
         syntax_max_lines: stored.syntax_max_lines,
         soft_wrap: stored.soft_wrap,
+        collapsing: crate::diff_window::Collapsing {
+            on: stored.collapse_unchanged,
+            context_lines: stored.context_lines,
+        },
         scroll_sync: stored.scroll_sync,
         scrollbars: stored.scrollbars,
         base_pane: stored.base_pane,
@@ -398,7 +403,8 @@ mod tests {
     }
 
     #[test]
-    fn the_diff_window_takes_the_files_colours_theme_syntax_revision_id_wrap_and_scrollbars() {
+    fn the_diff_window_takes_the_files_colours_theme_syntax_revision_id_wrap_folds_and_scrollbars()
+    {
         let base = WindowSettings {
             theme: merge_config::settings::Theme::Dark,
             colours: merge_config::settings::Colours {
@@ -410,6 +416,7 @@ mod tests {
             syntax: crate::window::Syntax::Plain,
             revision_id: vcs::IdKind::Commit,
             soft_wrap: true,
+            collapsing: crate::diff_window::Collapsing { on: true, context_lines: 0 },
             scrollbars: merge_config::settings::Scrollbars::WhenScrolling,
             window_size: gpui_kit::size(px(1024.), px(768.)),
             ..WindowSettings::default()
@@ -426,6 +433,7 @@ mod tests {
         assert_eq!(diff.syntax, crate::window::Syntax::Plain);
         assert_eq!(diff.revision_id, vcs::IdKind::Commit);
         assert!(diff.soft_wrap);
+        assert_eq!(diff.collapsing, crate::diff_window::Collapsing { on: true, context_lines: 0 });
         assert_eq!(diff.scrollbars, merge_config::settings::Scrollbars::WhenScrolling);
         assert_eq!(diff.window_size, gpui_kit::size(px(1024.), px(768.)));
     }
@@ -468,6 +476,8 @@ mod tests {
             syntax: false,
             syntax_max_lines: 7,
             soft_wrap: true,
+            collapse_unchanged: true,
+            context_lines: 9,
             key_bindings: merge_config::keybind::KeyBindings::default(),
         };
         let settings = window_settings(&stored);
@@ -490,6 +500,10 @@ mod tests {
         assert_eq!(settings.syntax, crate::window::Syntax::Plain);
         assert_eq!(settings.syntax_max_lines, 7);
         assert!(settings.soft_wrap);
+        assert_eq!(
+            settings.collapsing,
+            crate::diff_window::Collapsing { on: true, context_lines: 9 }
+        );
         assert!(settings.base_pane);
         assert_eq!(settings.origin_column, Visibility::Shown);
         assert_eq!(settings.revision_id, vcs::IdKind::Commit);

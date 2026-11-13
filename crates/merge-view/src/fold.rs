@@ -13,9 +13,6 @@ use merge_core::diff2::{DiffDocument, Kind2, Region2, Side};
 /// The fewest lines a fold hides: one hidden line takes no less room than its fold row.
 pub const MIN_FOLDED_LINES: usize = 2;
 
-/// The default number of lines an unchanged region keeps at each end that faces a change.
-pub const DEFAULT_CONTEXT_LINES: usize = 3;
-
 /// The lines one unchanged region hides on each side; as many on each.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fold {
@@ -71,18 +68,18 @@ impl Opened {
             .any(|open| overlaps(&open.left, &region.left) || overlaps(&open.right, &region.right))
     }
 
-    /// Move the opened lines on `side` that lie past an edit ending on line `end`, which
-    /// changed the line count by `delta`.
-    pub fn shift(&mut self, side: Side, end: usize, delta: isize) {
+    /// Move the opened lines on `side` past `edit`.
+    pub fn shift(&mut self, side: Side, edit: &LineEdit) {
+        let (from, delta) = (edit.lines.end, edit.delta);
         for open in &mut self.regions {
             let lines = match side {
                 Side::Left => &mut open.left,
                 Side::Right => &mut open.right,
             };
-            if lines.start > end {
+            if lines.start >= from {
                 lines.start = lines.start.saturating_add_signed(delta);
             }
-            if lines.end > end {
+            if lines.end >= from {
                 lines.end = lines.end.saturating_add_signed(delta);
             }
             lines.end = lines.end.max(lines.start);
@@ -99,6 +96,49 @@ impl Opened {
             .collect();
         self.regions = regions;
     }
+}
+
+/// The lines a text edit changes, after the lines its old and new text share at either end.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LineEdit {
+    /// The old lines the edit changes; empty for whole lines put in before `lines.start`.
+    /// Old lines from `lines.end` on move by `delta`.
+    pub lines: Range<usize>,
+    /// The change in the line count.
+    pub delta: isize,
+}
+
+impl LineEdit {
+    /// The edit that replaces `old` with `new`. Both start at the start of line `line`.
+    #[must_use]
+    pub fn new(old: &str, new: &str, line: usize) -> Self {
+        let (old, new) = (old.as_bytes(), new.as_bytes());
+        let prefix = old.iter().zip(new).take_while(|(a, b)| a == b).count();
+        let suffix = old[prefix..]
+            .iter()
+            .rev()
+            .zip(new[prefix..].iter().rev())
+            .take_while(|(a, b)| a == b)
+            .count();
+        let changed = &old[prefix..old.len() - suffix];
+        let start = line + breaks(&old[..prefix]);
+        let end = match changed.split_last() {
+            // The line of the last changed byte is the last changed line.
+            Some((_, before_last)) => start + breaks(before_last) + 1,
+            // Text put in at a line start changes no old line.
+            None if prefix == 0 || old[prefix - 1] == b'\n' => start,
+            None => start + 1,
+        };
+        Self { lines: start..end, delta: breaks(new).cast_signed() - breaks(old).cast_signed() }
+    }
+}
+
+#[expect(
+    clippy::naive_bytecount,
+    reason = "a patch is a few lines, a replace-all's whole text at most; not worth a dependency"
+)]
+fn breaks(bytes: &[u8]) -> usize {
+    bytes.iter().filter(|&&byte| byte == b'\n').count()
 }
 
 fn overlaps(a: &Range<usize>, b: &Range<usize>) -> bool {
@@ -217,7 +257,7 @@ mod tests {
     fn one_change(len: usize, changed: usize) -> DiffDocument {
         let left = lines(len);
         let mut right = left.clone();
-        right[changed] = "changed\n".to_owned();
+        "changed\n".clone_into(&mut right[changed]);
         doc(&left.concat(), &right.concat())
     }
 
@@ -229,8 +269,8 @@ mod tests {
     fn gap(gap: usize) -> DiffDocument {
         let left = lines(gap + 2);
         let mut right = left.clone();
-        right[0] = "x\n".to_owned();
-        right[gap + 1] = "y\n".to_owned();
+        "x\n".clone_into(&mut right[0]);
+        "y\n".clone_into(&mut right[gap + 1]);
         doc(&left.concat(), &right.concat())
     }
 
@@ -310,13 +350,13 @@ mod tests {
         let mut opened = Opened::default();
         opened.open(&folds(&d, CONTEXT, &opened)[1]);
         // The fold hid 14..20 on each side; the left moves down two.
-        opened.shift(Side::Left, 0, 2);
+        opened.shift(Side::Left, &LineEdit::new("", "new\nnew\n", 0));
         assert_eq!(opened.regions, [Fold { left: 16..22, right: 14..20 }]);
 
         let mut left = lines(20);
         left.splice(0..0, ["new\n".to_owned(), "new\n".to_owned()]);
         let mut right = lines(20);
-        right[10] = "changed\n".to_owned();
+        "changed\n".clone_into(&mut right[10]);
         let d = doc(&left.concat(), &right.concat());
         opened.renew(&d);
         // The edit is a change at the top; the unchanged regions are 2..12 and 13..22 on the
@@ -326,31 +366,49 @@ mod tests {
         assert_eq!(lefts, [5..9]);
     }
 
-    #[test]
-    fn a_shift_moves_only_lines_after_the_edit() {
+    /// An edit to the opened lines 10..20 on the left.
+    fn shifted(edit: &LineEdit) -> Range<usize> {
         let mut opened = Opened::default();
         opened.open(&Fold { left: 10..20, right: 10..20 });
-        // Inside: the end moves, the start stays.
-        opened.shift(Side::Left, 12, -1);
-        assert_eq!(opened.regions[0].left, 10..19);
-        opened.shift(Side::Left, 9, 1);
-        assert_eq!(opened.regions[0].left, 11..20, "the line before moves both");
-        opened.shift(Side::Left, 9, -1);
-        // An edit on the first line keeps the start: the line is still there.
-        opened.shift(Side::Left, 10, 1);
-        assert_eq!(opened.regions[0].left, 10..20);
-        opened.shift(Side::Left, 10, -1);
-        // Below: nothing moves.
-        opened.shift(Side::Left, 30, 4);
-        assert_eq!(opened.regions[0].left, 10..19);
-        // Right side only.
-        opened.shift(Side::Right, 0, 3);
-        assert_eq!(opened.regions[0], Fold { left: 10..19, right: 13..23 });
+        opened.shift(Side::Left, edit);
+        assert_eq!(opened.regions[0].right, 10..20, "the other side stays");
+        opened.regions[0].left.clone()
+    }
+
+    #[test]
+    fn a_shift_moves_the_lines_from_the_end_of_the_edit() {
+        let edit = |lines, delta| LineEdit { lines, delta };
+        assert_eq!(shifted(&edit(12..13, -1)), 10..19, "inside: the end moves");
+        assert_eq!(shifted(&edit(10..11, 1)), 10..21, "on the first line: the start stays");
+        assert_eq!(shifted(&edit(9..10, 1)), 11..21, "the line before: both move");
+        assert_eq!(shifted(&edit(10..10, 2)), 12..22, "lines put in before it: both move");
+        assert_eq!(shifted(&edit(25..30, 4)), 10..20, "below: nothing moves");
         // An end pulled above the start leaves an empty range, not a reversed one.
-        let mut short = Opened::default();
-        short.open(&Fold { left: 10..12, right: 10..12 });
-        short.shift(Side::Left, 11, -5);
-        assert_eq!(short.regions[0].left, 10..10);
+        assert_eq!(shifted(&edit(0..15, -20)), 10..10);
+    }
+
+    #[test]
+    fn a_line_edit_names_the_lines_that_differ() {
+        let edit = |old, new, line| LineEdit::new(old, new, line);
+        // One character changed on line 11.
+        assert_eq!(edit("a\nb\nc\n", "a\nB\nc\n", 10), LineEdit { lines: 11..12, delta: 0 });
+        // Line 11 deleted: lines from 12 move up one.
+        assert_eq!(edit("a\nb\nc\n", "a\nc\n", 10), LineEdit { lines: 11..12, delta: -1 });
+        // A line put in before line 3 changes none; lines from 3 move down one.
+        assert_eq!(edit("", "x\n", 3), LineEdit { lines: 3..3, delta: 1 });
+        // Typing inside line 5: line 5 changes, nothing moves.
+        assert_eq!(edit("ab", "axb", 5), LineEdit { lines: 5..6, delta: 0 });
+        // A line split inside line 5: lines from 6 move down one.
+        assert_eq!(edit("ab", "a\nb", 5), LineEdit { lines: 5..6, delta: 1 });
+        // A line added after the last: nothing old changes.
+        assert_eq!(edit("a\n", "a\nb\n", 0), LineEdit { lines: 1..1, delta: 1 });
+        // A whole text that differs in one line names that line only.
+        assert_eq!(
+            edit("l0\nl1\nl2\nl3\n", "l0\nL1\nl2\nl3\n", 0),
+            LineEdit { lines: 1..2, delta: 0 }
+        );
+        // No change at all.
+        assert_eq!(edit("a\n", "a\n", 4), LineEdit { lines: 5..5, delta: 0 });
     }
 
     #[test]

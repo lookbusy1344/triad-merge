@@ -223,6 +223,7 @@ pub(crate) mod menu {
     pub(crate) const BLAME: &str = "Blame";
     pub(crate) const SYNTAX: &str = "Syntax Highlighting";
     pub(crate) const SOFT_WRAP: &str = "Soft Wrap";
+    pub(crate) const COLLAPSE_UNCHANGED: &str = "Collapse Unchanged";
     pub(crate) const SCROLL_SYNC: &str = "Sync Result Scrolling";
 }
 
@@ -422,6 +423,11 @@ fn repo(kind: Option<RepoKind>) -> &'static str {
         Some(RepoKind::Jj) => "jj repo",
         None => "no repo",
     }
+}
+
+/// The text of a fold row, which stands in for `hidden` unchanged lines.
+pub(crate) fn unchanged_lines(hidden: usize) -> String {
+    count(hidden, "unchanged line", "unchanged lines")
 }
 
 /// The diff window's status bar text.

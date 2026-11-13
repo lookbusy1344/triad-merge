@@ -37,6 +37,9 @@ pub const DEFAULT_TOOLBAR_FONT_SIZE: f32 = 8.4;
 /// Toolbar text sizes that fit the toolbar's buttons and menu rows.
 pub const TOOLBAR_FONT_SIZES: RangeInclusive<f32> = 6.0..=12.0;
 pub const TAB_WIDTHS: RangeInclusive<usize> = 1..=16;
+/// The lines a collapsed unchanged region keeps at each end that faces a change.
+pub const DEFAULT_CONTEXT_LINES: usize = 3;
+pub const CONTEXT_LINES: RangeInclusive<u8> = 0..=100;
 /// The size the merge and diff windows open at, in points.
 pub const DEFAULT_WINDOW_SIZE: WindowSize = WindowSize { width: 1400, height: 900 };
 /// Window widths and heights, in points.
@@ -68,6 +71,7 @@ const FONT_SIZE_KEY: &str = "font-size";
 const TOOLBAR_FONT_SIZE_KEY: &str = "toolbar-font-size";
 const WINDOW_SIZE_KEY: &str = "window-size";
 const TAB_WIDTH_KEY: &str = "tab-width";
+const CONTEXT_LINES_KEY: &str = "context-lines";
 const SYNTAX_WHOLE_FILE_MAX_LINES_KEY: &str = "syntax-whole-file-max-lines";
 const SYNTAX_BOUNDARIES_KEY: &str = "syntax-boundaries";
 const MERGE_IGNORE_LINE_ENDINGS_KEY: &str = "merge-ignore-line-endings";
@@ -140,6 +144,10 @@ pub struct Settings {
     /// Long lines wrap in the result, input and diff panes when a window opens; else they scroll
     /// sideways.
     pub soft_wrap: bool,
+    /// The diff window opens with its unchanged regions collapsed (spec §5).
+    pub collapse_unchanged: bool,
+    /// The lines a collapsed unchanged region keeps at each end that faces a change.
+    pub context_lines: usize,
     /// The keys and the commands they run (`docs/DESIGN.md` §E9).
     pub key_bindings: KeyBindings,
 }
@@ -341,6 +349,8 @@ impl Default for Settings {
             syntax: true,
             syntax_max_lines: DEFAULT_SYNTAX_MAX_LINES,
             soft_wrap: false,
+            collapse_unchanged: false,
+            context_lines: DEFAULT_CONTEXT_LINES,
             key_bindings: KeyBindings::default(),
         }
     }
@@ -920,6 +930,18 @@ const KEYS: &[Key] = &[
         "Long lines wrap in the result, input and diff panes when a window opens; false scrolls them sideways.",
         soft_wrap,
     ),
+    bool_key!(
+        "collapse-unchanged",
+        "The diff window opens with each unchanged region collapsed to its context lines.",
+        collapse_unchanged,
+    ),
+    key!(
+        CONTEXT_LINES_KEY,
+        "The lines a collapsed unchanged region keeps at each end that faces a change, 0–100.",
+        context_lines = DEFAULT_CONTEXT_LINES,
+        context_lines,
+        |s| s.context_lines.to_string()
+    ),
 ];
 
 /// `settings` in the file's form, one `key = value` line per key in the order of spec §6.4.
@@ -1056,6 +1078,21 @@ fn refine(value: &str) -> Result<Refine, Problem> {
         "deep" => Ok(Refine::Deep),
         _ => Err(invalid("refine-conflicts", value, "true, false or deep")),
     }
+}
+
+fn context_lines(value: &str) -> Result<usize, Problem> {
+    let lines: usize =
+        value.parse().map_err(|_| invalid(CONTEXT_LINES_KEY, value, "a whole number"))?;
+    u8::try_from(lines)
+        .ok()
+        .filter(|lines| CONTEXT_LINES.contains(lines))
+        .map(usize::from)
+        .ok_or_else(|| Problem::OutOfRange {
+            key: CONTEXT_LINES_KEY,
+            value: value.to_owned(),
+            start: f32::from(*CONTEXT_LINES.start()),
+            end: f32::from(*CONTEXT_LINES.end()),
+        })
 }
 
 fn tab_width(value: &str) -> Result<usize, Problem> {
@@ -1228,6 +1265,8 @@ mod tests {
                 syntax: true,
                 syntax_max_lines: 20_000,
                 soft_wrap: false,
+                collapse_unchanged: false,
+                context_lines: 3,
                 key_bindings: KeyBindings::default(),
             }
         );
@@ -1274,6 +1313,8 @@ mod tests {
             syntax-highlighting = false
             syntax-whole-file-max-lines = 0
             soft-wrap = true
+            collapse-unchanged = true
+            context-lines = 12
         ";
         assert_eq!(
             settings(text),
@@ -1320,6 +1361,8 @@ mod tests {
                 syntax: false,
                 syntax_max_lines: 0,
                 soft_wrap: true,
+                collapse_unchanged: true,
+                context_lines: 12,
                 key_bindings: KeyBindings::default(),
             }
         );
@@ -1608,6 +1651,41 @@ mod tests {
         assert!(settings("soft-wrap = true").soft_wrap);
         assert!(!settings("soft-wrap = true\nsoft-wrap =").soft_wrap);
         assert_eq!(problem("soft-wrap = yes"), (1, invalid("soft-wrap", "yes", "true or false")));
+    }
+
+    #[test]
+    fn collapse_unchanged_reads_a_boolean_and_is_off_by_default() {
+        assert!(!Settings::default().collapse_unchanged);
+        assert!(settings("collapse-unchanged = true").collapse_unchanged);
+        assert!(!settings("collapse-unchanged = true\ncollapse-unchanged =").collapse_unchanged);
+        assert_eq!(
+            problem("collapse-unchanged = on"),
+            (1, invalid("collapse-unchanged", "on", "true or false"))
+        );
+    }
+
+    #[test]
+    fn context_lines_run_from_0_to_100_and_default_to_3() {
+        assert_eq!(Settings::default().context_lines, 3);
+        assert_eq!(settings("context-lines = 0").context_lines, 0);
+        assert_eq!(settings("context-lines = 100").context_lines, 100);
+        assert_eq!(settings("context-lines = 7\ncontext-lines =").context_lines, 3);
+        let outside = |value: &str| Problem::OutOfRange {
+            key: "context-lines",
+            value: value.to_owned(),
+            start: 0.0,
+            end: 100.0,
+        };
+        assert_eq!(problem("context-lines = 101"), (1, outside("101")));
+        assert_eq!(
+            problem("context-lines = -1"),
+            (1, invalid("context-lines", "-1", "a whole number"))
+        );
+        assert_eq!(
+            problem("context-lines = 2.5"),
+            (1, invalid("context-lines", "2.5", "a whole number"))
+        );
+        assert_eq!(outside("101").to_string(), "context-lines 101 is outside 0–100");
     }
 
     #[test]
@@ -2099,6 +2177,7 @@ keybind = cmd+b=toggle-base-pane
 keybind = cmd+i=toggle-origin-column
 keybind = cmd+y=toggle-syntax
 keybind = cmd+r=toggle-soft-wrap
+keybind = cmd+u=toggle-collapse-unchanged
 keybind = cmd+k=toggle-scroll-sync
 keybind = cmd+f=find
 keybind = cmd+l=go-to-line
@@ -2111,6 +2190,8 @@ keybind = cmd+,=open-settings
 syntax-highlighting = true
 syntax-whole-file-max-lines = 20000
 soft-wrap = false
+collapse-unchanged = false
+context-lines = 3
 ";
 
     /// [`DEFAULTS`] on this platform: its chords are macOS's.
@@ -2174,6 +2255,8 @@ soft-wrap = false
             syntax: false,
             syntax_max_lines: 123,
             soft_wrap: true,
+            collapse_unchanged: true,
+            context_lines: 0,
             key_bindings: added_binding(),
         }
     }
@@ -2235,6 +2318,8 @@ keybind = ctrl+j=next-conflict
 syntax-highlighting = false
 syntax-whole-file-max-lines = 123
 soft-wrap = true
+collapse-unchanged = true
+context-lines = 0
 "
             .replace("DEFAULT_KEYBINDS\n", &default_keybinds)
         );
@@ -2319,6 +2404,12 @@ syntax-whole-file-max-lines = 20000
 
 # Long lines wrap in the result, input and diff panes when a window opens; false scrolls them sideways.
 soft-wrap = false
+
+# The diff window opens with each unchanged region collapsed to its context lines.
+collapse-unchanged = false
+
+# The lines a collapsed unchanged region keeps at each end that faces a change, 0–100.
+context-lines = 3
 "
             ),
             "{text}"
@@ -2419,7 +2510,7 @@ soft-wrap = false
             ),
             "{text}"
         );
-        assert!(text.ends_with("# soft-wrap = false\n"), "{text}");
+        assert!(text.ends_with("# context-lines = 3\n"), "{text}");
         for line in defaults().lines() {
             assert!(text.contains(&format!("\n# {line}\n")), "{line}");
         }

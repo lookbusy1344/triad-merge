@@ -19,7 +19,7 @@ As of 2026-11-13.
 | M6 native resolution | Done: git stages a resolved save; jj snapshots before the read and after each save | D |
 | M7 syntax highlighting | Done: Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX | F |
 | p4merge parity | Done | E |
-| Review and diff features | Bulk takes (§G3) and line endings in comparison (§G4) done; the editor patch for §G2 done; the rest open | G |
+| Review and diff features | Bulk takes (§G3), line endings in comparison (§G4) and collapsed unchanged regions in the diff window (§G2) done; the rest open | G |
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
 
 Every spec §9 target is met (§A6.7). Toolchain: stable Rust 1.100, with `rust-version` 1.99. Dependencies: jj-lib and jj-core 0.47.1 on gix 0.90; gpui-kit 0.8.1 with the vendored `gpui-base` patch; gpui-kit 0.9 is not adopted (`docs/gpui-kit-issues.md`).
@@ -34,7 +34,7 @@ In order. Each is one or more commits.
 
 1. **Beta reports.** None so far from the owner's own use. Each bug starts with a test that reproduces it; README § Report a problem says what testers send.
 2. **Close M3.** The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
-3. **Review and diff features** (part G): collapse unchanged regions (§G2), diff window first; the rest of the comparison filters (§G4), moved code in the two-way diff (§G5); then §G6–§G14.
+3. **Review and diff features** (part G): collapse unchanged regions in the merge window (§G2); the rest of the comparison filters (§G4), moved code in the two-way diff (§G5); then §G6–§G14.
 4. **More grammars,** one commit each: C, C++, Java and Kotlin; then JSON, YAML, TOML, CSS and Markdown; then Bash, Ruby, PHP and SQL.
 5. **M4b** (§3) once the owner has the machines and the certificate.
 6. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
@@ -59,7 +59,9 @@ In order. Each is one or more commits.
 | Fuzzing | After release 1; `cargo-fuzz` needs nightly | spec §8.9 |
 | Accessibility gaps: no live announcements, region bands and gutter marks not exposed | gpui-kit | `docs/gpui-kit-issues.md` |
 | gpui-kit 0.9: build, rebase the patch, measure | — | `docs/gpui-kit-issues.md` |
-| Collapse unchanged regions, diff window then merge window | — | §G2 |
+| Collapse unchanged regions in the merge window | — | §G2 |
+| Ruler marks with folds: the marks keep their place in the whole file while the thumb follows display rows | A choice between the two | §G2 |
+| A key that opens the fold next to the caret | — | §G2 |
 | Review and diff features, §G4–§G14 | Owner's choices on §G15's open points | G |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
 
@@ -87,15 +89,11 @@ Out of scope (spec §1.3): image and binary comparison, encodings other than UTF
 
 ### G2 Collapse unchanged regions
 
-The main way to move through a large file with few changes; every tool compared has it.
+The main way to move through a large file with few changes; every tool compared has it. Spec §5 sets the behaviour; `DESIGN.md` §A6.5 holds the design.
 
-- An `Unchanged` region shows `context-lines` lines (default 3) at each end that faces a change and hides the rest behind one fold row, `N unchanged lines`. The first and last regions keep context only on the side facing a change. A region folds only when it would hide two or more lines.
-- A click on the fold row, or a key, expands it. View → Collapse Unchanged folds and expands all. Settings: `collapse-unchanged` (`false`), `context-lines` (0–100).
-- Merge window: the top panes' fold row stands in for a run of aligned rows, so the panes stay level. The result editor hides the same lines with `set_hidden_lines`. Scroll sync counts a fold row as one row in each pane.
-- Diff window: both editors hide their side's lines. Equal unchanged runs hide the same count on each side, so the panes stay level.
-- A jump, a search step or a go-to-line into a fold expands it; so does an edit it touches. Line numbers keep the file's numbers.
-- The editor patch is in place (§A6.1, §A6.5). `EditorState::set_hidden_lines` hides whole lines with folding off; spacers above hidden lines drop out; the caret steps over them; an edit that touches a range shows it again, and the application reads that from the edit observer to drop the fold. The fold row is one spacer row with a spacer note above the first line after the hidden run, or after the last line for a run at the end. A press on it emits `InputEvent::SpacerClick { line }`; the application expands the fold whose row sits above `line`.
-- Tests: fold boundaries at `2 × context` and `2 × context + 2` lines; first and last regions; a file with no changes; `context-lines = 0`; a jump into a fold; an edit inside a fold; scroll sync across a fold.
+- Diff window: done. Settings `collapse-unchanged` and `context-lines`, View → Collapse Unchanged (⌘U), fold rows that open on a click, edits and search matches that open their fold.
+- Merge window: open. The top panes' fold row stands in for a run of aligned rows, so the panes stay level. The result editor hides the same lines with `set_hidden_lines`. Scroll sync counts a fold row as one row in each pane. Go to Line into a fold opens it. `toggle-collapse-unchanged` then runs in both windows.
+- Open: a key that opens the fold next to the caret; ruler marks in display rows while folds are collapsed.
 
 ### G3 Bulk resolution
 

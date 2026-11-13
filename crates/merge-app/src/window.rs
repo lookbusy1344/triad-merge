@@ -286,6 +286,8 @@ pub struct WindowSettings {
     pub title: Option<String>,
     /// The result opens with soft wrap, for inputs of up to [`SOFT_WRAP_MAX_LINES`] lines.
     pub soft_wrap: bool,
+    /// Whether the diff window opens with its unchanged regions collapsed (spec §5).
+    pub collapsing: crate::diff_window::Collapsing,
     /// Where Save & Exit writes (spec §6.2).
     pub output: Option<PathBuf>,
     /// The VCS conflict each Save & Exit to `output` is recorded in (spec §7.4); none
@@ -342,6 +344,7 @@ impl Default for WindowSettings {
         Self {
             title: None,
             soft_wrap: false,
+            collapsing: crate::diff_window::Collapsing::default(),
             output: None,
             record: None,
             journal_dir: None,
@@ -1386,6 +1389,7 @@ impl MergeWindow {
             syntax: self.colouring.shown(),
             soft_wrap: self.scroll.wrap().wraps(),
             scroll_sync: self.scroll.syncing(),
+            ..crate::ViewTicks::default()
         }
     }
 
