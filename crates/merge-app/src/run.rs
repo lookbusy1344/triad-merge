@@ -10,7 +10,7 @@ use merge_config::settings::Settings as Stored;
 use merge_core::diff::DiffOptions;
 use merge_core::document::{MergeDocument, MergeOptions};
 use merge_session::WindowForm;
-use merge_session::invocation::{Resolve, Window};
+use merge_session::invocation::{Evolog, Resolve, Window};
 use merge_session::repository::{Handoff, RunRepository};
 use merge_session::resolve::Snapshot;
 use merge_session::semantics::Caller;
@@ -104,13 +104,14 @@ pub fn run(form: WindowForm) -> ExitCode {
                 Ok(files) => files,
                 Err(error) => return report(&error.to_string()),
             };
-            let settings = diff_settings(diff.title, diff.diff, base, origins, kind);
+            let settings = diff_settings(diff.title, diff.diff, base, Some(origins), kind);
             launch_diff(left, right, settings, errors, bindings)
         }
         Window::DiffNative { path, rev, op, diff, title } => {
             let window = NativeDiff { path, rev, op, diff, title };
             run_native_diff(window, repo, base, errors, bindings)
         }
+        Window::DiffEvolog(evolog) => run_evolog_diff(evolog, base, errors, bindings),
     }
 }
 
@@ -167,7 +168,34 @@ fn run_native_diff(
         Err(error) => return report(&error.to_string()),
     };
     let left = DiffFile::revision(native.left, native.left_title);
-    let settings = diff_settings(title, diff, base, origins, kind);
+    let settings = diff_settings(title, diff, base, Some(origins), kind);
+    launch_diff(left, right, settings, errors, bindings)
+}
+
+/// The diff window of `diff PATH --evolog`: a jj change's file against an earlier version
+/// of the change rebased onto its parents now, both sides read-only. The sides are no
+/// commit's file, so they carry no line origins.
+fn run_evolog_diff(
+    evolog: Evolog,
+    base: WindowSettings,
+    errors: Vec<String>,
+    bindings: KeyBindings,
+) -> ExitCode {
+    let cwd = working_dir(base.cwd.as_deref());
+    let Evolog { path, rev, from, diff, title } = evolog;
+    let texts = match merge_session::jj_native::evolog(
+        &cwd,
+        &path,
+        rev.as_deref(),
+        from.as_deref(),
+        None,
+    ) {
+        Ok(texts) => texts,
+        Err(error) => return report(&error.to_string()),
+    };
+    let left = DiffFile::revision(texts.left, texts.left_title);
+    let right = DiffFile::revision(texts.right, texts.right_title);
+    let settings = diff_settings(title, diff, base, None, Some(RepoKind::Jj));
     launch_diff(left, right, settings, errors, bindings)
 }
 
@@ -251,7 +279,7 @@ pub(crate) fn diff_settings(
     title: Option<String>,
     options: DiffOptions,
     base: WindowSettings,
-    origins: DiffLookup,
+    origins: Option<DiffLookup>,
     repo: Option<RepoKind>,
 ) -> DiffSettings {
     DiffSettings {
@@ -260,7 +288,7 @@ pub(crate) fn diff_settings(
         watch: true,
         typography: base.typography,
         window_size: base.window_size,
-        origins: Some(origins),
+        origins,
         origin_column: base.origin_column,
         revision_id: base.revision_id,
         theme: base.theme,
@@ -443,7 +471,7 @@ mod tests {
             rev: None,
             repo: Handoff::new(RunRepository::none()),
         };
-        let diff = diff_settings(None, DiffOptions::default(), base, lookup, None);
+        let diff = diff_settings(None, DiffOptions::default(), base, Some(lookup), None);
         assert_eq!(diff.colours, colours);
         assert_eq!(diff.theme, merge_config::settings::Theme::Dark);
         assert_eq!(diff.syntax, crate::window::Syntax::Plain);

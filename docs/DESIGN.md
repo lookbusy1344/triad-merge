@@ -804,3 +804,10 @@ Features git cannot have (spec §1.2, §7.5). `docs/PLAN-jj-native.md` holds the
 - Versions compare by `MergedTreeValue`: file IDs, not bytes. A run of equal values keeps the oldest operation, since the walk is newest first and each equal value renames the run.
 - `diff --op` resolves the operation with `resolve_op_with_repo`, takes the working-copy commit from its view, and hands the commit's full ID to the `diff PATH` path as the revision. A commit ID resolves in jj whether or not the commit is still visible, so the line origins and revision chip work unchanged.
 
+### I6 A change's patch across rewrites
+
+- `JjRepository::evolog_diff` rebases the earlier version as jj's `rebase_with_empty_behavior` does: `MergedTree::merge` of the earlier tree, its parents' merged tree and the change's parents' merged tree now. Nothing is written; the result lives in memory.
+- The default earlier version needs the rebased file of each predecessor, nearest first, so the search stops at the first that differs. A change rewritten often costs one tree merge per predecessor up to that one.
+- A conflict, on either side, is materialised with `materialize_merge_result_to_bytes` in jj's `diff` marker style, the default `jj` writes to a working copy, with the marker length jj picks for the content.
+- `diff_settings` takes the line-origin lookup as an `Option`: the evolog window has none.
+

@@ -311,6 +311,7 @@ triad-merge diff LEFT RIGHT [--diff-algorithm A] [--ignore-whitespace W] [--titl
                 [--readonly-left] [--readonly-right]    # two-way diff window
 triad-merge diff PATH [--rev REV]                        # working copy against its parent revision
 triad-merge diff PATH --op OP                             # working copy against itself at a jj operation (§7.5.4)
+triad-merge diff PATH --evolog [--rev REV] [--from COMMIT] [--inspect [--json]]   # a jj change's patch across rewrites (§7.5.5)
 triad-merge diff --inspect LEFT RIGHT [--diff-algorithm A] [--ignore-whitespace W] [--json]   # print two-way regions; no window
 triad-merge resolve [PATH] [--headless [--commands FILE]] # resolve in the working copy (§7.4)
 triad-merge resolve PATH -r REV [--headless [--commands FILE] [--dry-run]]   # resolve in a jj commit (§7.5.1)
@@ -708,6 +709,14 @@ Commands built on what only jj records (§1.2). In a git repository each exits w
 - `--json` prints `{path, versions: [{operation, time, description, commit, state}]}`: the full operation ID, the working-copy commit's full ID and `state` one of `file`, `conflict`, `absent`, `other`.
 - jj records the working copy when a jj command runs, or when its file watcher snapshots. The history is that fine.
 - `diff PATH --op OP` compares the working-copy file with its version in the working-copy commit at operation `OP`, as jj resolves an operation (`@`, `@-`, an ID prefix). The left pane is titled `@ at operation SHORT`; its revision chip and line origins read that commit, as for `--rev`. Edits save to the working copy. `--op` takes the place of `--rev`, and applies only to `diff PATH`. An operation jj cannot resolve is refused: `no operation OP: REASON`.
+
+#### 7.5.5 A change's patch across rewrites
+
+- `diff PATH --evolog` compares `PATH` in the change `--rev` names, `@` without it, with an earlier version of the change. The earlier version is rebased onto the change's parents now, in memory, as jj rebases: rebase noise drops out, and what remains is what the rewrite changed in the patch.
+- The earlier version is `--from COMMIT`, else the nearest predecessor in the evolog whose rebased file differs from the file now, else the nearest predecessor. A change with no earlier version is refused: `change CHANGE has no earlier version`.
+- Both sides are read-only and carry no line origins: the left side is no commit's file. The left pane is titled `CHANGE COMMIT rebased`, the right `CHANGE COMMIT`. A side whose path holds no file is empty, its title ending in "(no file)". A rebase that conflicts at `PATH` shows jj's conflict markers, in jj's default `diff` style, on the left; a conflicted change shows them on the right.
+- `--inspect` prints the regions as `diff --inspect` does, and exits 0 when the sides are equal, 1 when they differ.
+- `--evolog` applies only to `diff PATH`, and does not combine with `--op`, `--readonly-left` or `--readonly-right`. `--from` needs `--evolog`.
 
 ## 8. Testing
 

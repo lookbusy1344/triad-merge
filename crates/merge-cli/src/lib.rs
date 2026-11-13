@@ -193,6 +193,7 @@ fn window_form(
             let repo = RunRepository::of_file(&path);
             (Window::DiffNative { path, rev, op, diff, title }, repo)
         }
+        Window::DiffEvolog(evolog) => (Window::DiffEvolog(evolog), RunRepository::none()),
         Window::OpenDialog => (Window::OpenDialog, RunRepository::none()),
     };
     Outcome::Window(Box::new(WindowForm { window, settings, settings_errors, cwd, repo }))
@@ -251,6 +252,19 @@ fn batch_form(
         }
         Batch::DiffInspect { left, right, diff, json } => {
             let (text, code) = inspect::diff_inspect(&left, &right, diff, json)?;
+            Ok(report(stdout, &text, code))
+        }
+        Batch::DiffEvologInspect { evolog, json } => {
+            let cwd = cwd.ok_or(CliError::NoWorkingDirectory)?;
+            let texts = merge_session::jj_native::evolog(
+                cwd,
+                &evolog.path,
+                evolog.rev.as_deref(),
+                evolog.from.as_deref(),
+                Some(jj_config::snapshot_config(env)),
+            )?;
+            let (text, code) =
+                inspect::diff_inspect_texts(&texts.left, &texts.right, evolog.diff, json)?;
             Ok(report(stdout, &text, code))
         }
         Batch::Install { vcs, config } => {

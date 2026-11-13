@@ -52,6 +52,15 @@ fn a_jj_native_command_in_a_git_repository_says_it_needs_jj() {
         outcome(&history),
         (Some(ERROR), String::new(), "triad-merge: history needs a jj repository\n".to_owned())
     );
+    let evolog = triad(fixture.root(), &["diff", "a.txt", "--evolog", "--inspect"]);
+    assert_eq!(
+        outcome(&evolog),
+        (
+            Some(ERROR),
+            String::new(),
+            "triad-merge: diff --evolog needs a jj repository\n".to_owned()
+        )
+    );
     let diverge = triad(fixture.root(), &["diverge", "HEAD"]);
     assert_eq!(
         outcome(&diverge),
@@ -259,6 +268,39 @@ mod jj {
         let value: serde_json::Value = serde_json::from_str(&json).expect("JSON");
         assert_eq!(value["versions"][0]["operation"], ops[1].as_str());
         assert_eq!(value["versions"][0]["state"], "file");
+    }
+
+    /// A change that edits line 4, rebased by an amend of its base at line 1, then
+    /// amended itself at line 5 when `amend` holds. Returns the change now.
+    fn evolved(amend: bool) -> (Fixture, Committed) {
+        let fixture = Fixture::new();
+        let base = fixture.commit_on(&[], "base", &[("a.txt", b"1\n2\n3\n4\n5\n")]);
+        let change = fixture.commit_on(&[&base], "change", &[("a.txt", b"1\n2\n3\nFOUR\n5\n")]);
+        fixture.amend(&base, &[("a.txt", b"ONE\n2\n3\n4\n5\n")]);
+        if amend {
+            fixture.amend(&fixture.latest(&change), &[("a.txt", b"ONE\n2\n3\nFOUR\nFIVE\n")]);
+        }
+        let now = fixture.latest(&change);
+        (fixture, now)
+    }
+
+    #[test]
+    fn evolog_inspect_shows_the_amend_and_not_the_rebase() {
+        let (fixture, now) = evolved(true);
+        let args = ["diff", "a.txt", "--evolog", "--rev", &now.commit, "--inspect"];
+        let (code, out, err) = outcome(&triad(fixture.root(), &args));
+        assert_eq!((code, err.as_str()), (Some(CONFLICTS), ""), "{out}");
+        assert_eq!(
+            out,
+            "unchanged left 0..4 right 0..4\nchanged left 4..5 right 4..5\nchanges: 1\n"
+        );
+        let (fixture, now) = evolved(false);
+        let args = ["diff", "a.txt", "--evolog", "--rev", &now.commit, "--inspect"];
+        let (code, out, _) = outcome(&triad(fixture.root(), &args));
+        assert_eq!(
+            (code, out.as_str()),
+            (Some(RESOLVED), "unchanged left 0..5 right 0..5\nchanges: 0\n")
+        );
     }
 
     /// The working copy on a merge of three parents that each changed `a.txt` from `a`:

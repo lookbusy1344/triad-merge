@@ -32,6 +32,19 @@ pub enum Window {
     /// A conflict read from the repository at the working directory: `path`'s, or the first
     /// conflicted file's.
     Resolve(Resolve),
+    /// `diff PATH --evolog`: a jj change's file against an earlier version of the change.
+    DiffEvolog(Evolog),
+}
+
+/// `diff PATH --evolog`: `path` in the change `rev` names, `@` without one, against an
+/// earlier version of the change, `from` or the evolog's, rebased onto its parents now.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Evolog {
+    pub path: PathBuf,
+    pub rev: Option<String>,
+    pub from: Option<String>,
+    pub diff: DiffOptions,
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

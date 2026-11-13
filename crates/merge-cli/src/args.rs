@@ -13,7 +13,7 @@ use merge_config::named::Named;
 use merge_config::settings::{Algorithm, Settings, Whitespace};
 use merge_config::settings::{Choice, HunkLevelArg, SameChangeArg};
 use merge_session::invocation::{
-    Diff, DiffFlags, Merge, MergeFiles, Resolve, SemanticsFlags, Window,
+    Diff, DiffFlags, Evolog, Merge, MergeFiles, Resolve, SemanticsFlags, Window,
 };
 
 /// What the command line asks for.
@@ -46,6 +46,9 @@ pub enum Batch {
     Stack { revset: Option<String>, json: bool },
     /// The versions of a file across jj's operation log (jj only).
     History { path: PathBuf, json: bool },
+    /// `diff PATH --evolog --inspect`: the regions of a change's file against an earlier
+    /// version of the change (jj only).
+    DiffEvologInspect { evolog: Evolog, json: bool },
     /// Merge the visible commits of a divergent change into one (jj only).
     Diverge { change: String, dry_run: bool, json: bool },
 }
@@ -67,6 +70,8 @@ pub enum UsageError {
     RevWithTwoFiles,
     #[error("--op applies only to diff PATH")]
     OpWithTwoFiles,
+    #[error("--evolog applies only to diff PATH")]
+    EvologWithTwoFiles,
     #[error("--inspect needs LEFT RIGHT")]
     InspectNative,
     #[error("--commands applies to one file: give resolve a PATH")]
@@ -337,6 +342,13 @@ struct DiffCli {
     /// Compare PATH with its version in the working-copy commit at jj operation OP (jj only).
     #[arg(long, value_name = "OP", conflicts_with_all = ["rev", "inspect"])]
     op: Option<String>,
+    /// Compare PATH in the change --rev names, `@` without it, with an earlier version of
+    /// the change rebased onto its parents now; both sides read-only (jj only).
+    #[arg(long, conflicts_with_all = ["op", "readonly_left", "readonly_right"])]
+    evolog: bool,
+    /// With --evolog: the earlier version, a commit; else the nearest whose file differs.
+    #[arg(long, value_name = "COMMIT", requires = "evolog")]
+    from: Option<String>,
     /// Print the regions; no window.
     #[arg(long, conflicts_with_all = ["title", "readonly_left", "readonly_right"])]
     inspect: bool,
@@ -475,6 +487,22 @@ impl Cli {
 impl DiffCli {
     fn invocation(self, settings: &Settings) -> Result<Invocation, UsageError> {
         let count = self.files.len();
+        if self.evolog {
+            let [path] =
+                <[PathBuf; 1]>::try_from(self.files).map_err(|_| UsageError::EvologWithTwoFiles)?;
+            let evolog = Evolog {
+                path,
+                rev: self.rev,
+                from: self.from,
+                diff: self.diff.over(settings.two_way()),
+                title: self.title,
+            };
+            return Ok(if self.inspect {
+                Invocation::Batch(Batch::DiffEvologInspect { evolog, json: self.json })
+            } else {
+                Invocation::Window(Window::DiffEvolog(evolog))
+            });
+        }
         let mut files = self.files.into_iter();
         let paths = (files.next(), files.next(), files.next());
         match (paths, self.rev, self.inspect) {
@@ -1071,6 +1099,47 @@ mod tests {
             ErrorKind::ArgumentConflict
         );
         assert_eq!(usage(&["diff", "l", "r", "--op", "abc"]), UsageError::OpWithTwoFiles);
+    }
+
+    #[test]
+    fn evolog_takes_one_path_a_revision_and_an_earlier_commit() {
+        let evolog = |rev: Option<&str>, from: Option<&str>| Evolog {
+            path: "a.txt".into(),
+            rev: rev.map(str::to_owned),
+            from: from.map(str::to_owned),
+            diff: Settings::default().two_way(),
+            title: None,
+        };
+        assert_eq!(
+            ok(&["diff", "a.txt", "--evolog"]),
+            Invocation::Window(Window::DiffEvolog(evolog(None, None)))
+        );
+        assert_eq!(
+            ok(&[
+                "diff",
+                "a.txt",
+                "--evolog",
+                "--rev",
+                "kx",
+                "--from",
+                "abc",
+                "--inspect",
+                "--json"
+            ]),
+            Invocation::Batch(Batch::DiffEvologInspect {
+                evolog: evolog(Some("kx"), Some("abc")),
+                json: true
+            })
+        );
+        assert_eq!(usage(&["diff", "l", "r", "--evolog"]), UsageError::EvologWithTwoFiles);
+        assert_eq!(
+            clap_kind(&["diff", "a.txt", "--from", "abc"]),
+            ErrorKind::MissingRequiredArgument
+        );
+        assert_eq!(
+            clap_kind(&["diff", "a.txt", "--evolog", "--op", "x"]),
+            ErrorKind::ArgumentConflict
+        );
     }
 
     #[test]

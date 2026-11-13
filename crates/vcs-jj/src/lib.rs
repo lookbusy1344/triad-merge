@@ -4,6 +4,7 @@
 
 pub mod config;
 mod diverge;
+mod evolog;
 mod history;
 mod native;
 mod reduce;
@@ -12,6 +13,7 @@ pub mod testing;
 pub mod tool_config;
 
 pub use diverge::Divergence;
+pub use evolog::EvologDiff;
 pub use history::{FileVersion, SHORT_OPERATION, VersionState};
 pub use native::{DescendantEffect, Rewrite, StackCommit, StackPath};
 pub use reduce::{MIN_PAIR_SIDES, check_pair};
@@ -94,6 +96,12 @@ pub enum JjError {
     /// `diff --op` at an operation before the workspace had a working copy.
     #[error("the workspace has no working copy at operation {0}")]
     NoWorkingCopyAt(String),
+    /// `diff --evolog` on a change with no earlier version.
+    #[error("change {0} has no earlier version")]
+    NoPredecessor(String),
+    /// A path that holds a symlink, submodule or directory where a file is read.
+    #[error("{0} is not a file")]
+    NotAFile(camino::Utf8PathBuf),
 }
 
 /// A jj workspace, read through jj-lib at its head operation.

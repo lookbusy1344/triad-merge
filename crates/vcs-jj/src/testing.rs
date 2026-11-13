@@ -290,6 +290,29 @@ impl Fixture {
         written
     }
 
+    /// Rewrite `commit` to hold `files` as its whole tree, as `jj squash` into it does; its
+    /// descendants rebase. Returns the new commit.
+    #[expect(
+        clippy::must_use_candidate,
+        reason = "called for its effect on the repository; tests often ignore the result"
+    )]
+    pub fn amend(&self, commit: &Committed, files: Files<'_>) -> Committed {
+        let repo = self.repo();
+        let original = repo.store().get_commit(&commit.id).expect("the commit");
+        let tree = tree_of(&repo, &Entry::files(files));
+        let mut tx = repo.start_transaction();
+        let amended = tx
+            .repo_mut()
+            .rewrite_commit(&original)
+            .set_tree(tree)
+            .write()
+            .block_on()
+            .expect("the amended commit");
+        tx.repo_mut().rebase_descendants().block_on().expect("the descendants rebase");
+        self.finish(tx, "amend");
+        Committed::of(&amended)
+    }
+
     /// Commit `files` as the whole tree on `parents`, or on the root commit without any, under
     /// `change`'s change ID, with no predecessor: a copy of the change that shares no history with it.
     #[expect(

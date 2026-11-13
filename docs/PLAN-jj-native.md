@@ -59,6 +59,8 @@ Done: spec §7.5.4, `DESIGN.md` §I5.
 
 ## I6 Step 5: a change's patch across rewrites
 
+Done: spec §7.5.5, `DESIGN.md` §I6.
+
 - `triad-merge diff PATH --evolog [-r REV] [--from COMMIT]` compares two versions of one change's patch. Left: the predecessor (`--from`, else the latest earlier version whose tree differs) rebased onto the change's current parents. Right: the change now. Rebase noise drops out; what remains is what the rewrite changed in the patch. Both sides are read-only.
 - A predecessor whose rebase conflicts at `PATH` shows jj's markers on the left.
 - `--inspect` prints the regions, as `diff --inspect` does.
