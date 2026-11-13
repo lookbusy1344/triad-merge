@@ -185,6 +185,10 @@ fn regions(cx: &mut TestAppContext, view: &Entity<DiffWindow>) -> Vec<Region2> {
     cx.read(|cx| view.read(cx).document().regions().to_vec())
 }
 
+fn computing(cx: &mut TestAppContext, view: &Entity<DiffWindow>) -> bool {
+    cx.read(|cx| view.read(cx).computing())
+}
+
 fn status(cx: &mut TestAppContext, view: &Entity<DiffWindow>) -> String {
     cx.read(|cx| view.read(cx).status_text().to_string())
 }
@@ -301,6 +305,52 @@ fn regions_recompute_once_typing_pauses(cx: &mut TestAppContext) {
     wait(cx, ONE_MS);
     assert_eq!(regions(cx, &o.view), [region(Kind2::Unchanged, 0..2, 0..2)]);
     assert_eq!(status(cx, &o.view), "no repo · 0 differences · whitespace significant");
+}
+
+#[gpui_kit::test]
+fn an_edit_while_a_diff_runs_keeps_it_and_diffs_again_once_typing_pauses(cx: &mut TestAppContext) {
+    // a / a b. Typing "b" makes left a b without a newline; "\n" then makes the files equal.
+    let files = Files::new("a\n", "a\nb\n");
+    let o = open(cx, &files);
+    let before = vec![region(Kind2::Unchanged, 0..1, 0..1), region(Kind2::Changed, 1..1, 1..2)];
+    type_at(cx, &o, Side::Left, 2, "b");
+    run_to_a_diff(cx, &o);
+    type_at(cx, &o, Side::Left, 3, "\n");
+    assert!(computing(cx, &o.view), "the edit leaves the running diff alone");
+    cx.run_until_parked();
+    assert!(!computing(cx, &o.view));
+    assert_eq!(regions(cx, &o.view), before, "the diff of the older text is dropped");
+    wait(cx, JUST_BEFORE);
+    assert_eq!(regions(cx, &o.view), before, "the next diff waits for a pause");
+    wait(cx, ONE_MS);
+    assert_eq!(regions(cx, &o.view), [region(Kind2::Unchanged, 0..2, 0..2)]);
+}
+
+#[gpui_kit::test]
+fn a_navigation_waiting_on_a_stale_diff_runs_after_the_next_one(cx: &mut TestAppContext) {
+    let files = Files::new("a\nb\nc\n", "a\nb\nc\n");
+    let o = open(cx, &files);
+    type_at(cx, &o, Side::Left, 0, "y");
+    run_to_a_diff(cx, &o);
+    // Left becomes ya b xc: the diff running knows only the y.
+    type_at(cx, &o, Side::Left, 5, "x");
+    focus_at(cx, &o, Side::Left, 0);
+    press(cx, &o, "secondary-down");
+    // No clock advance: a waiting navigation does not wait out the debounce.
+    cx.run_until_parked();
+    // Line 2 starts at left byte 5 (ya b) and right byte 4 (a b).
+    assert_eq!(carets(cx, &o.view), (5, 4));
+}
+
+/// Start a recompute without the debounce, through a navigation, and run tasks one at a
+/// time until its diff runs and has not landed.
+fn run_to_a_diff(cx: &mut TestAppContext, o: &Opened) {
+    cx.run_until_parked();
+    focus_at(cx, o, Side::Left, 0);
+    press(cx, o, "secondary-down");
+    while !computing(cx, &o.view) {
+        assert!(cx.executor().tick(), "the recompute reaches its diff");
+    }
 }
 
 #[gpui_kit::test]
@@ -429,6 +479,28 @@ fn closing_with_edits_and_discard_writes_nothing(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert_eq!(o.finished.codes(), [ExitCode::Resolved]);
     assert_eq!(files.read(Side::Left), "a\n");
+}
+
+#[gpui_kit::test(iterations = 20)]
+fn closing_with_discard_waits_for_a_save_already_running(cx: &mut TestAppContext) {
+    let files = Files::new("a\n", "b\n");
+    let o = open(cx, &files);
+    type_at(cx, &o, Side::Left, 0, "x");
+    // Left's file as it is when the window finishes.
+    let on_finish = Rc::new(RefCell::new(Vec::new()));
+    let record = Rc::clone(&on_finish);
+    let left = files.path(Side::Left);
+    cx.update(|cx| {
+        cx.set_global(merge_app::Finish::new(move |code, _| {
+            let text = std::fs::read_to_string(&left).expect("left reads");
+            record.borrow_mut().push((code, text));
+        }));
+    });
+    press(cx, &o, "secondary-s");
+    press(cx, &o, "secondary-w");
+    cx.simulate_prompt_answer(DISCARD);
+    cx.run_until_parked();
+    assert_eq!(*on_finish.borrow(), [(ExitCode::Resolved, "xa\n".to_owned())]);
 }
 
 #[gpui_kit::test]

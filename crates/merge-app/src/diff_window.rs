@@ -634,6 +634,12 @@ impl DiffWindow {
         &self.pane(side).editor
     }
 
+    /// Whether a diff of a snapshot of the text runs off the UI thread.
+    #[must_use]
+    pub fn computing(&self) -> bool {
+        self.computing
+    }
+
     /// The banner over the panes, if any.
     #[must_use]
     pub fn banner(&self) -> Option<&SharedString> {
@@ -832,15 +838,18 @@ impl DiffWindow {
         self.start_recompute(delay, window, cx);
     }
 
-    /// Recompute the regions off the UI thread after `delay`. Replacing the task drops the
-    /// one before, which cancels it or discards its result.
+    /// Recompute the regions off the UI thread after `delay`. Replacing a task still waiting
+    /// out its delay cancels it. One diff runs at a time: while one runs, this does nothing,
+    /// and a diff that lands for an older text starts the next.
     fn start_recompute(
         &mut self,
         delay: Option<Duration>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.computing = false;
+        if self.computing {
+            return;
+        }
         self.recompute = Some(cx.spawn_in(window, async move |this, cx| {
             if let Some(delay) = delay {
                 cx.background_executor().timer(delay).await;
@@ -862,6 +871,8 @@ impl DiffWindow {
                     for navigation in std::mem::take(&mut this.waiting) {
                         this.step(navigation, window, cx);
                     }
+                } else {
+                    this.schedule_recompute(window, cx);
                 }
             }));
         }));
@@ -1351,13 +1362,27 @@ impl DiffWindow {
         }
     }
 
+    /// Finish with 0 once the saves running have landed: a save asked for before the close
+    /// still reaches its file.
+    fn exit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(saving) = self.saving.take() else {
+            finish(ExitCode::Resolved, cx);
+            return;
+        };
+        cx.spawn_in(window, async move |_, cx| {
+            saving.await;
+            ignore_closed_view(cx.update(|_, cx| finish(ExitCode::Resolved, cx)));
+        })
+        .detach();
+    }
+
     /// Close the window, asking first when a side has unsaved edits. The window exits with 0.
     fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         for side in SIDES {
             self.send_edits(side, window, cx);
         }
         if !self.panes.iter().any(|p| p.modified) {
-            finish(ExitCode::Resolved, cx);
+            self.exit(window, cx);
             return;
         }
         let answer = window.prompt(
@@ -1373,7 +1398,7 @@ impl DiffWindow {
             };
             ignore_closed_view(this.update_in(cx, |this, window, cx| match CLOSING.get(answer) {
                 Some(Closing::Save) => this.save(AfterSave::Exit, window, cx),
-                Some(Closing::Discard) => finish(ExitCode::Resolved, cx),
+                Some(Closing::Discard) => this.exit(window, cx),
                 Some(Closing::KeepEditing) | None => {}
             }));
         })
