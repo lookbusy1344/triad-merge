@@ -44,7 +44,7 @@ script/pre-commit              # from the repo root
 
 **The gate takes under 35 s on a warm build.** An edit to `merge-app` takes 12 s, one to `merge-core` 16 s. A run over 35 s is a defect, not a slow run. Stop, report it to the owner with the time of each step, and fix the cause before going on. Never wait it out or raise a limit. Check the object count under `target/debug/build` first: a huge file count there slows every rustc run (`DESIGN.md` §A13.5).
 
-The gate reads the changes in `@` (jj) or against `HEAD` (git). It skips the checks when no build file changed: `.rs`, `Cargo.toml`, `Cargo.lock`, `deny.toml`, toolchain and format config, `script/`, `fixtures/`. Otherwise it runs `script/checks --quick` on the changed paths:
+The gate reads the changes in `@` (jj) or against `HEAD` (git). It skips the checks when no build file changed: `.rs`, `Cargo.toml`, `Cargo.lock`, `deny.toml`, `.cargo/config.toml`, toolchain and format config, `script/`, `fixtures/`. Otherwise it runs `script/checks --quick` on the changed paths:
 
 ```sh
 cargo fmt --all --check
@@ -113,6 +113,7 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
   - Move values not used again; `std::mem::take` or `std::mem::replace` out of a `&mut`.
   - `with_capacity` when the length is known. Small `Copy` types go by value.
 - **Licences.** Dependencies pass `cargo deny check`.
+- **Publish age.** `.cargo/config.toml` sets `registry.global-min-publish-age = "3 days"`: `cargo update`, `cargo add` and `cargo generate-lockfile` take only versions published at least three days ago. Cargo.lock keeps what it already holds.
 - **Security audits.** Run `cargo audit` once per working session and after any dependency change. Fix or report every vulnerability. Before adding or bumping a dependency, also check Dependabot (`gh api -X GET repos/{owner}/{repo}/dependabot/alerts -f state=open`): RustSec, which `cargo audit` and `cargo deny` read, lags GitHub advisories. Known and needing no action: unmaintained-crate warnings deep in the GPUI tree, and the future-incompatibility notice for `block 0.1.6`, which GPUI's macOS backend pulls in through `cocoa` and `metal`, until a `gpui-kit` release drops it.
 
 ## Commands

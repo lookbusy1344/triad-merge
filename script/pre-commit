@@ -15,7 +15,7 @@ set -euo pipefail
 affects_build() {
     case "$1" in
         *.rs | Cargo.toml | */Cargo.toml | Cargo.lock | deny.toml | rust-toolchain.toml | rustfmt.toml \
-            | .config/nextest.toml | script/* | fixtures/*) return 0 ;;
+            | .config/nextest.toml | .cargo/config.toml | script/* | fixtures/*) return 0 ;;
         *) return 1 ;;
     esac
 }

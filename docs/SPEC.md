@@ -774,6 +774,7 @@ An idle window draws nothing. The caret blinks for 10 s after the last key, clic
 - Logs use `tracing`, with `TRIAD_LOG` setting the filter (default `warn`), and go to stderr and a daily file in the platform cache directory, of which the last seven are kept. `TRIAD_LOG_DIR` puts the files elsewhere. A bad filter or an unusable directory gives one warning, and logging goes on without it.
 - Fixtures live under `fixtures/` as plain text triples with expected outputs, named for the case they cover.
 - `cargo deny` checks licences and advisories in CI. It rejects GPL and AGPL dependencies. This matters because Zed's editor crates are GPL, while GPUI and gpui-component are Apache-2.0.
+- Dependency resolution takes only crate versions published at least three days ago (`.cargo/config.toml`), so a malicious release has time to be yanked first.
 
 ## 11. UI toolkit
 
