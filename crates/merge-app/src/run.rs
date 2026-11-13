@@ -107,8 +107,8 @@ pub fn run(form: WindowForm) -> ExitCode {
             let settings = diff_settings(diff.title, diff.diff, base, origins, kind);
             launch_diff(left, right, settings, errors, bindings)
         }
-        Window::DiffNative { path, rev, diff, title } => {
-            let window = NativeDiff { path, rev, diff, title };
+        Window::DiffNative { path, rev, op, diff, title } => {
+            let window = NativeDiff { path, rev, op, diff, title };
             run_native_diff(window, repo, base, errors, bindings)
         }
     }
@@ -134,6 +134,7 @@ fn jj_working_copy(repo: &mut RunRepository, right: &Path, cwd: &Path) -> Option
 struct NativeDiff {
     path: PathBuf,
     rev: Option<String>,
+    op: Option<String>,
     diff: DiffOptions,
     title: Option<String>,
 }
@@ -147,11 +148,16 @@ fn run_native_diff(
     errors: Vec<String>,
     bindings: KeyBindings,
 ) -> ExitCode {
-    let NativeDiff { path, rev, diff, title } = window;
+    let NativeDiff { path, rev, op, diff, title } = window;
     let dir = base.cwd.as_deref();
     let kind = repo.kind();
-    let native = match merge_session::native::load(&mut repo, &path, rev.as_deref()) {
-        Ok(native) => native,
+    let loaded = match &op {
+        Some(op) => merge_session::native::load_at_operation(&mut repo, &path, op)
+            .map(|(native, commit)| (native, Some(commit.as_str().to_owned()))),
+        None => merge_session::native::load(&mut repo, &path, rev.as_deref()).map(|n| (n, rev)),
+    };
+    let (native, rev) = match loaded {
+        Ok(loaded) => loaded,
         Err(error) => return report(&error.to_string()),
     };
     let origins =

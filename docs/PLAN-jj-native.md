@@ -50,6 +50,8 @@ Done: spec §7.5.3, `DESIGN.md` §I4.
 
 ## I5 Step 4: a file's history in the operation log
 
+Done: spec §7.5.4, `DESIGN.md` §I5.
+
 - `triad-merge history PATH [--json]` lists the distinct versions of `PATH` in the working-copy commit across the operation log, newest first: the operation's short ID, time and description, and whether the file is absent there. Adjacent operations with the same version show once.
 - `triad-merge diff PATH --op OP` compares the working-copy file with its version in the working-copy commit at operation `OP`. Edits save to the working copy, as for `--rev`.
 - jj records the working copy when a command runs, or when its watcher snapshots. Coverage is that fine.

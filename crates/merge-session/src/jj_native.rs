@@ -4,9 +4,9 @@
 use std::path::Path;
 
 use camino::Utf8PathBuf;
-use vcs::{RepoKind, VcsError};
+use vcs::{RepoKind, Repository as _, VcsError};
 use vcs_jj::config::ConfigEnv;
-use vcs_jj::{Divergence, JjRepository, StackCommit};
+use vcs_jj::{Divergence, FileVersion, JjRepository, StackCommit};
 
 use crate::resolve::ResolveError;
 
@@ -60,4 +60,26 @@ pub fn diverge(
     jj_config: Option<ConfigEnv>,
 ) -> Result<Divergence, ResolveError> {
     Ok(open(cwd, jj_config, "diverge")?.diverge(change, dry_run)?)
+}
+
+/// The versions of `path`, relative to `cwd`, in the working-copy commit across the
+/// operation log of the jj repository holding `cwd`, newest first (`history`).
+///
+/// # Errors
+///
+/// As [`open`]; [`ResolveError::Vcs`] for a path outside the repository, and as
+/// [`JjRepository::history`] fails.
+pub fn history(
+    cwd: &Path,
+    path: &Path,
+    jj_config: Option<ConfigEnv>,
+) -> Result<(Utf8PathBuf, Vec<FileVersion>), ResolveError> {
+    let mut repo = open(cwd, jj_config, "history")?;
+    let file = crate::resolve::absolute(&cwd.join(path))?;
+    let relative = file
+        .strip_prefix(repo.root())
+        .map_err(|_| VcsError::OutsideRepository(file.clone()))?
+        .to_owned();
+    let versions = repo.history(&relative)?;
+    Ok((relative, versions))
 }

@@ -4,6 +4,7 @@
 
 pub mod config;
 mod diverge;
+mod history;
 mod native;
 mod reduce;
 #[cfg(feature = "testing")]
@@ -11,6 +12,7 @@ pub mod testing;
 pub mod tool_config;
 
 pub use diverge::Divergence;
+pub use history::{FileVersion, SHORT_OPERATION, VersionState};
 pub use native::{DescendantEffect, Rewrite, StackCommit, StackPath};
 pub use reduce::{MIN_PAIR_SIDES, check_pair};
 
@@ -86,6 +88,12 @@ pub enum JjError {
     /// A conflict with a symlink, submodule or directory among its terms.
     #[error("{0} is not a conflict of files")]
     NotAFileConflict(camino::Utf8PathBuf),
+    /// `diff --op` with an operation jj cannot resolve.
+    #[error("no operation {op}: {reason}")]
+    UnknownOperation { op: String, reason: String },
+    /// `diff --op` at an operation before the workspace had a working copy.
+    #[error("the workspace has no working copy at operation {0}")]
+    NoWorkingCopyAt(String),
 }
 
 /// A jj workspace, read through jj-lib at its head operation.

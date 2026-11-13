@@ -7,6 +7,8 @@
 
 #[path = "jj/diverge.rs"]
 mod diverge;
+#[path = "jj/history.rs"]
+mod history;
 #[path = "jj/reduce.rs"]
 mod reduce;
 #[path = "jj/snapshot.rs"]

@@ -189,9 +189,9 @@ fn window_form(
             let repo = RunRepository::of_diff_tool(cwd.as_deref(), &diff.right);
             (Window::Diff(diff), repo)
         }
-        Window::DiffNative { path, rev, diff, title } => {
+        Window::DiffNative { path, rev, op, diff, title } => {
             let repo = RunRepository::of_file(&path);
-            (Window::DiffNative { path, rev, diff, title }, repo)
+            (Window::DiffNative { path, rev, op, diff, title }, repo)
         }
         Window::OpenDialog => (Window::OpenDialog, RunRepository::none()),
     };
@@ -266,6 +266,16 @@ fn batch_form(
             )?;
             let (text, code) = jj_native::stack_report(&commits, json)?;
             Ok(report(stdout, &text, code))
+        }
+        Batch::History { path, json } => {
+            let cwd = cwd.ok_or(CliError::NoWorkingDirectory)?;
+            let (path, versions) = merge_session::jj_native::history(
+                cwd,
+                &path,
+                Some(jj_config::snapshot_config(env)),
+            )?;
+            let text = jj_native::history_report(&path, &versions, json)?;
+            Ok(report(stdout, &text, ExitCode::Resolved))
         }
         Batch::Diverge { change, dry_run, json } => {
             let cwd = cwd.ok_or(CliError::NoWorkingDirectory)?;

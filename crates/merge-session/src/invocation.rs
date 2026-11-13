@@ -21,7 +21,14 @@ pub enum Window {
     /// The two-way diff window.
     Diff(Diff),
     /// A working-copy file against its parent revision, or `rev`.
-    DiffNative { path: PathBuf, rev: Option<String>, diff: DiffOptions, title: Option<String> },
+    /// `op`: the jj operation whose working-copy commit is the left side, in place of `rev`.
+    DiffNative {
+        path: PathBuf,
+        rev: Option<String>,
+        op: Option<String>,
+        diff: DiffOptions,
+        title: Option<String>,
+    },
     /// A conflict read from the repository at the working directory: `path`'s, or the first
     /// conflicted file's.
     Resolve(Resolve),

@@ -21,7 +21,7 @@ As of 2026-11-13.
 | p4merge parity | Done | E |
 | Review and diff features | Bulk takes (§G3), line endings in comparison (§G4) and collapsed unchanged regions in both windows (§G2) done; the rest open | G |
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
-| jj-native features | Conflicts across a stack (`stack`, `resolve -r`), divergent changes (`diverge`) and pair reduction (`resolve --pair`) done; operation-log history, evolog patch diff and absorb by hunk open | I |
+| jj-native features | Conflicts across a stack (`stack`, `resolve -r`), divergent changes (`diverge`), pair reduction (`resolve --pair`) and operation-log history (`history`, `diff --op`) done; evolog patch diff and absorb by hunk open | I |
 
 Every spec §9 target is met (§A6.7). Toolchain: stable Rust 1.100, with `rust-version` 1.99. Dependencies: jj-lib and jj-core 0.47.1 on gix 0.90; gpui-kit 0.8.1 with the vendored `gpui-base` patch; gpui-kit 0.9 is not adopted (`docs/gpui-kit-issues.md`).
 
@@ -33,7 +33,7 @@ Build profiles (root `Cargo.toml`): `release` aborts on panic and strips symbols
 
 In order. Each is one or more commits.
 
-1. **jj-native features** (part I), in the order of §I8: `history` next.
+1. **jj-native features** (part I), in the order of §I8: `diff --evolog` next.
 2. **Close M3.** The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
 3. **Review and diff features** (part G): the rest of the comparison filters (§G4), moved code in the two-way diff (§G5); then §G6–§G14.
 4. **More grammars,** one commit each: C, C++, Java and Kotlin; then Markdown; then Bash, Ruby, PHP and SQL.
@@ -65,7 +65,7 @@ In order. Each is one or more commits.
 | A key that opens the fold next to the caret | — | §G2 |
 | Review and diff features, §G4–§G14 | Owner's choices on §G15's open points | G |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
-| jj-native features, §I5–§I7 | — | `PLAN-jj-native.md` |
+| jj-native features, §I6–§I7 | — | `PLAN-jj-native.md` |
 
 ## 4. Risks
 

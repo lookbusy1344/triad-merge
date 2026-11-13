@@ -47,6 +47,11 @@ fn a_jj_native_command_in_a_git_repository_says_it_needs_jj() {
         outcome(&resolve),
         (Some(ERROR), String::new(), "triad-merge: resolve -r needs a jj repository\n".to_owned())
     );
+    let history = triad(fixture.root(), &["history", "a.txt"]);
+    assert_eq!(
+        outcome(&history),
+        (Some(ERROR), String::new(), "triad-merge: history needs a jj repository\n".to_owned())
+    );
     let diverge = triad(fixture.root(), &["diverge", "HEAD"]);
     assert_eq!(
         outcome(&diverge),
@@ -229,6 +234,31 @@ mod jj {
         assert_eq!(code, Some(CONFLICTS));
         assert_eq!(out.lines().nth(1), Some("  conflicted: a.txt"), "{out}");
         assert_eq!(fixture.held_in(&fixture.visible(&change)[0], "a.txt"), Held::Conflict);
+    }
+
+    #[test]
+    fn history_lists_each_snapshot_newest_first() {
+        let fixture = Fixture::new();
+        fixture.check_out_to_disk();
+        let mut ops = Vec::new();
+        for bytes in [&b"1\n"[..], b"2\n"] {
+            std::fs::write(fixture.root().join("a.txt"), bytes).expect("a.txt is written");
+            let mut repo = vcs_jj::JjRepository::discover(fixture.root()).expect("the repository");
+            vcs::Repository::snapshot(&mut repo).expect("the snapshot");
+            ops.push(fixture.operation_ids()[0].clone());
+        }
+        let (code, out, err) = outcome(&triad(fixture.root(), &["history", "a.txt"]));
+        assert_eq!((code, err.as_str()), (Some(RESOLVED), ""), "{out}");
+        let starts: Vec<String> =
+            out.lines().map(|l| l.split(' ').next().unwrap_or_default().to_owned()).collect();
+        let short = |id: &str| id[..vcs_jj::SHORT_OPERATION].to_owned();
+        assert_eq!(starts[..2], [short(&ops[1]), short(&ops[0])], "{out}");
+        assert_eq!(out.lines().count(), 3, "{out}");
+        assert!(out.lines().nth(2).is_some_and(|l| l.ends_with(" (absent)")), "{out}");
+        let (_, json, _) = outcome(&triad(fixture.root(), &["history", "a.txt", "--json"]));
+        let value: serde_json::Value = serde_json::from_str(&json).expect("JSON");
+        assert_eq!(value["versions"][0]["operation"], ops[1].as_str());
+        assert_eq!(value["versions"][0]["state"], "file");
     }
 
     /// The working copy on a merge of three parents that each changed `a.txt` from `a`:

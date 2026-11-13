@@ -44,6 +44,8 @@ pub enum Batch {
     Install { vcs: RepoKind, config: Option<PathBuf> },
     /// List the conflicted commits `revset` names, parents first (jj only).
     Stack { revset: Option<String>, json: bool },
+    /// The versions of a file across jj's operation log (jj only).
+    History { path: PathBuf, json: bool },
     /// Merge the visible commits of a divergent change into one (jj only).
     Diverge { change: String, dry_run: bool, json: bool },
 }
@@ -63,6 +65,8 @@ pub enum UsageError {
     DiffFiles(usize),
     #[error("--rev applies only to diff PATH")]
     RevWithTwoFiles,
+    #[error("--op applies only to diff PATH")]
+    OpWithTwoFiles,
     #[error("--inspect needs LEFT RIGHT")]
     InspectNative,
     #[error("--commands applies to one file: give resolve a PATH")]
@@ -194,6 +198,14 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// List the versions of PATH in the working-copy commit across jj's operation log,
+    /// newest first (jj only).
+    History {
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
     /// Merge the commits of a divergent change over their shared predecessor (jj only).
     Diverge {
         /// A change ID prefix, or a revision naming one of the change's commits.
@@ -322,6 +334,9 @@ struct DiffCli {
     /// The revision to compare PATH with.
     #[arg(long)]
     rev: Option<String>,
+    /// Compare PATH with its version in the working-copy commit at jj operation OP (jj only).
+    #[arg(long, value_name = "OP", conflicts_with_all = ["rev", "inspect"])]
+    op: Option<String>,
     /// Print the regions; no window.
     #[arg(long, conflicts_with_all = ["title", "readonly_left", "readonly_right"])]
     inspect: bool,
@@ -403,6 +418,9 @@ impl Cli {
             Some(Command::Stack { revset, json }) => {
                 Ok(Invocation::Batch(Batch::Stack { revset, json }))
             }
+            Some(Command::History { path, json }) => {
+                Ok(Invocation::Batch(Batch::History { path, json }))
+            }
             Some(Command::Diverge { change, dry_run, json }) => {
                 Ok(Invocation::Batch(Batch::Diverge { change, dry_run, json }))
             }
@@ -464,10 +482,14 @@ impl DiffCli {
             ((Some(path), None, None), rev, false) => Ok(Invocation::Window(Window::DiffNative {
                 path,
                 rev,
+                op: self.op,
                 diff: self.diff.over(settings.two_way()),
                 title: self.title,
             })),
             ((Some(_), Some(_), None), Some(_), _) => Err(UsageError::RevWithTwoFiles),
+            ((Some(_), Some(_), _), None, _) if self.op.is_some() => {
+                Err(UsageError::OpWithTwoFiles)
+            }
             ((Some(left), Some(right), None), None, inspect) => Ok(if inspect {
                 Invocation::Batch(Batch::DiffInspect {
                     left,
@@ -797,6 +819,7 @@ mod tests {
             Invocation::Window(Window::DiffNative {
                 path: "src/a.rs".into(),
                 rev: Some("main".to_owned()),
+                op: None,
                 diff: Settings::default().two_way(),
                 title: None,
             })
@@ -806,6 +829,7 @@ mod tests {
             Invocation::Window(Window::DiffNative {
                 path: "src/a.rs".into(),
                 rev: None,
+                op: None,
                 diff: Settings::default().two_way(),
                 title: None,
             })
@@ -815,6 +839,7 @@ mod tests {
             Invocation::Window(Window::DiffNative {
                 path: "src/a.rs".into(),
                 rev: None,
+                op: None,
                 diff: DiffOptions {
                     whitespace: diff::Whitespace::Amount,
                     ..Settings::default().two_way()
@@ -1026,6 +1051,26 @@ mod tests {
         assert_eq!((resolve.pair, resolve.in_commit()), (Some(1), Some("kx")));
         assert_eq!(clap_kind(&["resolve", "--pair", "1"]), ErrorKind::MissingRequiredArgument);
         assert_eq!(clap_kind(&["resolve", "a.txt", "--pair", "x"]), ErrorKind::ValueValidation);
+    }
+
+    #[test]
+    fn history_takes_a_path_and_diff_takes_an_operation_in_place_of_a_revision() {
+        assert_eq!(
+            ok(&["history", "a.txt", "--json"]),
+            Invocation::Batch(Batch::History { path: "a.txt".into(), json: true })
+        );
+        assert_eq!(clap_kind(&["history"]), ErrorKind::MissingRequiredArgument);
+        let Invocation::Window(Window::DiffNative { rev, op, .. }) =
+            ok(&["diff", "a.txt", "--op", "abc"])
+        else {
+            panic!("a native diff");
+        };
+        assert_eq!((rev, op.as_deref()), (None, Some("abc")));
+        assert_eq!(
+            clap_kind(&["diff", "a.txt", "--op", "abc", "--rev", "x"]),
+            ErrorKind::ArgumentConflict
+        );
+        assert_eq!(usage(&["diff", "l", "r", "--op", "abc"]), UsageError::OpWithTwoFiles);
     }
 
     #[test]

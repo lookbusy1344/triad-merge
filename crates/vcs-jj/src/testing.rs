@@ -636,6 +636,18 @@ impl Fixture {
         operations
     }
 
+    /// The full IDs of the operations, newest first, along first parents.
+    #[must_use]
+    pub fn operation_ids(&self) -> Vec<String> {
+        let mut ids = Vec::new();
+        let mut operation = Some(self.repo().operation().clone());
+        while let Some(op) = operation {
+            ids.push(jj_lib::object_id::ObjectId::hex(op.id()));
+            operation = op.parents().block_on().expect("the parents load").into_iter().next();
+        }
+        ids
+    }
+
     /// The full IDs of the working-copy commit's parents, `back` operations before the head
     /// (0: at the head), in order.
     #[must_use]

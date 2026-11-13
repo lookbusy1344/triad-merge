@@ -5,7 +5,9 @@ use std::fmt::Write as _;
 use camino::Utf8Path;
 use serde_json::json;
 use vcs::IdKind;
-use vcs_jj::{DescendantEffect, Divergence, Rewrite, StackCommit};
+use vcs_jj::{
+    DescendantEffect, Divergence, FileVersion, Rewrite, SHORT_OPERATION, StackCommit, VersionState,
+};
 
 use crate::ExitCode;
 
@@ -179,6 +181,53 @@ pub fn divergence_report(
     Ok((text, code))
 }
 
+/// `history`'s report: one line per version, newest first: the operation's short ID, its
+/// time and description, and a mark when the file is not a file there; or as JSON.
+///
+/// # Errors
+///
+/// [`serde_json::Error`] when the JSON cannot be written.
+pub fn history_report(
+    path: &Utf8Path,
+    versions: &[FileVersion],
+    json: bool,
+) -> Result<String, serde_json::Error> {
+    let state = |state| match state {
+        VersionState::File => "file",
+        VersionState::Conflict => "conflict",
+        VersionState::Absent => "absent",
+        VersionState::Other => "other",
+    };
+    if json {
+        let listed: Vec<_> = versions
+            .iter()
+            .map(|v| {
+                json!({
+                    "operation": v.operation,
+                    "time": v.time,
+                    "description": v.description,
+                    "commit": v.commit.as_str(),
+                    "state": state(v.state),
+                })
+            })
+            .collect();
+        return Ok(format!(
+            "{}\n",
+            serde_json::to_string_pretty(&json!({"path": path.as_str(), "versions": listed}))?
+        ));
+    }
+    let mut text = String::new();
+    for v in versions {
+        let short: String = v.operation.chars().take(SHORT_OPERATION).collect();
+        let mark = match v.state {
+            VersionState::File => String::new(),
+            other => format!(" ({})", state(other)),
+        };
+        line(&mut text, format_args!("{short} {} {}{mark}", v.time, v.description));
+    }
+    Ok(text)
+}
+
 /// Append `args` and a newline to `text`.
 fn line(text: &mut String, args: std::fmt::Arguments<'_>) {
     // Writing to a `String` cannot fail.
@@ -303,6 +352,37 @@ mod tests {
         assert_eq!(value["conflicted"], json!(["a.txt"]));
         assert_eq!(value["description_kept"], true);
         assert_eq!(value["descendants"][0]["before"], json!(["a.txt", "b.txt"]));
+    }
+
+    fn version(operation: &str, description: &str, state: VersionState) -> FileVersion {
+        FileVersion {
+            operation: operation.to_owned(),
+            time: "2026-11-13T10:00:00+01:00".to_owned(),
+            description: description.to_owned(),
+            commit: vcs::CommitId::new("cccc".to_owned()),
+            state,
+        }
+    }
+
+    #[test]
+    fn the_history_prints_each_version_with_its_short_operation_and_a_mark_off_a_file() {
+        let versions = [
+            version("0123456789abcdef", "snapshot working copy", VersionState::File),
+            version("fedcba9876543210", "new empty commit", VersionState::Absent),
+            version("00112233445566778899", "merge", VersionState::Conflict),
+        ];
+        assert_eq!(
+            history_report(Utf8Path::new("a.txt"), &versions, false).expect("a report"),
+            "0123456789ab 2026-11-13T10:00:00+01:00 snapshot working copy\n\
+             fedcba987654 2026-11-13T10:00:00+01:00 new empty commit (absent)\n\
+             001122334455 2026-11-13T10:00:00+01:00 merge (conflict)\n"
+        );
+        let text = history_report(Utf8Path::new("a.txt"), &versions, true).expect("a report");
+        let value: serde_json::Value = serde_json::from_str(&text).expect("JSON");
+        assert_eq!(value["path"], "a.txt");
+        assert_eq!(value["versions"][1]["operation"], "fedcba9876543210");
+        assert_eq!(value["versions"][1]["state"], "absent");
+        assert_eq!(value["versions"][2]["commit"], "cccc");
     }
 
     #[test]

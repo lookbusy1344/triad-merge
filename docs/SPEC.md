@@ -310,12 +310,14 @@ triad-merge inspect BASE LEFT RIGHT [--diff-algorithm A] [--ignore-whitespace W]
 triad-merge diff LEFT RIGHT [--diff-algorithm A] [--ignore-whitespace W] [--title T]
                 [--readonly-left] [--readonly-right]    # two-way diff window
 triad-merge diff PATH [--rev REV]                        # working copy against its parent revision
+triad-merge diff PATH --op OP                             # working copy against itself at a jj operation (§7.5.4)
 triad-merge diff --inspect LEFT RIGHT [--diff-algorithm A] [--ignore-whitespace W] [--json]   # print two-way regions; no window
 triad-merge resolve [PATH] [--headless [--commands FILE]] # resolve in the working copy (§7.4)
 triad-merge resolve PATH -r REV [--headless [--commands FILE] [--dry-run]]   # resolve in a jj commit (§7.5.1)
 triad-merge resolve PATH --pair N [-r REV] [--headless [--commands FILE] [--dry-run]]   # merge two sides of a jj conflict (§7.5.3)
 triad-merge stack [REVSET] [--json]                       # jj's conflicted commits, parents first (§7.5.1)
 triad-merge diverge CHANGE [--dry-run] [--json]           # merge a divergent jj change into one commit (§7.5.2)
+triad-merge history PATH [--json]                         # a file's versions across jj's operation log (§7.5.4)
 triad-merge install --git | --jj [--config FILE]          # register as merge and diff tool (§7.1)
 triad-merge show-config [--default] [--docs]            # print the settings in effect (§6.4)
 ```
@@ -699,6 +701,13 @@ Commands built on what only jj records (§1.2). In a git repository each exits w
 - A resolved save replaces the three terms with the result: the conflict keeps n − 1 sides, simplified as jj simplifies, and resolves when one side is left. The operation is `reduce PATH in CHANGE in triad`. A save with markers writes nothing; `--headless` then prints `PATH is unchanged: pair N has conflicts` and exits 1.
 - The report is §7.5.1's: `resolved PATH in CHANGE` when the path resolved, else `saved with conflicts PATH in CHANGE`, then the descendants.
 - Refused before anything opens: a conflict of two sides (`PATH has two sides; resolve it without --pair`), and a pair out of range (`pair N needs sides N and N + 1; the conflict has n`).
+
+#### 7.5.4 A file's history in the operation log
+
+- `history PATH` snapshots the working copy, then lists the versions of `PATH` in the working-copy commit across the operation log, newest first, one line each: the operation's short ID (12 characters), the time it ended in its own offset (RFC 3339), its description, and ` (absent)`, ` (conflict)` or ` (other)` when the path holds no file there, a conflict, or a symlink, submodule or directory. A run of operations holding the same version shows once, under its oldest operation: where the version appeared. Exit 0.
+- `--json` prints `{path, versions: [{operation, time, description, commit, state}]}`: the full operation ID, the working-copy commit's full ID and `state` one of `file`, `conflict`, `absent`, `other`.
+- jj records the working copy when a jj command runs, or when its file watcher snapshots. The history is that fine.
+- `diff PATH --op OP` compares the working-copy file with its version in the working-copy commit at operation `OP`, as jj resolves an operation (`@`, `@-`, an ID prefix). The left pane is titled `@ at operation SHORT`; its revision chip and line origins read that commit, as for `--rev`. Edits save to the working copy. `--op` takes the place of `--rev`, and applies only to `diff PATH`. An operation jj cannot resolve is refused: `no operation OP: REASON`.
 
 ## 8. Testing
 

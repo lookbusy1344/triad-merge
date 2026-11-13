@@ -798,3 +798,9 @@ Features git cannot have (spec §1.2, §7.5). `docs/PLAN-jj-native.md` holds the
 - `reduce_pair` splices the three terms out of the path's `Merge` and puts one file term in their place: `Merge::from_vec` of the result, simplified. A simplified value of one term is written resolved; any other is padded to the tree's arity, as `write_conflict` pads. The executable bit is the one the three terms agree on (`resolve_file_executable`).
 - `Rewrite::sides` is the path's number of sides after the rewrite, simplified, and `Rewrite::resolved` is about the path: a commit may hold other conflicts.
 
+### I5 A file's history in the operation log
+
+- `JjRepository::history` walks the operation log from the head with `walk_ancestors` and reads each operation's view for the workspace's working-copy commit. It reads the path's value from that commit's tree only when the commit differs from the previous operation's, so a run of operations on one commit costs one tree lookup. It loads no repository per operation: the view and the store suffice.
+- Versions compare by `MergedTreeValue`: file IDs, not bytes. A run of equal values keeps the oldest operation, since the walk is newest first and each equal value renames the run.
+- `diff --op` resolves the operation with `resolve_op_with_repo`, takes the working-copy commit from its view, and hands the commit's full ID to the `diff PATH` path as the revision. A commit ID resolves in jj whether or not the commit is still visible, so the line origins and revision chip work unchanged.
+
