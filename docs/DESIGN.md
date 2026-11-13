@@ -291,7 +291,7 @@ Tests hold the lock on a second thread behind a barrier, with no sleeps. A retir
 
 Limit: 35 s on a warm build (AGENTS.md). The gate takes 12 s after an edit to `merge-app` and 16 s after one to `merge-core`.
 
-- **Object files.** With debug info, rustc on macOS keeps every build's `*.rcgu.o` in `target/debug/deps`, and every rustc run lists that directory: 1.26 million objects cost 10 s a listing. `[profile.dev] debug = false` stops them; panics keep their locations, and `CARGO_PROFILE_DEV_DEBUG=line-tables-only` turns debug info on. An older `target/` needs `find target/debug/deps -name '*.rcgu.o' -delete` once.
+- **Object files.** With debug info, rustc on macOS keeps every build's `*.rcgu.o` beside its output under `target/debug/build`, and rustc lists the directories it links from: 1.26 million objects in one directory cost 10 s a listing. `[profile.dev] debug = false` stops them; panics keep their locations, and `CARGO_PROFILE_DEV_DEBUG=line-tables-only` turns debug info on. A `target/` built with debug info needs `find target/debug/build -name '*.rcgu.o' -delete` once.
 - **Optimised dependencies.** `[profile.dev.package."*"] opt-level = 1`: merge-app's tests take 75 s of CPU against 130 s at 0; the highlighter comparison 1.3 s against 4.6 s. A change to the setting rebuilds every dependency, 84 s cold.
 - **One integration-test binary per crate**, `tests/main.rs`.
 - **No serial tests in the quick profile.** A test with `threads-required = "num-test-threads"` holds every thread; the six highlighter comparisons cost 10 s of 20.

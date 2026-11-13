@@ -8,14 +8,15 @@ use std::sync::LazyLock;
 use merge_cli::forward::forward;
 use merge_session::ExitCode;
 
-/// Test binaries sit in `target/<profile>/deps`, examples in `target/<profile>/examples`.
+/// Examples sit in `target/<profile>/examples`; the test binary sits somewhere below
+/// `target/<profile>`, at a depth that depends on cargo's build-dir layout.
 static STAND_IN: LazyLock<PathBuf> = LazyLock::new(|| {
     let test = std::env::current_exe().expect("the test's path");
-    let profile = test
-        .parent()
-        .and_then(std::path::Path::parent)
-        .expect("a test binary sits two levels down");
-    profile.join("examples").join(format!("forward_stand_in{}", std::env::consts::EXE_SUFFIX))
+    let name = format!("forward_stand_in{}", std::env::consts::EXE_SUFFIX);
+    test.ancestors()
+        .map(|dir| dir.join("examples").join(&name))
+        .find(|path| path.is_file())
+        .expect("the stand-in example is built beside the test binary's profile directory")
 });
 const EXIT_VAR: &str = "TRIAD_STAND_IN_EXIT";
 

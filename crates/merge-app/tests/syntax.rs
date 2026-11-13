@@ -173,11 +173,7 @@ fn capture(cx: &mut TestAppContext, name: &str) -> HighlightStyle {
 
 /// The style of the run that holds byte `at`.
 fn at(highlights: &CellHighlights, at: usize) -> HighlightStyle {
-    highlights
-        .iter()
-        .find(|(range, _)| range.contains(&at))
-        .map(|&(_, style)| style)
-        .unwrap_or_default()
+    highlights.iter().find(|(range, _)| range.contains(&at)).map_or_default(|&(_, style)| style)
 }
 
 const FN: usize = 0;

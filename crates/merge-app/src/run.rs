@@ -283,7 +283,7 @@ fn origin_lookup(
 /// The working directory origins and conflicts are looked up from. Without one it is empty,
 /// which finds no repository, so the lookup falls back to the files' own directories.
 pub(crate) fn working_dir(cwd: Option<&Path>) -> PathBuf {
-    cwd.map(Path::to_path_buf).unwrap_or_default()
+    cwd.map_or_default(Path::to_path_buf)
 }
 
 /// The window settings the settings file gives, with the platform's journal directory.

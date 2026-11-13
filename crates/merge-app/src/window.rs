@@ -627,10 +627,8 @@ impl MergeWindow {
             Self::load_origins(lookup, &doc, window, cx);
         }
         Self::count_widest(&doc, settings.typography.tab_width, cx);
-        let syntax = colouring
-            .language()
-            .map(|language| Self::input_syntax(language, &doc))
-            .unwrap_or_default();
+        let syntax =
+            colouring.language().map_or_default(|language| Self::input_syntax(language, &doc));
         let (sides, bases) = (doc.inputs().sides().len(), doc.inputs().bases().len());
         let counts = status::status(&doc, settings.line_ending);
         let ruler = merge_view::ruler::marks(&doc).collect();
@@ -2460,8 +2458,7 @@ impl MergeWindow {
                             .context_menu(move |menu, _, cx| {
                                 let items = this
                                     .upgrade()
-                                    .map(|view| view.read(cx).menu_choices(cx))
-                                    .unwrap_or_default();
+                                    .map_or_default(|view| view.read(cx).menu_choices(cx));
                                 choice_menu(menu, &items)
                             })
                             .when_some(self.typography.font.clone(), gpui_kit::Styled::font_family)
