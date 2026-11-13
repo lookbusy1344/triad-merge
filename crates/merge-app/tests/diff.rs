@@ -503,6 +503,44 @@ fn closing_with_discard_waits_for_a_save_already_running(cx: &mut TestAppContext
     assert_eq!(*on_finish.borrow(), [(ExitCode::Resolved, "xa\n".to_owned())]);
 }
 
+#[gpui_kit::test(iterations = 20)]
+fn closing_with_discard_stays_open_when_the_running_save_fails(cx: &mut TestAppContext) {
+    let files = Files::new("a\n", "b\n");
+    let o = open(cx, &files);
+    type_at(cx, &o, Side::Right, 0, "x");
+    // A directory where the file was: the write's rename cannot replace it.
+    std::fs::remove_file(files.path(Side::Right)).expect("removed");
+    std::fs::create_dir(files.path(Side::Right)).expect("a directory");
+    press(cx, &o, "secondary-s");
+    press(cx, &o, "secondary-w");
+    cx.simulate_prompt_answer(DISCARD);
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt(), "an alert says why");
+    cx.simulate_prompt_answer("OK");
+    cx.run_until_parked();
+    assert_eq!(o.finished.codes(), []);
+    let expected = files.path(Side::Right).display().to_string() + MODIFIED;
+    assert_eq!(title(cx, &o.view, Side::Right), expected);
+}
+
+#[gpui_kit::test]
+fn a_save_that_succeeds_after_one_that_failed_lets_close_exit(cx: &mut TestAppContext) {
+    let files = Files::new("a\n", "b\n");
+    let o = open(cx, &files);
+    type_at(cx, &o, Side::Right, 0, "x");
+    std::fs::remove_file(files.path(Side::Right)).expect("removed");
+    std::fs::create_dir(files.path(Side::Right)).expect("a directory");
+    save(cx, &o);
+    cx.simulate_prompt_answer("OK");
+    cx.run_until_parked();
+    std::fs::remove_dir(files.path(Side::Right)).expect("the directory goes");
+    save(cx, &o);
+    press(cx, &o, "secondary-w");
+    cx.run_until_parked();
+    assert_eq!(o.finished.codes(), [ExitCode::Resolved]);
+    assert_eq!(files.read(Side::Right), "xb\n");
+}
+
 #[gpui_kit::test]
 fn closing_with_edits_and_save_writes_then_exits(cx: &mut TestAppContext) {
     let files = Files::new("a\n", "b\n");

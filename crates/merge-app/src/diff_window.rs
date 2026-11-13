@@ -341,6 +341,8 @@ pub struct DiffWindow {
     /// The latest save. Each save waits for the one before, so writes to a file land in the
     /// order asked.
     saving: Option<Task<()>>,
+    /// Whether the last save to land failed to write a side.
+    save_failed: bool,
     /// Whether the recompute task has taken its snapshot and is diffing it.
     computing: bool,
     /// Navigations asked for while the regions lag the text, in order. Each runs once the
@@ -587,6 +589,7 @@ impl DiffWindow {
             whitespace,
             recompute: None,
             saving: None,
+            save_failed: false,
             computing: false,
             waiting: Vec::new(),
             pinned: None,
@@ -1356,6 +1359,7 @@ impl DiffWindow {
                 }
             }
         }
+        self.save_failed = !all_saved;
         cx.notify();
         if all_saved && after == AfterSave::Exit {
             finish(ExitCode::Resolved, cx);
@@ -1363,15 +1367,20 @@ impl DiffWindow {
     }
 
     /// Finish with 0 once the saves running have landed: a save asked for before the close
-    /// still reaches its file.
+    /// still reaches its file. A save that fails keeps the window open, and its alert says
+    /// why.
     fn exit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(saving) = self.saving.take() else {
             finish(ExitCode::Resolved, cx);
             return;
         };
-        cx.spawn_in(window, async move |_, cx| {
+        cx.spawn_in(window, async move |this, cx| {
             saving.await;
-            ignore_closed_view(cx.update(|_, cx| finish(ExitCode::Resolved, cx)));
+            ignore_closed_view(this.update(cx, |this, cx| {
+                if !this.save_failed {
+                    finish(ExitCode::Resolved, cx);
+                }
+            }));
         })
         .detach();
     }
