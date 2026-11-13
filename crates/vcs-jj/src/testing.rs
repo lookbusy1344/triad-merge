@@ -51,6 +51,9 @@ operation.hostname = "triad"
 operation.username = "triad"
 "#;
 
+/// Files of a whole tree: each path and its bytes.
+pub type Files<'a> = &'a [(&'a str, &'a [u8])];
+
 /// A commit the fixture made, with full-length IDs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Committed {
@@ -257,6 +260,103 @@ impl Fixture {
         self.write_commit(&repo, parents, message, entries)
     }
 
+    /// Rewrite `commit` once per entry of `copies`, a description and the whole tree, in one
+    /// operation that leaves every copy visible: a divergent change, as two jj processes that
+    /// rewrite the same change at once leave it. Returns the copies in order.
+    #[expect(
+        clippy::must_use_candidate,
+        reason = "called for its effect on the repository; tests often ignore the result"
+    )]
+    pub fn diverge(&self, commit: &Committed, copies: &[(&str, Files<'_>)]) -> Vec<Committed> {
+        let repo = self.repo();
+        let original = repo.store().get_commit(&commit.id).expect("the commit");
+        let mut tx = repo.start_transaction();
+        let written = copies
+            .iter()
+            .map(|&(message, files)| {
+                let tree = tree_of(&repo, &Entry::files(files));
+                let copy = tx
+                    .repo_mut()
+                    .rewrite_commit(&original)
+                    .set_tree(tree)
+                    .set_description(message)
+                    .write()
+                    .block_on()
+                    .expect("a copy");
+                Committed::of(&copy)
+            })
+            .collect();
+        self.finish(tx, "diverge");
+        written
+    }
+
+    /// Commit `files` as the whole tree on `parents`, or on the root commit without any, under
+    /// `change`'s change ID, with no predecessor: a copy of the change that shares no history with it.
+    #[expect(
+        clippy::must_use_candidate,
+        reason = "called for its effect on the repository; tests often ignore the result"
+    )]
+    pub fn commit_as_change(
+        &self,
+        change: &Committed,
+        parents: &[&Committed],
+        message: &str,
+        files: &[(&str, &[u8])],
+    ) -> Committed {
+        let repo = self.repo();
+        let tree = tree_of(&repo, &Entry::files(files));
+        let parents = if parents.is_empty() {
+            vec![repo.store().root_commit_id().clone()]
+        } else {
+            parents.iter().map(|parent| parent.id.clone()).collect()
+        };
+        let change_id = jj_lib::backend::ChangeId::try_from_reverse_hex(&change.change_id)
+            .expect("a change ID in reverse hex");
+        let mut tx = repo.start_transaction();
+        let commit = tx
+            .repo_mut()
+            .new_commit(parents, tree)
+            .set_change_id(change_id)
+            .set_description(message)
+            .write()
+            .block_on()
+            .expect("a commit");
+        self.finish(tx, "commit");
+        Committed::of(&commit)
+    }
+
+    /// The visible commits of `commit`'s change at the head operation.
+    #[must_use]
+    pub fn visible(&self, commit: &Committed) -> Vec<Committed> {
+        let repo = self.repo();
+        let change_id = jj_lib::backend::ChangeId::try_from_reverse_hex(&commit.change_id)
+            .expect("a change ID in reverse hex");
+        let targets = repo
+            .resolve_change_id(&change_id)
+            .block_on()
+            .expect("the index reads")
+            .expect("the change has commits");
+        targets
+            .visible_with_offsets()
+            .map(|(_, id)| Committed::of(&repo.store().get_commit(id).expect("the commit")))
+            .collect()
+    }
+
+    /// `commit`'s description at the head operation.
+    #[must_use]
+    pub fn description(&self, commit: &Committed) -> String {
+        let repo = self.repo();
+        repo.store().get_commit(&commit.id).expect("the commit").description().to_owned()
+    }
+
+    /// The full IDs of `commit`'s parents.
+    #[must_use]
+    pub fn parents_of(&self, commit: &Committed) -> Vec<String> {
+        let repo = self.repo();
+        let commit = repo.store().get_commit(&commit.id).expect("the commit");
+        commit.parent_ids().iter().map(CommitId::hex).collect()
+    }
+
     fn write_commit(
         &self,
         repo: &Arc<ReadonlyRepo>,
@@ -264,28 +364,7 @@ impl Fixture {
         message: &str,
         entries: &[(&str, Entry)],
     ) -> Committed {
-        let store = repo.store();
-        let mut builder = MergedTreeBuilder::new(store.empty_merged_tree());
-        for &(path, entry) in entries {
-            let path = RepoPathBuf::from_internal_string(path).expect("a repository path");
-            let file = |mut bytes: &[u8], executable| TreeValue::File {
-                id: store.write_file(&path, &mut bytes).block_on().expect("a file"),
-                executable,
-                copy_id: CopyId::placeholder(),
-            };
-            let value = match entry {
-                Entry::File(bytes) => file(bytes, false),
-                Entry::Executable(bytes) => file(bytes, true),
-                Entry::Symlink(target) => TreeValue::Symlink(
-                    store.write_symlink(&path, target).block_on().expect("a symlink"),
-                ),
-                Entry::Submodule => TreeValue::GitSubmodule(
-                    CommitId::try_from_hex(SUBMODULE_COMMIT).expect("a commit ID in hex"),
-                ),
-            };
-            builder.set_or_remove(path, Some(value));
-        }
-        let tree = builder.write_tree().block_on().expect("a tree");
+        let tree = tree_of(repo, entries);
         let mut tx = repo.start_transaction();
         let commit = tx
             .repo_mut()
@@ -297,7 +376,35 @@ impl Fixture {
         self.finish(tx, "commit");
         Committed::of(&commit)
     }
+}
 
+/// `entries` as a whole tree in `repo`'s store.
+fn tree_of(repo: &ReadonlyRepo, entries: &[(&str, Entry)]) -> jj_lib::merged_tree::MergedTree {
+    let store = repo.store();
+    let mut builder = MergedTreeBuilder::new(store.empty_merged_tree());
+    for &(path, entry) in entries {
+        let path = RepoPathBuf::from_internal_string(path).expect("a repository path");
+        let file = |mut bytes: &[u8], executable| TreeValue::File {
+            id: store.write_file(&path, &mut bytes).block_on().expect("a file"),
+            executable,
+            copy_id: CopyId::placeholder(),
+        };
+        let value = match entry {
+            Entry::File(bytes) => file(bytes, false),
+            Entry::Executable(bytes) => file(bytes, true),
+            Entry::Symlink(target) => TreeValue::Symlink(
+                store.write_symlink(&path, target).block_on().expect("a symlink"),
+            ),
+            Entry::Submodule => TreeValue::GitSubmodule(
+                CommitId::try_from_hex(SUBMODULE_COMMIT).expect("a commit ID in hex"),
+            ),
+        };
+        builder.set_or_remove(path, Some(value));
+    }
+    builder.write_tree().block_on().expect("a tree")
+}
+
+impl Fixture {
     /// Commit on `parents` the merge of their trees, with `files` written over it, as `jj new`
     /// on several parents followed by edits does. A merge whose trees conflict holds the
     /// conflict. The working copy stays where it is.

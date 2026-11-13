@@ -6,7 +6,7 @@ use std::path::Path;
 use camino::Utf8PathBuf;
 use vcs::{RepoKind, VcsError};
 use vcs_jj::config::ConfigEnv;
-use vcs_jj::{JjRepository, StackCommit};
+use vcs_jj::{Divergence, JjRepository, StackCommit};
 
 use crate::resolve::ResolveError;
 
@@ -45,4 +45,19 @@ pub fn stack(
     jj_config: Option<ConfigEnv>,
 ) -> Result<Vec<StackCommit>, ResolveError> {
     Ok(open(cwd, jj_config, "stack")?.stack(revset)?)
+}
+
+/// Merge the copies of the divergent change `change` in the jj repository holding `cwd`
+/// (`diverge`); on a dry run, only report.
+///
+/// # Errors
+///
+/// As [`open`], and [`ResolveError::Vcs`] as [`JjRepository::diverge`] fails.
+pub fn diverge(
+    cwd: &Path,
+    change: &str,
+    dry_run: bool,
+    jj_config: Option<ConfigEnv>,
+) -> Result<Divergence, ResolveError> {
+    Ok(open(cwd, jj_config, "diverge")?.diverge(change, dry_run)?)
 }

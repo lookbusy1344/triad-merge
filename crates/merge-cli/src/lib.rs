@@ -267,6 +267,17 @@ fn batch_form(
             let (text, code) = jj_native::stack_report(&commits, json)?;
             Ok(report(stdout, &text, code))
         }
+        Batch::Diverge { change, dry_run, json } => {
+            let cwd = cwd.ok_or(CliError::NoWorkingDirectory)?;
+            let divergence = merge_session::jj_native::diverge(
+                cwd,
+                &change,
+                dry_run,
+                Some(jj_config::snapshot_config(env)),
+            )?;
+            let (text, code) = jj_native::divergence_report(&divergence, dry_run, json)?;
+            Ok(report(stdout, &text, code))
+        }
     }
 }
 

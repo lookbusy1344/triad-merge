@@ -44,6 +44,8 @@ pub enum Batch {
     Install { vcs: RepoKind, config: Option<PathBuf> },
     /// List the conflicted commits `revset` names, parents first (jj only).
     Stack { revset: Option<String>, json: bool },
+    /// Merge the visible commits of a divergent change into one (jj only).
+    Diverge { change: String, dry_run: bool, json: bool },
 }
 
 /// A command line that parses but asks for no valid form.
@@ -189,6 +191,17 @@ enum Command {
         diff: DiffArgs,
         #[command(flatten)]
         semantics: SemanticsArgs,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Merge the commits of a divergent change over their shared predecessor (jj only).
+    Diverge {
+        /// A change ID prefix, or a revision naming one of the change's commits.
+        #[arg(value_name = "CHANGE")]
+        change: String,
+        /// Report what the merge would do; write nothing.
+        #[arg(long)]
+        dry_run: bool,
         #[arg(long)]
         json: bool,
     },
@@ -382,6 +395,9 @@ impl Cli {
             Some(Command::Install(install)) => Ok(install.invocation()),
             Some(Command::Stack { revset, json }) => {
                 Ok(Invocation::Batch(Batch::Stack { revset, json }))
+            }
+            Some(Command::Diverge { change, dry_run, json }) => {
+                Ok(Invocation::Batch(Batch::Diverge { change, dry_run, json }))
             }
             Some(Command::ShowConfig { defaults, docs }) => {
                 Ok(Invocation::ShowConfig { defaults, docs })
@@ -980,6 +996,19 @@ mod tests {
             clap_kind(&["resolve", "a.txt", "--headless", "--dry-run"]),
             ErrorKind::MissingRequiredArgument
         );
+    }
+
+    #[test]
+    fn diverge_takes_a_change_and_its_flags() {
+        assert_eq!(
+            ok(&["diverge", "kx", "--dry-run", "--json"]),
+            Invocation::Batch(Batch::Diverge {
+                change: "kx".to_owned(),
+                dry_run: true,
+                json: true
+            })
+        );
+        assert_eq!(clap_kind(&["diverge"]), ErrorKind::MissingRequiredArgument);
     }
 
     #[test]

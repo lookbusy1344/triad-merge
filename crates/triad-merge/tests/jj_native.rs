@@ -47,6 +47,11 @@ fn a_jj_native_command_in_a_git_repository_says_it_needs_jj() {
         outcome(&resolve),
         (Some(ERROR), String::new(), "triad-merge: resolve -r needs a jj repository\n".to_owned())
     );
+    let diverge = triad(fixture.root(), &["diverge", "HEAD"]);
+    assert_eq!(
+        outcome(&diverge),
+        (Some(ERROR), String::new(), "triad-merge: diverge needs a jj repository\n".to_owned())
+    );
 }
 
 mod jj {
@@ -175,6 +180,55 @@ mod jj {
             )
         );
         assert_eq!(fixture.held_in(&merge, "a.txt"), Held::Conflict);
+    }
+
+    /// A change holding five lines in `a.txt`, rewritten two ways: `one` and `two`.
+    fn divergent(one: &[u8], two: &[u8]) -> (Fixture, Committed, Vec<Committed>) {
+        let fixture = Fixture::new();
+        let change = fixture.commit_on(&[], "change", &[("a.txt", b"1\n2\n3\n4\n5\n")]);
+        let copies = fixture
+            .diverge(&change, &[("change", &[("a.txt", one)]), ("change", &[("a.txt", two)])]);
+        (fixture, change, copies)
+    }
+
+    /// The report's first line when the copy at `kept` stays and the other goes.
+    fn merged_line(change: &Committed, copies: &[Committed], kept: usize) -> String {
+        format!(
+            "merged change {}: kept {}, abandoned {} over {}",
+            short(&change.change_id),
+            short(&copies[kept].commit),
+            short(&copies[1 - kept].commit),
+            short(&change.commit),
+        )
+    }
+
+    #[test]
+    fn diverge_merges_the_copies_and_names_them() {
+        let (fixture, change, copies) = divergent(b"ONE\n2\n3\n4\n5\n", b"1\n2\n3\n4\nFIVE\n");
+        let (code, out, err) = outcome(&triad(fixture.root(), &["diverge", &change.change_id]));
+        assert_eq!((code, err.as_str()), (Some(RESOLVED), ""), "{out}");
+        let first = out.lines().next().unwrap_or_default();
+        assert!(
+            [merged_line(&change, &copies, 0), merged_line(&change, &copies, 1)]
+                .contains(&first.to_owned()),
+            "{out}"
+        );
+        assert_eq!(out.lines().count(), 1, "{out}");
+        let visible = fixture.visible(&change);
+        assert_eq!(visible.len(), 1);
+        assert_eq!(
+            fixture.held_in(&visible[0], "a.txt"),
+            Held::File(b"ONE\n2\n3\n4\nFIVE\n".to_vec())
+        );
+    }
+
+    #[test]
+    fn diverge_with_a_conflict_names_it_and_exits_one() {
+        let (fixture, change, _) = divergent(b"ONE\n2\n3\n4\n5\n", b"uno\n2\n3\n4\n5\n");
+        let (code, out, _) = outcome(&triad(fixture.root(), &["diverge", &change.change_id]));
+        assert_eq!(code, Some(CONFLICTS));
+        assert_eq!(out.lines().nth(1), Some("  conflicted: a.txt"), "{out}");
+        assert_eq!(fixture.held_in(&fixture.visible(&change)[0], "a.txt"), Held::Conflict);
     }
 
     #[test]

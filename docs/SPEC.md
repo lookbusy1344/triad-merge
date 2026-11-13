@@ -314,6 +314,7 @@ triad-merge diff --inspect LEFT RIGHT [--diff-algorithm A] [--ignore-whitespace 
 triad-merge resolve [PATH] [--headless [--commands FILE]] # resolve in the working copy (§7.4)
 triad-merge resolve PATH -r REV [--headless [--commands FILE] [--dry-run]]   # resolve in a jj commit (§7.5.1)
 triad-merge stack [REVSET] [--json]                       # jj's conflicted commits, parents first (§7.5.1)
+triad-merge diverge CHANGE [--dry-run] [--json]           # merge a divergent jj change into one commit (§7.5.2)
 triad-merge install --git | --jj [--config FILE]          # register as merge and diff tool (§7.1)
 triad-merge show-config [--default] [--docs]            # print the settings in effect (§6.4)
 ```
@@ -682,6 +683,14 @@ Commands built on what only jj records (§1.2). In a git repository each exits w
 - `resolve PATH -r REV` opens the conflict at `PATH` in the one commit `REV` names, without checking it out. `REV` naming several commits is an error. A path resolved there is refused: `PATH is not conflicted`. The terms and labels come from the commit's tree, as §7.4 reads `@`'s; the markers are at least jj's length for the conflict.
 - The result saves to a temporary file. Each save writes it into the commit as `jj resolve -r` does: markers jj parses back keep their hunks conflicted, with fewer sides when the result resolves some, and content without markers resolves the path. A save that reads back as the conflict the commit holds writes nothing. Otherwise the operation is `resolve PATH in CHANGE in triad`, and `jj undo` reverts it.
 - `--headless` writes the automatic merge, with `--commands` applied, into the commit and reports: `resolved PATH in CHANGE`, `saved with conflicts PATH in CHANGE`, or `PATH in CHANGE is unchanged`, then one line per rebased descendant, parents first, with its conflicted paths before and after: `  CHANGE: a.txt, b.txt -> none`. `--dry-run` reports what the write would do, its first line starting `would`, and writes nothing. Exit 0 when the result is resolved, 1 with conflicts.
+
+#### 7.5.2 Divergent changes
+
+- `diverge CHANGE` merges the visible commits of a divergent change. `CHANGE` is a change ID prefix, or a revision naming one of the change's commits. A change with one visible commit is refused: `change CHANGE is not divergent`.
+- The copies merge in the order jj's index lists them. The first keeps its parents and its change. Each further copy merges in as jj merges trees, over the nearest predecessor it shares with the first in the evolog: the commit both were rewritten from. Copies that share no predecessor are refused: `the copies of change CHANGE share no predecessor`. A file the copies changed two ways stays conflicted in the commit, for `resolve -r`.
+- The description merges the same way: the copy that changed it wins; when both changed it differently, the first copy's stays and the report says so.
+- The further copies are rewritten into the merged commit, so their descendants and a working copy on one of them move onto it. The merged commit's predecessors are all the copies. One operation: `merge divergent change CHANGE in triad`.
+- The report: `merged change CHANGE: kept COMMIT, abandoned COMMIT over BASE`, then `  conflicted: PATHS` when the merge left conflicts, the description note, and the descendants as `resolve -r` lists them. `--dry-run` starts `would merge` and writes nothing. `--json` prints `{change_id, kept, abandoned, bases, conflicted, description_kept, written, descendants: [{change_id, before, after}]}`. Exit 0 when the merged commit is resolved, 1 with conflicts.
 
 ## 8. Testing
 

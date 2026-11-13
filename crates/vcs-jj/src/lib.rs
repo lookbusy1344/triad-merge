@@ -3,11 +3,13 @@
 //! reconciled.
 
 pub mod config;
+mod diverge;
 mod native;
 #[cfg(feature = "testing")]
 pub mod testing;
 pub mod tool_config;
 
+pub use diverge::Divergence;
 pub use native::{DescendantEffect, Rewrite, StackCommit, StackPath};
 
 use std::collections::HashMap;
@@ -66,6 +68,13 @@ const SECONDS_PER_MINUTE: i32 = 60;
 pub enum JjError {
     #[error("the repository has {0} concurrent operations; any jj command reconciles them")]
     ConcurrentOperations(usize),
+    /// `diverge` on a change with one visible commit.
+    #[error("change {0} is not divergent")]
+    NotDivergent(String),
+    /// `diverge` on copies with no predecessor in common, such as two commits given the
+    /// same change ID by hand.
+    #[error("the copies of change {0} share no predecessor")]
+    NoCommonPredecessor(String),
 }
 
 /// A jj workspace, read through jj-lib at its head operation.

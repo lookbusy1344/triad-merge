@@ -784,3 +784,11 @@ Features git cannot have (spec §1.2, §7.5). `docs/PLAN-jj-native.md` holds the
 - `resolve -r` loads through `resolve::load_at_commit`: the commit's conflict, decoded as `load` decodes `@`'s, with jj's marker length from `merge_core::jj::marker_length`. The `Record` carries the commit, the marker length and a temporary file whose directory lives as long as the record. Both front ends save through `Record`, so the window and `--headless` write the same way.
 - The write parses the result back with jj-lib's `update_from_content` over the path's file IDs. A result of fewer sides than the commit's tree is padded with cancelling pairs, since `MergedTreeBuilder` takes a conflict only at the tree's arity; `write_tree` simplifies them away. A resolved file takes the executable bit the terms agree on (`resolve_file_executable`); a conflict keeps each term's bit.
 
+### I3 Divergent changes
+
+- `JjRepository::diverge` reads the copies from the change's index entry, in its order, before the snapshot to check that they are mutable and again inside the rewrite. A change ID prefix resolves through `resolve_change_id_prefix`: jj's revset resolver refuses a divergent change ID, so the prefix goes there first, and a revision is the fallback.
+- The base is found in the evolog: `walk_predecessors` yields each copy's predecessors nearest first, and the first of the second copy's that the first copy also has, neither copy itself, is the base. It reads the operation log, so it finds the original of a copy jj rewrote in any earlier operation.
+- `MergedTree::merge` takes the first copy, the base and the other copy, each with its conflict label, so a conflict names the commits. More copies fold in one at a time, each over its own base with the first.
+- `set_rewritten_commit` maps each further copy to the merged commit. `rebase_descendants` then moves their children onto it and moves a working copy that sat on one; `record_abandoned_commit` would move the children onto the copy's parents instead.
+- The description rule is the three-way rule over whole strings: a line merge of free text would leave markers in a description.
+

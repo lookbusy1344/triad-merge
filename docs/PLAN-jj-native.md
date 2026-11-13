@@ -32,6 +32,8 @@ Done: spec §7.5.1, `DESIGN.md` §I1–§I2.
 
 ## I3 Step 2: divergent changes
 
+Done: spec §7.5.2, `DESIGN.md` §I3.
+
 - `triad-merge diverge CHANGE [--dry-run] [--json]` merges the visible commits of a divergent change. The base is their nearest common predecessor in the evolog: the commit each copy was rewritten from. The tree is jj's merge of the two trees over the base's; a conflicting file stays conflicted in the commit, for `resolve -r`.
 - The first commit, in the order the change's index lists them, keeps its parents and change. The others are abandoned; their descendants rebase onto the merged commit.
 - Descriptions merge three ways over the base's. When both copies change the description differently, the first copy's wins and the report says so.
