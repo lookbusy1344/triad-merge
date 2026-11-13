@@ -111,6 +111,8 @@ The bundle gives the Dock triad's icon; a bare binary shows the generic one. To 
 
 ## Use
 
+[`docs/USER-GUIDE.md`](docs/USER-GUIDE.md) covers every command, jj first, then git: resolving in the working copy and in any commit, diffing against older revisions and earlier snapshots, and the jj-only commands. The sections below are the short form.
+
 ### From jj
 
 ```sh
@@ -235,6 +237,7 @@ On macOS, Gatekeeper scans each newly linked binary on its first run, so the fir
 
 | File | Contents |
 |---|---|
+| `docs/USER-GUIDE.md` | How to use triad, jj then git |
 | `docs/SPEC.md` | Behaviour |
 | `docs/PLAN.md` | Status, next steps and open work |
 | `docs/DESIGN.md` | Design notes: reasons, decisions, measurements |

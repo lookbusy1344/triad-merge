@@ -2,7 +2,7 @@
 
 triad is a three-way merge and two-way diff tool. The binary is `triad-merge`. `docs/SPEC.md` sets the behaviour. `docs/PLAN.md` holds the status, the next steps and the open work. `docs/DESIGN.md` holds the design of what is built: reasons, decisions and current measurements. Cite both by part and section: `DESIGN.md` §B5.8 is part B, section 5.8.
 
-When a task finishes, update `PLAN.md` §1–§3 in the same change. §1 states where the project stands, never a log of changes: jj holds the history. When a change alters a design, a decision or a measured figure, update `DESIGN.md` in the same change: replace what it says, never append a dated entry. When a change finds the spec wrong or incomplete, update `docs/SPEC.md` in the same change.
+When a task finishes, update `PLAN.md` §1–§3 in the same change. §1 states where the project stands, never a log of changes: jj holds the history. When a change alters a design, a decision or a measured figure, update `DESIGN.md` in the same change: replace what it says, never append a dated entry. When a change finds the spec wrong or incomplete, update `docs/SPEC.md` in the same change. When a change adds or alters a command, update `docs/USER-GUIDE.md`, which shows users each command, jj first, in the same change.
 
 Docs describe the current design in the present tense. No before-and-after stories; a measurement is a present fact.
 
@@ -157,5 +157,5 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | `fixtures/demo` | A 980-line Rust merge with 20 conflicts, from `script/gen-demo`. |
 | `images` | Mark, logo and app icon as SVG, PNG, ICNS and ICO, from `script/gen-images.swift`. |
 | `packaging/linux` | Desktop entry of the Linux packages. |
-| `docs` | Spec, plan, design notes, the diff editor plan (`PLAN-diff-editor.md`, part H), UI style, JSON schema, release checklist, gpui-kit and gix issues, `scroll-debugging.md`, `mark-colours.md`: the mark's colour schemes, geometry and the shapes not taken, and `residue.md`: the files triad and its scripts leave behind. |
+| `docs` | User guide (`USER-GUIDE.md`), spec, plan, design notes, the diff editor plan (`PLAN-diff-editor.md`, part H), UI style, JSON schema, release checklist, gpui-kit and gix issues, `scroll-debugging.md`, `mark-colours.md`: the mark's colour schemes, geometry and the shapes not taken, and `residue.md`: the files triad and its scripts leave behind. |
 | `vendor/gpui-base` | `gpui-base` 0.8.1 with triad's editor patch, through `[patch.crates-io]`. Outside the workspace: no workspace lints, `cargo fmt` or `jj fix`. See its `PATCHES.md`. |
