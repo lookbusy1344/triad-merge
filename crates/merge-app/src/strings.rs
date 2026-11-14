@@ -2,6 +2,7 @@
 
 use gpui_kit::SharedString;
 use merge_core::diff::{Comparison, LineEndingRule, Whitespace};
+use merge_core::diff2::Side;
 use merge_core::index::RegionIx;
 use merge_core::merge3::{HunkLevel, Semantics};
 use merge_core::text::{Encoding, LineEnding};
@@ -16,6 +17,7 @@ use vcs::{ChangeInfo, IdKind, RepoKind};
 
 use crate::choice::{Choice, MenuAction};
 use crate::open_dialog::{Mode, Slot};
+use crate::pick_list::Row;
 use crate::toolbar::Tool;
 
 pub(crate) const APP_NAME: &str = "triad";
@@ -186,23 +188,33 @@ const NO_PATHS: &str = "none";
 /// The stack window's title (spec §7.5.1).
 pub(crate) const STACK_TITLE: &str = "Conflicted commits";
 pub(crate) const STACK_EMPTY: &str = "No conflicted commits.";
+pub(crate) const HISTORY_EMPTY: &str = "No versions.";
 /// The stack and history windows' button that lists again.
 pub(crate) const REFRESH: &str = "Refresh";
 pub(crate) const STACK_PREVIEW: &str = "Preview Save";
 pub(crate) const PREVIEW_RUNNING: &str = "Working out what the save would do…";
 
+/// A change's IDs, as the lists print them: change, then commit.
+fn change_ids(change: &ChangeInfo) -> SharedString {
+    format!("{} {}", change.id(IdKind::Change), change.id(IdKind::Commit)).into()
+}
+
 /// A listed commit's heading, as `stack --list` prints it: its change, commit and summary.
-pub(crate) fn stack_commit(commit: &StackCommit) -> String {
-    let ids = format!("{} {}", commit.change.id(IdKind::Change), commit.change.id(IdKind::Commit));
-    match &commit.change.summary {
-        Some(summary) => format!("{ids} {summary}"),
-        None => ids,
+pub(crate) fn stack_commit(commit: &StackCommit) -> Row {
+    Row {
+        lead: Some(change_ids(&commit.change)),
+        text: commit.change.summary.clone().unwrap_or_default().into(),
+        trail: None,
     }
 }
 
 /// A listed path, marked when a parent holds a conflict there too.
-pub(crate) fn stack_path(path: &StackPath) -> String {
-    if path.inherited { format!("{} (inherited)", path.path) } else { path.path.to_string() }
+pub(crate) fn stack_path(path: &StackPath) -> Row {
+    Row {
+        lead: None,
+        text: path.path.to_string().into(),
+        trail: path.inherited.then_some(SharedString::new_static("(inherited)")),
+    }
 }
 
 /// What the stack window says after the merge window on `path` in `change` finished with
@@ -242,15 +254,19 @@ pub(crate) fn history_title(path: &str) -> String {
 
 /// A listed version, as `history --list` prints it: the operation where it appeared, the
 /// time, the description, and a mark when the path holds no file there.
-pub(crate) fn history_version(version: &FileVersion) -> String {
+pub(crate) fn history_version(version: &FileVersion) -> Row {
     let short: String = version.operation.chars().take(SHORT_OPERATION).collect();
     let mark = match version.state {
-        VersionState::File => "",
-        VersionState::Conflict => " (conflict)",
-        VersionState::Absent => " (absent)",
-        VersionState::Other => " (other)",
+        VersionState::File => None,
+        VersionState::Conflict => Some("(conflict)"),
+        VersionState::Absent => Some("(absent)"),
+        VersionState::Other => Some("(other)"),
     };
-    format!("{short} {} {}{mark}", version.time, version.description)
+    Row {
+        lead: Some(format!("{short} {}", version.time).into()),
+        text: version.description.clone().into(),
+        trail: mark.map(SharedString::new_static),
+    }
 }
 
 /// The absorb window's title (spec §7.5.6).
@@ -261,45 +277,53 @@ pub(crate) const ABSORB_APPLY: &str = "Apply";
 const ABSORB_KEEP: &str = "Working copy";
 
 /// A listed hunk, as `absorb --list` prints it, with the commit it goes into now.
-pub(crate) fn absorb_hunk(hunk: &AbsorbHunk, target: Option<&ChangeInfo>) -> String {
+pub(crate) fn absorb_hunk(hunk: &AbsorbHunk, target: Option<&ChangeInfo>) -> Row {
     let goes = target.map_or_else(
         || "stays".to_owned(),
         |t| format!("-> {} {}", t.id(IdKind::Change), t.id(IdKind::Commit)),
     );
     let (left, right) = (&hunk.left, &hunk.right);
-    format!(
-        "{} {} left {}..{} right {}..{} {goes}",
-        hunk.number, hunk.path, left.start, left.end, right.start, right.end
-    )
+    Row {
+        lead: Some(hunk.number.to_string().into()),
+        text: hunk.path.to_string().into(),
+        trail: Some(
+            format!(
+                "left {}..{} right {}..{} {goes}",
+                left.start, left.end, right.start, right.end
+            )
+            .into(),
+        ),
+    }
 }
 
-/// A hunk's lines: those it replaces, each after `- `, then those it holds, after `+ `.
-pub(crate) fn absorb_lines(hunk: &AbsorbHunk) -> String {
-    let marked = |bytes: &[u8], mark: &'static str| {
+/// A hunk's lines, each with the side it is on: those it replaces, each after `- `, on the
+/// left, then those it holds, after `+ `, on the right.
+pub(crate) fn absorb_lines(hunk: &AbsorbHunk) -> Vec<(Side, String)> {
+    let marked = |bytes: &[u8], side: Side, mark: &'static str| {
         String::from_utf8_lossy(bytes)
             .lines()
-            .map(|line| format!("{mark}{line}"))
+            .map(|line| (side, format!("{mark}{line}")))
             .collect::<Vec<_>>()
     };
-    [marked(&hunk.before, "- "), marked(&hunk.after, "+ ")].concat().join("\n")
+    [marked(&hunk.before, Side::Left, "- "), marked(&hunk.after, Side::Right, "+ ")].concat()
 }
 
 /// A commit a hunk may go into, with the number of hunks going there when any.
-pub(crate) fn absorb_destination(change: &ChangeInfo, hunks: usize) -> String {
-    let mut label = format!("{} {}", change.id(IdKind::Change), change.id(IdKind::Commit));
-    if let Some(summary) = &change.summary {
-        label = format!("{label} {summary}");
+pub(crate) fn absorb_destination(change: &ChangeInfo, hunks: usize) -> Row {
+    Row {
+        lead: Some(change_ids(change)),
+        text: change.summary.clone().unwrap_or_default().into(),
+        trail: with_hunks(hunks),
     }
-    with_hunks(label, hunks)
 }
 
 /// The working copy as a choice, with the number of hunks kept when any.
-pub(crate) fn absorb_keep(hunks: usize) -> String {
-    with_hunks(ABSORB_KEEP.to_owned(), hunks)
+pub(crate) fn absorb_keep(hunks: usize) -> Row {
+    Row { lead: None, text: ABSORB_KEEP.into(), trail: with_hunks(hunks) }
 }
 
-fn with_hunks(label: String, hunks: usize) -> String {
-    if hunks == 0 { label } else { format!("{label} · {}", count(hunks, "hunk", "hunks")) }
+fn with_hunks(hunks: usize) -> Option<SharedString> {
+    (hunks > 0).then(|| format!("· {}", count(hunks, "hunk", "hunks")).into())
 }
 
 /// What Apply did: the hunks moved and the commits they went into.
@@ -757,23 +781,43 @@ mod tests {
     #[test]
     fn a_hunk_reads_as_absorb_lists_it_with_its_lines() {
         let kept = hunk(1, None);
-        assert_eq!(absorb_hunk(&kept, None), "1 a.txt left 2..3 right 2..4 stays");
+        assert_eq!(absorb_hunk(&kept, None).label(), "1 a.txt left 2..3 right 2..4 stays");
+        assert_eq!(
+            absorb_hunk(&kept, None),
+            Row {
+                lead: Some("1".into()),
+                text: "a.txt".into(),
+                trail: Some("left 2..3 right 2..4 stays".into())
+            }
+        );
         let target = change("kkkk", None);
         assert_eq!(
-            absorb_hunk(&kept, Some(&target)),
+            absorb_hunk(&kept, Some(&target)).label(),
             "1 a.txt left 2..3 right 2..4 -> kkkk c-kkkk"
         );
-        assert_eq!(absorb_lines(&kept), "- c\n+ C\n+ D");
+        let line = |side, text: &str| (side, text.to_owned());
+        assert_eq!(
+            absorb_lines(&kept),
+            [line(Side::Left, "- c"), line(Side::Right, "+ C"), line(Side::Right, "+ D")]
+        );
     }
 
     #[test]
     fn a_choice_counts_the_hunks_going_there() {
         let target = change("kkkk", Some("fix the parser"));
-        assert_eq!(absorb_destination(&target, 0), "kkkk c-kkkk fix the parser");
-        assert_eq!(absorb_destination(&target, 1), "kkkk c-kkkk fix the parser · 1 hunk");
-        assert_eq!(absorb_destination(&change("mmmm", None), 2), "mmmm c-mmmm · 2 hunks");
-        assert_eq!(absorb_keep(0), "Working copy");
-        assert_eq!(absorb_keep(3), "Working copy · 3 hunks");
+        assert_eq!(absorb_destination(&target, 0).label(), "kkkk c-kkkk fix the parser");
+        assert_eq!(absorb_destination(&target, 1).label(), "kkkk c-kkkk fix the parser · 1 hunk");
+        assert_eq!(absorb_destination(&change("mmmm", None), 2).label(), "mmmm c-mmmm · 2 hunks");
+        assert_eq!(absorb_keep(0).label(), "Working copy");
+        assert_eq!(absorb_keep(3).label(), "Working copy · 3 hunks");
+        assert_eq!(
+            absorb_destination(&target, 1),
+            Row {
+                lead: Some("kkkk c-kkkk".into()),
+                text: "fix the parser".into(),
+                trail: Some("· 1 hunk".into())
+            }
+        );
         assert_eq!(absorb_skipped("b.bin", "not a file"), "Skipped b.bin: not a file");
     }
 
@@ -824,7 +868,7 @@ mod tests {
 
     #[test]
     fn a_version_reads_as_history_lists_it() {
-        let line = |state| history_version(&version(state));
+        let line = |state| history_version(&version(state)).label();
         assert_eq!(
             line(VersionState::File),
             "0123456789ab 2026-11-13T10:00:00+01:00 snapshot working copy"
@@ -840,6 +884,14 @@ mod tests {
         assert_eq!(
             line(VersionState::Other),
             "0123456789ab 2026-11-13T10:00:00+01:00 snapshot working copy (other)"
+        );
+        assert_eq!(
+            history_version(&version(VersionState::Absent)),
+            Row {
+                lead: Some("0123456789ab 2026-11-13T10:00:00+01:00".into()),
+                text: "snapshot working copy".into(),
+                trail: Some("(absent)".into())
+            }
         );
         assert_eq!(history_title("src/a.txt"), "History of src/a.txt");
     }
@@ -1091,16 +1143,18 @@ mod tests {
             },
             paths: Vec::new(),
         };
-        assert_eq!(stack_commit(&commit), "qpvuntsm 1a2b3c4d merge");
+        assert_eq!(stack_commit(&commit).label(), "qpvuntsm 1a2b3c4d merge");
+        assert_eq!(stack_commit(&commit).text, "merge");
         commit.change.summary = None;
-        assert_eq!(stack_commit(&commit), "qpvuntsm 1a2b3c4d");
+        assert_eq!(stack_commit(&commit).label(), "qpvuntsm 1a2b3c4d");
     }
 
     #[test]
     fn an_inherited_path_is_marked() {
         let path = |inherited| StackPath { path: "src/a.rs".into(), inherited };
-        assert_eq!(stack_path(&path(false)), "src/a.rs");
-        assert_eq!(stack_path(&path(true)), "src/a.rs (inherited)");
+        assert_eq!(stack_path(&path(false)).label(), "src/a.rs");
+        assert_eq!(stack_path(&path(true)).label(), "src/a.rs (inherited)");
+        assert_eq!(stack_path(&path(true)).text, "src/a.rs");
     }
 
     #[test]

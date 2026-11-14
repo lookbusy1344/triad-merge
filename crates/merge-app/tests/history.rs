@@ -6,12 +6,15 @@ mod jj {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use crate::common::act;
+    use crate::common::tool_window::{EDGE, LIST_TOP, ROW_GAP, ROW_HEIGHT};
+    use crate::common::{act, bounds, is_selected, viewport_width};
     use gpui_kit::base::Root;
     use gpui_kit::test::TestWindowExt;
     use gpui_kit::{AnyWindowHandle, App, Entity, TestAppContext, VisualTestContext};
     use merge_app::diff_window::{DiffWindow, copy_id};
-    use merge_app::history_window::{self, HistoryStart, HistoryWindow, version_id};
+    use merge_app::history_window::{
+        self, EMPTY_ID, HistoryStart, HistoryWindow, REFRESH_ID, version_id,
+    };
     use merge_app::{ExitCode, WindowSettings};
     use merge_core::diff2::Side;
     use merge_core::index::RegionIx;
@@ -226,5 +229,47 @@ mod jj {
         cx.run_until_parked();
         assert_eq!(started.exits.borrow().as_slice(), []);
         assert_eq!(diff_windows(cx).len(), 1);
+    }
+
+    #[gpui_kit::test]
+    fn the_window_keeps_the_tool_window_edge_and_gaps(cx: &mut TestAppContext) {
+        let (fixture, _) = edited();
+        let started = start(cx, &fixture, None);
+        let refresh = bounds(cx, started.window, REFRESH_ID);
+        assert_eq!((refresh.left(), refresh.top()), (EDGE, EDGE));
+        let first = bounds(cx, started.window, version_id(0));
+        assert_eq!(first.top(), refresh.bottom() + ROW_GAP);
+    }
+
+    #[gpui_kit::test]
+    fn each_version_is_a_row_across_the_list(cx: &mut TestAppContext) {
+        let (fixture, _) = edited();
+        let started = start(cx, &fixture, None);
+        let width = viewport_width(cx, started.window) - EDGE - EDGE;
+        let [first, second] = [0, 1].map(|v| bounds(cx, started.window, version_id(v)));
+        assert_eq!((first.size.width, first.size.height), (width, ROW_HEIGHT));
+        assert_eq!(second.top(), first.bottom());
+    }
+
+    #[gpui_kit::test]
+    fn down_and_enter_open_the_selected_version(cx: &mut TestAppContext) {
+        let (fixture, [first, _]) = edited();
+        let started = start(cx, &fixture, None);
+        press(cx, started.window, "down");
+        press(cx, started.window, "down");
+        assert!(is_selected(cx, started.window, version_id(1)));
+        assert!(!is_selected(cx, started.window, version_id(0)));
+        press(cx, started.window, "enter");
+        let [(_, view)] = &diff_windows(cx)[..] else { panic!("one diff window") };
+        let title = format!("@ at operation {}", &first[..SHORT]);
+        assert_eq!(side(cx, view, Side::Left), ("1\n".to_owned(), title));
+    }
+
+    #[gpui_kit::test]
+    fn an_empty_list_says_so_where_the_list_starts(cx: &mut TestAppContext) {
+        let (fixture, _) = edited();
+        let started = start(cx, &fixture, Some(0));
+        assert_eq!(listed(cx, &started.view), []);
+        assert_eq!(bounds(cx, started.window, EMPTY_ID).top(), LIST_TOP);
     }
 }

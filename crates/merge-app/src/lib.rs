@@ -21,6 +21,7 @@ pub mod origin_column;
 mod own_writes;
 mod pane_scroll;
 mod patches;
+mod pick_list;
 mod prompt_view;
 mod recorder;
 mod recovery;
@@ -231,6 +232,7 @@ pub fn init_with(bindings: &KeyBindings, cx: &mut App) {
     syntax::register_queries();
     keys::bind(bindings, cx);
     split_menu::init(cx);
+    pick_list::init(cx);
     cx.on_action(|_: &OpenSettings, cx| settings_file::open(cx));
     cx.on_action(|_: &About, cx| about::show(cx));
     cx.set_menus(menus(ViewTicks::default()));

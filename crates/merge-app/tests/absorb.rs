@@ -5,13 +5,15 @@ mod jj {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use crate::common::act;
+    use crate::common::tool_window::{EDGE, ROW_GAP, ROW_HEIGHT};
+    use crate::common::{act, bounds, is_selected};
     use gpui_kit::test::TestWindowExt;
     use gpui_kit::{AnyWindowHandle, App, Entity, TestAppContext, VisualTestContext};
-    use merge_app::ExitCode;
     use merge_app::absorb_window::{
         self, APPLY_ID, AbsorbStart, AbsorbWindow, KEEP_ID, REFRESH_ID, destination_id, hunk_id,
+        lines_id,
     };
+    use merge_app::{ExitCode, Typography, WindowSettings};
     use vcs_jj::config::ConfigEnv;
     use vcs_jj::testing::{Committed, Fixture, Held};
 
@@ -42,12 +44,18 @@ mod jj {
     /// The absorb window at `fixture`'s root over every path, recording the codes it exits
     /// with, once its list has landed.
     fn start(cx: &mut TestAppContext, fixture: &Fixture) -> Started {
+        start_with(cx, fixture, WindowSettings::default())
+    }
+
+    /// [`start`] with `settings`.
+    fn start_with(cx: &mut TestAppContext, fixture: &Fixture, settings: WindowSettings) -> Started {
         let exits = Rc::new(RefCell::new(Vec::new()));
         let record = Rc::clone(&exits);
         let start = AbsorbStart {
             cwd: fixture.root().as_std_path().to_owned(),
             paths: Vec::new(),
             into: None,
+            settings,
             jj_config: Some(ConfigEnv::default()),
         };
         let (window, view) = cx.update(|cx| {
@@ -58,6 +66,11 @@ mod jj {
         });
         cx.run_until_parked();
         Started { window, view, exits }
+    }
+
+    fn press(cx: &mut TestAppContext, window: AnyWindowHandle, key: &str) {
+        act(cx, window, |window, cx| window.press(key, cx));
+        cx.run_until_parked();
     }
 
     fn click(cx: &mut TestAppContext, window: AnyWindowHandle, id: gpui_kit::ElementId) {
@@ -210,5 +223,83 @@ mod jj {
         cx.run_until_parked();
         assert_eq!(started.exits.borrow().as_slice(), [ExitCode::Resolved]);
         assert_eq!(fixture.held_in(&fixture.latest(&one), "a.txt"), Held::File(A_BEFORE.to_vec()));
+    }
+
+    #[gpui_kit::test]
+    fn the_window_keeps_the_tool_window_edge_and_gaps(cx: &mut TestAppContext) {
+        let (fixture, ..) = stack();
+        let started = start(cx, &fixture);
+        let refresh = bounds(cx, started.window, REFRESH_ID);
+        assert_eq!((refresh.left(), refresh.top()), (EDGE, EDGE));
+        let hunk = bounds(cx, started.window, hunk_id(0));
+        assert_eq!(hunk.top(), refresh.bottom() + ROW_GAP);
+        assert_eq!(hunk.size.height, ROW_HEIGHT);
+        let commit = bounds(cx, started.window, destination_id(0));
+        assert_eq!(commit.top(), hunk.top());
+        assert_eq!(commit.size.height, ROW_HEIGHT);
+    }
+
+    #[gpui_kit::test]
+    fn a_hunks_lines_take_the_editor_line_height(cx: &mut TestAppContext) {
+        let (fixture, ..) = stack();
+        let typography = Typography { size: gpui_kit::px(20.), ..Typography::default() };
+        let line = typography.line_height();
+        let settings = WindowSettings { typography, ..WindowSettings::default() };
+        let started = start_with(cx, &fixture, settings);
+        // `- 3` and `+ THREE`.
+        assert_eq!(bounds(cx, started.window, lines_id(0)).size.height, line + line);
+    }
+
+    #[gpui_kit::test]
+    fn the_keys_select_a_hunk_and_send_it_to_a_commit(cx: &mut TestAppContext) {
+        let (fixture, one, two) = stack();
+        let started = start(cx, &fixture);
+        press(cx, started.window, "down");
+        assert_eq!(selected(cx, &started.view), Some(0));
+        assert!(is_selected(cx, started.window, hunk_id(0)));
+        // Enter moves to the commits, on the one the hunk goes into: `one`, the second.
+        press(cx, started.window, "enter");
+        assert!(is_selected(cx, started.window, destination_id(1)));
+        press(cx, started.window, "up");
+        assert!(is_selected(cx, started.window, destination_id(0)));
+        press(cx, started.window, "enter");
+        assert_eq!(targets(cx, &started.view)[0].1.as_deref(), Some(two.commit.as_str()));
+        assert_eq!(selected(cx, &started.view), Some(1));
+        assert!(!is_selected(cx, started.window, destination_id(0)));
+        // Back in the hunks: Up selects the first hunk again.
+        press(cx, started.window, "up");
+        assert_eq!(selected(cx, &started.view), Some(0));
+        assert_eq!(targets(cx, &started.view)[1].1.as_deref(), Some(two.commit.as_str()));
+        assert_ne!(one.commit, two.commit);
+    }
+
+    #[gpui_kit::test]
+    fn down_past_the_commits_reaches_the_working_copy(cx: &mut TestAppContext) {
+        let (fixture, ..) = stack();
+        let started = start(cx, &fixture);
+        press(cx, started.window, "down");
+        press(cx, started.window, "enter");
+        for _ in 0..3 {
+            press(cx, started.window, "down");
+        }
+        assert!(is_selected(cx, started.window, KEEP_ID));
+        press(cx, started.window, "enter");
+        assert_eq!(targets(cx, &started.view)[0].1, None);
+    }
+
+    #[gpui_kit::test]
+    fn escape_leaves_the_commits_and_changes_nothing(cx: &mut TestAppContext) {
+        let (fixture, ..) = stack();
+        let started = start(cx, &fixture);
+        let before = targets(cx, &started.view);
+        press(cx, started.window, "down");
+        press(cx, started.window, "enter");
+        press(cx, started.window, "up");
+        press(cx, started.window, "escape");
+        assert!(!is_selected(cx, started.window, destination_id(0)));
+        // The keys move through the hunks again.
+        press(cx, started.window, "down");
+        assert_eq!(selected(cx, &started.view), Some(1));
+        assert_eq!(targets(cx, &started.view), before);
     }
 }

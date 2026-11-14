@@ -8,13 +8,13 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::button::Button;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, h_flex, v_flex};
 use gpui_kit::{
-    AnyWindowHandle, App, AppContext as _, ClickEvent, Context, ElementId, Entity,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, SharedString,
-    StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, WindowBounds,
-    WindowOptions, div,
+    AnyWindowHandle, App, AppContext as _, ClickEvent, Context, ElementId, Entity, FocusHandle,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, ScrollHandle,
+    SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window,
+    WindowBounds, WindowOptions, div,
 };
 use merge_session::jj_config::ConfigEnv;
 use merge_session::jj_native::{FileHistory, FileVersion};
@@ -23,12 +23,14 @@ use merge_session::resolve::ResolveError;
 use vcs::RepoKind;
 
 use crate::diff_window::{self, DiffFile, DiffLookup, DiffSettings};
+use crate::pick_list::{self, Activate, SelectNext, SelectPrevious, State};
 use crate::window::WindowSettings;
 use crate::{ExitCode, Finish, ignore_closed_view, strings};
 
 /// The element ids tests look up.
 pub const REFRESH_ID: &str = "history-refresh";
 pub const NOTE_ID: &str = "history-note";
+pub const EMPTY_ID: &str = "history-empty";
 const LIST_ID: &str = "history-list";
 
 /// The id of the button that opens version `version`, counted from 0, newest first.
@@ -81,6 +83,10 @@ pub struct HistoryWindow {
     loading: bool,
     /// The last error.
     note: Option<SharedString>,
+    /// The list's focus, which takes the list keys.
+    focus: FocusHandle,
+    scroll: ScrollHandle,
+    selected: Option<usize>,
 }
 
 /// Open the history window on `start`, take over the app's [`Finish`] so each diff window it
@@ -105,6 +111,8 @@ pub fn start(
     let exit: Rc<ExitFn> = Rc::new(exit);
     let (window, view) = gpui_kit::open_window(options, cx, |window, cx| {
         window.set_window_title(&strings::history_title(&start.path.to_string_lossy()));
+        let focus = cx.focus_handle();
+        focus.focus(window, cx);
         let view = cx.new(|_| HistoryWindow {
             start,
             exit,
@@ -114,6 +122,9 @@ pub fn start(
             open: None,
             loading: false,
             note: None,
+            focus,
+            scroll: ScrollHandle::new(),
+            selected: None,
         });
         let this = view.downgrade();
         window.on_window_should_close(cx, move |_, cx| {
@@ -175,6 +186,8 @@ impl HistoryWindow {
             Ok(FileHistory { root, path, versions }) => {
                 self.file = Some(root.join(path).into_std_path_buf());
                 self.versions = versions;
+                let len = self.versions.len();
+                self.selected = self.selected.filter(|&ix| ix < len);
             }
             Err(error) => self.note = Some(error.to_string().into()),
         }
@@ -270,20 +283,38 @@ impl HistoryWindow {
         true
     }
 
-    fn render_versions(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        v_flex().gap_1().children(self.versions.iter().enumerate().map(|(v, version)| {
-            let label = strings::history_version(version);
-            h_flex().child(
-                Button::new(version_id(v))
-                    .ghost()
-                    .small()
-                    .label(label.clone())
-                    .accessibility_label(label)
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        this.open_version(v, cx);
-                    })),
+    fn step(&mut self, step: fn(Option<usize>, usize) -> Option<usize>, cx: &mut Context<Self>) {
+        self.selected = step(self.selected, self.versions.len());
+        if let Some(ix) = self.selected {
+            self.scroll.scroll_to_item(ix);
+        }
+        cx.notify();
+    }
+
+    fn select_next(&mut self, _: &SelectNext, _: &mut Window, cx: &mut Context<Self>) {
+        self.step(pick_list::next, cx);
+    }
+
+    fn select_previous(&mut self, _: &SelectPrevious, _: &mut Window, cx: &mut Context<Self>) {
+        self.step(pick_list::previous, cx);
+    }
+
+    fn activate(&mut self, _: &Activate, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some(version) = self.selected {
+            self.open_version(version, cx);
+        }
+    }
+
+    fn render_versions(&self, cx: &mut Context<Self>) -> impl Iterator<Item = impl IntoElement> {
+        self.versions.iter().enumerate().map(|(v, version)| {
+            let state = State { selected: self.selected == Some(v), ..State::default() };
+            pick_list::row(version_id(v), &strings::history_version(version), state, cx).on_click(
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.selected = Some(v);
+                    this.open_version(v, cx);
+                }),
             )
-        }))
+        })
     }
 }
 
@@ -302,10 +333,12 @@ impl Render for HistoryWindow {
                 .whitespace_normal()
                 .child(note)
         });
+        let empty = (self.versions.is_empty() && self.file.is_some() && !self.listing)
+            .then(|| pick_list::note(EMPTY_ID, strings::HISTORY_EMPTY, muted));
         v_flex()
             .size_full()
-            .p_4()
-            .gap_4()
+            .p_3()
+            .gap_2()
             .bg(background)
             .text_color(foreground)
             .text_xs()
@@ -319,6 +352,14 @@ impl Render for HistoryWindow {
                 ),
             )
             .children(note)
-            .child(div().id(LIST_ID).flex_1().overflow_y_scroll().child(self.render_versions(cx)))
+            .child(
+                pick_list::list(LIST_ID, &self.focus, &self.scroll)
+                    .flex_1()
+                    .on_action(cx.listener(Self::select_next))
+                    .on_action(cx.listener(Self::select_previous))
+                    .on_action(cx.listener(Self::activate))
+                    .children(self.render_versions(cx))
+                    .children(empty),
+            )
     }
 }

@@ -8,13 +8,13 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::button::Button;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, h_flex, v_flex};
 use gpui_kit::{
-    AnyWindowHandle, App, AppContext as _, ClickEvent, Context, ElementId, Entity,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, SharedString,
-    StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, WeakEntity, Window,
-    WindowBounds, WindowOptions, div,
+    AnyElement, AnyWindowHandle, App, AppContext as _, ClickEvent, Context, ElementId, Entity,
+    FocusHandle, InteractiveElement as _, IntoElement, ParentElement as _, Render, Role,
+    ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _,
+    WeakEntity, Window, WindowBounds, WindowOptions, div,
 };
 use merge_core::document::MergeOptions;
 use merge_session::jj_config::ConfigEnv;
@@ -23,6 +23,7 @@ use merge_session::repository::RunRepository;
 use merge_session::resolve::{Opened, ResolveError};
 use vcs::IdKind;
 
+use crate::pick_list::{self, Activate, SelectNext, SelectPrevious, State};
 use crate::window::{MergeWindow, WindowSettings};
 use crate::{ExitCode, Finish, ignore_closed_view, strings};
 
@@ -31,7 +32,14 @@ pub const PREVIEW_ID: &str = "stack-preview";
 pub const REFRESH_ID: &str = "stack-refresh";
 pub const NOTE_ID: &str = "stack-note";
 pub const EFFECTS_ID: &str = "stack-effects";
+pub const EMPTY_ID: &str = "stack-empty";
 const LIST_ID: &str = "stack-list";
+
+/// The id of commit `commit`'s heading, counted from 0.
+#[must_use]
+pub fn commit_id(commit: usize) -> ElementId {
+    ElementId::Name(format!("stack-commit-{commit}").into())
+}
 
 /// The id of the button that opens path `path` of commit `commit`, both counted from 0.
 #[must_use]
@@ -89,6 +97,11 @@ pub struct StackWindow {
     preview: Option<Preview>,
     /// What happened last: a save, or an error.
     note: Option<SharedString>,
+    /// The list's focus, which takes the list keys.
+    focus: FocusHandle,
+    scroll: ScrollHandle,
+    /// The selected path, counted from 0 across the commits.
+    selected: Option<usize>,
 }
 
 /// Open the stack window on `start`, take over the app's [`Finish`] so each merge window it
@@ -113,6 +126,8 @@ pub fn start(
     let exit: Rc<ExitFn> = Rc::new(exit);
     let (window, view) = gpui_kit::open_window(options, cx, |window, cx| {
         window.set_window_title(strings::STACK_TITLE);
+        let focus = cx.focus_handle();
+        focus.focus(window, cx);
         let view = cx.new(|_| StackWindow {
             start,
             exit,
@@ -123,6 +138,9 @@ pub fn start(
             loading: false,
             preview: None,
             note: None,
+            focus,
+            scroll: ScrollHandle::new(),
+            selected: None,
         });
         let this = view.downgrade();
         window.on_window_should_close(cx, move |_, cx| {
@@ -193,6 +211,8 @@ impl StackWindow {
             Ok(Stacked { root, commits }) => {
                 self.root = Some(root.into_std_path_buf());
                 self.commits = commits;
+                let len = self.path_count();
+                self.selected = self.selected.filter(|&ix| ix < len);
             }
             Err(error) => self.note = Some(error.to_string().into()),
         }
@@ -329,33 +349,68 @@ impl StackWindow {
         true
     }
 
-    fn render_commits(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        v_flex().gap_2().children(self.commits.iter().enumerate().map(|(c, commit)| {
-            let heading = strings::stack_commit(commit);
-            v_flex()
-                .gap_1()
-                .child(
-                    div()
-                        .id(ElementId::Name(format!("stack-commit-{c}").into()))
-                        .test_support()
-                        .role(Role::Heading)
-                        .aria_label(heading.clone())
-                        .child(heading),
-                )
-                .children(commit.paths.iter().enumerate().map(|(p, path)| {
-                    let label = strings::stack_path(path);
-                    h_flex().pl_4().child(
-                        Button::new(path_id(c, p))
-                            .ghost()
-                            .small()
-                            .label(label.clone())
-                            .accessibility_label(label)
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                                this.open_path(c, p, cx);
-                            })),
-                    )
-                }))
-        }))
+    /// Every listed path as its commit and its place there, in list order.
+    fn paths(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
+        self.commits
+            .iter()
+            .enumerate()
+            .flat_map(|(c, commit)| (0..commit.paths.len()).map(move |p| (c, p)))
+    }
+
+    fn path_count(&self) -> usize {
+        self.commits.iter().map(|commit| commit.paths.len()).sum()
+    }
+
+    /// Select the path `step` gives, and scroll its row into view: the list's children are
+    /// each commit's heading, then its paths.
+    fn step(&mut self, step: fn(Option<usize>, usize) -> Option<usize>, cx: &mut Context<Self>) {
+        self.selected = step(self.selected, self.path_count());
+        if let Some(ix) = self.selected
+            && let Some((c, _)) = self.paths().nth(ix)
+        {
+            // Each commit's heading comes before its paths.
+            self.scroll.scroll_to_item(ix + c + 1);
+        }
+        cx.notify();
+    }
+
+    fn select_next(&mut self, _: &SelectNext, _: &mut Window, cx: &mut Context<Self>) {
+        self.step(pick_list::next, cx);
+    }
+
+    fn select_previous(&mut self, _: &SelectPrevious, _: &mut Window, cx: &mut Context<Self>) {
+        self.step(pick_list::previous, cx);
+    }
+
+    fn activate(&mut self, _: &Activate, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some((c, p)) = self.selected.and_then(|ix| self.paths().nth(ix)) {
+            self.open_path(c, p, cx);
+        }
+    }
+
+    fn render_commits(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let mut ix = 0;
+        let mut rows = Vec::with_capacity(self.commits.len() + self.path_count());
+        for (c, commit) in self.commits.iter().enumerate() {
+            rows.push(
+                pick_list::heading(commit_id(c), &strings::stack_commit(commit), cx)
+                    .into_any_element(),
+            );
+            for (p, path) in commit.paths.iter().enumerate() {
+                let (row, selected) = (ix, self.selected == Some(ix));
+                let state = State { selected, indented: true, ..State::default() };
+                rows.push(
+                    pick_list::row(path_id(c, p), &strings::stack_path(path), state, cx)
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                            this.selected = Some(row);
+                            this.open_path(c, p, cx);
+                        }))
+                        .into_any_element(),
+                );
+                ix += 1;
+            }
+        }
+        rows
     }
 
     fn render_preview(&self) -> Option<impl IntoElement + use<>> {
@@ -382,7 +437,7 @@ impl Render for StackWindow {
         let (background, foreground, muted) =
             (theme.background, theme.foreground, theme.muted_foreground);
         let empty = (self.commits.is_empty() && !self.listing)
-            .then(|| div().text_color(muted).child(strings::STACK_EMPTY));
+            .then(|| pick_list::note(EMPTY_ID, strings::STACK_EMPTY, muted));
         let note = self.note.clone().map(|note| {
             div()
                 .id(NOTE_ID)
@@ -395,8 +450,8 @@ impl Render for StackWindow {
         let can_preview = self.open.is_some();
         v_flex()
             .size_full()
-            .p_4()
-            .gap_4()
+            .p_3()
+            .gap_2()
             .bg(background)
             .text_color(foreground)
             .text_xs()
@@ -421,8 +476,15 @@ impl Render for StackWindow {
                     ),
             )
             .children(note)
-            .child(div().id(LIST_ID).flex_1().overflow_y_scroll().child(self.render_commits(cx)))
-            .children(empty)
+            .child(
+                pick_list::list(LIST_ID, &self.focus, &self.scroll)
+                    .flex_1()
+                    .on_action(cx.listener(Self::select_next))
+                    .on_action(cx.listener(Self::select_previous))
+                    .on_action(cx.listener(Self::activate))
+                    .children(self.render_commits(cx))
+                    .children(empty),
+            )
             .children(self.render_preview())
     }
 }

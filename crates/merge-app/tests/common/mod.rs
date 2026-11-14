@@ -91,3 +91,53 @@ impl Finished {
         self.0.borrow().clone()
     }
 }
+
+/// Sizes of a tool window, from `docs/STYLE.md`: the edge, the gap between rows, a small
+/// control and a list row.
+pub mod tool_window {
+    use gpui_kit::{Pixels, px};
+
+    pub const EDGE: Pixels = px(12.);
+    pub const ROW_GAP: Pixels = px(8.);
+    pub const CONTROL_HEIGHT: Pixels = px(24.);
+    pub const ROW_HEIGHT: Pixels = px(24.);
+    /// Where a tool window's list starts: under the edge, its row of buttons and a gap.
+    pub const LIST_TOP: Pixels = px(12. + 24. + 8.);
+}
+
+/// The bounds of `id` in `window`'s last frame.
+pub fn bounds(
+    cx: &mut TestAppContext,
+    window: AnyWindowHandle,
+    id: impl Into<gpui_kit::ElementId>,
+) -> gpui_kit::Bounds<gpui_kit::Pixels> {
+    let id = id.into();
+    let mut found = gpui_kit::Bounds::default();
+    act(cx, window, |window, cx| {
+        window.render_frame(cx);
+        found = window.find(id).bounds();
+    });
+    found
+}
+
+/// The width of `window`'s content.
+pub fn viewport_width(cx: &mut TestAppContext, window: AnyWindowHandle) -> gpui_kit::Pixels {
+    let mut width = gpui_kit::Pixels::ZERO;
+    act(cx, window, |window, _| width = window.viewport_size().width);
+    width
+}
+
+/// Whether `id` shows as selected in `window`'s last frame.
+pub fn is_selected(
+    cx: &mut TestAppContext,
+    window: AnyWindowHandle,
+    id: impl Into<gpui_kit::ElementId>,
+) -> bool {
+    let id = id.into();
+    let mut selected = false;
+    act(cx, window, |window, cx| {
+        window.render_frame(cx);
+        selected = window.find(id).selected() == Some(true);
+    });
+    selected
+}

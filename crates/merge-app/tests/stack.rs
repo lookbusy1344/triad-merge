@@ -5,11 +5,15 @@ mod jj {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use crate::common::act;
+    use crate::common::tool_window::{EDGE, LIST_TOP, ROW_GAP, ROW_HEIGHT};
+    use crate::common::{act, bounds, is_selected, viewport_width};
     use gpui_kit::base::Root;
     use gpui_kit::test::TestWindowExt;
     use gpui_kit::{AnyWindowHandle, App, Entity, TestAppContext, VisualTestContext};
-    use merge_app::stack_window::{self, PREVIEW_ID, Preview, StackStart, StackWindow, path_id};
+    use merge_app::stack_window::{
+        self, EMPTY_ID, PREVIEW_ID, Preview, REFRESH_ID, StackStart, StackWindow, commit_id,
+        path_id,
+    };
     use merge_app::{ExitCode, MergeWindow, WindowSettings};
     use merge_core::document::MergeOptions;
     use vcs_jj::config::ConfigEnv;
@@ -45,11 +49,16 @@ mod jj {
     /// The stack window at `fixture`'s root on the default revset, recording the codes it
     /// exits with, once its list has landed.
     fn start(cx: &mut TestAppContext, fixture: &Fixture) -> Started {
+        start_on(cx, fixture, None)
+    }
+
+    /// [`start`] on `revset`.
+    fn start_on(cx: &mut TestAppContext, fixture: &Fixture, revset: Option<&str>) -> Started {
         let exits = Rc::new(RefCell::new(Vec::new()));
         let record = Rc::clone(&exits);
         let start = StackStart {
             cwd: fixture.root().as_std_path().to_owned(),
-            revset: None,
+            revset: revset.map(str::to_owned),
             options: MergeOptions::default(),
             settings: WindowSettings::default(),
             jj_config: Some(ConfigEnv::default()),
@@ -249,5 +258,81 @@ mod jj {
         cx.run_until_parked();
         assert_eq!(started.exits.borrow().as_slice(), []);
         assert_eq!(merge_windows(cx).len(), 1);
+    }
+
+    #[gpui_kit::test]
+    fn the_window_keeps_the_tool_window_edge_and_gaps(cx: &mut TestAppContext) {
+        let (fixture, ..) = stacked();
+        let started = start(cx, &fixture);
+        let refresh = bounds(cx, started.window, REFRESH_ID);
+        assert_eq!((refresh.left(), refresh.top()), (EDGE, EDGE));
+        let heading = bounds(cx, started.window, commit_id(0));
+        assert_eq!(heading.top(), refresh.bottom() + ROW_GAP);
+    }
+
+    #[gpui_kit::test]
+    fn headings_and_paths_are_rows_across_the_list(cx: &mut TestAppContext) {
+        let (fixture, ..) = stacked();
+        let started = start(cx, &fixture);
+        let width = viewport_width(cx, started.window) - EDGE - EDGE;
+        let heading = bounds(cx, started.window, commit_id(0));
+        let path = bounds(cx, started.window, path_id(0, 0));
+        assert_eq!((heading.size.width, heading.size.height), (width, ROW_HEIGHT));
+        assert_eq!((path.size.width, path.size.height), (width, ROW_HEIGHT));
+        assert_eq!(path.left(), EDGE);
+        assert_eq!(path.top(), heading.bottom());
+    }
+
+    #[gpui_kit::test]
+    fn down_selects_the_first_path_and_enter_opens_it(cx: &mut TestAppContext) {
+        let (fixture, ..) = stacked();
+        let started = start(cx, &fixture);
+        assert!(!is_selected(cx, started.window, path_id(0, 0)));
+        press(cx, started.window, "down");
+        assert!(is_selected(cx, started.window, path_id(0, 0)));
+        assert_eq!(merge_windows(cx), []);
+        press(cx, started.window, "enter");
+        assert_eq!(merge_windows(cx).len(), 1);
+    }
+
+    #[gpui_kit::test]
+    fn the_selection_moves_across_commits_and_stops_at_either_end(cx: &mut TestAppContext) {
+        let (fixture, ..) = stacked();
+        let started = start(cx, &fixture);
+        // Three commits of one path each.
+        for _ in 0..4 {
+            press(cx, started.window, "down");
+        }
+        assert!(is_selected(cx, started.window, path_id(2, 0)));
+        assert!(!is_selected(cx, started.window, path_id(0, 0)));
+        for _ in 0..4 {
+            press(cx, started.window, "up");
+        }
+        assert!(is_selected(cx, started.window, path_id(0, 0)));
+        assert!(!is_selected(cx, started.window, path_id(2, 0)));
+    }
+
+    #[gpui_kit::test]
+    fn up_with_nothing_selected_selects_the_last_path(cx: &mut TestAppContext) {
+        let (fixture, ..) = stacked();
+        let started = start(cx, &fixture);
+        press(cx, started.window, "up");
+        assert!(is_selected(cx, started.window, path_id(2, 0)));
+    }
+
+    #[gpui_kit::test]
+    fn enter_with_nothing_selected_opens_nothing(cx: &mut TestAppContext) {
+        let (fixture, ..) = stacked();
+        let started = start(cx, &fixture);
+        press(cx, started.window, "enter");
+        assert_eq!(merge_windows(cx), []);
+    }
+
+    #[gpui_kit::test]
+    fn an_empty_list_says_so_where_the_list_starts(cx: &mut TestAppContext) {
+        let (fixture, ..) = stacked();
+        let started = start_on(cx, &fixture, Some("root()"));
+        assert_eq!(listed(cx, &started.view), []);
+        assert_eq!(bounds(cx, started.window, EMPTY_ID).top(), LIST_TOP);
     }
 }

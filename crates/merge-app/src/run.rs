@@ -118,7 +118,7 @@ pub fn run(form: WindowForm) -> ExitCode {
         Window::DiffEvolog(evolog) => run_evolog_diff(evolog, base, errors, bindings),
         Window::History(history) => run_history(history, &repo, base, bindings),
         Window::Stack(stack) => run_stack(stack, &repo, base, bindings),
-        Window::Absorb(absorb) => run_absorb(absorb, &repo, working_dir(dir), bindings),
+        Window::Absorb(absorb) => run_absorb(absorb, &repo, working_dir(dir), base, bindings),
     }
 }
 
@@ -143,17 +143,20 @@ fn run_history(
     })
 }
 
-/// The absorb window on `absorb`'s paths and `--into`, from the working directory `cwd`.
+/// The absorb window on `absorb`'s paths and `--into`, from the working directory `cwd`,
+/// whose hunks' lines take `settings`' font and colours.
 fn run_absorb(
     absorb: Absorb,
     repo: &RunRepository,
     cwd: PathBuf,
+    settings: WindowSettings,
     bindings: KeyBindings,
 ) -> ExitCode {
     let start = AbsorbStart {
         cwd,
         paths: absorb.paths,
         into: absorb.into,
+        settings,
         jj_config: repo.jj_config().cloned(),
     };
     launch(bindings, move |cx| {
