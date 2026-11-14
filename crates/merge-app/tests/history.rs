@@ -1,4 +1,4 @@
-//! Headless tests of the history window (spec §7.5.3): a file's versions across jj's
+//! Headless tests of the history window (spec §7.5.2): a file's versions across jj's
 //! operation log, each opening in the diff window against the working-copy file, a refresh
 //! after the diff window closes, and the exit code.
 

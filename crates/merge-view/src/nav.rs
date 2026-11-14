@@ -101,7 +101,7 @@ pub struct Sides {
 }
 
 /// The sides conflict `region` keeps once jj drops each pair of a side and a base that hold
-/// the same lines there (spec §7.5.2). `None` in a three-way merge, where every conflict has
+/// the same lines there (spec §7.5.1). `None` in a three-way merge, where every conflict has
 /// two, and for a region that is not a conflict or is past the last.
 #[must_use]
 pub fn conflict_sides(doc: &MergeDocument, region: RegionIx) -> Option<Sides> {

@@ -303,7 +303,6 @@ enum Command {
 }
 
 #[derive(Debug, clap::Args)]
-#[command(group = clap::ArgGroup::new("in_commit").args(["revision", "pair"]).multiple(true))]
 struct ResolveCli {
     #[arg(value_name = "PATH")]
     path: Option<PathBuf>,
@@ -317,13 +316,8 @@ struct ResolveCli {
     /// Resolve PATH in the commit REV names, without checking it out (jj only).
     #[arg(short = 'r', long = "revision", value_name = "REV", requires = "path")]
     revision: Option<String>,
-    /// Merge sides N and N + 1 of a conflict of more than two sides over the base between
-    /// them; a resolved save replaces the three with the result (jj only).
-    #[arg(long, value_name = "N", requires = "path")]
-    pair: Option<usize>,
-    /// With --headless and --revision or --pair: report what the save would do; write
-    /// nothing.
-    #[arg(long, requires_all = ["headless", "in_commit"])]
+    /// With --headless and --revision: report what the save would do; write nothing.
+    #[arg(long, requires_all = ["headless", "revision"])]
     dry_run: bool,
     #[command(flatten)]
     diff: DiffArgs,
@@ -352,7 +346,6 @@ impl ResolveCli {
             flags,
             semantics: self.semantics.flags(),
             rev: self.revision,
-            pair: self.pair,
             dry_run: self.dry_run,
         };
         Ok(if self.headless {
@@ -1045,7 +1038,6 @@ mod tests {
                 flags: DiffFlags::default(),
                 semantics: SemanticsFlags::default(),
                 rev: None,
-                pair: None,
                 dry_run: false,
             }))
         );
@@ -1084,7 +1076,6 @@ mod tests {
                     hunk_level: Some(HunkLevel::Word),
                 },
                 rev: None,
-                pair: None,
                 dry_run: false,
             }))
         );
@@ -1113,27 +1104,6 @@ mod tests {
             clap_kind(&["resolve", "a.txt", "--headless", "--dry-run"]),
             ErrorKind::MissingRequiredArgument
         );
-    }
-
-    #[test]
-    fn a_pair_needs_a_path_and_reads_the_working_copy_without_a_revision() {
-        let Invocation::Batch(Batch::Resolve(resolve)) =
-            ok(&["resolve", "a.txt", "--pair", "2", "--headless", "--dry-run"])
-        else {
-            panic!("a headless resolve");
-        };
-        assert_eq!(
-            (resolve.pair, resolve.in_commit(), resolve.dry_run),
-            (Some(2), Some("@"), true)
-        );
-        let Invocation::Window(Window::Resolve(resolve)) =
-            ok(&["resolve", "a.txt", "--pair", "1", "-r", "kx"])
-        else {
-            panic!("a resolve window");
-        };
-        assert_eq!((resolve.pair, resolve.in_commit()), (Some(1), Some("kx")));
-        assert_eq!(clap_kind(&["resolve", "--pair", "1"]), ErrorKind::MissingRequiredArgument);
-        assert_eq!(clap_kind(&["resolve", "a.txt", "--pair", "x"]), ErrorKind::ValueValidation);
     }
 
     #[test]

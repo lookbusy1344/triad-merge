@@ -997,23 +997,26 @@ mod jj {
         paths.iter().map(|p| p.as_str()).collect()
     }
 
-    fn at_commit(fixture: &vcs_jj::testing::Fixture, rev: &str, pair: Option<usize>) -> Loaded {
+    fn at_commit(fixture: &vcs_jj::testing::Fixture, rev: &str) -> Loaded {
         resolve::load_at_commit(
             fixture.root().as_std_path(),
             rev,
             Path::new("a.txt"),
-            pair,
             Some(ConfigEnv::default()),
         )
         .expect("it loads")
     }
 
+    fn commit(record: &resolve::Record) -> &resolve::InCommit {
+        record.in_commit().expect("a commit's conflict")
+    }
+
     #[test]
     fn a_preview_reports_a_resolution_and_writes_nothing() {
         let (fixture, merge) = stacked();
-        let record = at_commit(&fixture, &merge.commit, None).record.expect("a commit's record");
+        let record = at_commit(&fixture, &merge.commit).record.expect("a commit's record");
         let operations = fixture.operation_count();
-        let rewrite = record.preview(RIGHT, true).expect("previewed").expect("a commit's rewrite");
+        let rewrite = commit(&record).preview(RIGHT).expect("previewed");
         assert!(rewrite.resolved);
         assert!(!rewrite.written);
         // The child and the working copy on it inherit the conflict, and lose it with it.
@@ -1028,7 +1031,7 @@ mod jj {
         fixture: &vcs_jj::testing::Fixture,
         merge: &vcs_jj::testing::Committed,
     ) -> (Vec<u8>, resolve::Record) {
-        let opened = at_commit(fixture, &merge.commit, None)
+        let opened = at_commit(fixture, &merge.commit)
             .open(merge_core::document::MergeOptions::default())
             .expect("labels fit");
         let markers = EncodedOutput::new(&opened.doc, merge_core::document::OutputEnding::Keep);
@@ -1043,8 +1046,7 @@ mod jj {
         let text = String::from_utf8(markers).expect("UTF-8");
         let edited = text.replacen("\nleft\n", "\nleft edited\n", 1);
         assert_ne!(edited, text, "the left side is in the markers");
-        let rewrite =
-            record.preview(edited.as_bytes(), false).expect("previewed").expect("a rewrite");
+        let rewrite = commit(&record).preview(edited.as_bytes()).expect("previewed");
         assert!(!rewrite.resolved);
         assert_eq!(
             effects(&rewrite),
@@ -1056,7 +1058,7 @@ mod jj {
     fn a_preview_of_the_held_conflicts_markers_rebases_nothing() {
         let (fixture, merge) = stacked();
         let (markers, record) = markers_in(&fixture, &merge);
-        let rewrite = record.preview(&markers, false).expect("previewed").expect("a rewrite");
+        let rewrite = commit(&record).preview(&markers).expect("previewed");
         // The markers read back as the conflict the commit holds: the write changes nothing
         // (spec §7.5.1).
         assert!(!rewrite.resolved);
@@ -1066,14 +1068,14 @@ mod jj {
     #[test]
     fn a_preview_reads_the_content_given_not_the_saved_file() {
         let (fixture, merge) = stacked();
-        let opened = at_commit(&fixture, &merge.commit, None)
+        let opened = at_commit(&fixture, &merge.commit)
             .open(merge_core::document::MergeOptions::default())
             .expect("labels fit");
         // The saved file holds the conflict as the commit does: a write of it changes nothing.
         let markers = EncodedOutput::new(&opened.doc, merge_core::document::OutputEnding::Keep);
         std::fs::write(&opened.file, markers.bytes()).expect("written");
         let record = opened.record.expect("a commit's record");
-        let rewrite = record.preview(LEFT, true).expect("previewed").expect("a rewrite");
+        let rewrite = commit(&record).preview(LEFT).expect("previewed");
         assert!(rewrite.resolved);
         assert_eq!(effects(&rewrite), [(vec!["a.txt"], vec![]), (vec!["a.txt"], vec![])]);
     }
@@ -1083,6 +1085,6 @@ mod jj {
         let fixture = jj_on_disk(LEFT, RIGHT);
         let loaded = load(fixture.root().as_std_path(), Path::new("a.txt")).expect("it loads");
         let record = loaded.record.expect("jj holds the conflict");
-        assert_eq!(record.preview(RIGHT, true).expect("nothing to preview"), None);
+        assert!(record.in_commit().is_none());
     }
 }

@@ -1,4 +1,4 @@
-//! The history window (spec §7.5.3): a file's versions in the working-copy commit across
+//! The history window (spec §7.5.2): a file's versions in the working-copy commit across
 //! jj's operation log, newest first. A version opens in the diff window as
 //! `diff PATH --op OP` opens it: the version on the left, the working-copy file on the
 //! right, where lines copied back save. One diff window at a time; closing it lists the

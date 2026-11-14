@@ -54,7 +54,6 @@ triad 0.1 is an early beta. It is tested on macOS 27 on Apple Silicon. [Releases
 These rest on what jj records, so git has no form of them. In a git repository each exits 3. [`docs/USER-GUIDE.md`](docs/USER-GUIDE.md) §3 shows each command.
 
 - **Conflicts in any commit.** `triad-merge stack` lists the conflicted mutable commits, parents first, in a window; open any conflicted path from there. `resolve PATH -r REV` resolves in that commit without `jj edit`. A save rewrites the commit and rebases its descendants, and triad asks first when that changes a descendant's conflicts.
-- **Two sides at a time.** `resolve PATH --pair N` merges sides N and N + 1 of a conflict of more than two sides as an ordinary three-way merge. Each resolved save leaves one side fewer.
 - **File history from the operation log.** `triad-merge history PATH` lists each version of a file across jj's working-copy snapshots. Open one against the working copy and copy back what you overwrote. `diff PATH --op OP` opens one version directly.
 - **Absorb.** `triad-merge absorb` sends each working-copy hunk to the commit that last changed its lines. A window shows where each hunk goes and lets you send it elsewhere or keep it. Unlike `jj absorb`, triad keeps a hunk that would conflict in its target and says why.
 

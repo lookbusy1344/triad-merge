@@ -46,7 +46,7 @@ Both generators write under `fixtures/oracle/`. A changed corpus is a change in 
 | Corpus | Command | Needs | Caught when stale |
 |---|---|---|---|
 | `jj-corpus.jsonl`: jj-core's file merges under each `same_change` × `hunk_level` (`DESIGN.md` §B5.2) | `script/gen-jj-oracle` | nothing | Yes. Its first line names the jj-core release; `merge-core`'s `jj_oracle` tests compare it with `Cargo.lock`. |
-| `jj-cli-aliases.json`, `jj-cli-absorb.json`, `jj-cli-resolve.json`: jj's default revset aliases, `jj absorb` and `jj resolve -r` (`DESIGN.md` §I6) | `script/gen-jj-cli-oracle` | the release's `jj` and git on `PATH` | Yes. `vcs-jj`'s `oracle` tests compare each file's version with `Cargo.lock`. |
+| `jj-cli-aliases.json`, `jj-cli-absorb.json`, `jj-cli-resolve.json`: jj's default revset aliases, `jj absorb` and `jj resolve -r` (`DESIGN.md` §I5) | `script/gen-jj-cli-oracle` | the release's `jj` and git on `PATH` | Yes. `vcs-jj`'s `oracle` tests compare each file's version with `Cargo.lock`. |
 
 Then run the oracle tests:
 
@@ -56,7 +56,7 @@ cargo nextest run --workspace -E 'package(merge-core) & test(jj_oracle)'
 cargo nextest run --workspace -E 'package(vcs-jj) & test(/^oracle::/)'
 ```
 
-A failure in the aliases test means jj's default `revset-aliases` changed: copy jj's set into `vcs_jj::native::DEFAULT_ALIASES`. A failure in the absorb or resolve tests means triad's rewrite departs from jj's: fix triad, never the corpus. The departures triad keeps on purpose are listed in `DESIGN.md` §I6 and applied by the tests.
+A failure in the aliases test means jj's default `revset-aliases` changed: copy jj's set into `vcs_jj::native::DEFAULT_ALIASES`. A failure in the absorb or resolve tests means triad's rewrite departs from jj's: fix triad, never the corpus. The departures triad keeps on purpose are listed in `DESIGN.md` §I5 and applied by the tests.
 
 ## 5. Check the jj-cli behaviour triad copies
 
@@ -69,7 +69,7 @@ No oracle covers these. Read jj's source at the new release tag against each, an
 | `vcs-jj/src/testing.rs` (`ToolOutcome`), `merge-session/src/semantics.rs`, `merge-session/src/origin.rs` | `cli/src/merge_tools/external.rs` | How `jj resolve` reads a merge tool's exit code and output, `$name` interpolation, the diff tool's temporary directory layout. |
 | `vcs-jj/src/tool_config.rs`, `merge-cli`'s `install` | `cli/src/config/merge_tools.toml`, jj's config docs | The `merge-tools.*` keys and their values. |
 | `vcs-jj/src/native.rs` (`JjRepository::rewrite`) | `cli/src/cli_util.rs` (the end of a transaction) | Snapshot, rebase of descendants, git `HEAD` and ref export, working-copy checkout, abandon of an emptied working copy. The resolve and absorb oracles cover the result. Read it anyway for steps they do not reach. |
-| `vcs-jj/src/absorb.rs` | jj-lib's `absorb.rs` and `annotate.rs`, `cli/src/commands/absorb.rs` | The hunk split and the annotation rule (`DESIGN.md` §I5). |
+| `vcs-jj/src/absorb.rs` | jj-lib's `absorb.rs` and `annotate.rs`, `cli/src/commands/absorb.rs` | The hunk split and the annotation rule (`DESIGN.md` §I4). |
 | `merge-core` (`jj` mode, `DESIGN.md` §B2–§B5) | jj-core's `merge.rs`, `files.rs`, `diff.rs` and `conflicts.rs` | Conflict marker styles and lengths, the parse of markers back into a conflict, `merge.same-change`, `merge.hunk-level`. |
 
 To list the places:
@@ -87,7 +87,7 @@ rg -n '(jj-lib|jj-core|jj-cli|jj absorb|jj) [0-9]+\.[0-9]+' docs crates/*/README
 ```
 
 - `docs/PLAN.md` §1: the dependencies line.
-- `docs/DESIGN.md`: §A3 (the gix pin), §A7.1 (`vcs-jj`), §B2 (the heading), §I5 (`jj absorb`'s behaviour), and every section whose design changed.
+- `docs/DESIGN.md`: §A3 (the gix pin), §A7.1 (`vcs-jj`), §B2 (the heading), §I4 (`jj absorb`'s behaviour), and every section whose design changed.
 - `docs/SPEC.md` when jj's behaviour, and so triad's, changed.
 - `docs/USER-GUIDE.md` when a command's output or behaviour changed.
 - `crates/vcs-jj/README.md` and `crates/vcs-git/README.md`.

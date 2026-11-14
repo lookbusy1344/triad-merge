@@ -126,7 +126,7 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | A disposable jj repository with conflicts in two Rust files | `script/gen-conflict-repo [dest]` (`fixtures/conflict-repo/README.md`) |
 | Build `target/release/triad.app`; `dist` builds `target/dist/triad.app` with fat LTO, as a release does | `script/macos-app [dist]` |
 | Upgrade jj: pins, oracles, the jj-cli behaviour triad copies, docs and checks | `docs/jj-upgrade.md` |
-| Write the oracles from jj's CLI after a jj-lib upgrade; the `jj` on `PATH` must be the pinned release (`DESIGN.md` §I6) | `script/gen-jj-cli-oracle` |
+| Write the oracles from jj's CLI after a jj-lib upgrade; the `jj` on `PATH` must be the pinned release (`DESIGN.md` §I5) | `script/gen-jj-cli-oracle` |
 | Benchmarks against spec §9 | `cargo bench -p merge-core --bench merge`, `cargo bench -p merge-syntax --bench boundaries`, `cargo bench -p merge-cli --bench memory`, then `script/check-bench` |
 | Cost of `resolve`'s repository steps on 10k and 100k files (`DESIGN.md` §D5.5) | `cargo bench -p merge-cli --bench resolve` |
 | Measure the running app against spec §9 (`DESIGN.md` §A6.7) | `script/measure-app [refresh-hz] [output-extension]` (`rs` adds Rust highlighting); one mode: `TRIAD_MEASURE=<open\|scroll-rows\|scroll-result\|type\|pick\|syntax> target/release/triad-merge target/measure/<lines>/{base,left,right}.txt target/measure/<lines>/out.txt` |

@@ -1,5 +1,5 @@
 //! A file's versions in the working-copy commit across the operation log (`history`,
-//! `diff --op`, `DESIGN.md` §I4).
+//! `diff --op`, `DESIGN.md` §I3).
 
 use camino::Utf8Path;
 use futures::StreamExt as _;

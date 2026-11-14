@@ -10,7 +10,7 @@ use merge_core::merge3::Inputs;
 
 use crate::ending::{self, Journal, Next, UnresolvedSave};
 use crate::recovery::Recovery;
-use crate::resolve::Record;
+use crate::resolve::{InCommit, Record};
 use crate::{EncodedOutput, ExitCode, SaveError};
 use vcs::VcsError;
 use vcs_jj::Rewrite;
@@ -114,19 +114,17 @@ impl SaveJob {
 /// session.
 pub struct PreviewJob {
     encoded: EncodedOutput,
-    record: Record,
+    commit: InCommit,
 }
 
 impl PreviewJob {
-    /// What the save would do, written nothing: the rewrite's report. None when the save
-    /// would write nothing, as a pair's result with conflicts does.
+    /// What the save would do, written nothing: the rewrite's report.
     ///
     /// # Errors
     ///
     /// [`VcsError`] when the repository refuses the write.
-    pub fn run(self) -> Result<Option<Rewrite>, VcsError> {
-        let resolved = self.encoded.code() == ExitCode::Resolved;
-        self.record.preview(self.encoded.bytes(), resolved)
+    pub fn run(self) -> Result<Rewrite, VcsError> {
+        self.commit.preview(self.encoded.bytes())
     }
 }
 
@@ -242,13 +240,7 @@ impl Session {
     /// What Save & Exit does now (spec §6.2).
     #[must_use]
     pub fn save_requested(&self) -> Next {
-        let pair = self.target.record.as_ref().and_then(Record::pair);
-        ending::save_requested(
-            self.saving,
-            self.doc.unresolved(),
-            self.target.unresolved_save,
-            pair,
-        )
+        ending::save_requested(self.saving, self.doc.unresolved(), self.target.unresolved_save)
     }
 
     /// What Close does now (spec §6.2).
@@ -316,9 +308,9 @@ impl Session {
     /// commit (spec §7.5.1).
     #[must_use]
     pub fn preview(&self) -> Option<PreviewJob> {
-        let record = self.target.record.clone().filter(Record::in_commit)?;
+        let commit = self.target.record.as_ref()?.in_commit()?.clone();
         let encoded = EncodedOutput::new(&self.doc, self.target.line_ending);
-        Some(PreviewJob { encoded, record })
+        Some(PreviewJob { encoded, commit })
     }
 
     /// The output as Save Copy As writes it, and the conflicts it holds as markers.

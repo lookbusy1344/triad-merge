@@ -1,5 +1,5 @@
 //! Writes `fixtures/oracle/jj-cli-aliases.json`, `jj-cli-absorb.json` and
-//! `jj-cli-resolve.json` from jj's own CLI (`DESIGN.md` §I6). Dev-time only; `script/gen-jj-cli-oracle` runs
+//! `jj-cli-resolve.json` from jj's own CLI (`DESIGN.md` §I5). Dev-time only; `script/gen-jj-cli-oracle` runs
 //! it. The `jj` on `PATH` must be the release whose jj-lib `Cargo.lock` pins.
 //!
 //! The aliases are jj's defaults for `revset-aliases`. Each absorb case is a seeded random

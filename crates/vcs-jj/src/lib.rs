@@ -6,7 +6,6 @@ mod absorb;
 pub mod config;
 mod history;
 mod native;
-mod reduce;
 #[cfg(feature = "testing")]
 pub mod testing;
 pub mod tool_config;
@@ -14,7 +13,6 @@ pub mod tool_config;
 pub use absorb::{AbsorbHunk, Absorbed, DEFAULT_INTO, Destination, Goes, HunkChoice, Stay};
 pub use history::{FileVersion, SHORT_OPERATION, VersionState};
 pub use native::{CommitEffect, DEFAULT_ALIASES, Rewrite, StackCommit, StackPath};
-pub use reduce::{MIN_PAIR_SIDES, check_pair};
 
 use std::collections::HashMap;
 use std::error::Error;
@@ -72,12 +70,6 @@ const SECONDS_PER_MINUTE: i32 = 60;
 pub enum JjError {
     #[error("the repository has {0} concurrent operations; any jj command reconciles them")]
     ConcurrentOperations(usize),
-    /// `resolve --pair` on a conflict of two sides, where the pair is the whole conflict.
-    #[error("{0} has two sides; resolve it without --pair")]
-    PairOfTwoSides(camino::Utf8PathBuf),
-    /// `resolve --pair N` past the conflict's last pair.
-    #[error("pair {pair} needs sides {pair} and {next}; the conflict has {sides}", next = pair + 1)]
-    PairOutOfRange { pair: usize, sides: usize },
     /// A conflict with a symlink, submodule or directory among its terms.
     #[error("{0} is not a conflict of files")]
     NotAFileConflict(camino::Utf8PathBuf),

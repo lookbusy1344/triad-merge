@@ -94,7 +94,7 @@ triad-merge resolve           # the same, without the jj binary: the first file,
 triad-merge resolve src/lib.rs
 ```
 
-A conflict of more than two sides shows each side in a pane of its own.
+A conflict of more than two sides shows each side in a pane of its own. Sides count as jj shows them: jj drops pairs of terms that cancel. The conflict badge in the toolbar names the sides the current conflict keeps: `Conflict 3 of 10 · 2 of 3 sides · 5 unresolved`.
 
 Each save is its own jj operation, `save PATH in triad`; `jj undo` reverts it. A save with conflicts left exits 1 and keeps them in the commit as a conflict with fewer hunks. Build on it and come back later:
 
@@ -184,19 +184,6 @@ In the window, Save & Exit first works out what the save would do, changing noth
 
 jj refuses a write to an immutable commit, and so does triad, with your `revset-aliases`. A save is also refused when the conflict in the commit changed after triad read it, for example by a `jj rebase` while the window was open; nothing is written, and you open it again.
 
-### Resolve a conflict of more than two sides, two sides at a time (jj-enabled)
-
-A merge of three branches, or a rebase of a conflicted commit, can leave three or more sides. jj orders them side 1, base 1, side 2, base 2, …, side n. Sides count as jj shows them: jj drops pairs of terms that cancel, so a file the third branch left alone has two sides. `--pair N` opens an ordinary three-way merge of sides N and N + 1 over base N:
-
-```sh
-triad-merge resolve src/lib.rs --pair 1        # sides 1 and 2
-triad-merge resolve src/lib.rs --pair 1 -r xyz # in another commit
-```
-
-Opened without `--pair`, the merge window shows one top pane per side. The conflict badge in the toolbar names the sides the current conflict keeps once jj drops the cancelling pairs: `Conflict 3 of 10 · 2 of 3 sides · 5 unresolved`.
-
-A resolved save replaces those three terms with the result, so the conflict keeps one side fewer. The merged side keeps side N's label. Repeat until one side is left and the file resolves. The merge window refuses a save while the pair has conflicts; `--headless` then writes nothing and exits 1.
-
 ### Absorb working-copy edits into the commits that wrote the lines (jj-enabled)
 
 Fix lines across a stack of commits in the working copy, then send each hunk to the commit that last changed the lines it replaces.
@@ -246,7 +233,7 @@ In a jj repository triad merges as jj does: jj's diff, `merge.same-change` and `
 
 ## 4. git
 
-The features of §3 that rest on what jj records have no git form: conflicts in commits (`stack`, `resolve -r`, `--pair`), the operation log (`history`, `diff --op`) and `absorb`. In a git repository each says `COMMAND needs a jj repository` and exits 3. Everything else works the same in git.
+The features of §3 that rest on what jj records have no git form: conflicts in commits (`stack`, `resolve -r`), the operation log (`history`, `diff --op`) and `absorb`. In a git repository each says `COMMAND needs a jj repository` and exits 3. Everything else works the same in git.
 
 ### From git's own commands
 
@@ -330,7 +317,6 @@ triad-merge --headless BASE LEFT RIGHT -o OUTPUT --commands FILE   # then FILE's
 triad-merge inspect --json BASE LEFT RIGHT                         # the merge's regions
 triad-merge diff --inspect --json LEFT RIGHT                       # the diff's regions
 triad-merge resolve PATH -r REV --headless --commands FILE --dry-run   # jj: picks applied in a commit, reported, not written
-triad-merge resolve PATH --pair N --headless                       # jj: the automatic merge of one pair
 triad-merge stack --list
 triad-merge stack --json
 triad-merge history PATH --list

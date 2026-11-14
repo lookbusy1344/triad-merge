@@ -228,10 +228,9 @@ impl JjRepository {
             let commit = current(repo, &named)?;
             let value = this.held_conflict(&named, &commit, &repo_path, path)?;
             let new_value = parse_back(repo, &repo_path, &value, content, marker_length)?;
-            let sides = commit.tree().tree_ids().num_sides();
             let mut builder = MergedTreeBuilder::new(commit.tree());
             builder
-                .set_or_remove_merge(repo_path.clone(), pad(new_value, sides))
+                .set_or_remove_merge(repo_path.clone(), new_value)
                 .map_err(backend("writing the resolved path"))?;
             let tree = builder.write_tree().block_on().map_err(backend("writing a tree"))?;
             let change = this.change_info(&commit)?;
@@ -555,19 +554,6 @@ fn parse_back(
     }
 }
 
-/// `value` with as many sides as a tree of `sides`: each missing side comes as a base and a
-/// side holding the last side's value, which cancel. A resolved value stays as it is.
-pub(crate) fn pad(value: MergedTreeValue, sides: usize) -> MergedTreeValue {
-    if value.is_resolved() || value.num_sides() >= sides {
-        return value;
-    }
-    let missing = sides - value.num_sides();
-    let filler = value.adds().last().cloned().flatten();
-    let mut terms: Vec<Option<TreeValue>> = value.into_iter().collect();
-    terms.extend(std::iter::repeat_n(filler, 2 * missing));
-    Merge::from_vec(terms)
-}
-
 /// `value` as jj shows and parses it, with the labels of the terms that stay: simplified by
 /// file contents, as `jj resolve` and `update_from_content` simplify a conflict of files. A
 /// tree keeps every path at its own number of sides; a path that conflicts in fewer has
@@ -589,7 +575,7 @@ pub(crate) fn simplified(
 
 /// The positions in `value` of the terms jj keeps when it simplifies the conflict by file
 /// contents, in jj's order: side, base, side, … A tree's labels index the same positions.
-pub(crate) fn kept_terms(value: &MergedTreeValue) -> Merge<usize> {
+fn kept_terms(value: &MergedTreeValue) -> Merge<usize> {
     let key = |term: &Option<TreeValue>| {
         term.as_ref().map(|term| match term {
             TreeValue::File { id, .. } => Ok(id.clone()),
@@ -625,18 +611,5 @@ mod tests {
         }
         assert!(aliases.function_names().any(|name| name == "mutable"));
         assert!(DEFAULT_STACK.contains("mutable()"));
-    }
-
-    #[test]
-    fn padding_adds_cancelling_pairs_up_to_the_tree_s_sides() {
-        let value = |n: u8| Some(TreeValue::GitSubmodule(jj_lib::backend::CommitId::new(vec![n])));
-        let two = Merge::from_vec(vec![value(1), value(0), value(2)]);
-        let padded = pad(two.clone(), 3);
-        assert_eq!(padded.num_sides(), 3);
-        assert_eq!(padded.simplify(), two);
-        assert_eq!(pad(two.clone(), 2), two);
-        let resolved =
-            Merge::normal(TreeValue::GitSubmodule(jj_lib::backend::CommitId::new(vec![9])));
-        assert_eq!(pad(resolved.clone(), 3), resolved);
     }
 }

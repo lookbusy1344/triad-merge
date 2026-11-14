@@ -11,8 +11,6 @@ mod absorb;
 mod history;
 #[path = "jj/oracle.rs"]
 mod oracle;
-#[path = "jj/reduce.rs"]
-mod reduce;
 #[path = "jj/snapshot.rs"]
 mod snapshot;
 #[path = "jj/stack.rs"]

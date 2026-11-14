@@ -195,7 +195,7 @@ mod jj {
         let operations = fixture.operation_count();
         click(cx, started.window, PREVIEW_ID.into());
         let preview = cx.read(|cx| started.view.read(cx).preview().cloned());
-        let Some(Preview::Done(Some(rewrite))) = preview else {
+        let Some(Preview::Done(rewrite)) = preview else {
             panic!("a finished preview, got {preview:?}")
         };
         assert!(rewrite.resolved);

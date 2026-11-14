@@ -152,7 +152,7 @@ pub fn absorb(
 }
 
 /// What `absorb`'s listing says after a hunk that stays in the working copy, and why
-/// (spec §7.5.4).
+/// (spec §7.5.3).
 #[must_use]
 pub fn stays(stay: &Stay) -> String {
     match stay {

@@ -278,13 +278,9 @@ fn run_resolve(
         });
     }
     let loaded = match resolve.in_commit() {
-        Some(rev) => merge_session::resolve::load_at_commit(
-            &cwd,
-            rev,
-            &target,
-            resolve.pair,
-            repo.jj_config().cloned(),
-        ),
+        Some(rev) => {
+            merge_session::resolve::load_at_commit(&cwd, rev, &target, repo.jj_config().cloned())
+        }
         None => merge_session::resolve::load(&mut repo, &cwd, &target, Snapshot::Take),
     };
     let opened = match loaded

@@ -1,5 +1,5 @@
 //! `absorb`: each hunk of the working-copy commit against its parents, with the ancestor it
-//! goes into, moved there on request (`DESIGN.md` §I5).
+//! goes into, moved there on request (`DESIGN.md` §I4).
 
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
@@ -73,7 +73,7 @@ pub enum Stay<C = ChangeInfo> {
     /// is an insertion where two commits' lines meet.
     NoCommit,
     /// The commit that wrote its lines would take it with a conflict, as `jj absorb` writes
-    /// it (`DESIGN.md` §I5).
+    /// it (`DESIGN.md` §I4).
     WouldConflict(C),
     /// `--keep` chose it.
     Kept,

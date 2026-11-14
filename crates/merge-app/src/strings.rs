@@ -127,19 +127,6 @@ pub(crate) mod prompt {
 
     /// The question before a save into a jj commit that changes the conflicts of
     /// `descendants` of its descendants (spec §7.5.1).
-    /// The refusal of a save of pair `pair` with conflicts left (spec §7.5.2).
-    pub(crate) fn pair_unresolved(pair: usize) -> String {
-        format!("Pair {pair} has conflicts.")
-    }
-
-    pub(crate) fn pair_unresolved_detail(unresolved: usize) -> String {
-        let conflicts = if unresolved == 1 { "conflict" } else { "conflicts" };
-        format!(
-            "Saving writes nothing until the pair resolves. Resolve its {unresolved} \
-             {conflicts}, or close without saving."
-        )
-    }
-
     pub(crate) fn descendants_changed(descendants: usize) -> String {
         match descendants {
             1 => "Saving changes the conflicts of 1 descendant.".to_owned(),
@@ -242,11 +229,8 @@ pub(crate) fn stack_note(code: ExitCode, path: &str, change: &str) -> Option<Str
 }
 
 /// What saving the open merge window would do: whether the path resolves, and each
-/// descendant's conflicts before and after. `None` when the save would write nothing.
-pub(crate) fn stack_preview(rewrite: Option<&Rewrite>) -> String {
-    let Some(rewrite) = rewrite else {
-        return "Saving writes nothing: the pair keeps conflicts.".to_owned();
-    };
+/// descendant's conflicts before and after.
+pub(crate) fn stack_preview(rewrite: &Rewrite) -> String {
     let change = rewrite.target.id(IdKind::Change);
     let outcome = if rewrite.resolved {
         format!("Saving resolves the path in {change}.")
@@ -260,7 +244,7 @@ pub(crate) fn stack_preview(rewrite: Option<&Rewrite>) -> String {
     }
 }
 
-/// The history window's title (spec §7.5.3).
+/// The history window's title (spec §7.5.2).
 pub(crate) fn history_title(path: &str) -> String {
     format!("History of {path}")
 }
@@ -282,7 +266,7 @@ pub(crate) fn history_version(version: &FileVersion) -> Row {
     }
 }
 
-/// The absorb window's title (spec §7.5.4).
+/// The absorb window's title (spec §7.5.3).
 pub(crate) const ABSORB_TITLE: &str = "Absorb";
 pub(crate) const ABSORB_EMPTY: &str = "Nothing to absorb.";
 pub(crate) const ABSORB_APPLY: &str = "Apply";
@@ -1179,14 +1163,13 @@ mod tests {
     fn the_preview_says_whether_the_path_resolves_and_lists_each_descendant() {
         let effects = vec![effect("kmzzmxvq", &["a.txt"], &[])];
         assert_eq!(
-            stack_preview(Some(&rewrite(true, effects))),
+            stack_preview(&rewrite(true, effects)),
             "Saving resolves the path in qpvuntsm.\nkmzzmxvq: a.txt -> none"
         );
         assert_eq!(
-            stack_preview(Some(&rewrite(false, Vec::new()))),
+            stack_preview(&rewrite(false, Vec::new())),
             "Saving keeps conflicts in qpvuntsm.\nNo descendant is rebased."
         );
-        assert_eq!(stack_preview(None), "Saving writes nothing: the pair keeps conflicts.");
     }
 
     #[test]

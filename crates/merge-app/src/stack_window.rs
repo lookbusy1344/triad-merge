@@ -77,8 +77,8 @@ struct OpenMerge {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Preview {
     Running,
-    /// The save's report; none when it would write nothing.
-    Done(Option<Rewrite>),
+    /// The save's report.
+    Done(Rewrite),
     Failed(String),
 }
 
@@ -254,14 +254,9 @@ impl StackWindow {
         let (options, config) = (self.start.options, self.start.jj_config.clone());
         let load_path = PathBuf::from(&path);
         let loaded = cx.background_spawn(async move {
-            let loaded = merge_session::resolve::load_at_commit(
-                &root,
-                &rev,
-                &load_path,
-                None,
-                config.clone(),
-            )
-            .map_err(|e| e.to_string())?;
+            let loaded =
+                merge_session::resolve::load_at_commit(&root, &rev, &load_path, config.clone())
+                    .map_err(|e| e.to_string())?;
             let opened = loaded.open(options).map_err(|e| e.to_string())?;
             let repo = RunRepository::find([root.as_path()]);
             let repo = match config {
@@ -446,7 +441,7 @@ impl StackWindow {
     fn render_preview(&self) -> Option<impl IntoElement + use<>> {
         let text: SharedString = match self.preview.as_ref()? {
             Preview::Running => strings::PREVIEW_RUNNING.into(),
-            Preview::Done(rewrite) => strings::stack_preview(rewrite.as_ref()).into(),
+            Preview::Done(rewrite) => strings::stack_preview(rewrite).into(),
             Preview::Failed(error) => error.clone().into(),
         };
         Some(

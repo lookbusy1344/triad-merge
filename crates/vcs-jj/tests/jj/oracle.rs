@@ -1,4 +1,4 @@
-//! triad against jj's own CLI (`DESIGN.md` §I1, §I5): the default revset aliases and
+//! triad against jj's own CLI (`DESIGN.md` §I1, §I4): the default revset aliases and
 //! `absorb`, from corpora `script/gen-jj-cli-oracle` writes with the jj release whose jj-lib
 //! `Cargo.lock` pins.
 

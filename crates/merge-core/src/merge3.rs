@@ -482,7 +482,7 @@ fn classify(
 }
 
 /// The number of sides `region` keeps once jj drops each pair of a side and a base that hold
-/// the same lines, compared under `diff` (spec §7.5.2). A region of a three-way merge keeps
+/// the same lines, compared under `diff` (spec §7.5.1). A region of a three-way merge keeps
 /// two, or one when it resolves.
 #[must_use]
 pub fn simplified_sides(inputs: &Inputs, region: &Region, diff: DiffOptions) -> usize {
