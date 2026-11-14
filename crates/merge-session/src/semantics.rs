@@ -26,7 +26,7 @@ pub struct Mode {
 }
 
 /// jj writes a merge tool's files to a temporary directory whose name starts with this
-/// (jj-cli 0.46 `merge_tools/external.rs`).
+/// (jj-cli 0.47 `merge_tools/external.rs`).
 pub const JJ_RESOLVE_PREFIX: &str = "jj-resolve-";
 /// What the paths of a merge say about who started it.
 #[derive(Debug, Clone, PartialEq, Eq)]

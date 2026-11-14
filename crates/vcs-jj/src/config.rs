@@ -1,4 +1,4 @@
-//! The user's jj configuration, layered as jj-cli 0.46 layers it, and the snapshot options it
+//! The user's jj configuration, layered as jj-cli 0.47 layers it, and the snapshot options it
 //! gives. A snapshot triad takes (`DESIGN.md` §D5.5) tracks and ignores the files
 //! the user's own jj would.
 //!
@@ -48,7 +48,7 @@ use rand_chacha::ChaCha20Rng;
 
 use crate::JJ_DIR;
 
-/// jj-cli 0.46's defaults for the snapshot keys, which jj-lib's defaults leave unset
+/// jj-cli 0.47's defaults for the snapshot keys, which jj-lib's defaults leave unset
 /// (`cli/src/config/misc.toml`).
 const CLI_DEFAULTS: &str = r#"
 [snapshot]
@@ -88,7 +88,7 @@ const JJ_CONFIG: &str = "JJ_CONFIG";
 const JJ_RANDOMNESS_SEED: &str = "JJ_RANDOMNESS_SEED";
 const XDG_CONFIG_HOME: &str = "XDG_CONFIG_HOME";
 const USER: &str = "USER";
-/// The environment variables jj-cli 0.46 lets override every config file, and their keys.
+/// The environment variables jj-cli 0.47 lets override every config file, and their keys.
 /// `JJ_EDITOR` and `JJ_PAGER` are left out: they set nothing a repository write reads.
 const ENV_OVERRIDES: [(&str, &str); 6] = [
     ("JJ_USER", "user.name"),
@@ -165,7 +165,7 @@ pub struct ConfigEnv {
 }
 
 impl ConfigEnv {
-    /// The process's directories, host, user and environment, found as jj-cli 0.46 finds them.
+    /// The process's directories, host, user and environment, found as jj-cli 0.47 finds them.
     #[must_use]
     pub fn from_process() -> Self {
         let home_dir = etcetera::home_dir()

@@ -1,6 +1,7 @@
 //! GPUI shell: windows, panes, toolbar, menus and shortcuts. A thin renderer over `merge-view`.
 
 pub mod about;
+pub mod absorb_window;
 mod assets;
 mod blink;
 mod choice;
@@ -8,6 +9,7 @@ pub mod diff_window;
 mod editor_sync;
 mod editor_syntax;
 mod go_to_line;
+pub mod history_window;
 mod input_find;
 mod input_select;
 mod keys;
@@ -19,6 +21,7 @@ pub mod origin_column;
 mod own_writes;
 mod pane_scroll;
 mod patches;
+mod pick_list;
 mod prompt_view;
 mod recorder;
 mod recovery;
@@ -31,6 +34,7 @@ pub mod settings_banner;
 mod settings_file;
 mod sideways;
 mod split_menu;
+pub mod stack_window;
 mod strings;
 mod syntax;
 mod syntax_colours;
@@ -228,6 +232,7 @@ pub fn init_with(bindings: &KeyBindings, cx: &mut App) {
     syntax::register_queries();
     keys::bind(bindings, cx);
     split_menu::init(cx);
+    pick_list::init(cx);
     cx.on_action(|_: &OpenSettings, cx| settings_file::open(cx));
     cx.on_action(|_: &About, cx| about::show(cx));
     cx.set_menus(menus(ViewTicks::default()));

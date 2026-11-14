@@ -7,10 +7,13 @@
 
 mod a11y;
 mod about;
+mod absorb;
 mod choices;
 mod collapse;
 mod common;
 mod diff;
+mod history;
+mod in_commit;
 mod input_find;
 mod input_select;
 mod journal;
@@ -27,6 +30,7 @@ mod save;
 mod save_copy;
 mod scroll;
 mod scrollbars;
+mod stack;
 mod syntax;
 mod tools;
 mod window;

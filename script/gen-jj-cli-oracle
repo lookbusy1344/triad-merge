@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# gen-jj-cli-oracle — generate fixtures/oracle/jj-cli-aliases.json, jj-cli-absorb.json and
+# jj-cli-resolve.json from jj's own CLI (DESIGN.md §I5). Dev-time only. The jj on PATH must be
+# the release whose jj-lib Cargo.lock pins, and git must be on PATH; run it after each jj-lib
+# upgrade.
+# Usage: script/gen-jj-cli-oracle
+set -euo pipefail
+cd "$(dirname "$0")/.."
+cargo run --quiet --release -p vcs-jj --example gen_jj_cli_oracle

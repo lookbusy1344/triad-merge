@@ -61,6 +61,26 @@ pub const LABELS_MIN_WIDTH: Pixels = px(1052.);
 pub const COMPACT_MIN_WIDTH: Pixels = px(788.);
 /// The longest conflict badge at two-digit counts, which the label threshold makes room for.
 const REFERENCE_BADGE: &str = "Conflict 10 of 12 · 12 unresolved";
+/// [`REFERENCE_BADGE`] in a merge of more than two sides, with the sides a conflict keeps.
+const REFERENCE_BADGE_SIDES: &str = "Conflict 10 of 12 · 3 of 3 sides · 12 unresolved";
+
+/// What the conflict badge shows, which sets the room the toolbar keeps for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Badge {
+    /// The counts of a three-way merge.
+    Counts,
+    /// The counts and, in a conflict, the sides it keeps: a merge of more than two sides.
+    Sides,
+}
+
+impl Badge {
+    const fn reference(self) -> &'static str {
+        match self {
+            Self::Counts => REFERENCE_BADGE,
+            Self::Sides => REFERENCE_BADGE_SIDES,
+        }
+    }
+}
 
 /// A toolbar control.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,27 +161,26 @@ pub(crate) const DIFF_GROUPS: [&[Control]; 4] = [
     &[Control::Button(Tool::Syntax), Control::Button(Tool::SoftWrap)],
 ];
 
-/// The narrowest window whose merge toolbar shows its labels in text of `text_size`:
-/// [`LABELS_MIN_WIDTH`], less the labels' and the reference badge's text at the default
-/// size, plus that text at `text_size`. The buttons, gaps and padding stay the same.
+/// The narrowest window whose merge toolbar shows its labels in text of `text_size` with
+/// `badge`: [`LABELS_MIN_WIDTH`], less the labels' and [`REFERENCE_BADGE`]'s text at the
+/// default size, plus the labels' and `badge`'s reference text at `text_size`. The buttons,
+/// gaps and padding stay the same.
 #[must_use]
-pub fn labels_min_width(text_size: Pixels, window: &Window) -> Pixels {
-    let texts = GROUPS
-        .iter()
-        .flat_map(|group| group.iter())
-        .filter_map(|&control| strings::tool_label(control.labelled()))
-        .chain([REFERENCE_BADGE]);
+pub fn labels_min_width(text_size: Pixels, badge: Badge, window: &Window) -> Pixels {
     let style = window.text_style();
-    let width = |size| {
-        texts
-            .clone()
+    let width = |badge: Badge, size| {
+        GROUPS
+            .iter()
+            .flat_map(|group| group.iter())
+            .filter_map(|&control| strings::tool_label(control.labelled()))
+            .chain([badge.reference()])
             .map(|text| {
                 let run = style.to_run(text.len());
                 window.text_system().shape_line(text.into(), size, &[run], None).width
             })
             .fold(Pixels::ZERO, |total, width| total + width)
     };
-    LABELS_MIN_WIDTH + width(text_size) - width(crate::TOOLBAR_FONT_SIZE)
+    LABELS_MIN_WIDTH + width(badge, text_size) - width(Badge::Counts, crate::TOOLBAR_FONT_SIZE)
 }
 
 /// Every tool `groups` runs, in order.

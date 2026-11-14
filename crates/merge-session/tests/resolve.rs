@@ -973,4 +973,118 @@ mod jj {
         // The longest marker-like run is 8, so jj chooses 8 + 4.
         assert_eq!(loaded.marker_length, Some(12));
     }
+
+    /// `merge` of `left` and `right` conflicts in `a.txt`; `child` adds `b.txt`; the working
+    /// copy sits on `child`, on disk.
+    fn stacked() -> (vcs_jj::testing::Fixture, vcs_jj::testing::Committed) {
+        let fixture = vcs_jj::testing::Fixture::new();
+        let base = fixture.commit_on(&[], "base", &[("a.txt", BASE)]);
+        let left = fixture.commit_on(&[&base], "left", &[("a.txt", LEFT)]);
+        let right = fixture.commit_on(&[&base], "right", &[("a.txt", RIGHT)]);
+        let merge = fixture.commit_merged(&[&left, &right], "merge", &[]);
+        let child = fixture.commit_merged(&[&merge], "child", &[("b.txt", b"b\n")]);
+        fixture.check_out(&[&child]);
+        fixture.check_out_to_disk();
+        (fixture, merge)
+    }
+
+    /// Each descendant's conflicted paths before and after, parents first.
+    fn effects(rewrite: &vcs_jj::Rewrite) -> Vec<(Vec<&str>, Vec<&str>)> {
+        rewrite.rewritten.iter().map(|d| (strs(&d.before), strs(&d.after))).collect()
+    }
+
+    fn strs(paths: &[Utf8PathBuf]) -> Vec<&str> {
+        paths.iter().map(|p| p.as_str()).collect()
+    }
+
+    fn at_commit(fixture: &vcs_jj::testing::Fixture, rev: &str) -> Loaded {
+        resolve::load_at_commit(
+            fixture.root().as_std_path(),
+            rev,
+            Path::new("a.txt"),
+            Some(ConfigEnv::default()),
+        )
+        .expect("it loads")
+    }
+
+    fn commit(record: &resolve::Record) -> &resolve::InCommit {
+        record.in_commit().expect("a commit's conflict")
+    }
+
+    #[test]
+    fn a_preview_reports_a_resolution_and_writes_nothing() {
+        let (fixture, merge) = stacked();
+        let record = at_commit(&fixture, &merge.commit).record.expect("a commit's record");
+        let operations = fixture.operation_count();
+        let rewrite = commit(&record).preview(RIGHT).expect("previewed");
+        assert!(rewrite.resolved);
+        assert!(!rewrite.written);
+        // The child and the working copy on it inherit the conflict, and lose it with it.
+        assert_eq!(effects(&rewrite), [(vec!["a.txt"], vec![]), (vec!["a.txt"], vec![])]);
+        assert_eq!(fixture.held_in(&merge, "a.txt"), vcs_jj::testing::Held::Conflict);
+        assert_eq!(fixture.operation_count(), operations);
+    }
+
+    /// The automatic merge of `a.txt` in `merge`, with its markers, and the record that
+    /// writes it there.
+    fn markers_in(
+        fixture: &vcs_jj::testing::Fixture,
+        merge: &vcs_jj::testing::Committed,
+    ) -> (Vec<u8>, resolve::Record) {
+        let opened = at_commit(fixture, &merge.commit)
+            .open(merge_core::document::MergeOptions::default())
+            .expect("labels fit");
+        let markers = EncodedOutput::new(&opened.doc, merge_core::document::OutputEnding::Keep);
+        assert_eq!(markers.code(), ExitCode::Conflicts);
+        (markers.bytes().to_vec(), opened.record.expect("a commit's record"))
+    }
+
+    #[test]
+    fn a_preview_of_changed_markers_keeps_the_descendants_conflicted() {
+        let (fixture, merge) = stacked();
+        let (markers, record) = markers_in(&fixture, &merge);
+        let text = String::from_utf8(markers).expect("UTF-8");
+        let edited = text.replacen("\nleft\n", "\nleft edited\n", 1);
+        assert_ne!(edited, text, "the left side is in the markers");
+        let rewrite = commit(&record).preview(edited.as_bytes()).expect("previewed");
+        assert!(!rewrite.resolved);
+        assert_eq!(
+            effects(&rewrite),
+            [(vec!["a.txt"], vec!["a.txt"]), (vec!["a.txt"], vec!["a.txt"])]
+        );
+    }
+
+    #[test]
+    fn a_preview_of_the_held_conflicts_markers_rebases_nothing() {
+        let (fixture, merge) = stacked();
+        let (markers, record) = markers_in(&fixture, &merge);
+        let rewrite = commit(&record).preview(&markers).expect("previewed");
+        // The markers read back as the conflict the commit holds: the write changes nothing
+        // (spec §7.5.1).
+        assert!(!rewrite.resolved);
+        assert_eq!(effects(&rewrite), []);
+    }
+
+    #[test]
+    fn a_preview_reads_the_content_given_not_the_saved_file() {
+        let (fixture, merge) = stacked();
+        let opened = at_commit(&fixture, &merge.commit)
+            .open(merge_core::document::MergeOptions::default())
+            .expect("labels fit");
+        // The saved file holds the conflict as the commit does: a write of it changes nothing.
+        let markers = EncodedOutput::new(&opened.doc, merge_core::document::OutputEnding::Keep);
+        std::fs::write(&opened.file, markers.bytes()).expect("written");
+        let record = opened.record.expect("a commit's record");
+        let rewrite = commit(&record).preview(LEFT).expect("previewed");
+        assert!(rewrite.resolved);
+        assert_eq!(effects(&rewrite), [(vec!["a.txt"], vec![]), (vec!["a.txt"], vec![])]);
+    }
+
+    #[test]
+    fn the_working_copys_conflict_has_no_preview() {
+        let fixture = jj_on_disk(LEFT, RIGHT);
+        let loaded = load(fixture.root().as_std_path(), Path::new("a.txt")).expect("it loads");
+        let record = loaded.record.expect("jj holds the conflict");
+        assert!(record.in_commit().is_none());
+    }
 }

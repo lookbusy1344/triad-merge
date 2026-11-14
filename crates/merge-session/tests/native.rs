@@ -28,6 +28,19 @@ fn an_unstaged_file_is_compared_with_head_titled_by_branch() {
 }
 
 #[test]
+fn an_operation_needs_jj() {
+    let fixture = Fixture::new();
+    fixture.commit("one", &[("a.txt", b"committed\n")]);
+    let path = fixture.write("a.txt", b"edited\n");
+    let refused = native::load_at_operation(
+        &mut RunRepository::of_file(path.as_std_path()),
+        path.as_std_path(),
+        "@",
+    );
+    assert!(matches!(refused, Err(NativeError::NeedsJj("diff --op"))), "{refused:?}");
+}
+
+#[test]
 fn a_staged_file_is_compared_with_the_index() {
     let fixture = Fixture::new();
     fixture.commit("one", &[("a.txt", b"committed\n")]);
@@ -145,6 +158,7 @@ fn a_binary_parent_is_refused_with_its_revision() {
 mod jj {
     use super::load;
     use merge_session::native;
+    use merge_session::repository::RunRepository;
     use vcs::RepoKind;
     use vcs_jj::testing::Fixture;
 
@@ -168,6 +182,52 @@ mod jj {
         let diff = load(&path, None);
         assert_eq!(diff.left.content(), "");
         assert_eq!(diff.left_title, "@- (no file)");
+    }
+
+    /// Write `bytes` to `a.txt` and snapshot it; the new head operation's ID.
+    fn snapshot(fixture: &Fixture, bytes: &[u8]) -> String {
+        let path = fixture.write("a.txt", bytes);
+        let mut repo = vcs_jj::JjRepository::discover(fixture.root()).expect("the repository");
+        vcs::Repository::snapshot(&mut repo).expect("the snapshot");
+        drop(path);
+        fixture.operation_ids()[0].clone()
+    }
+
+    #[test]
+    fn an_operation_compares_with_the_working_copy_then() {
+        let fixture = Fixture::new();
+        let one = snapshot(&fixture, b"one\n");
+        let commit_then = fixture.working_copy_id();
+        snapshot(&fixture, b"two\n");
+        let path = fixture.write("a.txt", b"three\n");
+        let (diff, commit) = native::load_at_operation(
+            &mut RunRepository::of_file(path.as_std_path()),
+            path.as_std_path(),
+            &one[..8],
+        )
+        .expect("the inputs load");
+        assert_eq!(diff.left.content(), "one\n");
+        assert_eq!(diff.left_title, format!("@ at operation {}", &one[..vcs_jj::SHORT_OPERATION]));
+        assert_eq!(commit.as_str(), commit_then);
+    }
+
+    #[test]
+    fn an_operation_before_the_file_says_so_in_the_title() {
+        let fixture = Fixture::new();
+        let ids = fixture.operation_ids();
+        let first = ids[ids.len() - 2].clone();
+        let path = fixture.write("a.txt", b"new\n");
+        let (diff, _) = native::load_at_operation(
+            &mut RunRepository::of_file(path.as_std_path()),
+            path.as_std_path(),
+            &first,
+        )
+        .expect("the inputs load");
+        assert_eq!(diff.left.content(), "");
+        assert_eq!(
+            diff.left_title,
+            format!("@ at operation {} {}", &first[..vcs_jj::SHORT_OPERATION], native::NO_FILE)
+        );
     }
 
     #[test]

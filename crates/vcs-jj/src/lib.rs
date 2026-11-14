@@ -2,10 +2,17 @@
 //! working-copy snapshots of `resolve` (spec §7.4): concurrent operations are refused, not
 //! reconciled.
 
+mod absorb;
 pub mod config;
+mod history;
+mod native;
 #[cfg(feature = "testing")]
 pub mod testing;
 pub mod tool_config;
+
+pub use absorb::{AbsorbHunk, Absorbed, DEFAULT_INTO, Destination, Goes, HunkChoice, Stay};
+pub use history::{FileVersion, SHORT_OPERATION, VersionState};
+pub use native::{CommitEffect, DEFAULT_ALIASES, Rewrite, StackCommit, StackPath};
 
 use std::collections::HashMap;
 use std::error::Error;
@@ -63,6 +70,39 @@ const SECONDS_PER_MINUTE: i32 = 60;
 pub enum JjError {
     #[error("the repository has {0} concurrent operations; any jj command reconciles them")]
     ConcurrentOperations(usize),
+    /// A conflict with a symlink, submodule or directory among its terms.
+    #[error("{0} is not a conflict of files")]
+    NotAFileConflict(camino::Utf8PathBuf),
+    /// `diff --op` with an operation jj cannot resolve.
+    #[error("no operation {op}: {reason}")]
+    UnknownOperation { op: String, reason: String },
+    /// `diff --op` at an operation before the workspace had a working copy.
+    #[error("the workspace has no working copy at operation {0}")]
+    NoWorkingCopyAt(String),
+    /// `absorb --move` or `--keep` of a hunk that does not exist.
+    #[error("no hunk {hunk}; there are {count}")]
+    NoHunk { hunk: usize, count: usize },
+    /// `absorb --move` to a commit outside the ones a hunk may go into.
+    #[error("{0} is not a mutable ancestor of the working copy in --into")]
+    NotADestination(String),
+    /// `absorb --apply` at an operation the repository has moved past: the hunk numbers may
+    /// name other hunks now.
+    #[error("the repository changed since operation {0}; list the hunks again")]
+    RepositoryMoved(String),
+    /// A save into a commit whose conflict at the path differs from the one triad read: the
+    /// commit was rewritten while the window was open.
+    #[error("{path} in {change} changed since triad read it; nothing is written")]
+    ConflictChanged { path: camino::Utf8PathBuf, change: String },
+    /// jj parsed a saved conflict back with another number of sides than it holds.
+    #[error("{path}: jj read back a conflict of {after} sides for one of {before}")]
+    SidesChanged { path: camino::Utf8PathBuf, before: usize, after: usize },
+}
+
+/// What a revset resolves with: the aliases, and the email `mine()` matches.
+#[derive(Default)]
+pub(crate) struct Revsets {
+    pub aliases: RevsetAliasesMap,
+    pub user_email: String,
 }
 
 /// A jj workspace, read through jj-lib at its head operation.
@@ -251,19 +291,51 @@ impl JjRepository {
         Ok(())
     }
 
-    /// The commits `expr` names, in jj's revset syntax; at least one.
+    /// The commits `expr` names, in jj's revset syntax; at least one. Only jj-lib's built-in
+    /// functions: no aliases.
     fn resolve(&self, expr: &str) -> Result<Vec<Commit>, VcsError> {
+        let commits = self.evaluate(self.repo.as_ref(), expr, &Revsets::default())?;
+        if commits.is_empty() {
+            return Err(VcsError::UnknownRevision(expr.to_owned()));
+        }
+        Ok(commits)
+    }
+
+    /// The commits `expr` names in `repo`, children before parents, with `revsets`; possibly
+    /// none.
+    fn evaluate(
+        &self,
+        repo: &dyn jj_lib::repo::Repo,
+        expr: &str,
+        revsets: &Revsets,
+    ) -> Result<Vec<Commit>, VcsError> {
+        self.resolve_expression(repo, expr, revsets)?
+            .evaluate()
+            .map_err(backend("evaluating a revision"))?
+            .stream()
+            .commits(repo.store())
+            .try_collect()
+            .block_on()
+            .map_err(backend("reading a revision's commits"))
+    }
+
+    /// `expr` parsed with `revsets` and resolved in `repo`, unevaluated.
+    fn resolve_expression<'a>(
+        &self,
+        repo: &'a dyn jj_lib::repo::Repo,
+        expr: &str,
+        revsets: &Revsets,
+    ) -> Result<jj_lib::revset::ResolvedRevset<'a>, VcsError> {
         let path_converter = RepoPathUiConverter::Fs {
             cwd: self.root.clone().into(),
             base: self.root.clone().into(),
         };
-        let aliases = RevsetAliasesMap::new();
         let fileset_aliases = FilesetAliasesMap::new();
         let extensions = RevsetExtensions::default();
         let context = RevsetParseContext {
-            aliases_map: &aliases,
+            aliases_map: &revsets.aliases,
             local_variables: HashMap::new(),
-            user_email: "",
+            user_email: &revsets.user_email,
             current_time: jiff::Zoned::now(),
             default_ignored_remote: Some(REMOTE_NAME_FOR_LOCAL_GIT_REPO),
             fileset_aliases_map: &fileset_aliases,
@@ -276,21 +348,10 @@ impl JjRepository {
         let expression = revset::parse(&mut RevsetDiagnostics::new(), expr, &context)
             .map_err(backend("parsing a revision"))?;
         let no_extensions: [Box<dyn SymbolResolverExtension>; 0] = [];
-        let resolver = SymbolResolver::new(self.repo.as_ref(), &no_extensions);
-        let commits: Vec<Commit> = expression
-            .resolve_user_expression(self.repo.as_ref(), &resolver)
-            .map_err(|error| resolution_error(expr, error))?
-            .evaluate()
-            .map_err(backend("evaluating a revision"))?
-            .stream()
-            .commits(self.repo.store())
-            .try_collect()
-            .block_on()
-            .map_err(backend("reading a revision's commits"))?;
-        if commits.is_empty() {
-            return Err(VcsError::UnknownRevision(expr.to_owned()));
-        }
-        Ok(commits)
+        let resolver = SymbolResolver::new(repo, &no_extensions);
+        expression
+            .resolve_user_expression(repo, &resolver)
+            .map_err(|error| resolution_error(expr, error))
     }
 
     fn read_file(&self, path: &RepoPath, id: &FileId) -> Result<Vec<u8>, VcsError> {
@@ -355,6 +416,37 @@ impl JjRepository {
             Some(TreeValue::GitSubmodule(_)) => TermContent::Other(EntryKind::Submodule),
             Some(TreeValue::Tree(_)) => TermContent::Other(EntryKind::Directory),
         })
+    }
+
+    /// The conflict at `path` in `commit`'s tree: its adds are the sides and its removes the
+    /// bases, in jj's order, each labelled from the tree. None when the path is resolved.
+    fn conflict_in(&self, commit: &Commit, path: &Utf8Path) -> Result<Option<Conflict>, VcsError> {
+        let repo_path = RepoPathBuf::from_relative_path(path)
+            .map_err(|_| VcsError::OutsideRepository(path.to_owned()))?;
+        let tree = commit.tree();
+        let value =
+            tree.path_value(&repo_path).block_on().map_err(backend("finding a path in a tree"))?;
+        if value.is_resolved() {
+            return Ok(None);
+        }
+        let (value, labels) = native::simplified(&value, tree.labels());
+        let terms = |values: &mut dyn Iterator<Item = &Option<TreeValue>>, side: bool| {
+            values
+                .enumerate()
+                .map(|(index, value)| {
+                    let label = if side { labels.get_add(index) } else { labels.get_remove(index) };
+                    self.term_content(&repo_path, value.as_ref()).map(|content| ConflictTerm {
+                        term: Term { label: label.map(str::to_owned), change: None },
+                        content,
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()
+        };
+        Ok(Some(Conflict {
+            path: path.to_owned(),
+            sides: terms(&mut value.adds(), true)?,
+            bases: terms(&mut value.removes(), false)?,
+        }))
     }
 
     fn change_info(&self, commit: &Commit) -> Result<ChangeInfo, VcsError> {
@@ -565,33 +657,7 @@ impl Repository for JjRepository {
     /// The terms of the working-copy commit's merged tree value: its adds are the sides and
     /// its removes the bases, in jj's order.
     fn read_conflict(&self, path: &Utf8Path) -> Result<Option<Conflict>, VcsError> {
-        let repo_path = RepoPathBuf::from_relative_path(path)
-            .map_err(|_| VcsError::OutsideRepository(path.to_owned()))?;
-        let tree = self.working_copy_commit()?.tree();
-        let value =
-            tree.path_value(&repo_path).block_on().map_err(backend("finding a path in a tree"))?;
-        if value.is_resolved() {
-            return Ok(None);
-        }
-        // The value keeps the tree's terms, so the tree's labels index it.
-        let labels = tree.labels();
-        let terms = |values: &mut dyn Iterator<Item = &Option<TreeValue>>, side: bool| {
-            values
-                .enumerate()
-                .map(|(index, value)| {
-                    let label = if side { labels.get_add(index) } else { labels.get_remove(index) };
-                    self.term_content(&repo_path, value.as_ref()).map(|content| ConflictTerm {
-                        term: Term { label: label.map(str::to_owned), change: None },
-                        content,
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()
-        };
-        Ok(Some(Conflict {
-            path: path.to_owned(),
-            sides: terms(&mut value.adds(), true)?,
-            bases: terms(&mut value.removes(), false)?,
-        }))
+        self.conflict_in(&self.working_copy_commit()?, path)
     }
 
     fn merge_candidates(&self) -> Result<vcs::MergeCandidates, VcsError> {

@@ -21,10 +21,51 @@ pub enum Window {
     /// The two-way diff window.
     Diff(Diff),
     /// A working-copy file against its parent revision, or `rev`.
-    DiffNative { path: PathBuf, rev: Option<String>, diff: DiffOptions, title: Option<String> },
+    /// `op`: the jj operation whose working-copy commit is the left side, in place of `rev`.
+    DiffNative {
+        path: PathBuf,
+        rev: Option<String>,
+        op: Option<String>,
+        diff: DiffOptions,
+        title: Option<String>,
+    },
     /// A conflict read from the repository at the working directory: `path`'s, or the first
     /// conflicted file's.
     Resolve(Resolve),
+    /// `stack [REVSET]`: the conflicted jj commits, each conflict opening in the merge window.
+    Stack(Stack),
+    /// `history PATH`: a file's versions across jj's operation log, each opening in the diff
+    /// window against the working-copy file.
+    History(History),
+    /// `absorb [PATH...]`: the working copy's hunks, each sent to a commit or kept.
+    Absorb(Absorb),
+}
+
+/// `absorb [PATH...] [--into REVSET]` in a window (spec §7.5.3).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Absorb {
+    /// Only the hunks under these paths; none for every path.
+    pub paths: Vec<PathBuf>,
+    /// The commits a hunk may go into; none for `mutable()`.
+    pub into: Option<String>,
+}
+
+/// `history PATH` in a window (spec §7.5.2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct History {
+    pub path: PathBuf,
+    /// List at most this many versions, the newest.
+    pub limit: Option<usize>,
+}
+
+/// `stack [REVSET]` in a window (spec §7.5.1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stack {
+    /// The commits to list; none for `conflicts() & mutable()`.
+    pub revset: Option<String>,
+    /// The options each conflict merges with; the semantics are settled before the window
+    /// opens.
+    pub options: MergeOptions,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -125,6 +166,18 @@ pub struct Resolve {
     pub flags: DiffFlags,
     /// As [`Merge::semantics`].
     pub semantics: SemanticsFlags,
+    /// `-r`: the jj revision whose commit holds the conflict; none for the working copy.
+    pub rev: Option<String>,
+    /// `--dry-run`: report what writing into the commit would do, and write nothing.
+    pub dry_run: bool,
+}
+
+impl Resolve {
+    /// The revision whose commit `resolve` writes into: `-r`'s. None for a conflict on disk.
+    #[must_use]
+    pub fn in_commit(&self) -> Option<&str> {
+        self.rev.as_deref()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

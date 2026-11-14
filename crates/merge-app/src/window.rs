@@ -44,6 +44,7 @@ use merge_core::suggest::{self, EditSuggestion};
 use merge_core::text::Text;
 use merge_session::ending::{self, Closing, Next, SaveFailed, Undone, UnresolvedSave};
 use merge_session::io::WriteError;
+use merge_session::jj_native::CommitEffect;
 use merge_session::origin::{self, find_merge};
 use merge_session::repository::Handoff;
 use merge_session::resolve::Record;
@@ -55,7 +56,7 @@ use merge_view::heights::Heights;
 use merge_view::highlight::{CellSpans, Highlights};
 use merge_view::marks::{self, Band, Tone};
 use merge_view::merge_fold::{self, MergeFold, MergeOpened};
-use merge_view::nav::{self, Pin, Target};
+use merge_view::nav::{self, Pin, Sides, Target};
 use merge_view::origin::hover_text;
 use merge_view::placeholder;
 use merge_view::rows::{self, PaneError, PaneSet, RowIx, RowMap};
@@ -91,7 +92,7 @@ use crate::sideways;
 use crate::strings::prompt;
 use crate::syntax::{self, Colouring, InputSyntax};
 use crate::tones::{Palette, Tones};
-use crate::toolbar::{self, GROUPS, Labels};
+use crate::toolbar::{self, Badge, GROUPS, Labels};
 use crate::wrap::Wrap;
 use crate::{
     Cancel, CarryMovedEdit, ClearChoice, CopyInput, ExitCode, Find, GoToLine, LINE_HEIGHT,
@@ -103,7 +104,7 @@ use crate::{
     Undo, finish, go_to_line, ignore_closed_view, strings,
 };
 use merge_session::recovery::{FoundJournal, Locator, Recovery, WriteMode, Written, prune};
-use merge_session::session::{CannotSave, Refused, SaveJob, SaveTarget, Session};
+use merge_session::session::{CannotSave, PreviewJob, Refused, SaveJob, SaveTarget, Session};
 
 /// One row of the side panes at the default text size: an editor line, so the rows and the
 /// result stay level. [`Typography::line_height`] gives it for other sizes.
@@ -473,8 +474,10 @@ pub struct MergeWindow {
     ruler_drag: ruler::Dragging,
     /// When the rows' bar shows (spec §6.4).
     scrollbar_mode: ScrollbarMode,
-    /// The number of the conflict holding the caret, for the conflict badge.
+    /// The number of the conflict holding the caret, and the sides it keeps in a merge of
+    /// more than two, for the conflict badge.
     conflict_number: Option<usize>,
+    conflict_sides: Option<Sides>,
     /// The panes' scroll, soft wrap, scroll sync and the region `go_to` brings into view.
     scroll: PaneScroll,
     /// The region of each result placeholder, in order, for scroll sync's result rows.
@@ -695,6 +698,7 @@ impl MergeWindow {
             ruler_drag: ruler::Dragging::default(),
             scrollbar_mode,
             conflict_number: None,
+            conflict_sides: None,
             highlights: Highlights::new(panes),
             syntax,
             colouring,
@@ -966,6 +970,13 @@ impl MergeWindow {
     #[must_use]
     pub fn output(&self) -> Option<&Path> {
         self.session.output()
+    }
+
+    /// A dry run of Save & Exit into the jj commit the merge came from, as it stands; none
+    /// for a merge whose saves go to no commit (spec §7.5.1).
+    #[must_use]
+    pub fn preview_job(&self) -> Option<PreviewJob> {
+        self.session.preview()
     }
 
     #[must_use]
@@ -1544,14 +1555,15 @@ impl MergeWindow {
         }
         let region = self.current_region(cx);
         let number = nav::conflict_number(self.session.document(), region);
+        let sides = nav::conflict_sides(self.session.document(), region);
         let highlighted = (self.session.document().region(region).kind != Kind::Unchanged)
             .then(|| (region, self.session.document().region_bytes(region)));
         if highlighted != self.highlighted {
             self.highlighted = highlighted;
             self.paint_highlight(cx);
         }
-        if number != self.conflict_number {
-            self.conflict_number = number;
+        if (number, sides) != (self.conflict_number, self.conflict_sides) {
+            (self.conflict_number, self.conflict_sides) = (number, sides);
             cx.notify();
         }
     }
@@ -2157,7 +2169,7 @@ impl MergeWindow {
             }
             Next::ConfirmClose => Self::confirm_close(window, cx),
             Next::SaveAndExit => self.save_and_exit(&SaveAndExit, window, cx),
-            Next::Write => self.write_and_finish(window, cx),
+            Next::Write => self.check_descendants(window, cx),
             Next::Record(code) => self.record_again(code, window, cx),
             Next::SaveCopyAs => self.save_copy_as(&SaveCopyAs, window, cx),
             Next::Failed { undone, detail } => {
@@ -2272,6 +2284,63 @@ impl MergeWindow {
         cx.spawn_in(window, async move |_, cx| {
             copying.await;
             ignore_closed_view(cx.update(|_, cx| finish(code, cx)));
+        })
+        .detach();
+    }
+
+    /// Before a save into a jj commit, preview it off the UI thread, and ask first when it
+    /// changes the conflicts of a descendant (spec §7.5.1). Any other save writes at once.
+    /// The result stays locked while the preview runs, so the save writes what it showed.
+    fn check_descendants(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.save_task.is_some() {
+            return;
+        }
+        let Some(job) = self.session.preview() else {
+            return self.write_and_finish(window, cx);
+        };
+        self.set_saving(true, cx);
+        self.save_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let previewed = cx.background_spawn(async move { job.run() }).await;
+            ignore_closed_view(this.update_in(cx, |this, window, cx| {
+                this.save_task = None;
+                this.set_saving(false, cx);
+                let changed: Vec<CommitEffect> = match previewed {
+                    Ok(rewrite) => rewrite
+                        .rewritten
+                        .into_iter()
+                        .filter(|effect| effect.before != effect.after)
+                        .collect(),
+                    Err(error) => {
+                        // The save meets the same refusal and reports it.
+                        tracing::warn!(%error, "cannot preview the save into the commit");
+                        Vec::new()
+                    }
+                };
+                if changed.is_empty() {
+                    this.write_and_finish(window, cx);
+                } else {
+                    Self::confirm_descendants(&changed, window, cx);
+                }
+            }));
+        }));
+    }
+
+    /// Ask before a save that changes the conflicts of the descendants in `changed`.
+    fn confirm_descendants(changed: &[CommitEffect], window: &mut Window, cx: &mut Context<Self>) {
+        let answer = window.prompt(
+            PromptLevel::Info,
+            &prompt::descendants_changed(changed.len()),
+            Some(&strings::descendant_effects(changed)),
+            &[prompt::SAVE, prompt::KEEP_EDITING],
+            cx,
+        );
+        cx.spawn_in(window, async move |this, cx| {
+            let save = answer.await == Ok(GO_AHEAD);
+            ignore_closed_view(this.update_in(cx, |this, window, cx| {
+                if save {
+                    this.write_and_finish(window, cx);
+                }
+            }));
         })
         .detach();
     }
@@ -2650,10 +2719,17 @@ impl MergeWindow {
         }
     }
 
+    /// What the conflict badge can show: the sides a conflict keeps only in a merge of more
+    /// than two.
+    fn badge(&self) -> Badge {
+        if self.session.document().inputs().is_three_way() { Badge::Counts } else { Badge::Sides }
+    }
+
     /// The toolbar, with labels when `window` is wide enough for them.
     fn render_toolbar(&self, window: &Window, cx: &App) -> impl IntoElement + use<> {
         let (tones, dark) = (self.tones(cx), cx.theme().is_dark());
-        let badge = strings::conflict_badge(&self.counts, self.conflict_number).map(|text| {
+        let text = strings::conflict_badge(&self.counts, self.conflict_number, self.conflict_sides);
+        let badge = text.map(|text| {
             let text = SharedString::from(text);
             div()
                 .id(CONFLICT_BADGE_ID)
@@ -2673,7 +2749,7 @@ impl MergeWindow {
             dark,
             Labels::for_width(
                 window.viewport_size().width,
-                toolbar::labels_min_width(self.typography.toolbar_size, window),
+                toolbar::labels_min_width(self.typography.toolbar_size, self.badge(), window),
             ),
             self.typography.toolbar_size,
         )

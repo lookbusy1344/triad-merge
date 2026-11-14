@@ -3,6 +3,7 @@
 #![expect(
     clippy::missing_panics_doc,
     clippy::expect_used,
+    clippy::panic,
     reason = "test support: each panic is a failed test setup, named by its message"
 )]
 
@@ -15,6 +16,7 @@ use std::sync::Arc;
 use std::path::Path;
 
 use camino::{Utf8Path, Utf8PathBuf};
+use futures::{AsyncReadExt as _, StreamExt as _};
 use jj_lib::backend::{CommitId, CopyId, TreeValue};
 use jj_lib::commit::Commit;
 use jj_lib::config::{ConfigLayer, ConfigSource, StackedConfig};
@@ -51,6 +53,9 @@ operation.hostname = "triad"
 operation.username = "triad"
 "#;
 
+/// Files of a whole tree: each path and its bytes.
+pub type Files<'a> = &'a [(&'a str, &'a [u8])];
+
 /// A commit the fixture made, with full-length IDs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Committed {
@@ -69,6 +74,18 @@ impl Committed {
             id: commit.id().clone(),
         }
     }
+}
+
+/// A visible commit, as [`Fixture::visible_commits`] lists it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Visible {
+    pub commit: Committed,
+    /// The first line of its description.
+    pub description: String,
+    /// Its parents' full IDs.
+    pub parents: Vec<String>,
+    /// It is the working-copy commit.
+    pub working_copy: bool,
 }
 
 /// What the working-copy commit holds at a path.
@@ -257,6 +274,46 @@ impl Fixture {
         self.write_commit(&repo, parents, message, entries)
     }
 
+    /// Rewrite `commit` to hold `files` as its whole tree, as `jj squash` into it does; its
+    /// descendants rebase. Returns the new commit.
+    #[expect(
+        clippy::must_use_candidate,
+        reason = "called for its effect on the repository; tests often ignore the result"
+    )]
+    pub fn amend(&self, commit: &Committed, files: Files<'_>) -> Committed {
+        self.amend_entries(commit, &Entry::files(files))
+    }
+
+    /// Rewrite `commit` to hold `entries` as its whole tree, as [`Fixture::amend`] does.
+    #[expect(
+        clippy::must_use_candidate,
+        reason = "called for its effect on the repository; tests often ignore the result"
+    )]
+    pub fn amend_entries(&self, commit: &Committed, entries: &[(&str, Entry)]) -> Committed {
+        let repo = self.repo();
+        let original = repo.store().get_commit(&commit.id).expect("the commit");
+        let tree = tree_of(&repo, entries);
+        let mut tx = repo.start_transaction();
+        let amended = tx
+            .repo_mut()
+            .rewrite_commit(&original)
+            .set_tree(tree)
+            .write()
+            .block_on()
+            .expect("the amended commit");
+        tx.repo_mut().rebase_descendants().block_on().expect("the descendants rebase");
+        self.finish(tx, "amend");
+        Committed::of(&amended)
+    }
+
+    /// The full IDs of `commit`'s parents.
+    #[must_use]
+    pub fn parents_of(&self, commit: &Committed) -> Vec<String> {
+        let repo = self.repo();
+        let commit = repo.store().get_commit(&commit.id).expect("the commit");
+        commit.parent_ids().iter().map(CommitId::hex).collect()
+    }
+
     fn write_commit(
         &self,
         repo: &Arc<ReadonlyRepo>,
@@ -264,28 +321,7 @@ impl Fixture {
         message: &str,
         entries: &[(&str, Entry)],
     ) -> Committed {
-        let store = repo.store();
-        let mut builder = MergedTreeBuilder::new(store.empty_merged_tree());
-        for &(path, entry) in entries {
-            let path = RepoPathBuf::from_internal_string(path).expect("a repository path");
-            let file = |mut bytes: &[u8], executable| TreeValue::File {
-                id: store.write_file(&path, &mut bytes).block_on().expect("a file"),
-                executable,
-                copy_id: CopyId::placeholder(),
-            };
-            let value = match entry {
-                Entry::File(bytes) => file(bytes, false),
-                Entry::Executable(bytes) => file(bytes, true),
-                Entry::Symlink(target) => TreeValue::Symlink(
-                    store.write_symlink(&path, target).block_on().expect("a symlink"),
-                ),
-                Entry::Submodule => TreeValue::GitSubmodule(
-                    CommitId::try_from_hex(SUBMODULE_COMMIT).expect("a commit ID in hex"),
-                ),
-            };
-            builder.set_or_remove(path, Some(value));
-        }
-        let tree = builder.write_tree().block_on().expect("a tree");
+        let tree = tree_of(repo, entries);
         let mut tx = repo.start_transaction();
         let commit = tx
             .repo_mut()
@@ -296,6 +332,124 @@ impl Fixture {
             .expect("a commit");
         self.finish(tx, "commit");
         Committed::of(&commit)
+    }
+}
+
+/// `entries` as a whole tree in `repo`'s store.
+fn tree_of(repo: &ReadonlyRepo, entries: &[(&str, Entry)]) -> jj_lib::merged_tree::MergedTree {
+    let store = repo.store();
+    let mut builder = MergedTreeBuilder::new(store.empty_merged_tree());
+    for &(path, entry) in entries {
+        let path = RepoPathBuf::from_internal_string(path).expect("a repository path");
+        let file = |mut bytes: &[u8], executable| TreeValue::File {
+            id: store.write_file(&path, &mut bytes).block_on().expect("a file"),
+            executable,
+            copy_id: CopyId::placeholder(),
+        };
+        let value = match entry {
+            Entry::File(bytes) => file(bytes, false),
+            Entry::Executable(bytes) => file(bytes, true),
+            Entry::Symlink(target) => TreeValue::Symlink(
+                store.write_symlink(&path, target).block_on().expect("a symlink"),
+            ),
+            Entry::Submodule => TreeValue::GitSubmodule(
+                CommitId::try_from_hex(SUBMODULE_COMMIT).expect("a commit ID in hex"),
+            ),
+        };
+        builder.set_or_remove(path, Some(value));
+    }
+    builder.write_tree().block_on().expect("a tree")
+}
+
+impl Fixture {
+    /// Commit on `parents` the merge of their trees, with `files` written over it, as `jj new`
+    /// on several parents followed by edits does. A merge whose trees conflict holds the
+    /// conflict. The working copy stays where it is.
+    #[expect(
+        clippy::must_use_candidate,
+        reason = "called for its effect on the repository; tests often ignore the result"
+    )]
+    pub fn commit_merged(
+        &self,
+        parents: &[&Committed],
+        message: &str,
+        files: &[(&str, &[u8])],
+    ) -> Committed {
+        self.merged_commit(parents, message, files, None)
+    }
+
+    /// A second visible commit of `commit`'s change, on `parents` with their merged trees,
+    /// as two concurrent rewrites of the change leave it: the change is divergent. `commit`
+    /// stays visible.
+    #[expect(
+        clippy::must_use_candidate,
+        reason = "called for its effect on the repository; tests often ignore the result"
+    )]
+    pub fn divergent_copy(
+        &self,
+        commit: &Committed,
+        parents: &[&Committed],
+        message: &str,
+    ) -> Committed {
+        let change_id = jj_lib::backend::ChangeId::try_from_reverse_hex(&commit.change_id)
+            .expect("a change ID in reverse hex");
+        self.merged_commit(parents, message, &[], Some(change_id))
+    }
+
+    fn merged_commit(
+        &self,
+        parents: &[&Committed],
+        message: &str,
+        files: &[(&str, &[u8])],
+        change_id: Option<jj_lib::backend::ChangeId>,
+    ) -> Committed {
+        let repo = self.repo();
+        let store = repo.store();
+        let parent_commits: Vec<Commit> = parents
+            .iter()
+            .map(|parent| store.get_commit(&parent.id).expect("the parent"))
+            .collect();
+        let merged = jj_lib::rewrite::merge_commit_trees(repo.as_ref(), &parent_commits)
+            .block_on()
+            .expect("the parents' trees merge");
+        let mut builder = MergedTreeBuilder::new(merged);
+        for &(path, mut bytes) in files {
+            let path = RepoPathBuf::from_internal_string(path).expect("a repository path");
+            let id = store.write_file(&path, &mut bytes).block_on().expect("a file");
+            builder.set_or_remove(
+                path,
+                Some(TreeValue::File { id, executable: false, copy_id: CopyId::placeholder() }),
+            );
+        }
+        let tree = builder.write_tree().block_on().expect("a tree");
+        let mut tx = repo.start_transaction();
+        let builder = tx
+            .repo_mut()
+            .new_commit(parents.iter().map(|parent| parent.id.clone()).collect(), tree)
+            .set_description(message);
+        let builder = match change_id {
+            Some(change_id) => builder.set_change_id(change_id),
+            None => builder,
+        };
+        let commit = builder.write().block_on().expect("a commit");
+        self.finish(tx, "commit");
+        Committed::of(&commit)
+    }
+
+    /// Point tag `name` at `commit`, as `jj tag set` does; jj's default `immutable_heads()`
+    /// holds it.
+    pub fn set_tag(&self, name: &str, commit: &Committed) {
+        let repo = self.repo();
+        let mut tx = repo.start_transaction();
+        tx.repo_mut()
+            .set_local_tag_target(RefName::new(name), RefTarget::normal(commit.id.clone()));
+        self.finish(tx, "set tag");
+    }
+
+    /// The operations recorded so far, from the head back to the root.
+    #[must_use]
+    pub fn operation_count(&self) -> usize {
+        self.operations().len()
     }
 
     /// Commit `base`, then `left` and `right` on it, each holding `path` alone, and check
@@ -365,6 +519,125 @@ impl Fixture {
         let mut tx = repo.start_transaction();
         tx.repo_mut().set_local_bookmark_target(RefName::new(name), RefTarget::normal(wc));
         self.finish(tx, "set bookmark");
+    }
+
+    /// Point bookmark `name` at `commit`, as `jj bookmark set NAME -r COMMIT` does. A colocated
+    /// workspace exports it to git.
+    pub fn set_bookmark(&self, name: &str, commit: &Committed) {
+        let repo = self.repo();
+        let mut tx = repo.start_transaction();
+        tx.repo_mut()
+            .set_local_bookmark_target(RefName::new(name), RefTarget::normal(commit.id.clone()));
+        self.finish(tx, "set bookmark");
+    }
+
+    /// Every visible commit but the root, as `jj log -r 'all() ~ root()'` lists them, in
+    /// commit ID order.
+    #[must_use]
+    pub fn visible_commits(&self) -> Vec<Visible> {
+        let repo = self.repo();
+        let store = repo.store();
+        let root = store.root_commit_id().clone();
+        let wc = self.working_copy(repo.as_ref()).id().clone();
+        let mut pending: Vec<CommitId> = repo.view().heads().iter().cloned().collect();
+        let mut seen = std::collections::BTreeMap::new();
+        while let Some(id) = pending.pop() {
+            if id == root || seen.contains_key(&id) {
+                continue;
+            }
+            let commit = store.get_commit(&id).expect("a visible commit");
+            pending.extend(commit.parent_ids().iter().cloned());
+            let visible = Visible {
+                commit: Committed::of(&commit),
+                description: commit.description().lines().next().unwrap_or_default().to_owned(),
+                parents: commit.parent_ids().iter().map(CommitId::hex).collect(),
+                working_copy: id == wc,
+            };
+            seen.insert(id, visible);
+        }
+        seen.into_values().collect()
+    }
+
+    /// Each path of `commit`'s tree and its text, as `jj file show` prints it: a conflict
+    /// materialised in jj's `snapshot` marker style.
+    #[must_use]
+    pub fn tree_text(&self, commit: &Committed) -> std::collections::BTreeMap<String, String> {
+        let repo = self.repo();
+        let store = repo.store();
+        let tree = store.get_commit(&commit.id).expect("the commit").tree();
+        let options = ConflictMaterializeOptions {
+            marker_style: ConflictMarkerStyle::Snapshot,
+            marker_len: None,
+            merge: store.merge_options().clone(),
+        };
+        let entries: Vec<_> = tree.entries().collect().block_on();
+        entries
+            .into_iter()
+            .map(|(path, value)| {
+                let value = value.expect("the tree reads");
+                let bytes = match value.as_resolved() {
+                    Some(Some(TreeValue::File { id, .. })) => {
+                        let mut reader = store.read_file(&path, id).block_on().expect("a file");
+                        let mut bytes = Vec::new();
+                        reader.read_to_end(&mut bytes).block_on().expect("the file reads");
+                        bytes
+                    }
+                    Some(other) => panic!("a file at {path:?}, got {other:?}"),
+                    None => {
+                        let file = conflicts::try_materialize_file_conflict_value(
+                            store,
+                            &path,
+                            &value,
+                            tree.labels(),
+                        )
+                        .block_on()
+                        .expect("the conflict reads")
+                        .expect("a file conflict");
+                        conflicts::materialize_merge_result_to_bytes(
+                            &file.contents,
+                            &file.labels,
+                            &options,
+                        )
+                        .to_vec()
+                    }
+                };
+                (
+                    path.as_internal_file_string().to_owned(),
+                    String::from_utf8(bytes).expect("UTF-8 text"),
+                )
+            })
+            .collect()
+    }
+
+    /// The commit git's `HEAD` names, in a colocated workspace; none in an internal one.
+    #[must_use]
+    pub fn git_head(&self) -> Option<String> {
+        (self.store == Store::Colocated).then(|| {
+            let repo = gix::open(self.root()).expect("git's repository opens");
+            repo.head_id().expect("git has a HEAD").to_string()
+        })
+    }
+
+    /// git's branches and tags, each full ref name with the commit it names; none in an
+    /// internal workspace.
+    #[must_use]
+    pub fn git_refs(&self) -> std::collections::BTreeMap<String, String> {
+        if self.store != Store::Colocated {
+            return std::collections::BTreeMap::new();
+        }
+        let repo = gix::open(self.root()).expect("git's repository opens");
+        let platform = repo.references().expect("git's refs read");
+        platform
+            .all()
+            .expect("git's refs read")
+            .map(|reference| reference.expect("a ref"))
+            .filter_map(|reference| {
+                let name = reference.name().as_bstr().to_string();
+                let shown = name.starts_with("refs/heads/") || name.starts_with("refs/tags/");
+                let id = reference.target().try_id().map(|id| id.to_hex().to_string());
+                shown.then_some(id.map(|id| (name, id))).flatten()
+            })
+            .collect()
     }
 
     /// The full ID of the working-copy commit at the head operation.
@@ -467,6 +740,18 @@ impl Fixture {
             operation = op.parents().block_on().expect("the parents load").into_iter().next();
         }
         operations
+    }
+
+    /// The full IDs of the operations, newest first, along first parents.
+    #[must_use]
+    pub fn operation_ids(&self) -> Vec<String> {
+        let mut ids = Vec::new();
+        let mut operation = Some(self.repo().operation().clone());
+        while let Some(op) = operation {
+            ids.push(jj_lib::object_id::ObjectId::hex(op.id()));
+            operation = op.parents().block_on().expect("the parents load").into_iter().next();
+        }
+        ids
     }
 
     /// The full IDs of the working-copy commit's parents, `back` operations before the head
@@ -580,7 +865,7 @@ pub struct MergeTool {
     pub conflict_exit_codes: Vec<i32>,
 }
 
-/// What `jj resolve` makes of a merge tool's run, by the rules of jj-cli 0.46
+/// What `jj resolve` makes of a merge tool's run, by the rules of jj-cli 0.47
 /// (`cli/src/merge_tools/external.rs`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToolOutcome {
@@ -594,6 +879,52 @@ pub enum ToolOutcome {
     EmptyOrUnchanged,
     /// The exit code promised conflict markers, but jj found none it could parse.
     InvalidConflictMarkers,
+}
+
+/// The characters jj repeats to make a conflict marker line.
+const MARKER_CHARS: &[char] = &['<', '>', '+', '-', '%', '\\', '|', '='];
+
+/// `text` with each conflict marker line cut to its run of marker characters, so that
+/// conflicts compare without their labels, which name commit and change IDs.
+#[must_use]
+pub fn without_conflict_labels(text: &str) -> String {
+    text.split_inclusive('\n')
+        .map(|line| {
+            let first = line.chars().next().filter(|c| MARKER_CHARS.contains(c));
+            let run = first.map_or(0, |first| line.chars().take_while(|&c| c == first).count());
+            if run >= MIN_CONFLICT_MARKER_LEN {
+                let end = if line.ends_with('\n') { "\n" } else { "" };
+                format!("{}{end}", &line[..run])
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect()
+}
+
+/// The workspace's `Cargo.lock`.
+const CARGO_LOCK: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../Cargo.lock");
+
+/// The jj-lib version `Cargo.lock` pins: the jj release whose CLI the oracles under
+/// `fixtures/oracle/jj-cli-*.json` must come from.
+#[must_use]
+pub fn locked_jj_lib_version() -> String {
+    locked_version("jj-lib")
+}
+
+/// The version of `package` that `Cargo.lock` pins.
+#[must_use]
+pub fn locked_version(package: &str) -> String {
+    let lock = std::fs::read_to_string(CARGO_LOCK).expect("Cargo.lock reads");
+    let name = format!(r#"name = "{package}""#);
+    let mut lines = lock.lines();
+    lines.by_ref().find(|line| *line == name).expect("Cargo.lock holds the package");
+    lines
+        .next()
+        .and_then(|line| line.strip_prefix(r#"version = ""#))
+        .and_then(|rest| rest.strip_suffix('"'))
+        .expect("a package's version follows its name")
+        .to_owned()
 }
 
 /// The arguments with each `$name` replaced by its variable, as jj does (`$` then

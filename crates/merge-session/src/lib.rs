@@ -10,6 +10,7 @@ pub mod install;
 pub mod invocation;
 pub mod io;
 pub mod jj_config;
+pub mod jj_native;
 pub mod native;
 pub mod origin;
 pub mod recovery;
@@ -238,6 +239,12 @@ impl EncodedOutput {
         };
         let bytes = encoded.unwrap_or_else(|| text.into_bytes());
         Self { bytes, code }
+    }
+
+    /// The bytes a save writes.
+    #[must_use]
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
     }
 
     /// The exit code a save of this output ends the merge with.

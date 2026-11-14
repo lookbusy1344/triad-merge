@@ -43,7 +43,7 @@ pub struct Source {
 }
 
 /// `jj diff --tool` copies each side to a temporary directory whose name starts with this,
-/// in a subdirectory named for the side (jj-cli 0.46 `merge_tools/external.rs`).
+/// in a subdirectory named for the side (jj-cli 0.47 `merge_tools/external.rs`).
 pub const JJ_DIFF_PREFIX: &str = "jj-diff-";
 /// The side `jj diff --tool` copies the revision it shows changes in to.
 pub(crate) const JJ_DIFF_RIGHT: &str = "right";

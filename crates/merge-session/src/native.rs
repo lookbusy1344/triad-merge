@@ -35,6 +35,15 @@ pub enum NativeError {
     Vcs(#[from] VcsError),
     #[error("{path} at {rev}: {source}")]
     Decode { path: Utf8PathBuf, rev: String, source: DecodeError },
+    /// A jj-native option outside a jj repository (spec §1.2).
+    #[error("{0} needs a jj repository")]
+    NeedsJj(&'static str),
+}
+
+/// The left title's revision for `diff --op`: the working copy at operation `short`.
+#[must_use]
+pub fn operation_title(short: &str) -> String {
+    format!("@ at operation {short}")
 }
 
 /// The repository holding `start`, as [`nearest_repo`] finds it from `start` made canonical,
@@ -158,8 +167,46 @@ pub fn load(
             .unwrap_or_else(|| parent.rev.to_string());
         (parent.rev, title)
     };
-    let (bytes, left_title) = match repo.file_at(relative, &spec)? {
-        Some(bytes) => (bytes, title),
+    read_left(repo, relative, &spec, &title, path)
+}
+
+/// Load `path` against the working-copy commit at the jj operation `op` names (`diff
+/// --op`), from the run's repository. Also returns the commit, the revision the line
+/// origins read.
+///
+/// # Errors
+///
+/// [`NativeError::NeedsJj`] outside a jj repository; [`NativeError::Vcs`] for an operation
+/// jj cannot resolve; and the errors of [`load`].
+pub fn load_at_operation(
+    repo: &mut RunRepository,
+    path: &Path,
+    op: &str,
+) -> Result<(NativeDiff, vcs::CommitId), NativeError> {
+    let absolute = canonical_file(path)?;
+    let repo = repo.require()?;
+    if repo.kind() != RepoKind::Jj {
+        return Err(NativeError::NeedsJj("diff --op"));
+    }
+    let relative = absolute
+        .strip_prefix(repo.root())
+        .map_err(|_| VcsError::OutsideRepository(absolute.clone()))?;
+    let (short, commit) = JjRepository::discover(repo.root())?.working_copy_at(op)?;
+    let spec = RevSpec::Expr(commit.as_str().to_owned());
+    let diff = read_left(repo, relative, &spec, &operation_title(&short), path)?;
+    Ok((diff, commit))
+}
+
+/// `relative` at `spec` on the left, titled `title`, against the working-copy file `path`.
+fn read_left(
+    repo: &dyn Repository,
+    relative: &Utf8Path,
+    spec: &RevSpec,
+    title: &str,
+    path: &Path,
+) -> Result<NativeDiff, NativeError> {
+    let (bytes, left_title) = match repo.file_at(relative, spec)? {
+        Some(bytes) => (bytes, title.to_owned()),
         None => (Vec::new(), format!("{title} {NO_FILE}")),
     };
     let left = Text::decode(bytes).map_err(|source| NativeError::Decode {

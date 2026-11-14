@@ -10,21 +10,25 @@ use merge_config::settings::Settings as Stored;
 use merge_core::diff::DiffOptions;
 use merge_core::document::{MergeDocument, MergeOptions};
 use merge_session::WindowForm;
-use merge_session::invocation::{Resolve, Window};
+use merge_session::invocation::{Absorb, History, Resolve, Stack, Window};
 use merge_session::repository::{Handoff, RunRepository};
 use merge_session::resolve::Snapshot;
 use merge_session::semantics::Caller;
 use merge_view::status::FileNames;
 use vcs::RepoKind;
 
+use crate::absorb_window::{self, AbsorbStart};
 use crate::assets::AppAssets;
 use crate::diff_window::{self, DiffFile, DiffLookup, DiffSettings, Origin};
+use crate::history_window::{self, HistoryStart};
 use crate::measure::{self, Measure};
 use crate::resolve_queue::{self, Queue};
+use crate::stack_window::{self, StackStart};
 use crate::window::{OpenError, OriginLookup, WindowSettings};
 use crate::{ExitCode, Finish, Typography, open_dialog, strings};
 
-/// A diff window opened from the open dialog watches its files on disk (spec §6.1).
+/// A diff window opened from the open dialog or the history window watches its files on
+/// disk (spec §6.1).
 const WATCH_FILES: bool = true;
 
 /// Run a window form of the command line until its window finishes. Inputs load before the
@@ -107,11 +111,77 @@ pub fn run(form: WindowForm) -> ExitCode {
             let settings = diff_settings(diff.title, diff.diff, base, origins, kind);
             launch_diff(left, right, settings, errors, bindings)
         }
-        Window::DiffNative { path, rev, diff, title } => {
-            let window = NativeDiff { path, rev, diff, title };
+        Window::DiffNative { path, rev, op, diff, title } => {
+            let window = NativeDiff { path, rev, op, diff, title };
             run_native_diff(window, repo, base, errors, bindings)
         }
+        Window::History(history) => run_history(history, &repo, base, bindings),
+        Window::Stack(stack) => run_stack(stack, &repo, base, bindings),
+        Window::Absorb(absorb) => run_absorb(absorb, &repo, working_dir(dir), base, bindings),
     }
+}
+
+/// The history window on `history`'s file, whose diff windows watch their files.
+fn run_history(
+    history: History,
+    repo: &RunRepository,
+    base: WindowSettings,
+    bindings: KeyBindings,
+) -> ExitCode {
+    let start = HistoryStart {
+        cwd: working_dir(base.cwd.as_deref()),
+        path: history.path,
+        limit: history.limit,
+        jj_config: repo.jj_config().cloned(),
+        settings: base,
+        watch: WATCH_FILES,
+    };
+    launch(bindings, move |cx| {
+        history_window::start(start, |code, _| exit(code), cx).map(drop)?;
+        Ok(())
+    })
+}
+
+/// The absorb window on `absorb`'s paths and `--into`, from the working directory `cwd`,
+/// whose hunks' lines take `settings`' font and colours.
+fn run_absorb(
+    absorb: Absorb,
+    repo: &RunRepository,
+    cwd: PathBuf,
+    settings: WindowSettings,
+    bindings: KeyBindings,
+) -> ExitCode {
+    let start = AbsorbStart {
+        cwd,
+        paths: absorb.paths,
+        into: absorb.into,
+        settings,
+        jj_config: repo.jj_config().cloned(),
+    };
+    launch(bindings, move |cx| {
+        absorb_window::start(start, |code, _| exit(code), cx).map(drop)?;
+        Ok(())
+    })
+}
+
+/// The stack window on `stack`'s revset, whose merge windows read with the run's jj config.
+fn run_stack(
+    stack: Stack,
+    repo: &RunRepository,
+    base: WindowSettings,
+    bindings: KeyBindings,
+) -> ExitCode {
+    let start = StackStart {
+        cwd: working_dir(base.cwd.as_deref()),
+        revset: stack.revset,
+        options: stack.options,
+        jj_config: repo.jj_config().cloned(),
+        settings: base,
+    };
+    launch(bindings, move |cx| {
+        stack_window::start(start, |code, _| exit(code), cx).map(drop)?;
+        Ok(())
+    })
 }
 
 /// The working-copy file that `right`, the right side of `jj diff --tool`, copies, so its
@@ -134,6 +204,7 @@ fn jj_working_copy(repo: &mut RunRepository, right: &Path, cwd: &Path) -> Option
 struct NativeDiff {
     path: PathBuf,
     rev: Option<String>,
+    op: Option<String>,
     diff: DiffOptions,
     title: Option<String>,
 }
@@ -147,33 +218,51 @@ fn run_native_diff(
     errors: Vec<String>,
     bindings: KeyBindings,
 ) -> ExitCode {
-    let NativeDiff { path, rev, diff, title } = window;
+    let NativeDiff { path, rev, op, diff, title } = window;
     let dir = base.cwd.as_deref();
     let kind = repo.kind();
-    let native = match merge_session::native::load(&mut repo, &path, rev.as_deref()) {
-        Ok(native) => native,
+    let loaded = match &op {
+        Some(op) => merge_session::native::load_at_operation(&mut repo, &path, op)
+            .map(|(native, commit)| (native, Some(commit.as_str().to_owned()))),
+        None => merge_session::native::load(&mut repo, &path, rev.as_deref()).map(|n| (n, rev)),
+    };
+    let (native, rev) = match loaded {
+        Ok(loaded) => loaded,
         Err(error) => return report(&error.to_string()),
     };
     let origins =
         DiffLookup::Native { path: working_dir(dir).join(&path), rev, repo: Handoff::new(repo) };
-    let right = match merge_session::read_text(&native.right) {
-        Ok(text) => DiffFile { origin: Origin::File(native.right), text, read_only: false },
+    let (left, right) = match native_sides(native) {
+        Ok(sides) => sides,
         Err(error) => return report(&error.to_string()),
     };
-    let left = DiffFile::revision(native.left, native.left_title);
     let settings = diff_settings(title, diff, base, origins, kind);
     launch_diff(left, right, settings, errors, bindings)
 }
 
+/// A `diff PATH` window's sides: `native`'s revision on the left, read-only, and the
+/// working-tree file on the right, which saves.
+///
+/// # Errors
+///
+/// When the working-tree file cannot be read.
+pub(crate) fn native_sides(
+    native: merge_session::native::NativeDiff,
+) -> Result<(DiffFile, DiffFile), merge_session::SessionError> {
+    let text = merge_session::read_text(&native.right)?;
+    let right = DiffFile { origin: Origin::File(native.right), text, read_only: false };
+    Ok((DiffFile::revision(native.left, native.left_title), right))
+}
+
 /// The merge window on the conflict `resolve` names, read from the repository (spec §7.4).
 fn run_resolve(
-    resolve: Resolve,
+    mut resolve: Resolve,
     mut repo: RunRepository,
     base: WindowSettings,
     errors: Vec<String>,
     bindings: KeyBindings,
 ) -> ExitCode {
-    let Some(target) = resolve.target else {
+    let Some(target) = resolve.target.take() else {
         return report("resolve has no file to open");
     };
     let cwd = working_dir(base.cwd.as_deref());
@@ -188,7 +277,13 @@ fn run_resolve(
             Ok(())
         });
     }
-    let opened = match merge_session::resolve::load(&mut repo, &cwd, &target, Snapshot::Take)
+    let loaded = match resolve.in_commit() {
+        Some(rev) => {
+            merge_session::resolve::load_at_commit(&cwd, rev, &target, repo.jj_config().cloned())
+        }
+        None => merge_session::resolve::load(&mut repo, &cwd, &target, Snapshot::Take),
+    };
+    let opened = match loaded
         .map_err(|e| e.to_string())
         .and_then(|loaded| loaded.open(resolve.options).map_err(|e| e.to_string()))
     {

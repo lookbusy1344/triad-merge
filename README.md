@@ -21,7 +21,8 @@ triad 0.1 is an early beta. It is tested on macOS 27 on Apple Silicon. [Releases
 ## Why triad
 
 - **jj first.** triad merges with jj's own rules in a jj repository: jj's diff, its trivial resolution, `merge.same-change` and `merge.hunk-level`, and conflicts with any number of sides. It reads jj's working-copy commit through jj-lib.
-- **Full Git parity.** In a git repository triad merges as `git merge-file` does, byte for byte, and reads conflicts from git's index through gix. Every feature works in both.
+- **Git parity.** In a git repository triad merges as `git merge-file` does, byte for byte, and reads conflicts from git's index through gix. Every feature git can support works in both.
+- **Built on what jj records.** Commands git cannot have: resolve a conflict in any commit, walk a file through the operation log, absorb edits into the commits that wrote the lines (§ jj-enabled features).
 - **Exact semantics, checked.** Two oracle corpora pin the engine: about 1,950 triples from `git merge-file` and about 1,970 merges from jj-lib. The tests compare triad's output with each.
 - **Fast on large files.** Panes draw only the rows on screen. Scrolling holds the display's refresh rate at 1M lines.
 - **No unsafe code.** The workspace forbids it.
@@ -47,6 +48,16 @@ triad 0.1 is an early beta. It is tested on macOS 27 on Apple Silicon. [Releases
 - Suggestions offer, never apply, resolutions for common shapes: both sides inserting, sorted lists, a block moved on one side and edited on the other.
 
 **Editor.** Syntax highlighting for Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML and CSS. Overview ruler, search and replace, soft wrap, scroll sync, whitespace modes, line endings ignored or kept in comparison and output, recovery journals for unfinished merges, and a plain-text config file.
+
+## jj-enabled features
+
+These rest on what jj records, so git has no form of them. In a git repository each exits 3. [`docs/USER-GUIDE.md`](docs/USER-GUIDE.md) §3 shows each command.
+
+- **Conflicts in any commit.** `triad-merge stack` lists the conflicted mutable commits, parents first, in a window; open any conflicted path from there. `resolve PATH -r REV` resolves in that commit without `jj edit`. A save rewrites the commit and rebases its descendants, and triad asks first when that changes a descendant's conflicts.
+- **File history from the operation log.** `triad-merge history PATH` lists each version of a file across jj's working-copy snapshots. Open one against the working copy and copy back what you overwrote. `diff PATH --op OP` opens one version directly.
+- **Absorb.** `triad-merge absorb` sends each working-copy hunk to the commit that last changed its lines. A window shows where each hunk goes and lets you send it elsewhere or keep it. Unlike `jj absorb`, triad keeps a hunk that would conflict in its target and says why.
+
+Each has a form for scripts without a window: `--list`, `--json` or `--headless`.
 
 ## Performance
 
@@ -109,6 +120,8 @@ After install:
 The bundle gives the Dock triad's icon; a bare binary shows the generic one. To update, pull and repeat the first three commands. The registration names the path in `/Applications`, so it stays valid.
 
 ## Use
+
+[`docs/USER-GUIDE.md`](docs/USER-GUIDE.md) covers every command, jj first, then git: resolving in the working copy and in any commit, diffing against older revisions and earlier snapshots, and the jj-enabled commands. The sections below are the short form.
 
 ### From jj
 
@@ -234,6 +247,7 @@ On macOS, Gatekeeper scans each newly linked binary on its first run, so the fir
 
 | File | Contents |
 |---|---|
+| `docs/USER-GUIDE.md` | How to use triad, jj then git |
 | `docs/SPEC.md` | Behaviour |
 | `docs/PLAN.md` | Status, next steps and open work |
 | `docs/DESIGN.md` | Design notes: reasons, decisions, measurements |

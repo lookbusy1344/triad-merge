@@ -13,8 +13,9 @@ use merge_config::named::Named;
 use merge_config::settings::{Algorithm, Settings, Whitespace};
 use merge_config::settings::{Choice, HunkLevelArg, SameChangeArg};
 use merge_session::invocation::{
-    Diff, DiffFlags, Merge, MergeFiles, Resolve, SemanticsFlags, Window,
+    Absorb, Diff, DiffFlags, History, Merge, MergeFiles, Resolve, SemanticsFlags, Stack, Window,
 };
+use vcs_jj::HunkChoice;
 
 /// What the command line asks for.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,6 +43,28 @@ pub enum Batch {
     DiffInspect { left: PathBuf, right: PathBuf, diff: DiffOptions, json: bool },
     /// Write the merge and diff tool entries to `vcs`'s user config, or to `config`.
     Install { vcs: RepoKind, config: Option<PathBuf> },
+    /// A jj-native form (spec §7.5).
+    Jj(JjBatch),
+}
+
+/// A jj-native form that runs without a window (spec §7.5): each refuses a git repository.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JjBatch {
+    /// List the conflicted commits `revset` names, parents first.
+    Stack { revset: Option<String>, json: bool },
+    /// The versions of a file across jj's operation log.
+    History { path: PathBuf, limit: Option<usize>, json: bool },
+    /// The working copy's hunks, each with the ancestor it goes into; moved there with
+    /// `apply`.
+    Absorb {
+        paths: Vec<PathBuf>,
+        into: Option<String>,
+        choices: Vec<HunkChoice>,
+        apply: bool,
+        /// The operation the listing read; `apply` with `choices` needs it.
+        listed_at: Option<String>,
+        json: bool,
+    },
 }
 
 /// A command line that parses but asks for no valid form.
@@ -59,10 +82,16 @@ pub enum UsageError {
     DiffFiles(usize),
     #[error("--rev applies only to diff PATH")]
     RevWithTwoFiles,
+    #[error("--op applies only to diff PATH")]
+    OpWithTwoFiles,
     #[error("--inspect needs LEFT RIGHT")]
     InspectNative,
     #[error("--commands applies to one file: give resolve a PATH")]
     CommandsWithoutPath,
+    #[error(
+        "--move and --keep with --apply need --listed-at OP, the operation the listing printed"
+    )]
+    ChoicesWithoutListing,
 }
 
 /// Parse the arguments, program name first, over the default settings.
@@ -108,6 +137,16 @@ const MIN_MARKER_LENGTH: usize = 1;
 const MAX_MARKER_LENGTH: usize = 65_536;
 
 /// A conflict marker length: a whole number from [`MIN_MARKER_LENGTH`] to [`MAX_MARKER_LENGTH`].
+/// `--move N=REV`: a hunk's number and a revision.
+fn hunk_move(value: &str) -> Result<(usize, String), String> {
+    let (hunk, rev) = value.split_once('=').ok_or_else(|| "expected N=REV".to_owned())?;
+    if rev.is_empty() {
+        return Err("expected N=REV".to_owned());
+    }
+    let hunk = hunk.parse::<usize>().map_err(|error| error.to_string())?;
+    Ok((hunk, rev.to_owned()))
+}
+
 fn marker_length(value: &str) -> Result<usize, String> {
     match value.parse::<usize>() {
         Ok(n) if n < MIN_MARKER_LENGTH => Err(format!("must be at least {MIN_MARKER_LENGTH}")),
@@ -190,12 +229,68 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// The versions of PATH in the working-copy commit across jj's operation log, newest
+    /// first, in a window to compare and restore them from (jj only).
+    History {
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        /// List at most N versions, the newest.
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+        /// Print the list instead of opening the window.
+        #[arg(long)]
+        list: bool,
+        /// Print the list as JSON instead of opening the window.
+        #[arg(long)]
+        json: bool,
+    },
+    /// The working copy's hunks, each with the commit that wrote its lines, in a window to
+    /// send them there; or listed, and moved with --apply (jj only).
+    Absorb {
+        /// Only the hunks under these paths.
+        #[arg(value_name = "PATH")]
+        paths: Vec<PathBuf>,
+        /// The commits a hunk may go into; default `mutable()`, among the working copy's
+        /// ancestors.
+        #[arg(long, value_name = "REVSET")]
+        into: Option<String>,
+        /// Send hunk N into the commit REV names.
+        #[arg(long = "move", value_name = "N=REV", value_parser = hunk_move)]
+        moves: Vec<(usize, String)>,
+        /// Keep hunk N in the working copy.
+        #[arg(long = "keep", value_name = "N")]
+        keeps: Vec<usize>,
+        /// Move the hunks; without it, only list them.
+        #[arg(long)]
+        apply: bool,
+        /// Print the list instead of opening the window.
+        #[arg(long)]
+        list: bool,
+        /// The operation the listing printed: --apply refuses when the repository has moved
+        /// past it, so hunk numbers mean what the listing showed.
+        #[arg(long, value_name = "OP", requires = "apply")]
+        listed_at: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
     /// Two-way diff: LEFT RIGHT, or PATH against its parent revision.
     Diff(DiffCli),
     /// Resolve a conflicted file from the repository; with no PATH, the first of them.
     Resolve(ResolveCli),
     /// Register triad as git's or jj's merge and diff tool.
     Install(InstallCli),
+    /// The conflicted commits, parents first, in a window to resolve them in (jj only).
+    Stack {
+        /// The commits to list; default `conflicts() & mutable()`.
+        #[arg(value_name = "REVSET")]
+        revset: Option<String>,
+        /// Print the list instead of opening the window.
+        #[arg(long)]
+        list: bool,
+        /// Print the list as JSON instead of opening the window.
+        #[arg(long)]
+        json: bool,
+    },
     /// Print the settings in effect, in the config file's form.
     ShowConfig {
         /// Print the defaults instead.
@@ -218,6 +313,12 @@ struct ResolveCli {
     /// line, before writing.
     #[arg(long, value_name = "FILE", requires = "headless")]
     commands: Option<PathBuf>,
+    /// Resolve PATH in the commit REV names, without checking it out (jj only).
+    #[arg(short = 'r', long = "revision", value_name = "REV", requires = "path")]
+    revision: Option<String>,
+    /// With --headless and --revision: report what the save would do; write nothing.
+    #[arg(long, requires_all = ["headless", "revision"])]
+    dry_run: bool,
     #[command(flatten)]
     diff: DiffArgs,
     #[command(flatten)]
@@ -244,6 +345,8 @@ impl ResolveCli {
             options: flags.merge_options(settings, chosen),
             flags,
             semantics: self.semantics.flags(),
+            rev: self.revision,
+            dry_run: self.dry_run,
         };
         Ok(if self.headless {
             Invocation::Batch(Batch::Resolve(resolve))
@@ -284,6 +387,9 @@ struct DiffCli {
     /// The revision to compare PATH with.
     #[arg(long)]
     rev: Option<String>,
+    /// Compare PATH with its version in the working-copy commit at jj operation OP (jj only).
+    #[arg(long, value_name = "OP", conflicts_with_all = ["rev", "inspect"])]
+    op: Option<String>,
     /// Print the regions; no window.
     #[arg(long, conflicts_with_all = ["title", "readonly_left", "readonly_right"])]
     inspect: bool,
@@ -362,6 +468,38 @@ impl Cli {
             Some(Command::Diff(diff)) => diff.invocation(settings),
             Some(Command::Resolve(resolve)) => resolve.invocation(settings),
             Some(Command::Install(install)) => Ok(install.invocation()),
+            Some(Command::Stack { revset, list, json }) => Ok(if list || json {
+                Invocation::Batch(Batch::Jj(JjBatch::Stack { revset, json }))
+            } else {
+                let options = DiffFlags::default().merge_options(settings, MergeOptions::default());
+                Invocation::Window(Window::Stack(Stack { revset, options }))
+            }),
+            Some(Command::Absorb { paths, into, moves, keeps, apply, list, listed_at, json }) => {
+                if !(list || json || apply) && moves.is_empty() && keeps.is_empty() {
+                    return Ok(Invocation::Window(Window::Absorb(Absorb { paths, into })));
+                }
+                if apply && listed_at.is_none() && !(moves.is_empty() && keeps.is_empty()) {
+                    return Err(UsageError::ChoicesWithoutListing);
+                }
+                let choices = moves
+                    .into_iter()
+                    .map(|(hunk, rev)| HunkChoice::Move { hunk, rev })
+                    .chain(keeps.into_iter().map(HunkChoice::Keep))
+                    .collect();
+                Ok(Invocation::Batch(Batch::Jj(JjBatch::Absorb {
+                    paths,
+                    into,
+                    choices,
+                    apply,
+                    listed_at,
+                    json,
+                })))
+            }
+            Some(Command::History { path, limit, list, json }) => Ok(if list || json {
+                Invocation::Batch(Batch::Jj(JjBatch::History { path, limit, json }))
+            } else {
+                Invocation::Window(Window::History(History { path, limit }))
+            }),
             Some(Command::ShowConfig { defaults, docs }) => {
                 Ok(Invocation::ShowConfig { defaults, docs })
             }
@@ -420,10 +558,14 @@ impl DiffCli {
             ((Some(path), None, None), rev, false) => Ok(Invocation::Window(Window::DiffNative {
                 path,
                 rev,
+                op: self.op,
                 diff: self.diff.over(settings.two_way()),
                 title: self.title,
             })),
             ((Some(_), Some(_), None), Some(_), _) => Err(UsageError::RevWithTwoFiles),
+            ((Some(_), Some(_), _), None, _) if self.op.is_some() => {
+                Err(UsageError::OpWithTwoFiles)
+            }
             ((Some(left), Some(right), None), None, inspect) => Ok(if inspect {
                 Invocation::Batch(Batch::DiffInspect {
                     left,
@@ -753,6 +895,7 @@ mod tests {
             Invocation::Window(Window::DiffNative {
                 path: "src/a.rs".into(),
                 rev: Some("main".to_owned()),
+                op: None,
                 diff: Settings::default().two_way(),
                 title: None,
             })
@@ -762,6 +905,7 @@ mod tests {
             Invocation::Window(Window::DiffNative {
                 path: "src/a.rs".into(),
                 rev: None,
+                op: None,
                 diff: Settings::default().two_way(),
                 title: None,
             })
@@ -771,6 +915,7 @@ mod tests {
             Invocation::Window(Window::DiffNative {
                 path: "src/a.rs".into(),
                 rev: None,
+                op: None,
                 diff: DiffOptions {
                     whitespace: diff::Whitespace::Amount,
                     ..Settings::default().two_way()
@@ -892,6 +1037,8 @@ mod tests {
                 options: MergeOptions::default(),
                 flags: DiffFlags::default(),
                 semantics: SemanticsFlags::default(),
+                rev: None,
+                dry_run: false,
             }))
         );
         let args = [
@@ -928,7 +1075,193 @@ mod tests {
                     same_change: Some(SameChange::Keep),
                     hunk_level: Some(HunkLevel::Word),
                 },
+                rev: None,
+                dry_run: false,
             }))
+        );
+    }
+
+    #[test]
+    fn resolve_in_a_revision_needs_a_path_and_a_dry_run_needs_headless() {
+        let Invocation::Batch(Batch::Resolve(resolve)) =
+            ok(&["resolve", "a.txt", "-r", "kx", "--headless", "--dry-run"])
+        else {
+            panic!("a headless resolve");
+        };
+        assert_eq!((resolve.rev.as_deref(), resolve.dry_run), (Some("kx"), true));
+        let Invocation::Window(Window::Resolve(resolve)) =
+            ok(&["resolve", "a.txt", "--revision", "kx"])
+        else {
+            panic!("a resolve window");
+        };
+        assert_eq!((resolve.rev.as_deref(), resolve.dry_run), (Some("kx"), false));
+        assert_eq!(clap_kind(&["resolve", "-r", "kx"]), ErrorKind::MissingRequiredArgument);
+        assert_eq!(
+            clap_kind(&["resolve", "a.txt", "-r", "kx", "--dry-run"]),
+            ErrorKind::MissingRequiredArgument
+        );
+        assert_eq!(
+            clap_kind(&["resolve", "a.txt", "--headless", "--dry-run"]),
+            ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn history_takes_a_path_and_diff_takes_an_operation_in_place_of_a_revision() {
+        assert_eq!(
+            ok(&["history", "a.txt", "--json"]),
+            Invocation::Batch(Batch::Jj(JjBatch::History {
+                path: "a.txt".into(),
+                limit: None,
+                json: true
+            }))
+        );
+        assert_eq!(
+            ok(&["history", "a.txt", "--list", "--limit", "5"]),
+            Invocation::Batch(Batch::Jj(JjBatch::History {
+                path: "a.txt".into(),
+                limit: Some(5),
+                json: false
+            }))
+        );
+        assert_eq!(
+            ok(&["history", "a.txt", "--list", "--json"]),
+            Invocation::Batch(Batch::Jj(JjBatch::History {
+                path: "a.txt".into(),
+                limit: None,
+                json: true
+            }))
+        );
+        assert_eq!(clap_kind(&["history", "a.txt", "--limit", "x"]), ErrorKind::ValueValidation);
+        assert_eq!(clap_kind(&["history"]), ErrorKind::MissingRequiredArgument);
+        let Invocation::Window(Window::DiffNative { rev, op, .. }) =
+            ok(&["diff", "a.txt", "--op", "abc"])
+        else {
+            panic!("a native diff");
+        };
+        assert_eq!((rev, op.as_deref()), (None, Some("abc")));
+        assert_eq!(
+            clap_kind(&["diff", "a.txt", "--op", "abc", "--rev", "x"]),
+            ErrorKind::ArgumentConflict
+        );
+        assert_eq!(usage(&["diff", "l", "r", "--op", "abc"]), UsageError::OpWithTwoFiles);
+    }
+
+    #[test]
+    fn absorb_takes_paths_a_revset_and_its_choices_moves_first() {
+        assert_eq!(
+            ok(&[
+                "absorb",
+                "a.txt",
+                "src",
+                "--into",
+                "mutable()",
+                "--keep",
+                "3",
+                "--move",
+                "1=kx",
+                "--apply",
+                "--listed-at",
+                "abc",
+                "--json"
+            ]),
+            Invocation::Batch(Batch::Jj(JjBatch::Absorb {
+                paths: vec!["a.txt".into(), "src".into()],
+                into: Some("mutable()".to_owned()),
+                choices: vec![
+                    HunkChoice::Move { hunk: 1, rev: "kx".to_owned() },
+                    HunkChoice::Keep(3)
+                ],
+                apply: true,
+                listed_at: Some("abc".to_owned()),
+                json: true,
+            }))
+        );
+        assert_eq!(usage(&["absorb", "--keep", "1", "--apply"]), UsageError::ChoicesWithoutListing);
+        assert_eq!(
+            usage(&["absorb", "--move", "1=kx", "--apply"]),
+            UsageError::ChoicesWithoutListing
+        );
+        assert_eq!(
+            clap_kind(&["absorb", "--listed-at", "abc"]),
+            ErrorKind::MissingRequiredArgument
+        );
+        assert!(matches!(
+            ok(&["absorb", "--keep", "1"]),
+            Invocation::Batch(Batch::Jj(JjBatch::Absorb { apply: false, listed_at: None, .. }))
+        ));
+        assert!(matches!(
+            ok(&["absorb", "--apply"]),
+            Invocation::Batch(Batch::Jj(JjBatch::Absorb { apply: true, listed_at: None, .. }))
+        ));
+        assert_eq!(
+            ok(&["absorb", "--list"]),
+            Invocation::Batch(Batch::Jj(JjBatch::Absorb {
+                paths: vec![],
+                into: None,
+                choices: vec![],
+                apply: false,
+                listed_at: None,
+                json: false
+            }))
+        );
+        assert_eq!(
+            ok(&["absorb"]),
+            Invocation::Window(Window::Absorb(Absorb { paths: vec![], into: None }))
+        );
+        assert_eq!(
+            ok(&["absorb", "a.txt", "--into", "@-"]),
+            Invocation::Window(Window::Absorb(Absorb {
+                paths: vec!["a.txt".into()],
+                into: Some("@-".to_owned())
+            }))
+        );
+        for bad in ["1", "x=kx", "1="] {
+            assert_eq!(clap_kind(&["absorb", "--move", bad]), ErrorKind::ValueValidation, "{bad}");
+        }
+    }
+
+    #[test]
+    fn stack_opens_a_window_on_an_optional_revset() {
+        let Invocation::Window(Window::Stack(stack)) = ok(&["stack"]) else {
+            panic!("the stack window");
+        };
+        assert_eq!(stack.revset, None);
+        let Invocation::Window(Window::Stack(stack)) = ok(&["stack", "::@"]) else {
+            panic!("the stack window");
+        };
+        assert_eq!(stack.revset.as_deref(), Some("::@"));
+        assert_eq!(clap_kind(&["stack", "a", "b"]), ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn history_opens_a_window_without_list_or_json() {
+        assert_eq!(
+            ok(&["history", "a.txt"]),
+            Invocation::Window(Window::History(History { path: "a.txt".into(), limit: None }))
+        );
+        assert_eq!(
+            ok(&["history", "a.txt", "--limit", "5"]),
+            Invocation::Window(Window::History(History { path: "a.txt".into(), limit: Some(5) }))
+        );
+    }
+
+    #[test]
+    fn stack_prints_its_list_with_list_or_json() {
+        assert_eq!(
+            ok(&["stack", "--list"]),
+            Invocation::Batch(Batch::Jj(JjBatch::Stack { revset: None, json: false }))
+        );
+        assert_eq!(
+            ok(&["stack", "::@", "--json"]),
+            Invocation::Batch(Batch::Jj(JjBatch::Stack {
+                revset: Some("::@".to_owned()),
+                json: true
+            }))
+        );
+        assert_eq!(
+            ok(&["stack", "--list", "--json"]),
+            Invocation::Batch(Batch::Jj(JjBatch::Stack { revset: None, json: true }))
         );
     }
 

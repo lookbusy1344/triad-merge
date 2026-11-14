@@ -481,6 +481,17 @@ fn classify(
     jj::classify(&sides, &bases, opts.same_change)
 }
 
+/// The number of sides `region` keeps once jj drops each pair of a side and a base that hold
+/// the same lines, compared under `diff` (spec §7.5.1). A region of a three-way merge keeps
+/// two, or one when it resolves.
+#[must_use]
+pub fn simplified_sides(inputs: &Inputs, region: &Region, diff: DiffOptions) -> usize {
+    let mode = diff.comparison();
+    let sides = keys_each(&inputs.sides, &region.sides, mode);
+    let bases = keys_each(&inputs.bases, &region.bases, mode);
+    jj::simplified_sides(&sides, &bases)
+}
+
 fn all_equal<T: PartialEq>(items: &[T]) -> bool {
     items.windows(2).all(|pair| pair[0] == pair[1])
 }
@@ -1159,6 +1170,63 @@ mod tests {
         assert_eq!(align(&inputs, jj(Whitespace::None, SameChange::Accept, true)), expected);
         let kept = [expected[0].clone(), r5(Kind::Conflict, [1..2, 1..2], [1..2, 1..2, 1..2])];
         assert_eq!(align(&inputs, jj(Whitespace::None, SameChange::Keep, true)), kept);
+    }
+
+    fn sides_in(inputs: &Inputs, region: &Region, whitespace: Whitespace) -> usize {
+        simplified_sides(inputs, region, DiffOptions { whitespace, ..DiffOptions::default() })
+    }
+
+    #[test]
+    fn a_side_equal_to_a_base_drops_out_of_the_side_count() {
+        // s1 = b0 = b cancel, leaving X and Y over b.
+        let abc = "a\nb\nc\n";
+        let inputs = five("a\nX\nc\n", abc, abc, abc, "a\nY\nc\n");
+        let conflict = r5(Kind::Conflict, [1..2, 1..2], [1..2, 1..2, 1..2]);
+        assert_eq!(sides_in(&inputs, &conflict, Whitespace::None), 2);
+    }
+
+    #[test]
+    fn a_side_equal_to_a_base_it_does_not_follow_drops_out_too() {
+        // s0 = b1 = Q cancel although b1 sits between s1 and s2: jj pairs any side with any base.
+        let inputs = five("a\nQ\n", "a\nP\n", "a\nX\n", "a\nQ\n", "a\nY\n");
+        let conflict = r5(Kind::Conflict, [1..2, 1..2], [1..2, 1..2, 1..2]);
+        assert_eq!(sides_in(&inputs, &conflict, Whitespace::None), 2);
+    }
+
+    #[test]
+    fn sides_that_all_differ_from_every_base_all_count() {
+        let inputs = five("a\nX\n", "a\nB\n", "a\nY\n", "a\nC\n", "a\nZ\n");
+        let conflict = r5(Kind::Conflict, [1..2, 1..2], [1..2, 1..2, 1..2]);
+        assert_eq!(sides_in(&inputs, &conflict, Whitespace::None), 3);
+    }
+
+    #[test]
+    fn the_side_count_compares_lines_as_the_merge_does() {
+        // s1 differs from b0 by trailing whitespace alone.
+        let inputs = five("a\nX\n", "a\nb\n", "a\nb \n", "a\nC\n", "a\nY\n");
+        let conflict = r5(Kind::Conflict, [1..2, 1..2], [1..2, 1..2, 1..2]);
+        assert_eq!(sides_in(&inputs, &conflict, Whitespace::None), 3);
+        assert_eq!(sides_in(&inputs, &conflict, Whitespace::Trailing), 2);
+    }
+
+    #[test]
+    fn four_sides_drop_each_cancelling_pair() {
+        // Order s0 b0 s1 b1 s2 b2 s3: s1 = b0 = b and s3 = b2 = c cancel, leaving X and Y.
+        let (abc, acc) = ("a\nb\nc\n", "a\nc\nc\n");
+        let inputs = Inputs::new(
+            vec![text("a\nX\nc\n"), text(abc), text("a\nY\nc\n"), text(acc)],
+            vec![text(abc), text("a\nd\nc\n"), text(acc)],
+        )
+        .expect("four sides and three bases");
+        let conflict = Region { kind: Kind::Conflict, bases: vec![1..2; 3], sides: vec![1..2; 4] };
+        assert_eq!(sides_in(&inputs, &conflict, Whitespace::None), 2);
+    }
+
+    #[test]
+    fn a_three_way_conflict_has_two_sides() {
+        let conflict = r3(Kind::Conflict, 1..2, 1..2, 1..2);
+        let inputs = three("a\nb\n", "a\nL\n", "a\nR\n");
+        assert_eq!(sides_in(&inputs, &conflict, Whitespace::None), 2);
     }
 
     // jj semantics (docs/DESIGN.md §B5.3)

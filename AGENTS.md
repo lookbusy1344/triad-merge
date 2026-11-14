@@ -2,7 +2,7 @@
 
 triad is a three-way merge and two-way diff tool. The binary is `triad-merge`. `docs/SPEC.md` sets the behaviour. `docs/PLAN.md` holds the status, the next steps and the open work. `docs/DESIGN.md` holds the design of what is built: reasons, decisions and current measurements. Cite both by part and section: `DESIGN.md` §B5.8 is part B, section 5.8.
 
-When a task finishes, update `PLAN.md` §1–§3 in the same change. §1 states where the project stands, never a log of changes: jj holds the history. When a change alters a design, a decision or a measured figure, update `DESIGN.md` in the same change: replace what it says, never append a dated entry. When a change finds the spec wrong or incomplete, update `docs/SPEC.md` in the same change.
+When a task finishes, update `PLAN.md` §1–§3 in the same change. §1 states where the project stands, never a log of changes: jj holds the history. When a change alters a design, a decision or a measured figure, update `DESIGN.md` in the same change: replace what it says, never append a dated entry. When a change finds the spec wrong or incomplete, update `docs/SPEC.md` in the same change. When a change adds or alters a command, update `docs/USER-GUIDE.md`, which shows users each command, jj first, in the same change.
 
 Docs describe the current design in the present tense. No before-and-after stories; a measurement is a present fact.
 
@@ -10,11 +10,12 @@ You have skills for Rust development and jj version control.
 
 ## jj first, git parity
 
-triad is built for jj. git has full parity and comes second.
+triad is built for jj. git comes second, with parity wherever git has the capability.
 
-- jj leads design, defaults, examples, docs and test fixtures. Design each VCS feature for jj, then give git the same feature, never a lesser one.
-- The `vcs` types follow jj's model: n sides, n − 1 bases, optional labels (spec §1.2). git fills the same types.
-- Every VCS feature passes the conformance suite on jj, internal jj and git repositories.
+- jj leads design, defaults, examples, docs and test fixtures. Design each VCS feature for jj, then give git the same feature, never a lesser one, when git has what it needs.
+- jj-native features are encouraged. A feature built on what only jj records ships for jj alone: conflicts stored in commits, change IDs, the evolog, the operation log, rewrites that rebase descendants (spec §1.2 and §7.5, `DESIGN.md` part I). In a git repository its command says it needs jj and exits with 3.
+- The `vcs` types follow jj's model: n sides, n − 1 bases, optional labels (spec §1.2). git fills the same types. A jj-native feature lives in `vcs-jj`'s own API, outside the `vcs::Repository` trait.
+- Every shared VCS feature passes the conformance suite on jj, internal jj and git repositories. A jj-native feature passes its tests on jj and internal jj repositories.
 - The product reaches jj and git only through jj-lib and gix, never their executables.
 - In a jj repository triad merges with jj's semantics only.
 
@@ -31,7 +32,7 @@ Before the first VCS command, run `jj --ignore-working-copy root` on its own. Th
 
 - **IMPORTANT:** if it succeeds, use `jj` for every VCS command, `log`, `show`, `status` and `diff` included. Never run `git` on a jj repo. The session's `gitStatus` snapshot is no reason to use git.
 - **IMPORTANT:** never create, move or delete a bookmark or branch without explicit permission, `main` included. `jj commit` leaves bookmarks where they are; leave them there.
-- Commits are conventional commits with scope `triad`, made through jj: `feat(triad): add text decoding`. One task or sub-task per commit.
+- Commits are conventional commits, made through jj. The scope names the part of triad the change touches, never `triad` itself: a crate without its `merge-` prefix (`core`, `view`, `app`, `cli`, `session`, `syntax`, `config`), a VCS backend (`vcs`, `vcs-jj`, `vcs-git`), a window or feature (`stack`, `absorb`, `toolbar`), or an area (`style`, `ci`, `release`). Examples: `feat(core): add text decoding`, `fix(style): …`. Leave the scope out when no one part fits. One task or sub-task per commit.
 - No PII in commits, messages or bookmark names: real names, email addresses, usernames, machine paths such as `/Users/<name>/`, hostnames, tokens, credentials. Check the diff before `jj commit`, `jj describe` (finalising) and `git commit`.
 
 ## Commit gate
@@ -124,6 +125,8 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | Try a merge by hand | `cargo build --workspace`, then `target/debug/triad-merge inspect fixtures/demo/{base,left,right}.txt` (`fixtures/demo/README.md`) |
 | A disposable jj repository with conflicts in two Rust files | `script/gen-conflict-repo [dest]` (`fixtures/conflict-repo/README.md`) |
 | Build `target/release/triad.app`; `dist` builds `target/dist/triad.app` with fat LTO, as a release does | `script/macos-app [dist]` |
+| Upgrade jj: pins, oracles, the jj-cli behaviour triad copies, docs and checks | `docs/jj-upgrade.md` |
+| Write the oracles from jj's CLI after a jj-lib upgrade; the `jj` on `PATH` must be the pinned release (`DESIGN.md` §I5) | `script/gen-jj-cli-oracle` |
 | Benchmarks against spec §9 | `cargo bench -p merge-core --bench merge`, `cargo bench -p merge-syntax --bench boundaries`, `cargo bench -p merge-cli --bench memory`, then `script/check-bench` |
 | Cost of `resolve`'s repository steps on 10k and 100k files (`DESIGN.md` §D5.5) | `cargo bench -p merge-cli --bench resolve` |
 | Measure the running app against spec §9 (`DESIGN.md` §A6.7) | `script/measure-app [refresh-hz] [output-extension]` (`rs` adds Rust highlighting); one mode: `TRIAD_MEASURE=<open\|scroll-rows\|scroll-result\|type\|pick\|syntax> target/release/triad-merge target/measure/<lines>/{base,left,right}.txt target/measure/<lines>/out.txt` |
@@ -151,10 +154,10 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | `crates/vcs`, `vcs-jj`, `vcs-git` | Repository trait and its jj-lib and gix backends. |
 | `fixtures/core` | Hand-written triples with expected outputs, named for the case they cover. |
 | `fixtures/syntax` | One sample file per highlighted language, for the highlighting tests. |
-| `fixtures/oracle` | `jj-corpus.jsonl`: jj-lib merges with jj seeds, from `script/gen-jj-oracle`. `corpus.jsonl`: `git merge-file` triples, from `script/gen-oracle`. |
+| `fixtures/oracle` | `jj-corpus.jsonl`: jj-lib merges with jj seeds, from `script/gen-jj-oracle`. `corpus.jsonl`: `git merge-file` triples, from `script/gen-oracle`. `jj-cli-aliases.json`, `jj-cli-absorb.json` and `jj-cli-resolve.json`: jj's default revset aliases, `jj absorb` results and repositories after `jj resolve -r`, from `script/gen-jj-cli-oracle`. |
 | `fixtures/conflict-repo` | Sources of a disposable jj repository with two conflicted Rust files, for `script/gen-conflict-repo`. |
 | `fixtures/demo` | A 980-line Rust merge with 20 conflicts, from `script/gen-demo`. |
 | `images` | Mark, logo and app icon as SVG, PNG, ICNS and ICO, from `script/gen-images.swift`. |
 | `packaging/linux` | Desktop entry of the Linux packages. |
-| `docs` | Spec, plan, design notes, the diff editor plan (`PLAN-diff-editor.md`, part H), UI style, JSON schema, release checklist, gpui-kit and gix issues, `scroll-debugging.md`, `mark-colours.md`: the mark's colour schemes, geometry and the shapes not taken, and `residue.md`: the files triad and its scripts leave behind. |
+| `docs` | User guide (`USER-GUIDE.md`), spec, plan, design notes, the diff editor plan (`PLAN-diff-editor.md`, part H), UI style, JSON schema, release checklist, the steps of a jj upgrade (`jj-upgrade.md`), gpui-kit and gix issues, `scroll-debugging.md`, `mark-colours.md`: the mark's colour schemes, geometry and the shapes not taken, and `residue.md`: the files triad and its scripts leave behind. |
 | `vendor/gpui-base` | `gpui-base` 0.8.1 with triad's editor patch, through `[patch.crates-io]`. Outside the workspace: no workspace lints, `cargo fmt` or `jj fix`. See its `PATCHES.md`. |

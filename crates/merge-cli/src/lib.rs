@@ -5,6 +5,7 @@ pub mod args;
 pub mod forward;
 pub mod inspect;
 pub mod install;
+pub mod jj_native;
 pub mod logging;
 
 use std::ffi::OsString;
@@ -14,7 +15,7 @@ use std::path::{Path, PathBuf};
 use merge_config::settings::{self, Settings};
 use merge_core::document::OutputEnding;
 use merge_session::env::Env;
-use merge_session::invocation::{Merge, Resolve, Window};
+use merge_session::invocation::{Absorb, History, Merge, Resolve, SemanticsFlags, Stack, Window};
 use merge_session::repository::RunRepository;
 use merge_session::{
     EncodedOutput, SaveError, SessionError, choose_marker_style, choose_semantics, jj_config, load,
@@ -23,7 +24,7 @@ use merge_session::{
 
 pub use merge_session::{ExitCode, WindowForm};
 
-use crate::args::{Batch, Invocation, ParseError, parse_with};
+use crate::args::{Batch, Invocation, JjBatch, ParseError, parse_with};
 
 /// What the binary does next.
 #[derive(Debug)]
@@ -59,6 +60,9 @@ pub enum CliError {
     Save(#[from] SaveError),
     #[error("cannot find the working directory")]
     NoWorkingDirectory,
+    /// The result is written, but the repository refused it.
+    #[error("{path}: {source}")]
+    Rewrite { path: camino::Utf8PathBuf, source: vcs::VcsError },
 }
 
 /// [`choose_semantics`] and [`choose_marker_style`] for `merge`, set in its options, reading
@@ -185,11 +189,61 @@ fn window_form(
             let repo = RunRepository::of_diff_tool(cwd.as_deref(), &diff.right);
             (Window::Diff(diff), repo)
         }
-        Window::DiffNative { path, rev, diff, title } => {
+        Window::DiffNative { path, rev, op, diff, title } => {
             let repo = RunRepository::of_file(&path);
-            (Window::DiffNative { path, rev, diff, title }, repo)
+            (Window::DiffNative { path, rev, op, diff, title }, repo)
         }
         Window::OpenDialog => (Window::OpenDialog, RunRepository::none()),
+        Window::History(history) => {
+            let result = cwd
+                .as_deref()
+                .ok_or(CliError::NoWorkingDirectory)
+                .and_then(|cwd| history_prepare(&history, cwd, env));
+            match result {
+                Ok(repo) => (Window::History(history), repo),
+                Err(error) => {
+                    return Outcome::Exit(report(
+                        stderr,
+                        &format!("{PROGRAM}: {error}\n"),
+                        ExitCode::Error,
+                    ));
+                }
+            }
+        }
+        Window::Absorb(absorb) => {
+            let result = cwd
+                .as_deref()
+                .ok_or(CliError::NoWorkingDirectory)
+                .and_then(|cwd| absorb_prepare(&absorb, cwd, env));
+            match result {
+                Ok(Some(repo)) => (Window::Absorb(absorb), repo),
+                Ok(None) => return Outcome::Exit(ExitCode::Resolved),
+                Err(error) => {
+                    return Outcome::Exit(report(
+                        stderr,
+                        &format!("{PROGRAM}: {error}\n"),
+                        ExitCode::Error,
+                    ));
+                }
+            }
+        }
+        Window::Stack(mut stack) => {
+            let result = cwd
+                .as_deref()
+                .ok_or(CliError::NoWorkingDirectory)
+                .and_then(|cwd| stack_prepare(&mut stack, &settings, cwd, env));
+            match result {
+                Ok(Some(repo)) => (Window::Stack(stack), repo),
+                Ok(None) => return Outcome::Exit(ExitCode::Resolved),
+                Err(error) => {
+                    return Outcome::Exit(report(
+                        stderr,
+                        &format!("{PROGRAM}: {error}\n"),
+                        ExitCode::Error,
+                    ));
+                }
+            }
+        }
     };
     Outcome::Window(Box::new(WindowForm { window, settings, settings_errors, cwd, repo }))
 }
@@ -219,6 +273,17 @@ fn batch_form(
             if targets.is_empty() {
                 return Ok(ExitCode::Resolved);
             }
+            if let (Some(rev), Some(path)) = (resolve.in_commit(), &resolve.path) {
+                return resolve_in_commit(
+                    &resolve,
+                    rev,
+                    path,
+                    settings.line_ending,
+                    cwd,
+                    env,
+                    stdout,
+                );
+            }
             resolve_headless(&resolve, settings.line_ending, cwd, &targets, &mut repo, stderr)
         }
         Batch::Inspect { files, options, semantics, json } => {
@@ -241,6 +306,50 @@ fn batch_form(
         Batch::Install { vcs, config } => {
             let message = install::run(vcs, config.as_deref())?;
             Ok(report(stdout, &message, ExitCode::Resolved))
+        }
+        Batch::Jj(jj) => {
+            let cwd = cwd.ok_or(CliError::NoWorkingDirectory)?;
+            jj_native_batch(jj, cwd, env, stdout)
+        }
+    }
+}
+
+/// Run a jj-native form that needs no window (spec §7.5), with its report on `stdout`.
+///
+/// # Errors
+///
+/// [`CliError`] when the form fails.
+fn jj_native_batch(
+    batch: JjBatch,
+    cwd: &Path,
+    env: &Env,
+    stdout: &mut impl Write,
+) -> Result<ExitCode, CliError> {
+    let jj_config = || Some(jj_config::snapshot_config(env));
+    match batch {
+        JjBatch::Stack { revset, json } => {
+            let commits = merge_session::jj_native::stack(cwd, revset.as_deref(), jj_config())?;
+            let (text, code) = jj_native::stack_report(&commits, json)?;
+            Ok(report(stdout, &text, code))
+        }
+        JjBatch::History { path, limit, json } => {
+            let (path, versions) =
+                merge_session::jj_native::history(cwd, &path, limit, jj_config())?;
+            let text = jj_native::history_report(&path, &versions, json)?;
+            Ok(report(stdout, &text, ExitCode::Resolved))
+        }
+        JjBatch::Absorb { paths, into, choices, apply, listed_at, json } => {
+            let absorbed = merge_session::jj_native::absorb(
+                cwd,
+                &paths,
+                into.as_deref(),
+                &choices,
+                apply,
+                listed_at.as_deref(),
+                jj_config(),
+            )?;
+            let text = jj_native::absorb_report(&absorbed, apply, json)?;
+            Ok(report(stdout, &text, ExitCode::Resolved))
         }
     }
 }
@@ -272,6 +381,113 @@ fn resolve_prepare(
         resolve.options.marker_style = choose_marker_style(mode.semantics, settings, &mut repo);
     }
     Ok((targets, repo))
+}
+
+/// Settle `stack`'s merge options before its window opens, in the jj repository holding
+/// `cwd`, and give that repository. None when `stack`'s revset names no conflicted commit:
+/// no window opens, and the run exits with 0, as `stack --list` does.
+///
+/// # Errors
+///
+/// [`CliError`] outside a jj repository, when the revset does not resolve, or when the
+/// semantics settings are invalid.
+fn stack_prepare(
+    stack: &mut Stack,
+    settings: &Settings,
+    cwd: &Path,
+    env: &Env,
+) -> Result<Option<RunRepository>, CliError> {
+    let config = jj_config::snapshot_config(env);
+    let listed =
+        merge_session::jj_native::stack(cwd, stack.revset.as_deref(), Some(config.clone()))?;
+    if listed.is_empty() {
+        return Ok(None);
+    }
+    let mut repo = RunRepository::of_resolve(cwd, None).with_jj_config(config);
+    let mode = choose_semantics(SemanticsFlags::default(), settings, &repo, None, Some(cwd), env)?;
+    stack.options.semantics = mode.semantics;
+    stack.options.same_change = mode.same_change;
+    stack.options.hunk_level = mode.hunk_level;
+    stack.options.marker_style = choose_marker_style(mode.semantics, settings, &mut repo);
+    Ok(Some(repo))
+}
+
+/// List `absorb`'s hunks once before its window opens. None when there is no hunk, so no
+/// window opens; else the run's repository, with the user's jj config.
+///
+/// # Errors
+///
+/// [`CliError`] outside a jj repository, for a path outside it, or when `--into` does not
+/// resolve.
+fn absorb_prepare(
+    absorb: &Absorb,
+    cwd: &Path,
+    env: &Env,
+) -> Result<Option<RunRepository>, CliError> {
+    const LIST_ONLY: bool = false;
+    let config = jj_config::snapshot_config(env);
+    let listed = merge_session::jj_native::absorb(
+        cwd,
+        &absorb.paths,
+        absorb.into.as_deref(),
+        &[],
+        LIST_ONLY,
+        None,
+        Some(config.clone()),
+    )?;
+    Ok((!listed.hunks.is_empty())
+        .then(|| RunRepository::of_resolve(cwd, None).with_jj_config(config)))
+}
+
+/// Check that `history PATH` can list before its window opens: a jj repository holding
+/// `cwd`, and the path inside it. Gives the run's repository, with the user's jj config.
+///
+/// # Errors
+///
+/// [`CliError`] outside a jj repository, for a path outside it, or when the operation log
+/// cannot be read.
+fn history_prepare(history: &History, cwd: &Path, env: &Env) -> Result<RunRepository, CliError> {
+    const ONE: Option<usize> = Some(1);
+    let config = jj_config::snapshot_config(env);
+    merge_session::jj_native::file_history(cwd, &history.path, ONE, Some(config.clone()))?;
+    Ok(RunRepository::of_resolve(cwd, None).with_jj_config(config))
+}
+
+/// `resolve -r REV PATH --headless`: the automatic merge of the conflict in `rev`'s commit,
+/// with `resolve`'s commands applied, written into the commit; on a dry run, only reported.
+/// The report goes to `stdout`: 0 when the save resolves the conflict, else 1.
+///
+/// # Errors
+///
+/// [`CliError`] when the conflict cannot be loaded or changed by its commands, the result
+/// cannot be written, or the repository refuses it.
+fn resolve_in_commit(
+    resolve: &Resolve,
+    rev: &str,
+    path: &Path,
+    ending: OutputEnding,
+    cwd: &Path,
+    env: &Env,
+    stdout: &mut impl Write,
+) -> Result<ExitCode, CliError> {
+    let loaded = resolve::load_at_commit(cwd, rev, path, Some(jj_config::snapshot_config(env)))?;
+    let mut opened = loaded.open(resolve.options).map_err(SessionError::from)?;
+    if let Some(commands) = &resolve.commands {
+        replay::apply_file(&mut opened.doc, commands)?;
+    }
+    let output = EncodedOutput::new(&opened.doc, ending);
+    let code = output.write(opened.file.as_std_path()).map_err(SaveError::from)?;
+    let rewrite = opened
+        .record
+        .as_ref()
+        .and_then(resolve::Record::in_commit)
+        .map(|commit| commit.rewrite(resolve.dry_run))
+        .transpose()
+        .map_err(|source| CliError::Rewrite { path: opened.path.clone(), source })?;
+    if let Some(rewrite) = rewrite {
+        report(stdout, &jj_native::rewrite_report(&opened.path, &rewrite, resolve.dry_run), code);
+    }
+    Ok(code)
 }
 
 /// Write each target's automatic merge, with `resolve`'s commands applied, to its

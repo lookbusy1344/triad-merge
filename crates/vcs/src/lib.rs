@@ -269,6 +269,12 @@ pub enum VcsError {
     Conflicted { path: Utf8PathBuf, rev: String },
     #[error("{0} has no index")]
     NoIndex(&'static str),
+    /// jj's `immutable()` holds the commit, so jj would refuse to rewrite it.
+    #[error("commit {0} is immutable")]
+    Immutable(String),
+    /// A write to a conflict at `rev` found the path resolved there.
+    #[error("{path} is not conflicted at {rev}")]
+    NotConflicted { path: Utf8PathBuf, rev: String },
     /// A config value the VCS itself would refuse.
     #[error("{key} has the unknown value {value:?}")]
     BadConfig { key: &'static str, value: String },
@@ -583,6 +589,14 @@ mod tests {
         assert_eq!(
             VcsError::Conflicted { path: "src/a.rs".into(), rev: "@-".to_owned() }.to_string(),
             "src/a.rs is conflicted at @-"
+        );
+        assert_eq!(
+            VcsError::Immutable("abc12345".to_owned()).to_string(),
+            "commit abc12345 is immutable"
+        );
+        assert_eq!(
+            VcsError::NotConflicted { path: "a.txt".into(), rev: "kx".to_owned() }.to_string(),
+            "a.txt is not conflicted at kx"
         );
         let backend =
             VcsError::Backend { context: "reading HEAD", source: "object missing".into() };

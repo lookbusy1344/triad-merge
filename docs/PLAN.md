@@ -1,10 +1,10 @@
 # triad — plan
 
-Where the project stands and what comes next. [SPEC.md](SPEC.md) sets the behaviour, [DESIGN.md](DESIGN.md) holds the design of what is built (parts A–F), and [PLAN-diff-editor.md](PLAN-diff-editor.md) holds part H while it is open. Part G is below. A reference such as §B5.8 names part B, section 5.8, in whichever file holds that part. jj holds the history.
+Where the project stands and what comes next. [SPEC.md](SPEC.md) sets the behaviour, [DESIGN.md](DESIGN.md) holds the design of what is built (parts A–F), [PLAN-diff-editor.md](PLAN-diff-editor.md) holds part H while it is open; part I, the jj-native features, is in `DESIGN.md`. Part G is below. A reference such as §B5.8 names part B, section 5.8, in whichever file holds that part. jj holds the history.
 
 ## 1. Status
 
-As of 2026-11-13.
+As of 2026-11-14.
 
 | Milestone | State | Part |
 |---|---|---|
@@ -21,10 +21,11 @@ As of 2026-11-13.
 | p4merge parity | Done | E |
 | Review and diff features | Bulk takes (§G3), line endings in comparison (§G4) and collapsed unchanged regions in both windows (§G2) done; the rest open | G |
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
+| jj-native features | Done: conflicts across a stack (`stack`, `resolve -r`), operation-log history (`history`, `diff --op`) and absorb by hunk (`absorb`); the stack window, with a preview of a save's effect on the descendants and a confirmation before a save changes them; the history window; the absorb window, by hunk; the three windows' lists follow `docs/STYLE.md` and work from the keys; the conflict badge names the sides a conflict keeps; absorb, `resolve -r` and the default revset aliases checked against jj's CLI (§I5) | I |
 
 Every spec §9 target is met (§A6.7). Toolchain: stable Rust 1.100, with `rust-version` 1.99. Dependencies: jj-lib and jj-core 0.47.1 on gix 0.90; gpui-kit 0.8.1 with the vendored `gpui-base` patch; gpui-kit 0.9 is not adopted (`docs/gpui-kit-issues.md`).
 
-CI: `triad.yml` tests on Linux, macOS and Windows; `bench.yml` and `audit.yml` run weekly. All three pass on GitHub's runners; Linux and macOS also under `act`. `release.yml` runs on a `v*` tag that matches the workspace version: it builds `triad.app` for macOS ARM64, a zip of both binaries for Windows x64 and the smoke-tested Linux x64 packages, and publishes them as a release. v0.1.0 is the first.
+CI: `triad.yml` tests on Linux, macOS and Windows; `bench.yml` and `audit.yml` run weekly. All three pass on GitHub's runners; Linux and macOS also under `act`. On the Windows runner, tests that build jj repositories run about 40 times slower than on Linux: `vcs-jj`'s jj tests take 292 s of test time there and 7 s on Linux, while `vcs-git`'s take 8 s. Defender is off in the runner image. The cause is open (§3). `release.yml` runs on a `v*` tag that matches the workspace version: it builds `triad.app` for macOS ARM64, a zip of both binaries for Windows x64 and the smoke-tested Linux x64 packages, and publishes them as a release. v0.1.0 is the first.
 
 Build profiles (root `Cargo.toml`): `release` aborts on panic and strips symbols, 37.5 MB on macOS ARM64, 1 min clean; `script/macos-app`, `script/measure-app` and the benchmarks use it. `dist` adds fat LTO and one codegen unit, 35.4 MB, 3 min; `script/package`, `script/macos-app dist` and `release.yml` use it.
 
@@ -47,6 +48,7 @@ In order. Each is one or more commits.
 | Linux packages: triad's MIT licence file and dependency notices | The release | §E7.1 |
 | Windows: tool runs from `git mergetool`, `git difftool`, `jj resolve` and `jj diff --tool` in a real console; MSI through `cargo-wix`, Authenticode signing, winget manifest; icon resource; rendering, IME and file watching on x64 and ARM64; release checklist and spec §9 | x64 and ARM64 machines, a certificate, permission to install `cargo-wix` | §E7.2 |
 | Windows ARM64 in CI (`windows-11-arm`), before version 1.0 | — | `.github/workflows/triad.yml` |
+| Windows CI: find why jj repository tests run about 40 times slower than on Linux. First check: fixtures on D: through `TMP` and `TEMP`; next, jj-lib's file lock under parallel tests | A CI run per check | §1, `.github/workflows/triad.yml` |
 | Per-command scans in `MergeWindow::refresh`: bands, placeholders, status counts; a pick at 1M costs 4.4 / 6.3 ms mean / max | A measurement that calls for them | §A6.7 |
 | Whole-text copies: `Recompute::run`, `MergeDocument::output`, 8-byte line starts | A measurement that calls for them | §A6.7 |
 | `DiffScroll`: the diff window's eight scroll fields in one component, as `PaneScroll` | A diff scroll bug | §A13.3 |
@@ -63,6 +65,12 @@ In order. Each is one or more commits.
 | A key that opens the fold next to the caret | — | §G2 |
 | Review and diff features, §G4–§G14 | Owner's choices on §G15's open points | G |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
+| The absorb oracle's generator builds text files only: no renames, executable bits, symlinks, conflicted inputs or immutable commits | — | §I5 |
+| jj-cli's config defaults other than the revset aliases: none checked for whether triad depends on one | — | §I5 |
+| Absorb: split one hunk between commits | Part H's line selection (§H6) | §I4 |
+| `write_conflict` checks the conflict against the commit `InCommit` read, never the commit a save wrote: a second write after one that kept markers is refused as `ConflictChanged`. Every save ends the session today, so only Try Again after a failed record reaches it; a plain Save would. `Rewrite` returns the new commit and `InCommit` takes it. First a test: two writes into one commit, the first with markers | — | §I2 |
+| `rewrite` publishes the operation before `Workspace::check_out`: a checkout that fails returns an error though the commit is rewritten, and Try Again meets `ConflictChanged` or `NotConflicted`. Report the save as written with a stale working copy, naming `jj workspace update-stale` | — | §I1 |
+| The stack, history and absorb windows checked on screen: layout, keys, focus and the accessibility tree; their tests run headless only | — | §I2, §I3, §I4 |
 
 ## 4. Risks
 
@@ -73,6 +81,7 @@ In order. Each is one or more commits.
 | Editor slow paths: very long lines, many cursors | Missed spec §9 targets | Benchmarks and `script/measure-app`; intra-line diffs capped |
 | Editor and core text drift apart | Wrong output bytes | The core is the source of truth; tests compare the editor's rope with the core's after each command |
 | jj-lib API changes between releases | `vcs-jj` breaks on bump | Exact pin; the conformance suite gates each bump |
+| `vcs-jj` re-implements jj-cli behaviour: the end of a transaction in `JjRepository::rewrite`, the default revset aliases, absorb's hunk split | A jj upgrade changes jj's behaviour and triad's silently departs from it | Oracles from jj's CLI, pinned to the jj-lib version in `Cargo.lock`, cover the aliases, absorb and `resolve -r` (§I5); regenerating them needs the pinned jj on `PATH` |
 | gix and jj-lib disagree on gix version | Two gix copies | `vcs-git` pinned to jj-lib's gix; `script/check-workspace` fails on two |
 | Windows GUI and console split surprises git or jj | Lost exit codes or stderr | §A4.13 tests in CI; manual check in M4b |
 | Linux desktop rendering | Poor Linux experience | Real-desktop check in M4b; record in `gpui-kit-issues.md` |

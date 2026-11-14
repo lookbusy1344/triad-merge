@@ -2,14 +2,22 @@
 
 use gpui_kit::SharedString;
 use merge_core::diff::{Comparison, LineEndingRule, Whitespace};
+use merge_core::diff2::Side;
 use merge_core::index::RegionIx;
 use merge_core::merge3::{HunkLevel, Semantics};
 use merge_core::text::{Encoding, LineEnding};
+use merge_session::ExitCode;
+use merge_session::jj_native::{
+    AbsorbHunk, Absorbed, CommitEffect, FileVersion, Goes, Rewrite, SHORT_OPERATION, StackCommit,
+    StackPath, Stay, VersionState, stays,
+};
+use merge_view::nav::Sides;
 use merge_view::status::{Divergence, Status};
-use vcs::RepoKind;
+use vcs::{ChangeInfo, IdKind, RepoKind};
 
 use crate::choice::{Choice, MenuAction};
 use crate::open_dialog::{Mode, Slot};
+use crate::pick_list::Row;
 use crate::toolbar::Tool;
 
 pub(crate) const APP_NAME: &str = "triad";
@@ -117,6 +125,15 @@ pub(crate) mod prompt {
     pub(crate) const RELOAD: &str = "Reload";
     pub(crate) const KEEP_MINE: &str = "Keep Mine";
 
+    /// The question before a save into a jj commit that changes the conflicts of
+    /// `descendants` of its descendants (spec §7.5.1).
+    pub(crate) fn descendants_changed(descendants: usize) -> String {
+        match descendants {
+            1 => "Saving changes the conflicts of 1 descendant.".to_owned(),
+            n => format!("Saving changes the conflicts of {n} descendants."),
+        }
+    }
+
     /// The question when a file with unsaved edits changes on disk.
     pub(crate) fn changed_on_disk(name: &str) -> String {
         format!("{name} changed on disk.")
@@ -139,6 +156,200 @@ pub(crate) mod prompt {
             Semantics::Jj => detail,
         }
     }
+}
+
+/// Each descendant's change ID and its conflicted paths before and after a rewrite, one line
+/// each, as `resolve -r --headless` reports them: `abc12345: a.txt, b.txt -> none`.
+pub(crate) fn descendant_effects<'a>(
+    effects: impl IntoIterator<Item = &'a CommitEffect>,
+) -> String {
+    effects
+        .into_iter()
+        .map(|effect| {
+            let change = effect.change.id(IdKind::Change);
+            format!("{change}: {} -> {}", path_list(&effect.before), path_list(&effect.after))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// `paths` joined by commas, or [`NO_PATHS`].
+fn path_list(paths: &[impl AsRef<str>]) -> String {
+    if paths.is_empty() {
+        NO_PATHS.to_owned()
+    } else {
+        paths.iter().map(AsRef::as_ref).collect::<Vec<_>>().join(", ")
+    }
+}
+
+/// A descendant's conflicted paths when it has none.
+const NO_PATHS: &str = "none";
+
+/// The stack window's title (spec §7.5.1).
+pub(crate) const STACK_TITLE: &str = "Conflicted commits";
+pub(crate) const STACK_EMPTY: &str = "No conflicted commits.";
+pub(crate) const HISTORY_EMPTY: &str = "No versions.";
+/// The stack and history windows' button that lists again.
+pub(crate) const REFRESH: &str = "Refresh";
+pub(crate) const STACK_PREVIEW: &str = "Preview Save";
+pub(crate) const PREVIEW_RUNNING: &str = "Working out what the save would do…";
+
+/// A change's IDs, as the lists print them: change, then commit.
+fn change_ids(change: &ChangeInfo) -> SharedString {
+    format!("{} {}", change.id(IdKind::Change), change.id(IdKind::Commit)).into()
+}
+
+/// A listed commit's heading, as `stack --list` prints it: its change, commit and summary.
+pub(crate) fn stack_commit(commit: &StackCommit) -> Row {
+    Row {
+        lead: Some(change_ids(&commit.change)),
+        text: commit.change.summary.clone().unwrap_or_default().into(),
+        trail: None,
+    }
+}
+
+/// A listed path, marked when a parent holds a conflict there too.
+pub(crate) fn stack_path(path: &StackPath) -> Row {
+    Row {
+        lead: None,
+        text: path.path.to_string().into(),
+        trail: path.inherited.then_some(SharedString::new_static("(inherited)")),
+    }
+}
+
+/// What the stack window says after the merge window on `path` in `change` finished with
+/// `code`; nothing after a cancel.
+pub(crate) fn stack_note(code: ExitCode, path: &str, change: &str) -> Option<String> {
+    match code {
+        ExitCode::Resolved => Some(format!("Resolved {path} in {change}.")),
+        ExitCode::Conflicts => Some(format!("Saved {path} in {change} with conflicts.")),
+        ExitCode::Cancelled => None,
+        ExitCode::Error => Some(format!("The merge of {path} in {change} ended with an error.")),
+    }
+}
+
+/// What saving the open merge window would do: whether the path resolves, and each
+/// descendant's conflicts before and after.
+pub(crate) fn stack_preview(rewrite: &Rewrite) -> String {
+    let change = rewrite.target.id(IdKind::Change);
+    let outcome = if rewrite.resolved {
+        format!("Saving resolves the path in {change}.")
+    } else {
+        format!("Saving keeps conflicts in {change}.")
+    };
+    if rewrite.rewritten.is_empty() {
+        format!("{outcome}\nNo descendant is rebased.")
+    } else {
+        format!("{outcome}\n{}", descendant_effects(&rewrite.rewritten))
+    }
+}
+
+/// The history window's title (spec §7.5.2).
+pub(crate) fn history_title(path: &str) -> String {
+    format!("History of {path}")
+}
+
+/// A listed version, as `history --list` prints it: the operation where it appeared, the
+/// time, the description, and a mark when the path holds no file there.
+pub(crate) fn history_version(version: &FileVersion) -> Row {
+    let short: String = version.operation.chars().take(SHORT_OPERATION).collect();
+    let mark = match version.state {
+        VersionState::File => None,
+        VersionState::Conflict => Some("(conflict)"),
+        VersionState::Absent => Some("(absent)"),
+        VersionState::Other => Some("(other)"),
+    };
+    Row {
+        lead: Some(format!("{short} {}", version.time).into()),
+        text: version.description.clone().into(),
+        trail: mark.map(SharedString::new_static),
+    }
+}
+
+/// The absorb window's title (spec §7.5.3).
+pub(crate) const ABSORB_TITLE: &str = "Absorb";
+pub(crate) const ABSORB_EMPTY: &str = "Nothing to absorb.";
+pub(crate) const ABSORB_APPLY: &str = "Apply";
+/// The choice that keeps a hunk in the working copy.
+const ABSORB_KEEP: &str = "Working copy";
+
+/// A listed hunk, as `absorb --list` prints it, with the commit chosen for it now: the
+/// listing's reason when it stays as listed, `kept` when the choice keeps a hunk the listing
+/// moved.
+pub(crate) fn absorb_hunk(hunk: &AbsorbHunk, target: Option<&ChangeInfo>) -> Row {
+    let goes = match (target, &hunk.goes) {
+        (Some(t), _) => format!("-> {} {}", t.id(IdKind::Change), t.id(IdKind::Commit)),
+        (None, Goes::Stays(stay)) => stays(stay),
+        (None, Goes::Into(_)) => stays(&Stay::Kept),
+    };
+    let (left, right) = (&hunk.left, &hunk.right);
+    Row {
+        lead: Some(hunk.number.to_string().into()),
+        text: hunk.path.to_string().into(),
+        trail: Some(
+            format!(
+                "left {}..{} right {}..{} {goes}",
+                left.start, left.end, right.start, right.end
+            )
+            .into(),
+        ),
+    }
+}
+
+/// A hunk's lines, each with the side it is on: those it replaces, each after `- `, on the
+/// left, then those it holds, after `+ `, on the right.
+pub(crate) fn absorb_lines(hunk: &AbsorbHunk) -> Vec<(Side, String)> {
+    let marked = |bytes: &[u8], side: Side, mark: &'static str| {
+        String::from_utf8_lossy(bytes)
+            .lines()
+            .map(|line| (side, format!("{mark}{line}")))
+            .collect::<Vec<_>>()
+    };
+    [marked(&hunk.before, Side::Left, "- "), marked(&hunk.after, Side::Right, "+ ")].concat()
+}
+
+/// A commit a hunk may go into, with the number of hunks going there when any.
+pub(crate) fn absorb_destination(change: &ChangeInfo, hunks: usize) -> Row {
+    Row {
+        lead: Some(change_ids(change)),
+        text: change.summary.clone().unwrap_or_default().into(),
+        trail: with_hunks(hunks),
+    }
+}
+
+/// The working copy as a choice, with the number of hunks kept when any.
+pub(crate) fn absorb_keep(hunks: usize) -> Row {
+    Row { lead: None, text: ABSORB_KEEP.into(), trail: with_hunks(hunks) }
+}
+
+fn with_hunks(hunks: usize) -> Option<SharedString> {
+    (hunks > 0).then(|| format!("· {}", count(hunks, "hunk", "hunks")).into())
+}
+
+/// What Apply did: the hunks moved and the commits they went into, then each commit whose
+/// conflicts changed.
+pub(crate) fn absorb_note(absorbed: &Absorbed) -> String {
+    let moved: Vec<&str> =
+        absorbed.hunks.iter().filter_map(AbsorbHunk::target).map(|t| t.commit.as_str()).collect();
+    let mut commits = moved.clone();
+    commits.sort_unstable();
+    commits.dedup();
+    let summary = format!(
+        "Absorbed {} into {}.",
+        count(moved.len(), "hunk", "hunks"),
+        count(commits.len(), "commit", "commits")
+    );
+    let mut changed =
+        absorbed.rewrite.rewritten.iter().filter(|effect| effect.before != effect.after).peekable();
+    if changed.peek().is_none() {
+        return summary;
+    }
+    format!("{summary}\n{}", descendant_effects(changed))
+}
+
+/// A path absorb cannot split, and why.
+pub(crate) fn absorb_skipped(path: &str, reason: &str) -> String {
+    format!("Skipped {path}: {reason}")
 }
 
 /// The open dialog's window title on `mode`'s tab.
@@ -298,14 +509,20 @@ pub(crate) fn pick_label(
 }
 
 /// The toolbar's conflict count: how many conflicts are unresolved out of all of them,
-/// led by the current conflict's `number` when the caret is in one. `None` for a merge
-/// without conflicts.
-pub(crate) fn conflict_badge(status: &Status, number: Option<usize>) -> Option<String> {
+/// led by the current conflict's `number` when the caret is in one, and the `sides` that
+/// conflict keeps in a merge of more than two. `None` for a merge without conflicts.
+pub(crate) fn conflict_badge(
+    status: &Status,
+    number: Option<usize>,
+    sides: Option<Sides>,
+) -> Option<String> {
     let Status { conflicts, unresolved, .. } = *status;
+    let sides =
+        sides.map_or_else(String::new, |Sides { kept, of }| format!(" · {kept} of {of} sides"));
     match (conflicts, unresolved, number) {
         (0, _, _) => None,
-        (all, 0, Some(n)) => Some(format!("Conflict {n} of {all} · all resolved")),
-        (all, left, Some(n)) => Some(format!("Conflict {n} of {all} · {left} unresolved")),
+        (all, 0, Some(n)) => Some(format!("Conflict {n} of {all}{sides} · all resolved")),
+        (all, left, Some(n)) => Some(format!("Conflict {n} of {all}{sides} · {left} unresolved")),
         (1, 0, None) => Some("Conflict resolved".to_owned()),
         (all, 0, None) => Some(format!("All {all} resolved")),
         (all, left, None) => Some(format!("{left} of {all} unresolved")),
@@ -544,6 +761,182 @@ mod tests {
     use super::*;
     use merge_core::merge3::{Refine, SameChange};
 
+    fn change(id: &str, summary: Option<&str>) -> ChangeInfo {
+        ChangeInfo {
+            commit: format!("c-{id}"),
+            change_id: Some(id.to_owned()),
+            summary: summary.map(str::to_owned),
+        }
+    }
+
+    fn hunk(number: usize, goes: Goes) -> AbsorbHunk {
+        AbsorbHunk {
+            number,
+            path: "a.txt".into(),
+            left: 2..3,
+            right: 2..4,
+            goes,
+            before: b"c\n".to_vec(),
+            after: b"C\nD\n".to_vec(),
+        }
+    }
+
+    #[test]
+    fn a_hunk_reads_as_absorb_lists_it_with_its_lines() {
+        let kept = hunk(1, Goes::Stays(Stay::WouldConflict(change("mmmm", None))));
+        assert_eq!(
+            absorb_hunk(&kept, None).label(),
+            "1 a.txt left 2..3 right 2..4 stays: would conflict in mmmm"
+        );
+        assert_eq!(
+            absorb_hunk(&kept, None),
+            Row {
+                lead: Some("1".into()),
+                text: "a.txt".into(),
+                trail: Some("left 2..3 right 2..4 stays: would conflict in mmmm".into())
+            }
+        );
+        let target = change("kkkk", None);
+        assert_eq!(
+            absorb_hunk(&kept, Some(&target)).label(),
+            "1 a.txt left 2..3 right 2..4 -> kkkk c-kkkk"
+        );
+        // A hunk the listing moved, kept in the working copy by a choice in the window.
+        let moved = hunk(2, Goes::Into(target.clone()));
+        assert_eq!(absorb_hunk(&moved, None).label(), "2 a.txt left 2..3 right 2..4 stays: kept");
+        let line = |side, text: &str| (side, text.to_owned());
+        assert_eq!(
+            absorb_lines(&kept),
+            [line(Side::Left, "- c"), line(Side::Right, "+ C"), line(Side::Right, "+ D")]
+        );
+    }
+
+    #[test]
+    fn a_choice_counts_the_hunks_going_there() {
+        let target = change("kkkk", Some("fix the parser"));
+        assert_eq!(absorb_destination(&target, 0).label(), "kkkk c-kkkk fix the parser");
+        assert_eq!(absorb_destination(&target, 1).label(), "kkkk c-kkkk fix the parser · 1 hunk");
+        assert_eq!(absorb_destination(&change("mmmm", None), 2).label(), "mmmm c-mmmm · 2 hunks");
+        assert_eq!(absorb_keep(0).label(), "Working copy");
+        assert_eq!(absorb_keep(3).label(), "Working copy · 3 hunks");
+        assert_eq!(
+            absorb_destination(&target, 1),
+            Row {
+                lead: Some("kkkk c-kkkk".into()),
+                text: "fix the parser".into(),
+                trail: Some("· 1 hunk".into())
+            }
+        );
+        assert_eq!(absorb_skipped("b.bin", "not a file"), "Skipped b.bin: not a file");
+    }
+
+    #[test]
+    fn the_apply_note_counts_moved_hunks_and_distinct_commits() {
+        let absorbed = |hunks| Absorbed {
+            operation: String::new(),
+            hunks,
+            destinations: Vec::new(),
+            skipped: Vec::new(),
+            rewrite: Rewrite {
+                target: change("kkkk", None),
+                written: true,
+                resolved: true,
+                sides: None,
+                rewritten: Vec::new(),
+            },
+        };
+        let note = |hunks| absorb_note(&absorbed(hunks));
+        assert_eq!(
+            note(vec![
+                hunk(1, Goes::Into(change("kkkk", None))),
+                hunk(2, Goes::Stays(Stay::NoCommit)),
+                hunk(3, Goes::Into(change("kkkk", None)))
+            ]),
+            "Absorbed 2 hunks into 1 commit."
+        );
+        assert_eq!(
+            note(vec![hunk(1, Goes::Into(change("kkkk", None)))]),
+            "Absorbed 1 hunk into 1 commit."
+        );
+        assert_eq!(
+            note(vec![
+                hunk(1, Goes::Into(change("kkkk", None))),
+                hunk(2, Goes::Into(change("mmmm", None)))
+            ]),
+            "Absorbed 2 hunks into 2 commits."
+        );
+        assert_eq!(
+            note(vec![hunk(1, Goes::Stays(Stay::NoCommit))]),
+            "Absorbed 0 hunks into 0 commits."
+        );
+    }
+
+    #[test]
+    fn the_apply_note_lists_each_commit_whose_conflicts_changed() {
+        let effect = |id: &str, before: &[&str], after: &[&str]| CommitEffect {
+            change: change(id, None),
+            before: before.iter().map(Into::into).collect(),
+            after: after.iter().map(Into::into).collect(),
+        };
+        let absorbed = Absorbed {
+            operation: String::new(),
+            hunks: vec![hunk(1, Goes::Into(change("kkkk", None)))],
+            destinations: Vec::new(),
+            skipped: Vec::new(),
+            rewrite: Rewrite {
+                target: change("wwww", None),
+                written: true,
+                resolved: true,
+                sides: None,
+                rewritten: vec![
+                    effect("kkkk", &[], &["a.txt"]),
+                    effect("mmmm", &["b.txt"], &["b.txt"]),
+                ],
+            },
+        };
+        assert_eq!(absorb_note(&absorbed), "Absorbed 1 hunk into 1 commit.\nkkkk: none -> a.txt");
+    }
+
+    fn version(state: VersionState) -> FileVersion {
+        FileVersion {
+            operation: "0123456789abcdef0123".to_owned(),
+            time: "2026-11-13T10:00:00+01:00".to_owned(),
+            description: "snapshot working copy".to_owned(),
+            commit: vcs::CommitId::new("cccc".to_owned()),
+            state,
+        }
+    }
+
+    #[test]
+    fn a_version_reads_as_history_lists_it() {
+        let line = |state| history_version(&version(state)).label();
+        assert_eq!(
+            line(VersionState::File),
+            "0123456789ab 2026-11-13T10:00:00+01:00 snapshot working copy"
+        );
+        assert_eq!(
+            line(VersionState::Absent),
+            "0123456789ab 2026-11-13T10:00:00+01:00 snapshot working copy (absent)"
+        );
+        assert_eq!(
+            line(VersionState::Conflict),
+            "0123456789ab 2026-11-13T10:00:00+01:00 snapshot working copy (conflict)"
+        );
+        assert_eq!(
+            line(VersionState::Other),
+            "0123456789ab 2026-11-13T10:00:00+01:00 snapshot working copy (other)"
+        );
+        assert_eq!(
+            history_version(&version(VersionState::Absent)),
+            Row {
+                lead: Some("0123456789ab 2026-11-13T10:00:00+01:00".into()),
+                text: "snapshot working copy".into(),
+                trail: Some("(absent)".into())
+            }
+        );
+        assert_eq!(history_title("src/a.txt"), "History of src/a.txt");
+    }
+
     #[test]
     fn the_build_line_names_the_commit_and_the_jj_change() {
         assert_eq!(
@@ -717,7 +1110,137 @@ mod tests {
     }
 
     fn conflict_badge_at(number: Option<usize>, status: &Status) -> Option<String> {
-        conflict_badge(status, number)
+        conflict_badge(status, number, None)
+    }
+
+    fn effect(change: &str, before: &[&str], after: &[&str]) -> CommitEffect {
+        let paths = |paths: &[&str]| paths.iter().map(|&p| p.into()).collect();
+        CommitEffect {
+            change: vcs::ChangeInfo {
+                commit: "c0ffee12".to_owned(),
+                change_id: Some(change.to_owned()),
+                summary: None,
+            },
+            before: paths(before),
+            after: paths(after),
+        }
+    }
+
+    #[test]
+    fn each_descendant_shows_its_conflicts_before_and_after() {
+        let effects = [
+            effect("kmzzmxvq", &["a.txt", "b.txt"], &[]),
+            effect("vruxwmqv", &["a.txt"], &["b.txt"]),
+        ];
+        assert_eq!(
+            descendant_effects(&effects),
+            "kmzzmxvq: a.txt, b.txt -> none\nvruxwmqv: a.txt -> b.txt"
+        );
+    }
+
+    #[test]
+    fn a_descendant_without_a_change_id_shows_its_commit() {
+        let mut effect = effect("unused", &[], &["a.txt"]);
+        effect.change.change_id = None;
+        assert_eq!(descendant_effects([&effect]), "c0ffee12: none -> a.txt");
+    }
+
+    fn rewrite(resolved: bool, rewritten: Vec<CommitEffect>) -> Rewrite {
+        Rewrite {
+            target: vcs::ChangeInfo {
+                commit: "1a2b3c4d".to_owned(),
+                change_id: Some("qpvuntsm".to_owned()),
+                summary: None,
+            },
+            resolved,
+            sides: None,
+            rewritten,
+            written: false,
+        }
+    }
+
+    #[test]
+    fn the_preview_says_whether_the_path_resolves_and_lists_each_descendant() {
+        let effects = vec![effect("kmzzmxvq", &["a.txt"], &[])];
+        assert_eq!(
+            stack_preview(&rewrite(true, effects)),
+            "Saving resolves the path in qpvuntsm.\nkmzzmxvq: a.txt -> none"
+        );
+        assert_eq!(
+            stack_preview(&rewrite(false, Vec::new())),
+            "Saving keeps conflicts in qpvuntsm.\nNo descendant is rebased."
+        );
+    }
+
+    #[test]
+    fn a_listed_commit_reads_change_commit_and_summary() {
+        let mut commit = StackCommit {
+            id: vcs::CommitId::new("1a2b3c4d5e6f".to_owned()),
+            change: vcs::ChangeInfo {
+                commit: "1a2b3c4d".to_owned(),
+                change_id: Some("qpvuntsm".to_owned()),
+                summary: Some("merge".to_owned()),
+            },
+            paths: Vec::new(),
+        };
+        assert_eq!(stack_commit(&commit).label(), "qpvuntsm 1a2b3c4d merge");
+        assert_eq!(stack_commit(&commit).text, "merge");
+        commit.change.summary = None;
+        assert_eq!(stack_commit(&commit).label(), "qpvuntsm 1a2b3c4d");
+    }
+
+    #[test]
+    fn an_inherited_path_is_marked() {
+        let path = |inherited| StackPath { path: "src/a.rs".into(), inherited };
+        assert_eq!(stack_path(&path(false)).label(), "src/a.rs");
+        assert_eq!(stack_path(&path(true)).label(), "src/a.rs (inherited)");
+        assert_eq!(stack_path(&path(true)).text, "src/a.rs");
+    }
+
+    #[test]
+    fn the_note_after_a_merge_window_says_how_it_ended() {
+        let note = |code| stack_note(code, "a.txt", "qpvuntsm");
+        assert_eq!(note(ExitCode::Resolved).as_deref(), Some("Resolved a.txt in qpvuntsm."));
+        assert_eq!(
+            note(ExitCode::Conflicts).as_deref(),
+            Some("Saved a.txt in qpvuntsm with conflicts.")
+        );
+        assert_eq!(note(ExitCode::Cancelled), None);
+        assert_eq!(
+            note(ExitCode::Error).as_deref(),
+            Some("The merge of a.txt in qpvuntsm ended with an error.")
+        );
+    }
+
+    #[test]
+    fn the_descendants_question_counts_them() {
+        assert_eq!(prompt::descendants_changed(1), "Saving changes the conflicts of 1 descendant.");
+        assert_eq!(
+            prompt::descendants_changed(3),
+            "Saving changes the conflicts of 3 descendants."
+        );
+    }
+
+    #[test]
+    fn a_conflict_of_more_than_two_sides_shows_the_sides_jj_keeps() {
+        let sides = Some(Sides { kept: 2, of: 3 });
+        assert_eq!(
+            conflict_badge(&with(25, 20, 5), Some(3), sides).as_deref(),
+            Some("Conflict 3 of 20 · 2 of 3 sides · 5 unresolved")
+        );
+        assert_eq!(
+            conflict_badge(&with(25, 20, 0), Some(3), sides).as_deref(),
+            Some("Conflict 3 of 20 · 2 of 3 sides · all resolved")
+        );
+    }
+
+    #[test]
+    fn the_sides_show_only_while_the_caret_is_in_a_conflict() {
+        let sides = Some(Sides { kept: 3, of: 4 });
+        assert_eq!(
+            conflict_badge(&with(25, 20, 5), None, sides).as_deref(),
+            Some("5 of 20 unresolved")
+        );
     }
 
     #[test]
