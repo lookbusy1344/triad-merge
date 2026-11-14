@@ -367,15 +367,15 @@ fn every_slot_names_its_field_and_choose_button(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn the_mark_heads_the_dialog_beside_the_tabs_and_names_the_app(cx: &mut TestAppContext) {
+fn the_mark_heads_the_dialog_beside_the_tabs_as_the_about_button(cx: &mut TestAppContext) {
     use gpui_kit::{Role, px};
     use merge_app::open_dialog::MARK_ID;
 
-    /// The mark's side in a title bar or toolbar, as `logo::MARK_SIDE` draws it.
-    const MARK_SIDE: f32 = 18.;
+    /// STYLE.md: a small control is 24 px tall.
+    const SMALL_CONTROL_HEIGHT: f32 = 24.;
 
     let (window, _) = opened(cx);
-    assert_eq!(named(cx, window, MARK_ID), (Some(Role::Image), Some("triad".to_owned())));
+    assert_eq!(named(cx, window, MARK_ID), (Some(Role::Button), Some("About triad".to_owned())));
     let mut bounds = None;
     act(cx, window, |window, _| {
         bounds = Some((
@@ -385,9 +385,30 @@ fn the_mark_heads_the_dialog_beside_the_tabs_and_names_the_app(cx: &mut TestAppC
         ));
     });
     let (mark, tab, base) = bounds.expect("the window ran");
-    assert_eq!(mark.size, gpui_kit::size(px(MARK_SIDE), px(MARK_SIDE)));
+    assert_eq!(mark.size.height, px(SMALL_CONTROL_HEIGHT));
     assert!(mark.right() <= tab.left(), "the mark sits left of the tabs");
     assert!(mark.bottom() <= base.top(), "the mark heads the slots");
+}
+
+#[gpui_kit::test]
+fn a_click_on_the_mark_opens_the_about_window(cx: &mut TestAppContext) {
+    use merge_app::open_dialog::MARK_ID;
+
+    let (window, _) = opened(cx);
+    assert_eq!(cx.update(|cx| cx.windows().len()), 1);
+    act(cx, window, |window, cx| window.click(MARK_ID, cx));
+    cx.run_until_parked();
+    let about = cx.update(|cx| {
+        cx.windows().into_iter().find(|other| other.window_id() != window.window_id())
+    });
+    let about = about.expect("the About window is open");
+    act(cx, about, TestWindowExt::render_frame);
+    let mut found = false;
+    act(cx, about, |window, _| {
+        found = window.try_find(merge_app::about::LOGO_ID).is_some();
+    });
+    assert!(found, "the new window is the About window");
+    assert_eq!(cx.update(|cx| cx.windows().len()), 2, "the dialog stays open");
 }
 
 #[gpui_kit::test]

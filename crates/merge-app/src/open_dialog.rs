@@ -25,7 +25,7 @@ use merge_view::status::FileNames;
 
 use crate::diff_window::{self, DiffFile, DiffLookup, Origin};
 use crate::window::{OpenError, WindowSettings};
-use crate::{ExitCode, finish, ignore_closed_view, logo, run, strings};
+use crate::{ExitCode, finish, ignore_closed_view, run, strings, toolbar};
 
 const WINDOW_WIDTH: Pixels = px(440.);
 const WINDOW_HEIGHT: Pixels = px(232.);
@@ -37,7 +37,8 @@ const TAB_HEIGHT: Pixels = px(22.);
 /// The button that starts the merge or diff, also used by tests.
 pub const START_ID: &str = "start-merge";
 pub const ERROR_ID: &str = "open-error";
-pub const MARK_ID: &str = "mark";
+/// The mark that opens the About window, as in the toolbar.
+pub use crate::toolbar::MARK_ID;
 const TABS_ID: &str = "open-mode";
 
 /// A file slot.
@@ -430,14 +431,7 @@ impl Render for OpenDialog {
                     .flex_none()
                     .gap_2()
                     .mb_1()
-                    .child(
-                        div()
-                            .id(MARK_ID)
-                            .test_support()
-                            .role(Role::Image)
-                            .aria_label(strings::APP_NAME)
-                            .child(logo::mark(dark)),
-                    )
+                    .child(toolbar::mark(dark))
                     .child(self.render_tabs(cx)),
             )
             .children(self.mode.slots().iter().map(|&slot| self.render_slot(slot, cx)))
