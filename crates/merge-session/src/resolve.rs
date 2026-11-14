@@ -153,6 +153,13 @@ impl Record {
 }
 
 impl InCommit {
+    /// The path that names this merge's recovery journal from one run to the next: the
+    /// conflicted file under the root. The result's temporary file is new each run.
+    #[must_use]
+    pub fn journal_name(&self) -> PathBuf {
+        self.root.join(&self.path).into_std_path_buf()
+    }
+
     /// Write the saved result into the commit, or on a `dry_run` report what the write
     /// would do.
     ///

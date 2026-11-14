@@ -12,8 +12,8 @@ use gpui_kit::{AnyWindowHandle, App, AppContext as _};
 use merge_core::document::{MergeDocument, MergeOptions};
 use merge_session::jj_config::ConfigEnv;
 use merge_session::repository::{Handoff, RunRepository};
-use merge_session::resolve::Opened;
 use merge_session::resolve::Snapshot;
+use merge_session::resolve::{InCommit, Opened, Record};
 
 use crate::window::{OpenError, OriginLookup, WindowSettings};
 use crate::{ExitCode, Finish};
@@ -163,14 +163,21 @@ pub fn start(queue: Queue, cx: &mut App) {
 }
 
 /// The window of `opened`, run from `cwd`: titled by its path, saving to its working-tree
-/// file, and with its terms' origins, read from `repo`. The terms follow the commits a merge
+/// file, or for a conflict in a jj commit to a temporary file journalled under the path's
+/// name, and with its terms' origins, read from `repo`. The terms follow the commits a merge
 /// the VCS stopped on names (spec §7.3), so the merge's lookup finds them.
-pub(crate) fn window_settings(
+pub fn window_settings(
     opened: Opened,
     cwd: &Path,
     repo: RunRepository,
     base: WindowSettings,
 ) -> (MergeDocument, WindowSettings) {
+    let journal_name = opened
+        .record
+        .as_ref()
+        .and_then(Record::in_commit)
+        .map(InCommit::journal_name)
+        .or(base.journal_name);
     let file = opened.file.into_std_path_buf();
     let title = opened.path.into_string();
     let settings = WindowSettings {
@@ -184,6 +191,7 @@ pub(crate) fn window_settings(
         title: Some(title),
         output: Some(file),
         record: opened.record,
+        journal_name,
         ..base
     };
     (opened.doc, settings)

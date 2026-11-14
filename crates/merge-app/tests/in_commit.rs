@@ -56,6 +56,33 @@ mod jj {
         (window, finished)
     }
 
+    /// The merge window on `a.txt` in `commit`, with its settings as `resolve -r` and the
+    /// stack window build them, journalled in `journal`.
+    fn open_journalled(
+        cx: &mut TestAppContext,
+        fixture: &Fixture,
+        commit: &Committed,
+        journal: &Path,
+    ) -> (AnyWindowHandle, gpui_kit::Entity<merge_app::MergeWindow>) {
+        let root = fixture.root().as_std_path();
+        let opened = merge_session::resolve::load_at_commit(
+            root,
+            &commit.commit,
+            Path::new("a.txt"),
+            Some(ConfigEnv::default()),
+        )
+        .expect("it loads")
+        .open(MergeOptions::default())
+        .expect("labels fit");
+        let base =
+            WindowSettings { journal_dir: Some(journal.to_owned()), ..WindowSettings::default() };
+        let repo = merge_session::repository::RunRepository::find([root]);
+        let (doc, settings) = merge_app::resolve_queue::window_settings(opened, root, repo, base);
+        let (window, view, _) = common::open_with(cx, doc, &settings);
+        cx.run_until_parked();
+        (window, view)
+    }
+
     fn press(cx: &mut TestAppContext, window: AnyWindowHandle, key: &str) {
         act(cx, window, |window, cx| window.press(key, cx));
         cx.run_until_parked();
@@ -153,5 +180,24 @@ mod jj {
         cx.run_until_parked();
         assert!(!cx.has_pending_prompt());
         assert_eq!(finished.codes(), [ExitCode::Conflicts]);
+    }
+
+    #[gpui_kit::test]
+    fn a_merge_in_a_commit_restores_after_a_crash(cx: &mut TestAppContext) {
+        let (fixture, merge, _) = stacked();
+        let journal = tempfile::tempdir().expect("tempdir");
+        let (window, view) = open_journalled(cx, &fixture, &merge, journal.path());
+        pick_left(cx, window);
+        cx.executor().advance_clock(merge_app::window::JOURNAL_DEBOUNCE);
+        cx.run_until_parked();
+        let picked = cx.read(|cx| view.read(cx).document().text());
+        assert_eq!(picked, "left\n");
+        // The first window never finishes: a crash. The run after it loads the same conflict
+        // into a new temporary file.
+        let (_, after) = open_journalled(cx, &fixture, &merge, journal.path());
+        assert!(cx.has_pending_prompt(), "a restore is offered");
+        cx.simulate_prompt_answer("Restore");
+        cx.run_until_parked();
+        assert_eq!(cx.read(|cx| after.read(cx).document().text()), picked);
     }
 }
