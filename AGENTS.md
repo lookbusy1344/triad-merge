@@ -32,7 +32,7 @@ Before the first VCS command, run `jj --ignore-working-copy root` on its own. Th
 
 - **IMPORTANT:** if it succeeds, use `jj` for every VCS command, `log`, `show`, `status` and `diff` included. Never run `git` on a jj repo. The session's `gitStatus` snapshot is no reason to use git.
 - **IMPORTANT:** never create, move or delete a bookmark or branch without explicit permission, `main` included. `jj commit` leaves bookmarks where they are; leave them there.
-- Commits are conventional commits with scope `triad`, made through jj: `feat(triad): add text decoding`. One task or sub-task per commit.
+- Commits are conventional commits, made through jj. The scope names the part of triad the change touches, never `triad` itself: a crate without its `merge-` prefix (`core`, `view`, `app`, `cli`, `session`, `syntax`, `config`), a VCS backend (`vcs`, `vcs-jj`, `vcs-git`), a window or feature (`stack`, `absorb`, `toolbar`), or an area (`style`, `ci`, `release`). Examples: `feat(core): add text decoding`, `fix(style): …`. Leave the scope out when no one part fits. One task or sub-task per commit.
 - No PII in commits, messages or bookmark names: real names, email addresses, usernames, machine paths such as `/Users/<name>/`, hostnames, tokens, credentials. Check the diff before `jj commit`, `jj describe` (finalising) and `git commit`.
 
 ## Commit gate
