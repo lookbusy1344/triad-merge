@@ -35,9 +35,14 @@ struct Corpus {
 #[derive(Deserialize)]
 struct Case {
     id: String,
-    /// A linear stack on the root commit, `base` first; each commit's whole tree.
+    /// Commits on the root commit, `base` first; each commit's whole tree.
     commits: Vec<Tree>,
+    /// Each commit's parents, by index into `commits`; none for `base`, on the root.
+    parents: Vec<Vec<usize>>,
     working_copy: Tree,
+    working_copy_parents: Vec<usize>,
+    /// `--into`; none for jj's default.
+    into: Option<String>,
     absorbed: Outcome,
 }
 
@@ -115,7 +120,7 @@ fn held(fixture: &Fixture, commit: &Committed, paths: &[&str]) -> Vec<Held> {
     paths.iter().map(|path| fixture.held_in(commit, path)).collect()
 }
 
-/// Build `case`'s stack on the root commit of `fixture` and its working copy, absorb with
+/// Build `case`'s history on the root commit of `fixture` and its working copy, absorb with
 /// triad, and give each commit's held paths after, then the working copy's. The cases of one
 /// fixture share only the root: absorb reaches the ancestors of the working copy alone.
 fn absorbed_by_triad(
@@ -124,14 +129,16 @@ fn absorbed_by_triad(
     paths: &[&str],
 ) -> (Vec<Vec<Held>>, Vec<Held>) {
     let mut stack: Vec<Committed> = Vec::with_capacity(case.commits.len());
-    for (index, tree) in case.commits.iter().enumerate() {
+    for (index, (tree, parents)) in case.commits.iter().zip(&case.parents).enumerate() {
         let files: Vec<(&str, &[u8])> =
             tree.iter().map(|(path, text)| (path.as_str(), text.as_bytes())).collect();
-        let parents: Vec<&Committed> = stack.last().into_iter().collect();
+        let parents: Vec<&Committed> = parents.iter().map(|&parent| &stack[parent]).collect();
         let committed = fixture.commit_on(&parents, &format!("c{index}"), &files);
         stack.push(committed);
     }
-    fixture.check_out(&[stack.last().expect("a case has a commit")]);
+    let parents: Vec<&Committed> =
+        case.working_copy_parents.iter().map(|&parent| &stack[parent]).collect();
+    fixture.check_out(&parents);
     fixture.check_out_to_disk();
     for path in paths {
         let file = fixture.root().join(path);
@@ -144,7 +151,7 @@ fn absorbed_by_triad(
     fixture
         .open()
         .with_config(ConfigEnv::default())
-        .absorb(&[], None, &[], true, None)
+        .absorb(&[], case.into.as_deref(), &[], true, None)
         .expect("triad absorbs");
     let commits =
         stack.iter().map(|commit| held(fixture, &fixture.latest(commit), paths)).collect();
@@ -185,9 +192,10 @@ fn departure(fixture: &Fixture, case: &Case) -> Option<String> {
 }
 
 /// The corpus runs in this many tests, each case in the one its index picks, so each test
-/// stays well inside nextest's limit under the full suite's load. A case costs about 70 ms on
-/// Linux and up to 8 s on a loaded Windows runner, and threads gain nothing on a loaded machine.
-const SHARDS: usize = 32;
+/// stays well inside nextest's limit under the full suite's load: two cases each. A case costs
+/// about 70 ms on Linux and up to 8 s on a loaded Windows runner, and threads gain nothing on
+/// a loaded machine.
+const SHARDS: usize = 52;
 
 /// The cases of shard `shard` that depart from `jj absorb`.
 fn absorb_shard(shard: usize) {
@@ -196,6 +204,7 @@ fn absorb_shard(shard: usize) {
     let cases: Vec<&Case> = corpus.cases.iter().skip(shard).step_by(SHARDS).collect();
     for case in &cases {
         assert_eq!(case.absorbed.commits.len(), case.commits.len(), "{}", case.id);
+        assert_eq!(case.parents.len(), case.commits.len(), "{}", case.id);
         assert_eq!(
             case.absorbed.working_copy.is_none(),
             case.absorbed.conflicted.iter().any(|name| name == WORKING_COPY),
@@ -258,6 +267,26 @@ absorb_shards!(
     absorb_matches_jj_29 = 29,
     absorb_matches_jj_30 = 30,
     absorb_matches_jj_31 = 31,
+    absorb_matches_jj_32 = 32,
+    absorb_matches_jj_33 = 33,
+    absorb_matches_jj_34 = 34,
+    absorb_matches_jj_35 = 35,
+    absorb_matches_jj_36 = 36,
+    absorb_matches_jj_37 = 37,
+    absorb_matches_jj_38 = 38,
+    absorb_matches_jj_39 = 39,
+    absorb_matches_jj_40 = 40,
+    absorb_matches_jj_41 = 41,
+    absorb_matches_jj_42 = 42,
+    absorb_matches_jj_43 = 43,
+    absorb_matches_jj_44 = 44,
+    absorb_matches_jj_45 = 45,
+    absorb_matches_jj_46 = 46,
+    absorb_matches_jj_47 = 47,
+    absorb_matches_jj_48 = 48,
+    absorb_matches_jj_49 = 49,
+    absorb_matches_jj_50 = 50,
+    absorb_matches_jj_51 = 51,
 );
 
 const RESOLVE: &str =

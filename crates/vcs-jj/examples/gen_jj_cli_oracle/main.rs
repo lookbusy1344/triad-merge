@@ -3,9 +3,11 @@
 //! it. The `jj` on `PATH` must be the release whose jj-lib `Cargo.lock` pins.
 //!
 //! The aliases are jj's defaults for `revset-aliases`. Each absorb case is a seeded random
-//! stack of commits on the root, `base` first, and a working copy on it; the case records
-//! each commit's tree after `jj absorb`, and the commits it left conflicted. The resolve
-//! cases are in `resolve.rs`.
+//! history of commits on the root, `base` first, and a working copy on it; the case records
+//! each commit's tree after `jj absorb`, and the commits it left conflicted. Three kinds of
+//! case come from three seeded streams: linear stacks with jj's default `--into`, histories
+//! that merge two branches, in a commit or in the working copy, and linear stacks with a
+//! narrower `--into`. The resolve cases are in `resolve.rs`.
 #![expect(
     clippy::expect_used,
     clippy::panic,
@@ -25,12 +27,26 @@ use vcs_jj::testing::locked_jj_lib_version;
 mod resolve;
 
 const SEED: u64 = 500_135_715_172;
-/// The inputs generated; the corpus keeps the first cases of each kind.
+/// The seed of the merge cases' stream.
+const MERGE_SEED: u64 = 500_135_715_173;
+/// The seed of the `--into` cases' stream.
+const INTO_SEED: u64 = 500_135_715_174;
+/// The inputs generated of each kind; the corpus keeps the first cases of each outcome.
 const POOL: usize = 200;
-/// Cases where `jj absorb` leaves every commit resolved: triad must match them exactly.
+/// Linear cases where `jj absorb` leaves every commit resolved: triad must match them exactly.
 const CLEAN_CASES: usize = 48;
-/// Cases where `jj absorb` writes a conflict, which triad keeps out.
+/// Linear cases where `jj absorb` writes a conflict, which triad keeps out.
 const CONFLICT_CASES: usize = 16;
+/// Merge cases, resolved and conflicted, as above.
+const MERGE_CLEAN_CASES: usize = 16;
+const MERGE_CONFLICT_CASES: usize = 4;
+/// `--into` cases, resolved and conflicted, as above.
+const INTO_CLEAN_CASES: usize = 16;
+const INTO_CONFLICT_CASES: usize = 4;
+/// The share of merge cases whose working copy is the merge, with no merge commit.
+const P_MERGE_WORKING_COPY: f64 = 0.5;
+/// The share of `--into` cases that name two commits.
+const P_INTO_TWO: f64 = 0.3;
 /// The commits a case stacks on `base`, at most.
 const MAX_COMMITS: usize = 3;
 /// The lines of a file in `base`.
@@ -49,6 +65,8 @@ const P_WC_NEW_FILE: f64 = 0.1;
 const P_NO_FINAL_NEWLINE: f64 = 0.1;
 const P_TOGGLE_FINAL_NEWLINE: f64 = 0.05;
 const FILES: [&str; 3] = ["a.txt", "b.txt", "c.txt"];
+/// The revset of the working copy, which `-` steps back from.
+const WORKING_COPY: &str = "@";
 const CONFIG: &str = r#"
 user.name = "triad"
 user.email = "triad@example.com"
@@ -82,6 +100,38 @@ fn tree(files: &Files) -> Tree {
 struct Generator {
     rng: ChaCha20Rng,
     lines: usize,
+}
+
+/// One case's input: each commit's tree and parents, by index, `base` first on the root; the
+/// working copy's tree and parents; and `--into` when narrower than jj's default.
+struct Input {
+    commits: Vec<Files>,
+    parents: Vec<Vec<usize>>,
+    working_copy: Files,
+    working_copy_parents: Vec<usize>,
+    into: Option<String>,
+}
+
+impl Input {
+    /// A stack: each commit on the one before, and the working copy on the last.
+    fn linear((commits, working_copy): (Vec<Files>, Files)) -> Self {
+        let parents = (0..commits.len()).map(|index| index.checked_sub(1).into_iter().collect());
+        Self {
+            parents: parents.collect(),
+            working_copy_parents: vec![commits.len() - 1],
+            commits,
+            working_copy,
+            into: None,
+        }
+    }
+
+    /// The working copy holds the merge of its parents' trees: no hunk to absorb.
+    fn is_empty(&self) -> bool {
+        match self.working_copy_parents.as_slice() {
+            [parent] => tree(&self.commits[*parent]) == tree(&self.working_copy),
+            _ => false,
+        }
+    }
 }
 
 impl Generator {
@@ -159,6 +209,67 @@ impl Generator {
         }
         (commits, files)
     }
+
+    /// `base` with `a.txt` and `b.txt`; `c1` and `c2` on it, each editing one of them, so
+    /// they merge without a conflict; then either a merge commit `c3` on both, maybe with
+    /// edits, and the working copy on it, or the working copy on both.
+    fn merge_case(&mut self) -> Input {
+        let mut base = Files::new();
+        for path in &FILES[..2] {
+            base.insert(path, self.file("base-"));
+        }
+        let mut branches = Vec::with_capacity(2);
+        for (index, path) in FILES[..2].iter().enumerate() {
+            let mut files = base.clone();
+            let file = files.get_mut(path).expect("base holds both files");
+            self.edit(file, &format!("c{}-", index + 1));
+            branches.push(files);
+        }
+        let mut merged = base.clone();
+        for (branch, path) in branches.iter().zip(&FILES[..2]) {
+            merged.insert(path, branch[path].clone());
+        }
+        let mut commits = vec![base];
+        commits.extend(branches);
+        let mut parents = vec![vec![], vec![0], vec![0]];
+        let working_copy_parents = if self.rng.random_bool(P_MERGE_WORKING_COPY) {
+            vec![1, 2]
+        } else {
+            for file in merged.values_mut() {
+                if self.rng.random_bool(P_TOUCH) {
+                    self.edit(file, "c3-");
+                }
+            }
+            commits.push(merged.clone());
+            parents.push(vec![1, 2]);
+            vec![3]
+        };
+        for file in merged.values_mut() {
+            if self.rng.random_bool(P_WC_TOUCH) {
+                self.edit(file, "w-");
+            }
+        }
+        Input { commits, parents, working_copy: merged, working_copy_parents, into: None }
+    }
+
+    /// A linear case with `--into` one or two of its commits, named back from the working
+    /// copy: `@-` is the last.
+    fn narrow_case(&mut self) -> Input {
+        let mut input = Input::linear(self.case());
+        let len = input.commits.len();
+        let back = |rng: &mut ChaCha20Rng| {
+            format!("{WORKING_COPY}{}", "-".repeat(rng.random_range(1..=len)))
+        };
+        let first = back(&mut self.rng);
+        let into = if len > 1 && self.rng.random_bool(P_INTO_TWO) {
+            let second = back(&mut self.rng);
+            format!("{first} | {second}")
+        } else {
+            first
+        };
+        input.into = Some(into);
+        input
+    }
 }
 
 /// Runs `jj` in a directory with an isolated config.
@@ -211,7 +322,12 @@ impl Jj<'_> {
 struct Case {
     id: String,
     commits: Vec<Tree>,
+    /// Each commit's parents, by index into `commits`; none for `base`, on the root.
+    parents: Vec<Vec<usize>>,
     working_copy: Tree,
+    working_copy_parents: Vec<usize>,
+    /// `--into`; none for jj's default.
+    into: Option<String>,
     absorbed: Outcome,
 }
 
@@ -226,30 +342,45 @@ fn name(index: usize) -> String {
     if index == 0 { "base".to_owned() } else { format!("c{index}") }
 }
 
-fn absorb(dir: &Path, config: &Path, id: String, commits: &[Files], wc: &Files) -> Case {
+fn absorb(dir: &Path, config: &Path, id: String, input: &Input) -> Case {
     fs::create_dir(dir).expect("the case's directory is made");
     let jj = Jj { dir, config };
     jj.run(&["git", "init"]);
-    let mut changes = Vec::with_capacity(commits.len());
-    for (index, files) in commits.iter().enumerate() {
+    let change_of = |rev: &str| jj.run(&["log", "--no-graph", "-r", rev, "-T", "change_id"]);
+    let mut changes: Vec<String> = Vec::with_capacity(input.commits.len());
+    let new_on = |changes: &[String], parents: &[usize]| {
+        let mut args = vec!["new"];
+        args.extend(parents.iter().map(|&parent| changes[parent].as_str()));
+        jj.run(&args);
+    };
+    for (index, (files, parents)) in input.commits.iter().zip(&input.parents).enumerate() {
+        // `jj git init` leaves an empty working copy on the root, which `base` takes.
+        if !parents.is_empty() {
+            new_on(&changes, parents);
+        }
         jj.write(files);
-        changes.push(jj.run(&["log", "--no-graph", "-r", "@", "-T", "change_id"]));
-        jj.run(&["commit", "-m", &name(index)]);
+        jj.run(&["describe", "-m", &name(index)]);
+        changes.push(change_of("@"));
     }
-    jj.write(wc);
-    let wc_change = jj.run(&["log", "--no-graph", "-r", "@", "-T", "change_id"]);
-    jj.run(&["absorb"]);
+    new_on(&changes, &input.working_copy_parents);
+    jj.write(&input.working_copy);
+    let wc_change = change_of("@");
+    let mut args = vec!["absorb"];
+    if let Some(into) = &input.into {
+        args.extend(["--into", into]);
+    }
+    jj.run(&args);
     let conflicted: Vec<String> = jj
         .run(&["log", "--no-graph", "-r", "conflicts()", "-T", "change_id ++ \"\\n\""])
         .lines()
         .map(|change| {
             if change == wc_change {
-                return "@".to_owned();
+                return WORKING_COPY.to_owned();
             }
             let index = changes
                 .iter()
                 .position(|c| c == change)
-                .unwrap_or_else(|| panic!("conflicted change {change} is in the stack"));
+                .unwrap_or_else(|| panic!("conflicted change {change} is in the history"));
             name(index)
         })
         .collect();
@@ -257,13 +388,58 @@ fn absorb(dir: &Path, config: &Path, id: String, commits: &[Files], wc: &Files) 
         |change: &str, named: String| (!conflicted.contains(&named)).then(|| jj.tree(change));
     let after: Vec<Option<Tree>> =
         changes.iter().enumerate().map(|(index, change)| read(change, name(index))).collect();
-    let working_copy = read("@", "@".to_owned());
+    let working_copy = read(WORKING_COPY, WORKING_COPY.to_owned());
     Case {
         id,
-        commits: commits.iter().map(tree).collect(),
-        working_copy: tree(wc),
+        commits: input.commits.iter().map(tree).collect(),
+        parents: input.parents.clone(),
+        working_copy: tree(&input.working_copy),
+        working_copy_parents: input.working_copy_parents.clone(),
+        into: input.into.clone(),
         absorbed: Outcome { conflicted, commits: after, working_copy },
     }
+}
+
+/// Run `jj absorb` on each of `inputs`, named `{kind}-{index}`, across the machine's threads.
+fn run_cases(root: &Path, config: &Path, kind: &str, inputs: &[Input]) -> Vec<Case> {
+    let threads = std::thread::available_parallelism().map_or(1, usize::from);
+    let chunk = inputs.len().div_ceil(threads);
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = inputs
+            .chunks(chunk)
+            .enumerate()
+            .map(|(part, inputs)| {
+                scope.spawn(move || {
+                    inputs
+                        .iter()
+                        .enumerate()
+                        .map(|(offset, input)| {
+                            let index = part * chunk + offset;
+                            let dir = root.join(format!("{kind}-{index}"));
+                            absorb(&dir, config, format!("{kind}-{index}"), input)
+                        })
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        handles.into_iter().flat_map(|handle| handle.join().expect("a worker ends")).collect()
+    })
+}
+
+/// The first `clean` cases `jj absorb` left resolved and the first `conflicted` it did not.
+fn keep(cases: &[Case], clean: usize, conflicted: usize) -> Vec<&Case> {
+    let resolved = cases.iter().filter(|case| case.absorbed.conflicted.is_empty()).take(clean);
+    let conflicts =
+        cases.iter().filter(|case| !case.absorbed.conflicted.is_empty()).take(conflicted);
+    let kept: Vec<&Case> = resolved.chain(conflicts).collect();
+    assert_eq!(kept.len(), clean + conflicted, "the pool holds enough of each outcome");
+    kept
+}
+
+/// `POOL` inputs from `generate`, less those with nothing to absorb.
+fn pool(seed: u64, mut generate: impl FnMut(&mut Generator) -> Input) -> Vec<Input> {
+    let mut generator = Generator { rng: ChaCha20Rng::seed_from_u64(seed), lines: 0 };
+    (0..POOL).map(|_| generate(&mut generator)).filter(|input| !input.is_empty()).collect()
 }
 
 fn jj_version() -> String {
@@ -310,40 +486,15 @@ fn main() {
     fs::write(oracle.join("jj-cli-aliases.json"), aliases(scratch.path(), &config, &version))
         .expect("the aliases are written");
 
-    let mut generator = Generator { rng: ChaCha20Rng::seed_from_u64(SEED), lines: 0 };
-    // A working copy that holds its parent's tree has no hunk to absorb.
-    let inputs: Vec<(Vec<Files>, Files)> = (0..POOL)
-        .map(|_| generator.case())
-        .filter(|(commits, wc)| commits.last().map(tree) != Some(tree(wc)))
+    let root = scratch.path();
+    let linear = run_cases(root, &config, "seed", &pool(SEED, |g| Input::linear(g.case())));
+    let merges = run_cases(root, &config, "merge", &pool(MERGE_SEED, Generator::merge_case));
+    let intos = run_cases(root, &config, "into", &pool(INTO_SEED, Generator::narrow_case));
+    let kept: Vec<&Case> = keep(&linear, CLEAN_CASES, CONFLICT_CASES)
+        .into_iter()
+        .chain(keep(&merges, MERGE_CLEAN_CASES, MERGE_CONFLICT_CASES))
+        .chain(keep(&intos, INTO_CLEAN_CASES, INTO_CONFLICT_CASES))
         .collect();
-    let threads = std::thread::available_parallelism().map_or(1, usize::from);
-    let chunk = inputs.len().div_ceil(threads);
-    let cases: Vec<Case> = std::thread::scope(|scope| {
-        let handles: Vec<_> = inputs
-            .chunks(chunk)
-            .enumerate()
-            .map(|(part, inputs)| {
-                let (root, config) = (scratch.path(), &config);
-                scope.spawn(move || {
-                    inputs
-                        .iter()
-                        .enumerate()
-                        .map(|(offset, (commits, wc))| {
-                            let index = part * chunk + offset;
-                            let dir = root.join(format!("case-{index}"));
-                            absorb(&dir, config, format!("seed-{index}"), commits, wc)
-                        })
-                        .collect::<Vec<_>>()
-                })
-            })
-            .collect();
-        handles.into_iter().flat_map(|handle| handle.join().expect("a worker ends")).collect()
-    });
-    let clean = cases.iter().filter(|case| case.absorbed.conflicted.is_empty()).take(CLEAN_CASES);
-    let conflicted =
-        cases.iter().filter(|case| !case.absorbed.conflicted.is_empty()).take(CONFLICT_CASES);
-    let kept: Vec<&Case> = clean.chain(conflicted).collect();
-    assert_eq!(kept.len(), CLEAN_CASES + CONFLICT_CASES, "the pool holds enough of each kind");
     let lines: Vec<String> =
         kept.iter().map(|case| serde_json::to_string(case).expect("JSON")).collect();
     let body = format!(
@@ -354,7 +505,5 @@ fn main() {
     fs::write(oracle.join("jj-cli-absorb.json"), body).expect("the absorb corpus is written");
     let resolved = resolve::corpus(scratch.path(), &config, &version);
     fs::write(oracle.join("jj-cli-resolve.json"), resolved).expect("the resolve corpus is written");
-    println!(
-        "{CLEAN_CASES} absorb cases jj leaves resolved, {CONFLICT_CASES} where it writes a conflict"
-    );
+    println!("{} absorb cases", kept.len());
 }

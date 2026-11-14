@@ -65,7 +65,7 @@ In order. Each is one or more commits.
 | A key that opens the fold next to the caret | — | §G2 |
 | Review and diff features, §G4–§G14 | Owner's choices on §G15's open points | G |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
-| The absorb oracle's generator builds linear stacks of text files with the default `--into` only: no merge commits, no merge working copy, no renames, executable bits, symlinks, conflicted inputs, immutable commits or narrower `--into` | — | §I5 |
+| The absorb oracle's generator builds text files only: no renames, executable bits, symlinks, conflicted inputs or immutable commits | — | §I5 |
 | jj-cli's config defaults other than the revset aliases: none checked for whether triad depends on one | — | §I5 |
 | Absorb: split one hunk between commits | Part H's line selection (§H6) | §I4 |
 | The stack, history and absorb windows checked on screen: layout, keys, focus and the accessibility tree; their tests run headless only | — | §I2, §I3, §I4 |
