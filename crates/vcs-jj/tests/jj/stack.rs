@@ -21,7 +21,9 @@ const MARKERS: &[u8] = b"<<<<<<< side 1\nleft\n||||||| base\na\n=======\nright\n
 /// and the working copy sits on `child`, checked out to disk.
 struct Stack {
     fixture: Fixture,
+    base: Committed,
     left: Committed,
+    right: Committed,
     merge: Committed,
     child: Committed,
 }
@@ -34,7 +36,7 @@ fn stack(fixture: Fixture) -> Stack {
     let child = fixture.commit_merged(&[&merge], "child", &[("b.txt", b"b\n")]);
     fixture.check_out(&[&child]);
     fixture.check_out_to_disk();
-    Stack { fixture, left, merge, child }
+    Stack { fixture, base, left, right, merge, child }
 }
 
 fn both_stores() -> [(Stack, &'static str); 2] {
@@ -69,6 +71,20 @@ fn effects(descendants: &[CommitEffect]) -> Vec<(String, Vec<String>, Vec<String
 
 fn short(change_id: &str, effect: &str) -> bool {
     change_id.starts_with(effect)
+}
+
+/// The one visible commit described `description`.
+fn described(fixture: &Fixture, description: &str) -> Committed {
+    let found: Vec<Committed> = fixture
+        .visible_commits()
+        .into_iter()
+        .filter(|visible| visible.description == description)
+        .map(|visible| visible.commit)
+        .collect();
+    match <[Committed; 1]>::try_from(found) {
+        Ok([commit]) => commit,
+        Err(found) => panic!("{} commits described {description}", found.len()),
+    }
 }
 
 #[test]
@@ -384,4 +400,50 @@ fn a_conflict_of_a_file_and_a_symlink_is_refused_as_not_a_conflict_of_files() {
         other => panic!("expected a refusal, got {other:?}"),
     };
     assert_eq!(message, "a.txt is not a conflict of files");
+}
+
+#[test]
+fn a_save_into_one_copy_of_a_divergent_change_rewrites_that_copy_alone() {
+    for (Stack { fixture, left, right, merge, .. }, store) in both_stores() {
+        let copy = fixture.divergent_copy(&merge, &[&left, &right], "merge copy");
+        let rewrite = open(&fixture)
+            .write_conflict(&id(&merge), a_txt(), MERGED, MARKER_LENGTH, false)
+            .expect("the resolution is written");
+        assert!(rewrite.written && rewrite.resolved, "{store}: {rewrite:?}");
+        let merged = Held::File(MERGED.to_vec());
+        assert_eq!(fixture.held_in(&described(&fixture, "merge"), "a.txt"), merged, "{store}");
+        assert_eq!(fixture.held_in(&described(&fixture, "child"), "a.txt"), merged, "{store}");
+        let untouched = described(&fixture, "merge copy");
+        assert_eq!(untouched.commit, copy.commit, "{store}: the other copy is not rewritten");
+        assert_eq!(fixture.held_in(&untouched, "a.txt"), Held::Conflict, "{store}");
+    }
+}
+
+#[test]
+fn each_copy_of_a_divergent_descendant_reports_its_own_conflicts() {
+    let Stack { fixture, base, merge, child, .. } = stack(Fixture::new());
+    let wc = fixture.working_copy_commit();
+    // The copy merges `merge` with a third side of a.txt: it stays conflicted after `merge`
+    // resolves, while `child` resolves.
+    let other = fixture.commit_on(&[&base], "other", &[("a.txt", b"other\n")]);
+    fixture.divergent_copy(&child, &[&merge, &other], "child copy");
+    let rewrite = open(&fixture)
+        .write_conflict(&id(&merge), a_txt(), MERGED, MARKER_LENGTH, true)
+        .expect("the dry run runs");
+    let named = |change: &str| {
+        if short(&child.change_id, change) {
+            "child"
+        } else if short(&wc.change_id, change) {
+            "working copy"
+        } else {
+            panic!("{change} is neither child nor the working copy")
+        }
+    };
+    let mut found: Vec<_> = effects(&rewrite.rewritten)
+        .into_iter()
+        .map(|(change, before, after)| (named(&change), before, after))
+        .collect();
+    found.sort();
+    let a = || vec!["a.txt".to_owned()];
+    assert_eq!(found, [("child", a(), vec![]), ("child", a(), a()), ("working copy", a(), vec![])]);
 }

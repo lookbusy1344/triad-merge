@@ -11,7 +11,7 @@ use jj_lib::repo_path::RepoPathBuf;
 use pollster::FutureExt as _;
 use vcs::{IdKind, VcsError};
 
-use crate::native::{Mutated, Rewrite, kept_terms, visible};
+use crate::native::{Mutated, Rewrite, current, kept_terms};
 use crate::{JjError, JjRepository, backend};
 
 /// Terms per side in jj's order: a side, then the base after it.
@@ -63,9 +63,8 @@ impl JjRepository {
         let named = self.commit_by_id(id)?;
         let revsets = self.revsets()?;
         self.check_mutable(std::slice::from_ref(&named), &revsets)?;
-        let change_id = named.change_id().clone();
         self.rewrite(&revsets, dry_run, |this, repo| {
-            let commit = visible(repo, &change_id)?;
+            let commit = current(repo, &named)?;
             let value = this.held_conflict(&named, &commit, &repo_path, path)?;
             // Sides count as jj shows them: the pair indexes the simplified conflict, whose
             // terms sit at `kept`'s positions in the tree's value.

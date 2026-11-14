@@ -366,6 +366,34 @@ impl Fixture {
         message: &str,
         files: &[(&str, &[u8])],
     ) -> Committed {
+        self.merged_commit(parents, message, files, None)
+    }
+
+    /// A second visible commit of `commit`'s change, on `parents` with their merged trees,
+    /// as two concurrent rewrites of the change leave it: the change is divergent. `commit`
+    /// stays visible.
+    #[expect(
+        clippy::must_use_candidate,
+        reason = "called for its effect on the repository; tests often ignore the result"
+    )]
+    pub fn divergent_copy(
+        &self,
+        commit: &Committed,
+        parents: &[&Committed],
+        message: &str,
+    ) -> Committed {
+        let change_id = jj_lib::backend::ChangeId::try_from_reverse_hex(&commit.change_id)
+            .expect("a change ID in reverse hex");
+        self.merged_commit(parents, message, &[], Some(change_id))
+    }
+
+    fn merged_commit(
+        &self,
+        parents: &[&Committed],
+        message: &str,
+        files: &[(&str, &[u8])],
+        change_id: Option<jj_lib::backend::ChangeId>,
+    ) -> Committed {
         let repo = self.repo();
         let store = repo.store();
         let parent_commits: Vec<Commit> = parents
@@ -386,13 +414,15 @@ impl Fixture {
         }
         let tree = builder.write_tree().block_on().expect("a tree");
         let mut tx = repo.start_transaction();
-        let commit = tx
+        let builder = tx
             .repo_mut()
             .new_commit(parents.iter().map(|parent| parent.id.clone()).collect(), tree)
-            .set_description(message)
-            .write()
-            .block_on()
-            .expect("a commit");
+            .set_description(message);
+        let builder = match change_id {
+            Some(change_id) => builder.set_change_id(change_id),
+            None => builder,
+        };
+        let commit = builder.write().block_on().expect("a commit");
         self.finish(tx, "commit");
         Committed::of(&commit)
     }

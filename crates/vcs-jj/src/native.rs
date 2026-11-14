@@ -2,16 +2,20 @@
 //! through `JjRepository`'s own API. Every write snapshots the working copy first, rewrites
 //! in one transaction, rebases the descendants, and checks out a moved working-copy commit.
 
+use std::collections::HashSet;
+
 use camino::{Utf8Path, Utf8PathBuf};
 use futures::{StreamExt as _, TryStreamExt as _};
-use jj_lib::backend::{ChangeId, CopyId, MergedTreeValue, MergedTreeValueExt as _, TreeValue};
+use jj_lib::backend::{
+    ChangeId, CommitId, CopyId, MergedTreeValue, MergedTreeValueExt as _, TreeValue,
+};
 use jj_lib::commit::Commit;
 use jj_lib::conflict_labels::ConflictLabels;
 use jj_lib::conflicts::{resolve_file_executable, update_from_content};
 use jj_lib::merge::Merge;
 use jj_lib::merged_tree_builder::MergedTreeBuilder;
 use jj_lib::object_id::ObjectId as _;
-use jj_lib::repo::{MutableRepo, Repo as _};
+use jj_lib::repo::{MutableRepo, ReadonlyRepo, Repo};
 use jj_lib::repo_path::{RepoPath, RepoPathBuf};
 use jj_lib::revset::RevsetAliasesMap;
 use pollster::FutureExt as _;
@@ -220,9 +224,8 @@ impl JjRepository {
         let named = self.commit_by_id(id)?;
         let revsets = self.revsets()?;
         self.check_mutable(std::slice::from_ref(&named), &revsets)?;
-        let change_id = named.change_id().clone();
         self.rewrite(&revsets, dry_run, |this, repo| {
-            let commit = visible(repo, &change_id)?;
+            let commit = current(repo, &named)?;
             let value = this.held_conflict(&named, &commit, &repo_path, path)?;
             let new_value = parse_back(repo, &repo_path, &value, content, marker_length)?;
             let sides = commit.tree().tree_ids().num_sides();
@@ -366,8 +369,51 @@ impl JjRepository {
             .rebase_descendants()
             .block_on()
             .map_err(backend("rebasing the descendants"))?;
-        let (resolved, sides) = match visible(tx.repo(), target.change_id()) {
-            Ok(now) => {
+        let written = !dry_run && tx.repo().has_changes();
+        let new_wc = if written {
+            let new_wc_id = tx
+                .repo()
+                .view()
+                .get_wc_commit_id(&self.workspace)
+                .cloned()
+                .ok_or_else(|| VcsError::NoWorkingCopy(self.root.clone()))?;
+            let new_wc = (new_wc_id != *old_wc.id())
+                .then(|| tx.repo().store().get_commit(&new_wc_id))
+                .transpose()
+                .map_err(backend("reading the working-copy commit"))?;
+            if colocated_git(&repo, workspace.workspace_root()).is_some() {
+                if let Some(new_wc) = &new_wc {
+                    jj_lib::git::reset_head(
+                        tx.repo_mut(),
+                        &self.workspace,
+                        workspace.workspace_root(),
+                        (Some(&old_wc), new_wc),
+                    )
+                    .block_on()
+                    .map_err(backend("moving git's HEAD"))?;
+                }
+                export_refs(tx.repo_mut())?;
+            }
+            new_wc
+        } else {
+            None
+        };
+        // The report follows each commit through the predecessors the operation records, so
+        // each copy of a divergent change maps to its own rewrite. A dry run writes the
+        // operation without publishing it, as it writes the commits.
+        let after = if tx.repo().has_changes() {
+            let unpublished =
+                tx.write(description).block_on().map_err(backend("writing the operation"))?;
+            if written {
+                unpublished.publish().block_on().map_err(backend("writing the operation"))?
+            } else {
+                unpublished.leave_unpublished()
+            }
+        } else {
+            std::sync::Arc::clone(&repo)
+        };
+        let (resolved, sides) = match successor(&after, &target)? {
+            Some(now) => {
                 let sides = path
                     .map(|path| {
                         now.tree()
@@ -381,78 +427,93 @@ impl JjRepository {
             }
             // `absorb` abandons a working-copy commit it empties; an abandoned commit holds
             // no conflict.
-            Err(VcsError::UnknownRevision(_)) => (true, None),
-            Err(error) => return Err(error),
+            None => (true, None),
         };
         let target = self.change_info(&target)?;
         let rewritten = before
             .into_iter()
             .map(|(commit, before)| {
-                let after = match visible(tx.repo(), commit.change_id()) {
-                    Ok(now) => conflicted_paths(&now)?,
-                    Err(VcsError::UnknownRevision(_) | VcsError::AmbiguousRevision(_)) => {
-                        Vec::new()
-                    }
-                    Err(error) => return Err(error),
-                };
+                let after = successor(&after, &commit)?
+                    .map(|now| conflicted_paths(&now))
+                    .transpose()?
+                    .unwrap_or_default();
                 Ok(CommitEffect { change: self.change_info(&commit)?, before, after })
             })
             .collect::<Result<Vec<_>, VcsError>>()?;
-        if dry_run || !tx.repo().has_changes() {
-            return Ok(Rewrite { target, resolved, sides, rewritten, written: false });
+        if !written {
+            return Ok(Rewrite { target, resolved, sides, rewritten, written });
         }
-        let new_wc_id = tx
-            .repo()
-            .view()
-            .get_wc_commit_id(&self.workspace)
-            .cloned()
-            .ok_or_else(|| VcsError::NoWorkingCopy(self.root.clone()))?;
-        let new_wc = (new_wc_id != *old_wc.id())
-            .then(|| tx.repo().store().get_commit(&new_wc_id))
-            .transpose()
-            .map_err(backend("reading the working-copy commit"))?;
-        if colocated_git(&repo, workspace.workspace_root()).is_some() {
-            if let Some(new_wc) = &new_wc {
-                jj_lib::git::reset_head(
-                    tx.repo_mut(),
-                    &self.workspace,
-                    workspace.workspace_root(),
-                    (Some(&old_wc), new_wc),
-                )
-                .block_on()
-                .map_err(backend("moving git's HEAD"))?;
-            }
-            export_refs(tx.repo_mut())?;
-        }
-        let repo = tx.commit(description).block_on().map_err(backend("writing the operation"))?;
         if let Some(new_wc) = &new_wc {
             workspace
-                .check_out(repo.op_id().clone(), Some(&old_wc.tree()), new_wc)
+                .check_out(after.op_id().clone(), Some(&old_wc.tree()), new_wc)
                 .block_on()
                 .map_err(backend("checking out the working copy"))?;
         }
-        self.repo = repo;
-        Ok(Rewrite { target, resolved, sides, rewritten, written: true })
+        self.repo = after;
+        Ok(Rewrite { target, resolved, sides, rewritten, written })
     }
 }
 
-/// The one visible commit of `change_id` in `repo`.
-pub(crate) fn visible(
-    repo: &dyn jj_lib::repo::Repo,
-    change_id: &ChangeId,
-) -> Result<Commit, VcsError> {
-    let named = || change_id.reverse_hex();
-    let targets = repo
-        .resolve_change_id(change_id)
-        .block_on()
-        .map_err(backend("looking up a change"))?
-        .ok_or_else(|| VcsError::UnknownRevision(named()))?;
-    let mut visible = targets.visible_with_offsets().map(|(_, id)| id);
-    match (visible.next(), visible.next()) {
-        (Some(id), None) => repo.store().get_commit(id).map_err(backend("reading a commit")),
-        // Every commit of the change is hidden: abandoned.
-        (None, _) => Err(VcsError::UnknownRevision(named())),
-        (Some(_), Some(_)) => Err(VcsError::AmbiguousRevision(named())),
+/// The visible commits of `change_id` in `repo`.
+fn visible_ids(repo: &dyn Repo, change_id: &ChangeId) -> Result<Vec<CommitId>, VcsError> {
+    let targets =
+        repo.resolve_change_id(change_id).block_on().map_err(backend("looking up a change"))?;
+    Ok(targets.map_or_default(|targets| {
+        targets.visible_with_offsets().map(|(_, id)| id.clone()).collect()
+    }))
+}
+
+/// The commit `named` is in `repo`: itself while visible, else the one visible commit of its
+/// change, as after a rewrite elsewhere.
+///
+/// # Errors
+///
+/// [`VcsError::UnknownRevision`] for an abandoned change, and
+/// [`VcsError::AmbiguousRevision`] when `named` is hidden and its change is divergent.
+pub(crate) fn current(repo: &dyn Repo, named: &Commit) -> Result<Commit, VcsError> {
+    let ids = visible_ids(repo, named.change_id())?;
+    let read = |id| repo.store().get_commit(id).map_err(backend("reading a commit"));
+    // Read from `repo`'s store: a rewrite builds only on commits of its own store.
+    if ids.contains(named.id()) {
+        return read(named.id());
+    }
+    let change = || named.change_id().reverse_hex();
+    match ids.as_slice() {
+        [id] => read(id),
+        [] => Err(VcsError::UnknownRevision(change())),
+        _ => Err(VcsError::AmbiguousRevision(change())),
+    }
+}
+
+/// What `old` became in the operation `repo` is at: itself while visible, else the visible
+/// commit of its change that the operation rewrote it into, through the predecessors the
+/// operation records; none when the operation abandoned it.
+fn successor(repo: &ReadonlyRepo, old: &Commit) -> Result<Option<Commit>, VcsError> {
+    let ids = visible_ids(repo, old.change_id())?;
+    if ids.contains(old.id()) {
+        return Ok(Some(old.clone()));
+    }
+    let operation = repo.operation();
+    let rewritten_from_old = |id: &CommitId| {
+        let mut pending = vec![id.clone()];
+        let mut seen = HashSet::new();
+        while let Some(id) = pending.pop() {
+            if id == *old.id() {
+                return true;
+            }
+            if seen.insert(id.clone())
+                && let Some(predecessors) = operation.predecessors_for_commit(&id)
+            {
+                pending.extend(predecessors.iter().cloned());
+            }
+        }
+        false
+    };
+    let found: Vec<&CommitId> = ids.iter().filter(|id| rewritten_from_old(id)).collect();
+    match found.as_slice() {
+        [] => Ok(None),
+        [id] => repo.store().get_commit(id).map(Some).map_err(backend("reading a commit")),
+        _ => Err(VcsError::AmbiguousRevision(old.change_id().reverse_hex())),
     }
 }
 

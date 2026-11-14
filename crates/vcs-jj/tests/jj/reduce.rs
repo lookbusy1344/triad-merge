@@ -260,3 +260,36 @@ fn the_merged_side_takes_side_n_s_label_and_every_other_term_keeps_its_own() {
         assert_eq!(label_names(&fixture, &merge), (owned(sides), owned(&["base"])), "pair {pair}");
     }
 }
+
+#[test]
+fn a_pair_saved_into_one_copy_of_a_divergent_change_reduces_that_copy_alone() {
+    let fixture = Fixture::new();
+    let base = fixture.commit_on(&[], "base", &[("a.txt", BASE)]);
+    let parents: Vec<Committed> = [("one", ONE), ("two", TWO), ("three", THREE)]
+        .into_iter()
+        .map(|(name, bytes)| fixture.commit_on(&[&base], name, &[("a.txt", bytes)]))
+        .collect();
+    let parents: Vec<&Committed> = parents.iter().collect();
+    let merge = fixture.commit_merged(&parents, "merge", &[]);
+    let copy = fixture.divergent_copy(&merge, &parents, "merge copy");
+    let rewrite =
+        open(&fixture).reduce_pair(&id(&merge), a_txt(), 1, MERGED, false).expect("the pair saves");
+    assert!(rewrite.written && !rewrite.resolved, "{rewrite:?}");
+    assert_eq!(rewrite.sides, Some(2));
+    let visible = fixture.visible_commits();
+    let reduced = visible
+        .iter()
+        .find(|commit| commit.description == "merge")
+        .expect("the reduced copy is visible");
+    let conflict = open(&fixture)
+        .conflict_at(&id(&reduced.commit), a_txt())
+        .expect("reads")
+        .expect("a conflict");
+    assert_eq!(bytes(&conflict.sides), [MERGED, THREE]);
+    let untouched = visible
+        .iter()
+        .find(|commit| commit.description == "merge copy")
+        .expect("the other copy is visible");
+    assert_eq!(untouched.commit.commit, copy.commit, "the other copy is not rewritten");
+    assert_eq!(fixture.held_in(&untouched.commit, "a.txt"), Held::Conflict);
+}
