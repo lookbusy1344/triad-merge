@@ -856,7 +856,7 @@ pub struct MergeTool {
     pub conflict_exit_codes: Vec<i32>,
 }
 
-/// What `jj resolve` makes of a merge tool's run, by the rules of jj-cli 0.46
+/// What `jj resolve` makes of a merge tool's run, by the rules of jj-cli 0.47
 /// (`cli/src/merge_tools/external.rs`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToolOutcome {

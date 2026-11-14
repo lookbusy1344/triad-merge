@@ -60,7 +60,7 @@ A failure in the aliases test means jj's default `revset-aliases` changed: copy 
 
 ## 5. Check the jj-cli behaviour triad copies
 
-No oracle covers these. Read jj-cli's source at the new release tag against each, and change triad where jj changed. Each place names the jj-cli release it was last checked against. After checking, set that name to the new release. A name older than the pinned release marks a place not yet checked.
+No oracle covers these. Read jj's source at the new release tag against each, and change triad where jj changed. GitHub's comparison of the two tags lists the files that changed (`gh api repos/jj-vcs/jj/compare/vOLD...vNEW`); it lists at most 300 files, so fetch a file it leaves out at both tags and compare. The comments that copy jj-cli name the release they follow (`jj-cli 0.47`). After checking, set each to the new release. A name older than the pinned release marks a place not yet checked.
 
 | triad | jj-cli | What to compare |
 |---|---|---|
