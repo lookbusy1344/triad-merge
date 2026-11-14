@@ -3,10 +3,12 @@
 use std::fmt::Write as _;
 
 use camino::Utf8Path;
+use merge_session::jj_native::stays;
 use serde_json::json;
 use vcs::IdKind;
 use vcs_jj::{
-    Absorbed, CommitEffect, FileVersion, Rewrite, SHORT_OPERATION, StackCommit, VersionState,
+    AbsorbHunk, Absorbed, CommitEffect, FileVersion, Goes, Rewrite, SHORT_OPERATION, StackCommit,
+    Stay, VersionState,
 };
 
 use crate::ExitCode;
@@ -185,7 +187,8 @@ pub fn absorb_report(
                     "path": h.path.as_str(),
                     "left": range(&h.left),
                     "right": range(&h.right),
-                    "target": h.target.as_ref().map(|t| json!({"commit": t.commit, "change_id": t.change_id})),
+                    "target": h.target().map(|t| json!({"commit": t.commit, "change_id": t.change_id})),
+                    "stays": stays_json(&h.goes),
                 })
             })
             .collect();
@@ -208,10 +211,10 @@ pub fn absorb_report(
         line(&mut text, format_args!("at operation {short}"));
     }
     for h in &absorbed.hunks {
-        let goes = h.target.as_ref().map_or_else(
-            || "stays".to_owned(),
-            |t| format!("-> {} {}", t.id(IdKind::Change), t.id(IdKind::Commit)),
-        );
+        let goes = match &h.goes {
+            Goes::Into(t) => format!("-> {} {}", t.id(IdKind::Change), t.id(IdKind::Commit)),
+            Goes::Stays(stay) => stays(stay),
+        };
         line(
             &mut text,
             format_args!(
@@ -225,7 +228,7 @@ pub fn absorb_report(
     }
     if apply {
         let moved: Vec<&vcs::ChangeInfo> =
-            absorbed.hunks.iter().filter_map(|h| h.target.as_ref()).collect();
+            absorbed.hunks.iter().filter_map(AbsorbHunk::target).collect();
         let mut commits: Vec<&str> = moved.iter().map(|t| t.commit.as_str()).collect();
         commits.sort_unstable();
         commits.dedup();
@@ -236,6 +239,19 @@ pub fn absorb_report(
         descendant_lines(&mut text, &absorbed.rewrite.rewritten);
     }
     Ok(text)
+}
+
+/// Why a hunk stays, as `absorb --json` gives it; null for a hunk that moves.
+fn stays_json(goes: &Goes) -> serde_json::Value {
+    let commit = |c: &vcs::ChangeInfo| json!({"commit": c.commit, "change_id": c.change_id});
+    match goes {
+        Goes::Into(_) => serde_json::Value::Null,
+        Goes::Stays(Stay::NoCommit) => json!({"reason": "no-commit", "commit": null}),
+        Goes::Stays(Stay::WouldConflict(c)) => {
+            json!({"reason": "would-conflict", "commit": commit(c)})
+        }
+        Goes::Stays(Stay::Kept) => json!({"reason": "kept", "commit": null}),
+    }
 }
 
 /// Append `args` and a newline to `text`.
@@ -352,21 +368,23 @@ mod tests {
     }
 
     fn absorbed() -> Absorbed {
-        let hunk = |number, target| vcs_jj::AbsorbHunk {
+        let hunk = |number, goes| vcs_jj::AbsorbHunk {
             number,
             path: "a.txt".into(),
             left: 2..3,
             right: 2..4,
-            target,
+            goes,
             before: b"c\n".to_vec(),
             after: b"C\nD\n".to_vec(),
         };
         Absorbed {
             operation: "0123456789abcdef0123".to_owned(),
             hunks: vec![
-                hunk(1, Some(change("kkkk", None))),
-                hunk(2, None),
-                hunk(3, Some(change("kkkk", None))),
+                hunk(1, Goes::Into(change("kkkk", None))),
+                hunk(2, Goes::Stays(Stay::NoCommit)),
+                hunk(3, Goes::Into(change("kkkk", None))),
+                hunk(4, Goes::Stays(Stay::WouldConflict(change("mmmm", None)))),
+                hunk(5, Goes::Stays(Stay::Kept)),
             ],
             destinations: Vec::new(),
             skipped: vec![("b.bin".into(), "conflicted in the parents".to_owned())],
@@ -380,13 +398,15 @@ mod tests {
             absorb_report(&absorbed(), false, false).expect("a report"),
             "at operation 0123456789ab\n\
              1 a.txt left 2..3 right 2..4 -> kkkk c-kkkk\n\
-             2 a.txt left 2..3 right 2..4 stays\n\
+             2 a.txt left 2..3 right 2..4 stays: no one commit in --into wrote its lines\n\
              3 a.txt left 2..3 right 2..4 -> kkkk c-kkkk\n\
+             4 a.txt left 2..3 right 2..4 stays: would conflict in mmmm\n\
+             5 a.txt left 2..3 right 2..4 stays: kept\n\
              skipped b.bin: conflicted in the parents\n"
         );
         let applied = absorb_report(&absorbed(), true, false).expect("a report");
         assert_eq!(
-            applied.lines().skip(4).collect::<Vec<_>>(),
+            applied.lines().skip(6).collect::<Vec<_>>(),
             ["absorbed 2 hunks into 1 commits", "  llll: a.txt, b.txt -> none"]
         );
         let value: serde_json::Value =
@@ -395,6 +415,13 @@ mod tests {
         assert_eq!(value["hunks"][0]["left"], json!([2, 3]));
         assert_eq!(value["hunks"][0]["target"]["commit"], "c-kkkk");
         assert_eq!(value["hunks"][1]["target"], serde_json::Value::Null);
+        assert_eq!(value["hunks"][0]["stays"], serde_json::Value::Null);
+        assert_eq!(value["hunks"][1]["stays"], json!({"reason": "no-commit", "commit": null}));
+        assert_eq!(
+            value["hunks"][3]["stays"],
+            json!({"reason": "would-conflict", "commit": {"commit": "c-mmmm", "change_id": "mmmm"}})
+        );
+        assert_eq!(value["hunks"][4]["stays"], json!({"reason": "kept", "commit": null}));
         assert_eq!(value["skipped"][0]["path"], "b.bin");
         assert_eq!(value["written"], true);
         assert_eq!(value["operation"], "0123456789abcdef0123");

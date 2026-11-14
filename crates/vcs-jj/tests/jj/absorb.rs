@@ -2,10 +2,10 @@
 //! moved there on request (spec §7.5.4).
 
 use camino::Utf8PathBuf;
-use vcs::{IdKind, VcsError};
+use vcs::{ChangeInfo, IdKind, VcsError};
 use vcs_jj::config::ConfigEnv;
 use vcs_jj::testing::{Committed, Fixture, Held};
-use vcs_jj::{AbsorbHunk, Absorbed, HunkChoice, JjError, JjRepository};
+use vcs_jj::{AbsorbHunk, Absorbed, Goes, HunkChoice, JjError, JjRepository, Stay};
 
 fn open(fixture: &Fixture) -> JjRepository {
     fixture.open().with_config(ConfigEnv::default())
@@ -28,20 +28,38 @@ fn listed(fixture: &Fixture, choices: &[HunkChoice], apply: bool) -> Absorbed {
     open(fixture).absorb(&[], None, choices, apply, None).expect("the hunks are listed")
 }
 
-/// Each hunk's number, path, line ranges and target's full commit ID prefix.
-fn summary(absorbed: &Absorbed) -> Vec<(usize, &str, [usize; 4], Option<&str>)> {
+/// Each hunk's number, path, line ranges and where it goes: the target's commit ID prefix,
+/// or why it stays.
+fn summary(absorbed: &Absorbed) -> Vec<(usize, &str, [usize; 4], String)> {
     absorbed
         .hunks
         .iter()
-        .map(|AbsorbHunk { number, path, left, right, target, .. }| {
-            (
-                *number,
-                path.as_str(),
-                [left.start, left.end, right.start, right.end],
-                target.as_ref().map(|t| t.id(IdKind::Commit)),
-            )
+        .map(|AbsorbHunk { number, path, left, right, goes, .. }| {
+            (*number, path.as_str(), [left.start, left.end, right.start, right.end], shown(goes))
         })
         .collect()
+}
+
+fn shown(goes: &Goes) -> String {
+    let prefix = |change: &ChangeInfo| change.id(IdKind::Commit).to_owned();
+    match goes {
+        Goes::Into(change) => prefix(change),
+        Goes::Stays(Stay::NoCommit) => NO_COMMIT.to_owned(),
+        Goes::Stays(Stay::WouldConflict(change)) => format!("{WOULD_CONFLICT} {}", prefix(change)),
+        Goes::Stays(Stay::Kept) => KEPT.to_owned(),
+    }
+}
+
+const NO_COMMIT: &str = "no commit";
+const WOULD_CONFLICT: &str = "would conflict in";
+const KEPT: &str = "kept";
+
+fn into(commit: &Committed) -> String {
+    short(commit).to_owned()
+}
+
+fn conflicts_in(commit: &Committed) -> String {
+    format!("{WOULD_CONFLICT} {}", short(commit))
 }
 
 fn short(commit: &Committed) -> &str {
@@ -54,10 +72,7 @@ fn each_hunk_goes_to_the_commit_that_wrote_its_lines() {
     let absorbed = listed(&fixture, &[], false);
     assert_eq!(
         summary(&absorbed),
-        [
-            (1, "a.txt", [2, 3, 2, 3], Some(short(&one))),
-            (2, "b.txt", [1, 2, 1, 2], Some(short(&two))),
-        ]
+        [(1, "a.txt", [2, 3, 2, 3], into(&one)), (2, "b.txt", [1, 2, 1, 2], into(&two)),]
     );
     assert!(!absorbed.rewrite.written);
     assert_eq!(
@@ -93,10 +108,7 @@ fn the_listing_names_the_commits_a_hunk_may_go_into_children_first() {
 #[test]
 fn an_insertion_inside_one_commit_s_lines_goes_there() {
     let (fixture, one, _) = stack(b"1\n2\nNEW\n3\n4\n5\n", b"x\ny\nz\n");
-    assert_eq!(
-        summary(&listed(&fixture, &[], false)),
-        [(1, "a.txt", [2, 2, 2, 3], Some(short(&one)))]
-    );
+    assert_eq!(summary(&listed(&fixture, &[], false)), [(1, "a.txt", [2, 2, 2, 3], into(&one))]);
 }
 
 #[test]
@@ -109,10 +121,13 @@ fn a_hunk_across_two_commits_lines_stays() {
     std::fs::write(fixture.root().join("a.txt"), b"1\nTWO\nTHREE\n4\n").expect("written");
     std::fs::write(fixture.root().join("c.txt"), b"new\n").expect("written");
     let absorbed = listed(&fixture, &[], false);
-    assert_eq!(summary(&absorbed), [(1, "a.txt", [1, 3, 1, 3], None)]);
+    assert_eq!(summary(&absorbed), [(1, "a.txt", [1, 3, 1, 3], NO_COMMIT.to_owned())]);
     // An insertion where `one`'s lines end and `two`'s start stays too.
     std::fs::write(fixture.root().join("a.txt"), b"1\n2\nMID\n3\n4\n").expect("written");
-    assert_eq!(summary(&listed(&fixture, &[], false)), [(1, "a.txt", [2, 2, 2, 3], None)]);
+    assert_eq!(
+        summary(&listed(&fixture, &[], false)),
+        [(1, "a.txt", [2, 2, 2, 3], NO_COMMIT.to_owned())]
+    );
 }
 
 #[test]
@@ -125,7 +140,10 @@ fn a_deletion_across_two_commits_lines_stays() {
     fixture.check_out(&[&two]);
     fixture.check_out_to_disk();
     std::fs::write(fixture.root().join("a.txt"), b"1\n4\n").expect("written");
-    assert_eq!(summary(&listed(&fixture, &[], false)), [(1, "a.txt", [1, 3, 1, 1], None)]);
+    assert_eq!(
+        summary(&listed(&fixture, &[], false)),
+        [(1, "a.txt", [1, 3, 1, 1], NO_COMMIT.to_owned())]
+    );
 }
 
 #[test]
@@ -140,12 +158,12 @@ fn a_line_from_a_commit_outside_into_stays() {
     let absorbed = open(&fixture)
         .absorb(&[], Some(&one.commit), &[], false, None)
         .expect("the hunks are listed");
-    assert_eq!(summary(&absorbed), [(1, "a.txt", [1, 3, 1, 3], None)]);
+    assert_eq!(summary(&absorbed), [(1, "a.txt", [1, 3, 1, 3], NO_COMMIT.to_owned())]);
     std::fs::write(fixture.root().join("a.txt"), b"1\n2\nTHREE\n").expect("written");
     let absorbed = open(&fixture)
         .absorb(&[], Some(&one.commit), &[], false, None)
         .expect("the hunks are listed");
-    assert_eq!(summary(&absorbed), [(1, "a.txt", [2, 3, 2, 3], None)]);
+    assert_eq!(summary(&absorbed), [(1, "a.txt", [2, 3, 2, 3], NO_COMMIT.to_owned())]);
 }
 
 #[test]
@@ -154,7 +172,7 @@ fn move_and_keep_override_a_hunk_s_commit() {
     let choices = [HunkChoice::Keep(1), HunkChoice::Move { hunk: 2, rev: one.commit.clone() }];
     assert_eq!(
         summary(&listed(&fixture, &choices, false)),
-        [(1, "a.txt", [2, 3, 2, 3], None), (2, "b.txt", [1, 2, 1, 2], Some(short(&one)))]
+        [(1, "a.txt", [2, 3, 2, 3], KEPT.to_owned()), (2, "b.txt", [1, 2, 1, 2], into(&one))]
     );
 }
 
@@ -210,7 +228,7 @@ fn paths_limit_the_hunks() {
     let absorbed = open(&fixture)
         .absorb(&[Utf8PathBuf::from("b.txt")], None, &[], false, None)
         .expect("the hunks are listed");
-    assert_eq!(summary(&absorbed), [(1, "b.txt", [1, 2, 1, 2], Some(short(&two)))]);
+    assert_eq!(summary(&absorbed), [(1, "b.txt", [1, 2, 1, 2], into(&two))]);
 }
 
 #[test]
@@ -221,7 +239,7 @@ fn into_limits_the_commits() {
         .expect("the hunks are listed");
     assert_eq!(
         summary(&absorbed),
-        [(1, "a.txt", [2, 3, 2, 3], None), (2, "b.txt", [1, 2, 1, 2], Some(short(&two)))]
+        [(1, "a.txt", [2, 3, 2, 3], NO_COMMIT.to_owned()), (2, "b.txt", [1, 2, 1, 2], into(&two))]
     );
 }
 
@@ -333,7 +351,7 @@ fn an_insertion_where_a_commit_outside_into_starts_stays() {
     let absorbed = open(&fixture)
         .absorb(&[], Some(&one.commit), &[], true, None)
         .expect("the hunks are listed");
-    assert_eq!(summary(&absorbed), [(1, "a.txt", [3, 3, 3, 4], None)]);
+    assert_eq!(summary(&absorbed), [(1, "a.txt", [3, 3, 3, 4], conflicts_in(&one))]);
     assert_eq!(
         fixture.held_in(&fixture.latest(&one), "a.txt"),
         Held::File(b"a1\na2\na3\n".to_vec())
@@ -347,7 +365,7 @@ fn a_change_next_to_lines_a_later_commit_wrote_stays() {
     let (fixture, one, _) =
         two_commits(b"a1\na2\na3\n", b"a1\na2\na3\nx1\nx2\n", b"a1\na2\nA3\nx1\nx2\n");
     let absorbed = listed(&fixture, &[], true);
-    assert_eq!(summary(&absorbed), [(1, "a.txt", [2, 3, 2, 3], None)]);
+    assert_eq!(summary(&absorbed), [(1, "a.txt", [2, 3, 2, 3], conflicts_in(&one))]);
     assert_eq!(
         fixture.held_in(&fixture.latest(&one), "a.txt"),
         Held::File(b"a1\na2\na3\n".to_vec())
@@ -359,13 +377,13 @@ fn a_change_next_to_a_line_a_later_commit_removed_stays() {
     // `two` removed a4, which the annotation cannot see: a3 is `one`'s line, but in `one`'s
     // file a4 follows it, and the change touches `two`'s deletion.
     let (fixture, one, _) = two_commits(b"a1\na2\na3\na4\n", b"a1\na2\na3\n", b"a1\na2\nA3\n");
-    assert_eq!(summary(&listed(&fixture, &[], false)), [(1, "a.txt", [2, 3, 2, 3], None)]);
-    // A change away from `two`'s deletion still goes to `one`.
-    std::fs::write(fixture.root().join("a.txt"), b"A1\na2\na3\n").expect("written");
     assert_eq!(
         summary(&listed(&fixture, &[], false)),
-        [(1, "a.txt", [0, 1, 0, 1], Some(short(&one)))]
+        [(1, "a.txt", [2, 3, 2, 3], conflicts_in(&one))]
     );
+    // A change away from `two`'s deletion still goes to `one`.
+    std::fs::write(fixture.root().join("a.txt"), b"A1\na2\na3\n").expect("written");
+    assert_eq!(summary(&listed(&fixture, &[], false)), [(1, "a.txt", [0, 1, 0, 1], into(&one))]);
 }
 
 #[test]

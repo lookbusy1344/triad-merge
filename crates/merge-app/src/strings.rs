@@ -8,8 +8,8 @@ use merge_core::merge3::{HunkLevel, Semantics};
 use merge_core::text::{Encoding, LineEnding};
 use merge_session::ExitCode;
 use merge_session::jj_native::{
-    AbsorbHunk, Absorbed, CommitEffect, FileVersion, Rewrite, SHORT_OPERATION, StackCommit,
-    StackPath, VersionState,
+    AbsorbHunk, Absorbed, CommitEffect, FileVersion, Goes, Rewrite, SHORT_OPERATION, StackCommit,
+    StackPath, Stay, VersionState, stays,
 };
 use merge_view::nav::Sides;
 use merge_view::status::{Divergence, Status};
@@ -289,12 +289,15 @@ pub(crate) const ABSORB_APPLY: &str = "Apply";
 /// The choice that keeps a hunk in the working copy.
 const ABSORB_KEEP: &str = "Working copy";
 
-/// A listed hunk, as `absorb --list` prints it, with the commit it goes into now.
+/// A listed hunk, as `absorb --list` prints it, with the commit chosen for it now: the
+/// listing's reason when it stays as listed, `kept` when the choice keeps a hunk the listing
+/// moved.
 pub(crate) fn absorb_hunk(hunk: &AbsorbHunk, target: Option<&ChangeInfo>) -> Row {
-    let goes = target.map_or_else(
-        || "stays".to_owned(),
-        |t| format!("-> {} {}", t.id(IdKind::Change), t.id(IdKind::Commit)),
-    );
+    let goes = match (target, &hunk.goes) {
+        (Some(t), _) => format!("-> {} {}", t.id(IdKind::Change), t.id(IdKind::Commit)),
+        (None, Goes::Stays(stay)) => stays(stay),
+        (None, Goes::Into(_)) => stays(&Stay::Kept),
+    };
     let (left, right) = (&hunk.left, &hunk.right);
     Row {
         lead: Some(hunk.number.to_string().into()),
@@ -342,12 +345,8 @@ fn with_hunks(hunks: usize) -> Option<SharedString> {
 /// What Apply did: the hunks moved and the commits they went into, then each commit whose
 /// conflicts changed.
 pub(crate) fn absorb_note(absorbed: &Absorbed) -> String {
-    let moved: Vec<&str> = absorbed
-        .hunks
-        .iter()
-        .filter_map(|h| h.target.as_ref())
-        .map(|t| t.commit.as_str())
-        .collect();
+    let moved: Vec<&str> =
+        absorbed.hunks.iter().filter_map(AbsorbHunk::target).map(|t| t.commit.as_str()).collect();
     let mut commits = moved.clone();
     commits.sort_unstable();
     commits.dedup();
@@ -786,13 +785,13 @@ mod tests {
         }
     }
 
-    fn hunk(number: usize, target: Option<ChangeInfo>) -> AbsorbHunk {
+    fn hunk(number: usize, goes: Goes) -> AbsorbHunk {
         AbsorbHunk {
             number,
             path: "a.txt".into(),
             left: 2..3,
             right: 2..4,
-            target,
+            goes,
             before: b"c\n".to_vec(),
             after: b"C\nD\n".to_vec(),
         }
@@ -800,14 +799,17 @@ mod tests {
 
     #[test]
     fn a_hunk_reads_as_absorb_lists_it_with_its_lines() {
-        let kept = hunk(1, None);
-        assert_eq!(absorb_hunk(&kept, None).label(), "1 a.txt left 2..3 right 2..4 stays");
+        let kept = hunk(1, Goes::Stays(Stay::WouldConflict(change("mmmm", None))));
+        assert_eq!(
+            absorb_hunk(&kept, None).label(),
+            "1 a.txt left 2..3 right 2..4 stays: would conflict in mmmm"
+        );
         assert_eq!(
             absorb_hunk(&kept, None),
             Row {
                 lead: Some("1".into()),
                 text: "a.txt".into(),
-                trail: Some("left 2..3 right 2..4 stays".into())
+                trail: Some("left 2..3 right 2..4 stays: would conflict in mmmm".into())
             }
         );
         let target = change("kkkk", None);
@@ -815,6 +817,9 @@ mod tests {
             absorb_hunk(&kept, Some(&target)).label(),
             "1 a.txt left 2..3 right 2..4 -> kkkk c-kkkk"
         );
+        // A hunk the listing moved, kept in the working copy by a choice in the window.
+        let moved = hunk(2, Goes::Into(target.clone()));
+        assert_eq!(absorb_hunk(&moved, None).label(), "2 a.txt left 2..3 right 2..4 stays: kept");
         let line = |side, text: &str| (side, text.to_owned());
         assert_eq!(
             absorb_lines(&kept),
@@ -859,21 +864,27 @@ mod tests {
         let note = |hunks| absorb_note(&absorbed(hunks));
         assert_eq!(
             note(vec![
-                hunk(1, Some(change("kkkk", None))),
-                hunk(2, None),
-                hunk(3, Some(change("kkkk", None)))
+                hunk(1, Goes::Into(change("kkkk", None))),
+                hunk(2, Goes::Stays(Stay::NoCommit)),
+                hunk(3, Goes::Into(change("kkkk", None)))
             ]),
             "Absorbed 2 hunks into 1 commit."
         );
         assert_eq!(
-            note(vec![hunk(1, Some(change("kkkk", None)))]),
+            note(vec![hunk(1, Goes::Into(change("kkkk", None)))]),
             "Absorbed 1 hunk into 1 commit."
         );
         assert_eq!(
-            note(vec![hunk(1, Some(change("kkkk", None))), hunk(2, Some(change("mmmm", None)))]),
+            note(vec![
+                hunk(1, Goes::Into(change("kkkk", None))),
+                hunk(2, Goes::Into(change("mmmm", None)))
+            ]),
             "Absorbed 2 hunks into 2 commits."
         );
-        assert_eq!(note(vec![hunk(1, None)]), "Absorbed 0 hunks into 0 commits.");
+        assert_eq!(
+            note(vec![hunk(1, Goes::Stays(Stay::NoCommit))]),
+            "Absorbed 0 hunks into 0 commits."
+        );
     }
 
     #[test]
@@ -885,7 +896,7 @@ mod tests {
         };
         let absorbed = Absorbed {
             operation: String::new(),
-            hunks: vec![hunk(1, Some(change("kkkk", None)))],
+            hunks: vec![hunk(1, Goes::Into(change("kkkk", None)))],
             destinations: Vec::new(),
             skipped: Vec::new(),
             rewrite: Rewrite {

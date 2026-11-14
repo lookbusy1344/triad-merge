@@ -273,7 +273,7 @@ impl AbsorbWindow {
                     .hunks
                     .iter()
                     .map(|hunk| {
-                        let target = hunk.target.as_ref()?;
+                        let target = hunk.target()?;
                         listed.destinations.iter().position(|d| &d.change == target)
                     })
                     .collect();

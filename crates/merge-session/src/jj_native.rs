@@ -9,8 +9,8 @@ use vcs_jj::JjRepository;
 use vcs_jj::config::ConfigEnv;
 /// The reports the front ends show.
 pub use vcs_jj::{
-    AbsorbHunk, Absorbed, CommitEffect, Destination, FileVersion, HunkChoice, Rewrite,
-    SHORT_OPERATION, StackCommit, StackPath, VersionState,
+    AbsorbHunk, Absorbed, CommitEffect, Destination, FileVersion, Goes, HunkChoice, Rewrite,
+    SHORT_OPERATION, StackCommit, StackPath, Stay, VersionState,
 };
 
 use crate::resolve::ResolveError;
@@ -149,4 +149,36 @@ pub fn absorb(
         })
         .collect::<Result<Vec<_>, VcsError>>()?;
     Ok(repo.absorb(&relative, into, choices, apply, listed_at)?)
+}
+
+/// What `absorb`'s listing says after a hunk that stays in the working copy, and why
+/// (spec §7.5.4).
+#[must_use]
+pub fn stays(stay: &Stay) -> String {
+    match stay {
+        Stay::NoCommit => "stays: no one commit in --into wrote its lines".to_owned(),
+        Stay::WouldConflict(change) => {
+            format!("stays: would conflict in {}", change.id(vcs::IdKind::Change))
+        }
+        Stay::Kept => "stays: kept".to_owned(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use vcs::ChangeInfo;
+
+    use super::*;
+
+    #[test]
+    fn a_hunk_that_stays_says_why() {
+        let change = ChangeInfo {
+            commit: "c-kkkk".to_owned(),
+            change_id: Some("kkkk".to_owned()),
+            summary: None,
+        };
+        assert_eq!(stays(&Stay::NoCommit), "stays: no one commit in --into wrote its lines");
+        assert_eq!(stays(&Stay::WouldConflict(change)), "stays: would conflict in kkkk");
+        assert_eq!(stays(&Stay::Kept), "stays: kept");
+    }
 }

@@ -205,7 +205,7 @@ triad-merge absorb src/ --into @-   # only these paths, only these commits
 triad-merge absorb --list           # print the list instead
 ```
 
-`absorb` opens a window listing each hunk, its lines and the commit it goes into, beside the commits a hunk may go into and Working copy. Click a hunk, then a commit to send it there or Working copy to keep it; the next hunk is then selected. From the keys: ↑ and ↓ select a hunk, Enter moves to the commits, ↑ and ↓ pick one, Enter sends the hunk there and Escape comes back without a change. Each commit shows how many hunks go into it. Apply writes the choices, says how many hunks went into how many commits and names each commit whose conflicts changed, and lists what is left. Apply refuses when the repository moved on since the list: Refresh and choose again. Closing the window exits 0. With nothing to absorb, `absorb` opens no window and exits 0.
+`absorb` opens a window listing each hunk, its lines and the commit it goes into or why it stays, beside the commits a hunk may go into and Working copy. Click a hunk, then a commit to send it there or Working copy to keep it; the next hunk is then selected. From the keys: ↑ and ↓ select a hunk, Enter moves to the commits, ↑ and ↓ pick one, Enter sends the hunk there and Escape comes back without a change. Each commit shows how many hunks go into it. Apply writes the choices, says how many hunks went into how many commits and names each commit whose conflicts changed, and lists what is left. Apply refuses when the repository moved on since the list: Refresh and choose again. Closing the window exits 0. With nothing to absorb, `absorb` opens no window and exits 0.
 
 `absorb --list` prints the list; it writes only with `--apply`:
 
@@ -213,9 +213,10 @@ triad-merge absorb --list           # print the list instead
 at operation 6c1e0e2b7f3a
 1 lib.rs left 0..1 right 0..1 -> womuzyvr 9843b8e4
 2 notes.txt left 2..3 right 2..3 -> qpnysvsn 14ede62f
+3 notes.txt left 9..10 right 9..11 stays: would conflict in qpnysvsn
 ```
 
-The first line names the operation the listing read. Each further line is a hunk: its number, the path, the lines it replaces and the lines it holds now (from 0, end excluded), then the commit it goes into, or `stays`. Steer it, then apply:
+The first line names the operation the listing read. Each further line is a hunk: its number, the path, the lines it replaces and the lines it holds now (from 0, end excluded), then the commit it goes into, or `stays:` and why. Steer it, then apply:
 
 ```sh
 triad-merge absorb src/                      # only these paths
@@ -235,7 +236,7 @@ absorbed 1 hunks into 1 commits
 
 After the count come the commits the hunks went into and their descendants, each with its conflicted paths before and after.
 
-A hunk stays when it spans lines from two commits, or when it is an insertion at the seam between two commits' lines. A deletion over two commits' lines stays too, where `jj absorb` splits it and leaves both commits conflicted. A hunk also stays when a commit outside `--into` wrote its lines, and when it touches lines a later commit wrote or removed: sent into its commit, it would conflict there, as it does with `jj absorb`. New files stay. Conflicted paths are listed as `skipped`. With `--apply` each target takes its hunks, the descendants rebase, and the working copy keeps the rest; an empty working copy without a description is replaced by a new one. It is one operation, `absorb in triad`, which `jj undo` reverts.
+A hunk stays when it spans lines from two commits, or when it is an insertion at the seam between two commits' lines. A deletion over two commits' lines stays too, where `jj absorb` splits it and leaves both commits conflicted. A hunk also stays when a commit outside `--into` wrote its lines, and when it touches lines a later commit wrote or removed: sent into its commit, it would conflict there. Here triad differs from `jj absorb`, which moves the hunk and leaves the commit conflicted. triad keeps it and says so: `stays: would conflict in CHANGE`. `--move N=CHANGE` sends it anyway, conflict and all. New files stay. Conflicted paths are listed as `skipped`. With `--apply` each target takes its hunks, the descendants rebase, and the working copy keeps the rest; an empty working copy without a description is replaced by a new one. It is one operation, `absorb in triad`, which `jj undo` reverts.
 
 ### Merge semantics
 

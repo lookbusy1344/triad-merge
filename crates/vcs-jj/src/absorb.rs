@@ -39,12 +39,58 @@ pub struct AbsorbHunk {
     pub left: Range<usize>,
     /// The lines it holds in the working copy's file.
     pub right: Range<usize>,
-    /// The commit it goes into; none when it stays in the working copy.
-    pub target: Option<ChangeInfo>,
+    /// The commit it goes into, or why it stays in the working copy.
+    pub goes: Goes,
     /// The lines it replaces, as the parents' file holds them.
     pub before: Vec<u8>,
     /// The lines it holds, as the working copy's file holds them.
     pub after: Vec<u8>,
+}
+
+impl AbsorbHunk {
+    /// The commit it goes into; none when it stays.
+    #[must_use]
+    pub fn target(&self) -> Option<&ChangeInfo> {
+        match &self.goes {
+            Goes::Into(change) => Some(change),
+            Goes::Stays(_) => None,
+        }
+    }
+}
+
+/// Where a hunk goes: `C` names a commit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Goes<C = ChangeInfo> {
+    Into(C),
+    Stays(Stay<C>),
+}
+
+/// Why a hunk stays in the working copy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Stay<C = ChangeInfo> {
+    /// No one commit in `--into` last changed every line it replaces and holds the file: its
+    /// lines come from several commits, from none, or from a commit outside `--into`; or it
+    /// is an insertion where two commits' lines meet.
+    NoCommit,
+    /// The commit that wrote its lines would take it with a conflict, as `jj absorb` writes
+    /// it (`DESIGN.md` §I5).
+    WouldConflict(C),
+    /// `--keep` chose it.
+    Kept,
+}
+
+impl<C> Goes<C> {
+    /// The same choice with each commit named by `name`.
+    fn named<D, E>(self, mut name: impl FnMut(C) -> Result<D, E>) -> Result<Goes<D>, E> {
+        Ok(match self {
+            Self::Into(commit) => Goes::Into(name(commit)?),
+            Self::Stays(Stay::NoCommit) => Goes::Stays(Stay::NoCommit),
+            Self::Stays(Stay::WouldConflict(commit)) => {
+                Goes::Stays(Stay::WouldConflict(name(commit)?))
+            }
+            Self::Stays(Stay::Kept) => Goes::Stays(Stay::Kept),
+        })
+    }
 }
 
 /// A commit a hunk may go into.
@@ -93,7 +139,7 @@ struct Planned {
     file: usize,
     left: Range<usize>,
     right: Range<usize>,
-    target: Option<CommitId>,
+    goes: Goes<CommitId>,
 }
 
 /// One changed file: the parents' text and the working copy's.
@@ -170,10 +216,10 @@ impl JjRepository {
                     number.checked_sub(1).and_then(|index| planned.get_mut(index)).ok_or_else(
                         || backend("choosing a hunk")(JjError::NoHunk { hunk: number, count }),
                     )?;
-                hunk.target = target;
+                hunk.goes = target;
             }
             let targets: BTreeSet<&CommitId> =
-                planned.iter().filter_map(|hunk| hunk.target.as_ref()).collect();
+                planned.iter().filter_map(|hunk| destination(&hunk.goes)).collect();
             let mut roots = vec![source.clone()];
             for id in targets {
                 roots.push(repo.store().get_commit(id).map_err(backend("reading a commit"))?);
@@ -187,21 +233,17 @@ impl JjRepository {
                 .enumerate()
                 .map(|(index, hunk)| {
                     let file = &files[hunk.file];
-                    let target = hunk
-                        .target
-                        .as_ref()
-                        .map(|id| {
-                            let commit =
-                                repo.store().get_commit(id).map_err(backend("reading a commit"))?;
-                            this.change_info(&commit)
-                        })
-                        .transpose()?;
+                    let goes = hunk.goes.clone().named(|id| {
+                        let commit =
+                            repo.store().get_commit(&id).map_err(backend("reading a commit"))?;
+                        this.change_info(&commit)
+                    })?;
                     Ok(AbsorbHunk {
                         number: index + 1,
                         path: Utf8PathBuf::from(hunk.path.as_internal_file_string()),
                         left: lines(&file.left, &hunk.left),
                         right: lines(&file.right, &hunk.right),
-                        target,
+                        goes,
                         before: file.left[hunk.left.clone()].to_vec(),
                         after: file.right[hunk.right.clone()].to_vec(),
                     })
@@ -228,16 +270,16 @@ impl JjRepository {
         Ok(Absorbed { operation, hunks, destinations, skipped, rewrite })
     }
 
-    /// The hunk `choice` names and the commit it now goes into; none to keep it.
+    /// The hunk `choice` names and where it now goes.
     fn chosen(
         &self,
         repo: &MutableRepo,
         choice: &HunkChoice,
         destinations: &[Commit],
         revsets: &crate::Revsets,
-    ) -> Result<(usize, Option<CommitId>), VcsError> {
+    ) -> Result<(usize, Goes<CommitId>), VcsError> {
         match choice {
-            HunkChoice::Keep(number) => Ok((*number, None)),
+            HunkChoice::Keep(number) => Ok((*number, Goes::Stays(Stay::Kept))),
             HunkChoice::Move { hunk, rev } => {
                 let commit = match <[Commit; 1]>::try_from(self.evaluate(repo, rev, revsets)?) {
                     Ok([commit]) => commit,
@@ -251,7 +293,7 @@ impl JjRepository {
                         rev.clone(),
                     )));
                 }
-                Ok((*hunk, Some(commit.id().clone())))
+                Ok((*hunk, Goes::Into(commit.id().clone())))
             }
         }
     }
@@ -283,7 +325,7 @@ impl JjRepository {
             let diff = ContentDiff::by_line([&file.left, &file.right]);
             for hunk in diff.hunk_ranges().filter(|hunk| hunk.kind == DiffHunkKind::Different) {
                 let (left, right) = (hunk.ranges[0].clone(), hunk.ranges[1].clone());
-                let target = match target(&ranges, &left) {
+                let goes = match target(&ranges, &left) {
                     Some(commit) => {
                         let text = match texts.entry(commit.clone()) {
                             Entry::Occupied(found) => found.into_mut(),
@@ -291,13 +333,17 @@ impl JjRepository {
                                 slot.insert(self.text_in(repo, &commit, &file.path)?)
                             }
                         };
-                        text.as_deref()
-                            .is_some_and(|text| merges_cleanly(repo, text, file, &left, &right))
-                            .then_some(commit)
+                        match text.as_deref() {
+                            Some(text) if merges_cleanly(repo, text, file, &left, &right) => {
+                                Goes::Into(commit)
+                            }
+                            Some(_) => Goes::Stays(Stay::WouldConflict(commit)),
+                            None => Goes::Stays(Stay::NoCommit),
+                        }
                     }
-                    None => None,
+                    None => Goes::Stays(Stay::NoCommit),
                 };
-                planned.push(Planned { path: file.path.clone(), file: index, target, left, right });
+                planned.push(Planned { path: file.path.clone(), file: index, goes, left, right });
             }
         }
         Ok(planned)
@@ -394,6 +440,14 @@ fn merges_cleanly(
     try_merge(&inputs, repo.store().merge_options()).is_some()
 }
 
+/// The commit `goes` sends a hunk into; none when it stays.
+fn destination(goes: &Goes<CommitId>) -> Option<&CommitId> {
+    match goes {
+        Goes::Into(commit) => Some(commit),
+        Goes::Stays(_) => None,
+    }
+}
+
 /// Move each planned hunk into its target, rebase the descendants, and leave the rest in
 /// `source`, as jj's `absorb` writes.
 fn write_hunks(
@@ -425,7 +479,7 @@ fn target_trees(
 ) -> Result<BTreeMap<CommitId, MergedTreeBuilder>, VcsError> {
     let mut selected: BTreeMap<(CommitId, usize), Vec<RangePair>> = BTreeMap::new();
     for hunk in planned {
-        if let Some(target) = &hunk.target {
+        if let Some(target) = destination(&hunk.goes) {
             selected
                 .entry((target.clone(), hunk.file))
                 .or_default()

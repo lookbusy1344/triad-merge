@@ -33,7 +33,7 @@ Build profiles (root `Cargo.toml`): `release` aborts on panic and strips symbols
 
 In order. Each is one or more commits.
 
-1. **jj-native review findings** (§3): absorb's departure from `jj absorb` in the user guide and the listing, the executable-bit rule.
+1. **jj-native review finding** (§3): the executable-bit rule.
 2. **Close M3.** The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
 3. **Review and diff features** (part G): the rest of the comparison filters (§G4), moved code in the two-way diff (§G5); then §G6–§G14.
 4. **More grammars,** one commit each: C, C++, Java and Kotlin; then Markdown; then Bash, Ruby, PHP and SQL.
@@ -69,7 +69,6 @@ In order. Each is one or more commits.
 | jj-cli's config defaults other than the revset aliases: none checked for whether triad depends on one | — | §I6 |
 | Absorb: split one hunk between commits | Part H's line selection (§H6) | §I5 |
 | The stack, history and absorb windows checked on screen: layout, keys, focus and the accessibility tree; their tests run headless only | — | §I2, §I4, §I5 |
-| `absorb` keeps a hunk that `jj absorb` writes as a conflict (§I5); `USER-GUIDE.md` does not say so, and users who expect jj's result get another | — | §I5 |
 | The executable bit: `held_conflict` and `simplified` compare terms by file ID alone, `reduce_pair` simplifies by the whole tree value. A change to the bit alone passes the changed-conflict check | — | §I2, §I3 |
 | `resolve --pair` has the least use for its cost among the jj-native features: conflicts of more than two sides are rare. It is the first to cut if part I is pruned again | Owner's choice | §I3 |
 
