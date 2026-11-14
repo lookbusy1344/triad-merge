@@ -1,5 +1,5 @@
 //! `absorb`: each hunk of the working-copy commit against its parents, with the ancestor it
-//! goes into, moved there on request (`DESIGN.md` §I7).
+//! goes into, moved there on request (`DESIGN.md` §I5).
 
 use std::collections::BTreeMap;
 use std::ops::Range;

@@ -1,5 +1,5 @@
 //! `resolve --pair`: two adjacent sides of a conflict of more than two sides merged over the
-//! base between them, so the conflict keeps one side fewer (`DESIGN.md` §I4).
+//! base between them, so the conflict keeps one side fewer (`DESIGN.md` §I3).
 
 use camino::Utf8Path;
 use jj_lib::backend::{CopyId, MergedTreeValueExt as _, TreeValue};

@@ -32,8 +32,6 @@ pub enum Window {
     /// A conflict read from the repository at the working directory: `path`'s, or the first
     /// conflicted file's.
     Resolve(Resolve),
-    /// `diff PATH --evolog`: a jj change's file against an earlier version of the change.
-    DiffEvolog(Evolog),
     /// `stack [REVSET]`: the conflicted jj commits, each conflict opening in the merge window.
     Stack(Stack),
     /// `history PATH`: a file's versions across jj's operation log, each opening in the diff
@@ -43,7 +41,7 @@ pub enum Window {
     Absorb(Absorb),
 }
 
-/// `absorb [PATH...] [--into REVSET]` in a window (spec §7.5.6).
+/// `absorb [PATH...] [--into REVSET]` in a window (spec §7.5.4).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Absorb {
     /// Only the hunks under these paths; none for every path.
@@ -52,7 +50,7 @@ pub struct Absorb {
     pub into: Option<String>,
 }
 
-/// `history PATH` in a window (spec §7.5.4).
+/// `history PATH` in a window (spec §7.5.3).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct History {
     pub path: PathBuf,
@@ -68,17 +66,6 @@ pub struct Stack {
     /// The options each conflict merges with; the semantics are settled before the window
     /// opens.
     pub options: MergeOptions,
-}
-
-/// `diff PATH --evolog`: `path` in the change `rev` names, `@` without one, against an
-/// earlier version of the change, `from` or the evolog's, rebased onto its parents now.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Evolog {
-    pub path: PathBuf,
-    pub rev: Option<String>,
-    pub from: Option<String>,
-    pub diff: DiffOptions,
-    pub title: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

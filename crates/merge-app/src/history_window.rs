@@ -1,4 +1,4 @@
-//! The history window (spec §7.5.4): a file's versions in the working-copy commit across
+//! The history window (spec §7.5.3): a file's versions in the working-copy commit across
 //! jj's operation log, newest first. A version opens in the diff window as
 //! `diff PATH --op OP` opens it: the version on the left, the working-copy file on the
 //! right, where lines copied back save. One diff window at a time; closing it lists the
@@ -247,7 +247,7 @@ impl HistoryWindow {
         let options = base.diff_options;
         let settings = DiffSettings {
             watch: self.start.watch,
-            ..crate::run::diff_settings(None, options, base, Some(origins), Some(RepoKind::Jj))
+            ..crate::run::diff_settings(None, options, base, origins, Some(RepoKind::Jj))
         };
         match diff_window::open(left, right, &settings, cx) {
             Ok((window, _)) => {

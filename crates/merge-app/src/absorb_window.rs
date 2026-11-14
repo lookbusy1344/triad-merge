@@ -1,4 +1,4 @@
-//! The absorb window (spec §7.5.6): the working copy's hunks against its parents, each with
+//! The absorb window (spec §7.5.4): the working copy's hunks against its parents, each with
 //! the commit it goes into, beside the commits a hunk may go into. Click a hunk, then a
 //! commit or Working Copy, to send it there or keep it; the next hunk is then selected.
 //! From the keys: ↑ and ↓ select a hunk, Enter moves to the commits, on the one the hunk

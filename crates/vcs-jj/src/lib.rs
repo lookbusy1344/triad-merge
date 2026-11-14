@@ -4,8 +4,6 @@
 
 mod absorb;
 pub mod config;
-mod diverge;
-mod evolog;
 mod history;
 mod native;
 mod reduce;
@@ -14,8 +12,6 @@ pub mod testing;
 pub mod tool_config;
 
 pub use absorb::{AbsorbHunk, Absorbed, DEFAULT_INTO, Destination, HunkChoice};
-pub use diverge::Divergence;
-pub use evolog::EvologDiff;
 pub use history::{FileVersion, SHORT_OPERATION, VersionState};
 pub use native::{DescendantEffect, Rewrite, StackCommit, StackPath};
 pub use reduce::{MIN_PAIR_SIDES, check_pair};
@@ -76,13 +72,6 @@ const SECONDS_PER_MINUTE: i32 = 60;
 pub enum JjError {
     #[error("the repository has {0} concurrent operations; any jj command reconciles them")]
     ConcurrentOperations(usize),
-    /// `diverge` on a change with one visible commit.
-    #[error("change {0} is not divergent")]
-    NotDivergent(String),
-    /// `diverge` on copies with no predecessor in common, such as two commits given the
-    /// same change ID by hand.
-    #[error("the copies of change {0} share no predecessor")]
-    NoCommonPredecessor(String),
     /// `resolve --pair` on a conflict of two sides, where the pair is the whole conflict.
     #[error("{0} has two sides; resolve it without --pair")]
     PairOfTwoSides(camino::Utf8PathBuf),
@@ -98,12 +87,6 @@ pub enum JjError {
     /// `diff --op` at an operation before the workspace had a working copy.
     #[error("the workspace has no working copy at operation {0}")]
     NoWorkingCopyAt(String),
-    /// `diff --evolog` on a change with no earlier version.
-    #[error("change {0} has no earlier version")]
-    NoPredecessor(String),
-    /// A path that holds a symlink, submodule or directory where a file is read.
-    #[error("{0} is not a file")]
-    NotAFile(camino::Utf8PathBuf),
     /// `absorb --move` or `--keep` of a hunk that does not exist.
     #[error("no hunk {hunk}; there are {count}")]
     NoHunk { hunk: usize, count: usize },

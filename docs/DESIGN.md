@@ -773,13 +773,11 @@ Features git cannot have (spec §1.2, §7.5). Each rests on something jj records
 | Command | jj fact it rests on |
 |---|---|
 | `stack`, `resolve -r REV PATH` | Conflicts in commits; descendants rebase on a rewrite |
-| `diverge CHANGE` | Change IDs; the evolog's predecessors |
 | `resolve PATH --pair N` | Conflicts of more than two sides |
 | `history PATH`, `diff PATH --op OP` | The operation log's working-copy snapshots |
-| `diff PATH --evolog` | The evolog |
 | `absorb` | Annotation; descendants rebase on a rewrite |
 
-Each ships a command line with `--json`, `--headless` or `--inspect` for scripts, tests and agents. A command that fits a window triad has opens it; `stack`, `history` and `absorb` have windows of their own (§I2, §I5, §I7). In a git repository each refuses with `needs a jj repository` and exits with 3.
+Each ships a command line with `--json`, `--headless` or `--inspect` for scripts, tests and agents. A command that fits a window triad has opens it; `stack`, `history` and `absorb` have windows of their own (§I2, §I4, §I5). In a git repository each refuses with `needs a jj repository` and exits with 3.
 
 ### I1 Rewrites
 
@@ -800,24 +798,14 @@ Each ships a command line with `--json`, `--headless` or `--inspect` for scripts
 - The merge window checks a save into a commit before it writes: `Session::preview` hands a `PreviewJob`, the output as the save encodes it and the record, to a background thread, where `Record::preview` runs the write as a dry run over those bytes. The result stays locked meanwhile, so the save writes what the preview read. The window asks only when a descendant's `before` and `after` differ; a refused dry run logs a warning and goes on to the save, which reports the refusal.
 - The record keeps the commit triad read. A write takes the change's visible commit now and compares the path's simplified value there with the one in the commit read (`held_conflict`); a difference refuses the write (`JjError::ConflictChanged`). The comparison is of the path alone, so a snapshot that rewrites the commit with other files takes the save.
 
-### I3 Divergent changes
-
-- `JjRepository::diverge` reads the copies from the change's index entry, in its order, before the snapshot to check that they are mutable and again inside the rewrite. A change ID prefix resolves through `resolve_change_id_prefix`: jj's revset resolver refuses a divergent change ID, so the prefix goes there first, and a revision is the fallback.
-- The base is found in the evolog: `walk_predecessors` yields each copy and its predecessors nearest first. It reads the operation log, so it finds the original of a copy jj rewrote in any earlier operation.
-- The base is the first of the second copy's evolog, itself included, that the first copy's evolog holds, itself included: a copy rewritten from the other merges over that copy, and takes the other's changes cleanly.
-- The other copy and the base are rebased onto the first copy's parents before the merge, as `diff --evolog` rebases (§I6): `MergedTree::merge` of the tree, its parents' tree and the first copy's parents' tree. A rebase in one place and an amend in another is the usual way a change diverges; merging trees as they are would carry the difference between the parents into the merged commit's patch.
-- `MergedTree::merge` takes the first copy, the rebased base and the rebased other copy, each with its conflict label, so a conflict names the commits. More copies fold in one at a time, each over its own base with the first.
-- `set_rewritten_commit` maps each further copy to the merged commit. `rebase_descendants` then moves their children onto it and moves a working copy that sat on one; `record_abandoned_commit` would move the children onto the copy's parents instead.
-- The description rule is the three-way rule over whole strings: a line merge of free text would leave markers in a description.
-
-### I4 Two sides of a conflict
+### I3 Two sides of a conflict
 
 - `resolve --pair` loads the commit's conflict as `resolve -r` does, simplified (§I2), and keeps sides N and N + 1 and base N as the merge's inputs. `reduce_pair` indexes the same simplified value, so the pair is the one the window showed. The record carries the pair, so a save goes to `JjRepository::reduce_pair` instead of `write_conflict`, and only a save that exits 0 writes.
 - `reduce_pair` splices the three terms out of the path's `Merge` and puts one file term in their place: `Merge::from_vec` of the result, simplified. A simplified value of one term is written resolved; any other is padded to the tree's arity, as `write_conflict` pads. The executable bit is the one the three terms agree on (`resolve_file_executable`).
 - The merge window's conflict badge counts the sides of the current conflict with `merge3::simplified_sides`: jj-core's `Merge::simplify` over the region's comparison keys, so it follows the whitespace mode as `classify` does. `nav::conflict_sides` gives it only for a merge of more than two sides.
 - `Rewrite::sides` is the path's number of sides after the rewrite, simplified, and `Rewrite::resolved` is about the path: a commit may hold other conflicts.
 
-### I5 A file's history in the operation log
+### I4 A file's history in the operation log
 
 - `JjRepository::history` walks the operation log from the head with `walk_ancestors`, lazily, and reads each operation's view for the workspace's working-copy commit. It reads the path's value from that commit's tree only when the commit differs from the previous operation's, so a run of operations on one commit costs one tree lookup. It loads no repository per operation: the view and the store suffice.
 - Versions compare by `MergedTreeValue`: file IDs, not bytes. A run of equal values keeps the oldest operation, since the walk is newest first and each equal value renames the run. `--limit N` stops at the first value of version N + 1, so version N still carries the operation where it appeared.
@@ -825,14 +813,7 @@ Each ships a command line with `--json`, `--headless` or `--inspect` for scripts
 - The history window (`merge-app::history_window`) follows the stack window's design (§I2): it lists through `jj_native::file_history`, which also gives the repository root, takes over the app's `Finish` so a diff window's close comes back to it, and lists again then. A version opens through the same `native::load_at_operation` and `run::native_sides` as `diff --op`. Listing and loading run off the UI thread, each on a fresh repository; a listing snapshots, so a save from the diff window shows as a new version. `merge-cli` lists one version before the window opens, so a git repository or a path outside the repository exits without one.
 - `diff --op` resolves the operation with `resolve_op_with_repo`, takes the working-copy commit from its view, and hands the commit's full ID to the `diff PATH` path as the revision. A commit ID resolves in jj whether or not the commit is still visible, so the line origins and revision chip work unchanged.
 
-### I6 A change's patch across rewrites
-
-- `JjRepository::evolog_diff` rebases the earlier version as jj's `rebase_with_empty_behavior` does: `MergedTree::merge` of the earlier tree, its parents' merged tree and the change's parents' merged tree now. Nothing is written; the result lives in memory.
-- The default earlier version needs the rebased file of each predecessor, nearest first, so the search stops at the first that differs. A change rewritten often costs one tree merge per predecessor up to that one.
-- A conflict, on either side, is materialised with `materialize_merge_result_to_bytes` in jj's `diff` marker style, the default `jj` writes to a working copy, with the marker length jj picks for the content.
-- `diff_settings` takes the line-origin lookup as an `Option`: the evolog window has none.
-
-### I7 Absorb by hunk
+### I5 Absorb by hunk
 
 - `JjRepository::absorb` follows jj-lib's `split_hunks_to_trees`, which gives no per-hunk control, then hands the result to jj-lib's `absorb_hunks`. It diffs the working copy's tree against its parents' merged tree, annotates each changed file's parent text with `FileAnnotator` over `(INTO) & ::parents`, and splits the file with `ContentDiff::by_line`. Hunk ranges are byte ranges; the report counts newlines for line numbers.
 - The rule for a hunk is jj's for one that is not a pure deletion: the first compacted annotation range that ends at or past the hunk must start at or before it, and an insertion at the seam of two ranges stays. A pure deletion takes the same rule, so a deletion over two commits' lines stays where jj would split it.

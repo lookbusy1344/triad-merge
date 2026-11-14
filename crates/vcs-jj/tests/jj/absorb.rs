@@ -1,5 +1,5 @@
 //! `absorb` on jj: the working copy's hunks, each with the ancestor that wrote its lines,
-//! moved there on request (spec §7.5.6).
+//! moved there on request (spec §7.5.4).
 
 use camino::Utf8PathBuf;
 use vcs::{IdKind, VcsError};

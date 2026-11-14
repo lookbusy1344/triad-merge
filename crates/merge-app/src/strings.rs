@@ -247,7 +247,7 @@ pub(crate) fn stack_preview(rewrite: Option<&Rewrite>) -> String {
     }
 }
 
-/// The history window's title (spec §7.5.4).
+/// The history window's title (spec §7.5.3).
 pub(crate) fn history_title(path: &str) -> String {
     format!("History of {path}")
 }
@@ -269,7 +269,7 @@ pub(crate) fn history_version(version: &FileVersion) -> Row {
     }
 }
 
-/// The absorb window's title (spec §7.5.6).
+/// The absorb window's title (spec §7.5.4).
 pub(crate) const ABSORB_TITLE: &str = "Absorb";
 pub(crate) const ABSORB_EMPTY: &str = "Nothing to absorb.";
 pub(crate) const ABSORB_APPLY: &str = "Apply";

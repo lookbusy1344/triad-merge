@@ -21,7 +21,7 @@ As of 2026-11-14.
 | p4merge parity | Done | E |
 | Review and diff features | Bulk takes (§G3), line endings in comparison (§G4) and collapsed unchanged regions in both windows (§G2) done; the rest open | G |
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
-| jj-native features | Done: conflicts across a stack (`stack`, `resolve -r`), divergent changes (`diverge`), pair reduction (`resolve --pair`), operation-log history (`history`, `diff --op`), the evolog patch diff (`diff --evolog`) and absorb by hunk (`absorb`); the stack window, with a preview of a save's effect on the descendants and a confirmation before a save changes them; the history window; the absorb window, by hunk; the three windows' lists follow `docs/STYLE.md` and work from the keys; the conflict badge names the sides a conflict keeps | I |
+| jj-native features | Done: conflicts across a stack (`stack`, `resolve -r`), pair reduction (`resolve --pair`), operation-log history (`history`, `diff --op`) and absorb by hunk (`absorb`); the stack window, with a preview of a save's effect on the descendants and a confirmation before a save changes them; the history window; the absorb window, by hunk; the three windows' lists follow `docs/STYLE.md` and work from the keys; the conflict badge names the sides a conflict keeps | I |
 
 Every spec §9 target is met (§A6.7). Toolchain: stable Rust 1.100, with `rust-version` 1.99. Dependencies: jj-lib and jj-core 0.47.1 on gix 0.90; gpui-kit 0.8.1 with the vendored `gpui-base` patch; gpui-kit 0.9 is not adopted (`docs/gpui-kit-issues.md`).
 
@@ -64,9 +64,8 @@ In order. Each is one or more commits.
 | A key that opens the fold next to the caret | — | §G2 |
 | Review and diff features, §G4–§G14 | Owner's choices on §G15's open points | G |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
-| Absorb: split one hunk between commits | Part H's line selection (§H6) | §I7 |
-| The stack, history and absorb windows checked on screen: layout, keys, focus and the accessibility tree; their tests run headless only | — | §I2, §I5, §I7 |
-| Whether `diverge` gets a window; it runs from the command line only | The owner's choice | §I3 |
+| Absorb: split one hunk between commits | Part H's line selection (§H6) | §I5 |
+| The stack, history and absorb windows checked on screen: layout, keys, focus and the accessibility tree; their tests run headless only | — | §I2, §I4, §I5 |
 
 ## 4. Risks
 

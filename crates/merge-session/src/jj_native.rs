@@ -4,15 +4,14 @@
 use std::path::Path;
 
 use camino::{Utf8Path, Utf8PathBuf};
-use merge_core::text::Text;
-use vcs::{IdKind, RepoKind, Repository as _, VcsError};
+use vcs::{RepoKind, Repository as _, VcsError};
+use vcs_jj::JjRepository;
 use vcs_jj::config::ConfigEnv;
 /// The reports the front ends show.
 pub use vcs_jj::{
     AbsorbHunk, Absorbed, DescendantEffect, Destination, FileVersion, HunkChoice, Rewrite,
     SHORT_OPERATION, StackCommit, StackPath, VersionState,
 };
-use vcs_jj::{Divergence, JjRepository};
 
 use crate::resolve::ResolveError;
 
@@ -75,21 +74,6 @@ pub fn stacked(
     Ok(Stacked { root: repo.root().to_owned(), commits })
 }
 
-/// Merge the copies of the divergent change `change` in the jj repository holding `cwd`
-/// (`diverge`); on a dry run, only report.
-///
-/// # Errors
-///
-/// As [`open`], and [`ResolveError::Vcs`] as [`JjRepository::diverge`] fails.
-pub fn diverge(
-    cwd: &Path,
-    change: &str,
-    dry_run: bool,
-    jj_config: Option<ConfigEnv>,
-) -> Result<Divergence, ResolveError> {
-    Ok(open(cwd, jj_config, "diverge")?.diverge(change, dry_run)?)
-}
-
 /// The versions of `path`, relative to `cwd`, in the working-copy commit across the
 /// operation log of the jj repository holding `cwd`, newest first, at most `limit` of them
 /// (`history`).
@@ -135,56 +119,6 @@ pub fn file_history(
         .to_owned();
     let versions = repo.history(&relative, limit)?;
     Ok(FileHistory { root: repo.root().to_owned(), path: relative, versions })
-}
-
-/// The two sides of `diff PATH --evolog`, as text, with their pane titles.
-#[derive(Debug)]
-pub struct EvologTexts {
-    pub left: Text,
-    pub right: Text,
-    pub left_title: String,
-    pub right_title: String,
-}
-
-/// `path`, relative to `cwd`, in the change `rev` names, `@` without one, against an
-/// earlier version of the change, `from` or the evolog's, rebased onto its parents now
-/// (`diff --evolog`). An absent side is empty, its title ending in
-/// [`NO_FILE`](crate::native::NO_FILE).
-///
-/// # Errors
-///
-/// As [`open`]; [`ResolveError::Vcs`] for a path outside the repository and as
-/// [`JjRepository::evolog_diff`] fails; [`ResolveError::Decode`] when a side is not text.
-pub fn evolog(
-    cwd: &Path,
-    path: &Path,
-    rev: Option<&str>,
-    from: Option<&str>,
-    jj_config: Option<ConfigEnv>,
-) -> Result<EvologTexts, ResolveError> {
-    let repo = open(cwd, jj_config, "diff --evolog")?;
-    let file = crate::resolve::absolute(&cwd.join(path))?;
-    let relative = file
-        .strip_prefix(repo.root())
-        .map_err(|_| VcsError::OutsideRepository(file.clone()))?
-        .to_owned();
-    let diff =
-        repo.evolog_diff(rev.unwrap_or(crate::invocation::WORKING_COPY_REV), from, &relative)?;
-    let side = |bytes: Option<Vec<u8>>, title: String| -> Result<(Text, String), ResolveError> {
-        let (bytes, title) = match bytes {
-            Some(bytes) => (bytes, title),
-            None => (Vec::new(), format!("{title} {}", crate::native::NO_FILE)),
-        };
-        let text = Text::decode(bytes)
-            .map_err(|source| ResolveError::Decode { path: relative.clone(), source })?;
-        Ok((text, title))
-    };
-    let name = |change: &vcs::ChangeInfo| {
-        format!("{} {}", change.id(IdKind::Change), change.id(IdKind::Commit))
-    };
-    let (left, left_title) = side(diff.left, format!("{} rebased", name(&diff.predecessor)))?;
-    let (right, right_title) = side(diff.right, name(&diff.change))?;
-    Ok(EvologTexts { left, right, left_title, right_title })
 }
 
 /// The hunks of the working-copy commit of the jj repository holding `cwd`, under `paths`

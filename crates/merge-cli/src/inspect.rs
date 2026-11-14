@@ -8,7 +8,7 @@ use merge_core::diff::DiffOptions;
 use merge_core::diff2::{self, Kind2};
 use merge_core::document::{Labels, MergeOptions, OutputEnding};
 use merge_core::merge3::{Kind, LEFT, RIGHT, word_merge};
-use merge_core::text::{Encoding, Text, output_encoding};
+use merge_core::text::{Encoding, output_encoding};
 use serde::Serialize;
 
 use merge_session::invocation::MergeFiles;
@@ -162,22 +162,8 @@ pub fn diff_inspect(
 ) -> Result<(String, ExitCode), CliError> {
     let left = read_text(left)?;
     let right = read_text(right)?;
-    Ok(diff_inspect_texts(&left, &right, diff, json)?)
-}
-
-/// [`diff_inspect`] of texts already read.
-///
-/// # Errors
-///
-/// [`serde_json::Error`] when the JSON cannot be written.
-pub fn diff_inspect_texts(
-    left: &Text,
-    right: &Text,
-    diff: DiffOptions,
-    json: bool,
-) -> Result<(String, ExitCode), serde_json::Error> {
     let encodings = [left.encoding(), right.encoding()];
-    let regions: Vec<DiffRegion> = diff2::regions(left, right, diff)
+    let regions: Vec<DiffRegion> = diff2::regions(&left, &right, diff)
         .iter()
         .map(|r| DiffRegion {
             kind: match r.kind {

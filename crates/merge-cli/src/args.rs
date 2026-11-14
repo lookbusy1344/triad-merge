@@ -13,8 +13,7 @@ use merge_config::named::Named;
 use merge_config::settings::{Algorithm, Settings, Whitespace};
 use merge_config::settings::{Choice, HunkLevelArg, SameChangeArg};
 use merge_session::invocation::{
-    Absorb, Diff, DiffFlags, Evolog, History, Merge, MergeFiles, Resolve, SemanticsFlags, Stack,
-    Window,
+    Absorb, Diff, DiffFlags, History, Merge, MergeFiles, Resolve, SemanticsFlags, Stack, Window,
 };
 use vcs_jj::HunkChoice;
 
@@ -55,11 +54,6 @@ pub enum JjBatch {
     Stack { revset: Option<String>, json: bool },
     /// The versions of a file across jj's operation log.
     History { path: PathBuf, limit: Option<usize>, json: bool },
-    /// `diff PATH --evolog --inspect`: the regions of a change's file against an earlier
-    /// version of the change.
-    DiffEvologInspect { evolog: Evolog, json: bool },
-    /// Merge the visible commits of a divergent change into one.
-    Diverge { change: String, dry_run: bool, json: bool },
     /// The working copy's hunks, each with the ancestor it goes into; moved there with
     /// `apply`.
     Absorb {
@@ -90,8 +84,6 @@ pub enum UsageError {
     RevWithTwoFiles,
     #[error("--op applies only to diff PATH")]
     OpWithTwoFiles,
-    #[error("--evolog applies only to diff PATH")]
-    EvologWithTwoFiles,
     #[error("--inspect needs LEFT RIGHT")]
     InspectNative,
     #[error("--commands applies to one file: give resolve a PATH")]
@@ -281,17 +273,6 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Merge the commits of a divergent change over their shared predecessor (jj only).
-    Diverge {
-        /// A change ID prefix, or a revision naming one of the change's commits.
-        #[arg(value_name = "CHANGE")]
-        change: String,
-        /// Report what the merge would do; write nothing.
-        #[arg(long)]
-        dry_run: bool,
-        #[arg(long)]
-        json: bool,
-    },
     /// Two-way diff: LEFT RIGHT, or PATH against its parent revision.
     Diff(DiffCli),
     /// Resolve a conflicted file from the repository; with no PATH, the first of them.
@@ -416,13 +397,6 @@ struct DiffCli {
     /// Compare PATH with its version in the working-copy commit at jj operation OP (jj only).
     #[arg(long, value_name = "OP", conflicts_with_all = ["rev", "inspect"])]
     op: Option<String>,
-    /// Compare PATH in the change --rev names, `@` without it, with an earlier version of
-    /// the change rebased onto its parents now; both sides read-only (jj only).
-    #[arg(long, conflicts_with_all = ["op", "readonly_left", "readonly_right"])]
-    evolog: bool,
-    /// With --evolog: the earlier version, a commit; else the nearest whose file differs.
-    #[arg(long, value_name = "COMMIT", requires = "evolog")]
-    from: Option<String>,
     /// Print the regions; no window.
     #[arg(long, conflicts_with_all = ["title", "readonly_left", "readonly_right"])]
     inspect: bool,
@@ -533,9 +507,6 @@ impl Cli {
             } else {
                 Invocation::Window(Window::History(History { path, limit }))
             }),
-            Some(Command::Diverge { change, dry_run, json }) => {
-                Ok(Invocation::Batch(Batch::Jj(JjBatch::Diverge { change, dry_run, json })))
-            }
             Some(Command::ShowConfig { defaults, docs }) => {
                 Ok(Invocation::ShowConfig { defaults, docs })
             }
@@ -587,22 +558,6 @@ impl Cli {
 impl DiffCli {
     fn invocation(self, settings: &Settings) -> Result<Invocation, UsageError> {
         let count = self.files.len();
-        if self.evolog {
-            let [path] =
-                <[PathBuf; 1]>::try_from(self.files).map_err(|_| UsageError::EvologWithTwoFiles)?;
-            let evolog = Evolog {
-                path,
-                rev: self.rev,
-                from: self.from,
-                diff: self.diff.over(settings.two_way()),
-                title: self.title,
-            };
-            return Ok(if self.inspect {
-                Invocation::Batch(Batch::Jj(JjBatch::DiffEvologInspect { evolog, json: self.json }))
-            } else {
-                Invocation::Window(Window::DiffEvolog(evolog))
-            });
-        }
         let mut files = self.files.into_iter();
         let paths = (files.next(), files.next(), files.next());
         match (paths, self.rev, self.inspect) {
@@ -1223,47 +1178,6 @@ mod tests {
     }
 
     #[test]
-    fn evolog_takes_one_path_a_revision_and_an_earlier_commit() {
-        let evolog = |rev: Option<&str>, from: Option<&str>| Evolog {
-            path: "a.txt".into(),
-            rev: rev.map(str::to_owned),
-            from: from.map(str::to_owned),
-            diff: Settings::default().two_way(),
-            title: None,
-        };
-        assert_eq!(
-            ok(&["diff", "a.txt", "--evolog"]),
-            Invocation::Window(Window::DiffEvolog(evolog(None, None)))
-        );
-        assert_eq!(
-            ok(&[
-                "diff",
-                "a.txt",
-                "--evolog",
-                "--rev",
-                "kx",
-                "--from",
-                "abc",
-                "--inspect",
-                "--json"
-            ]),
-            Invocation::Batch(Batch::Jj(JjBatch::DiffEvologInspect {
-                evolog: evolog(Some("kx"), Some("abc")),
-                json: true
-            }))
-        );
-        assert_eq!(usage(&["diff", "l", "r", "--evolog"]), UsageError::EvologWithTwoFiles);
-        assert_eq!(
-            clap_kind(&["diff", "a.txt", "--from", "abc"]),
-            ErrorKind::MissingRequiredArgument
-        );
-        assert_eq!(
-            clap_kind(&["diff", "a.txt", "--evolog", "--op", "x"]),
-            ErrorKind::ArgumentConflict
-        );
-    }
-
-    #[test]
     fn absorb_takes_paths_a_revset_and_its_choices_moves_first() {
         assert_eq!(
             ok(&[
@@ -1335,19 +1249,6 @@ mod tests {
         for bad in ["1", "x=kx", "1="] {
             assert_eq!(clap_kind(&["absorb", "--move", bad]), ErrorKind::ValueValidation, "{bad}");
         }
-    }
-
-    #[test]
-    fn diverge_takes_a_change_and_its_flags() {
-        assert_eq!(
-            ok(&["diverge", "kx", "--dry-run", "--json"]),
-            Invocation::Batch(Batch::Jj(JjBatch::Diverge {
-                change: "kx".to_owned(),
-                dry_run: true,
-                json: true
-            }))
-        );
-        assert_eq!(clap_kind(&["diverge"]), ErrorKind::MissingRequiredArgument);
     }
 
     #[test]

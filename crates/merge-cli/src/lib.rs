@@ -193,7 +193,6 @@ fn window_form(
             let repo = RunRepository::of_file(&path);
             (Window::DiffNative { path, rev, op, diff, title }, repo)
         }
-        Window::DiffEvolog(evolog) => (Window::DiffEvolog(evolog), RunRepository::none()),
         Window::OpenDialog => (Window::OpenDialog, RunRepository::none()),
         Window::History(history) => {
             let result = cwd
@@ -328,18 +327,6 @@ fn jj_native_batch(
 ) -> Result<ExitCode, CliError> {
     let jj_config = || Some(jj_config::snapshot_config(env));
     match batch {
-        JjBatch::DiffEvologInspect { evolog, json } => {
-            let texts = merge_session::jj_native::evolog(
-                cwd,
-                &evolog.path,
-                evolog.rev.as_deref(),
-                evolog.from.as_deref(),
-                jj_config(),
-            )?;
-            let (text, code) =
-                inspect::diff_inspect_texts(&texts.left, &texts.right, evolog.diff, json)?;
-            Ok(report(stdout, &text, code))
-        }
         JjBatch::Stack { revset, json } => {
             let commits = merge_session::jj_native::stack(cwd, revset.as_deref(), jj_config())?;
             let (text, code) = jj_native::stack_report(&commits, json)?;
@@ -363,11 +350,6 @@ fn jj_native_batch(
             )?;
             let text = jj_native::absorb_report(&absorbed, apply, json)?;
             Ok(report(stdout, &text, ExitCode::Resolved))
-        }
-        JjBatch::Diverge { change, dry_run, json } => {
-            let divergence = merge_session::jj_native::diverge(cwd, &change, dry_run, jj_config())?;
-            let (text, code) = jj_native::divergence_report(&divergence, dry_run, json)?;
-            Ok(report(stdout, &text, code))
         }
     }
 }

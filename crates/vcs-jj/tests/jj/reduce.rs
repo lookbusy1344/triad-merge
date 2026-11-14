@@ -1,5 +1,5 @@
 //! `reduce_pair` on jj: two adjacent sides of a conflict of three merged over the base
-//! between them (spec §7.5.3).
+//! between them (spec §7.5.2).
 
 use camino::Utf8Path;
 use vcs::{ConflictTerm, TermContent, VcsError};

@@ -149,22 +149,6 @@ Opened without `--pair`, the merge window shows one top pane per side. The confl
 
 A resolved save replaces those three terms with the result, so the conflict keeps one side fewer. Repeat until one side is left and the file resolves. A save with conflicts in the pair writes nothing.
 
-### Merge a divergent change
-
-A change is divergent when it has two visible commits, for example after rewriting it in two workspaces. `diverge` merges the copies over the commit both were rewritten from, which jj's evolog records:
-
-```sh
-triad-merge diverge abc --dry-run   # what it would do
-triad-merge diverge abc
-```
-
-```
-merged change abc: kept 1a2b3c4d, abandoned 5e6f7a8b over 9c0d1e2f
-  conflicted: src/lib.rs
-```
-
-The first copy keeps its change and parents. Each other copy, and the commit it shares with the first, is rebased onto those parents before the merge, as jj rebases, so a copy that only moved to new parents brings no changes from them. When one copy was rewritten from the other, that copy is the base. The others are rewritten into it, so their descendants, and a working copy on one of them, move onto the merged commit. Files changed two ways stay conflicted in the commit: run `triad-merge resolve PATH -r abc`. The description merges the same way; when both copies changed it, the first copy's stays and the report says so.
-
 ### Diff the working copy
 
 ```sh
@@ -211,19 +195,6 @@ f09f484b2665 2026-11-13T15:35:02+00:00 add workspace 'default' (absent)
 
 `(absent)`, `(conflict)` and `(other)` mark an operation where the path held no file, a conflict, or a symlink or directory. `diff --op` opens one version without the window; `--op` takes what `jj --at-op` takes: an ID prefix, `@`, `@-`. The history is as fine as jj's snapshots: one per jj command, or more with jj's file watcher.
 
-### See what a rewrite changed in a patch
-
-After `jj rebase`, an amend or a squash, a plain diff of the old commit against the new one mixes the patch's own changes with everything the new parents brought. `--evolog` rebases the earlier version onto today's parents, in memory, and compares that, so only what the rewrite changed in the patch shows:
-
-```sh
-triad-merge diff src/lib.rs --evolog                # @ against its last earlier version that differs
-triad-merge diff src/lib.rs --evolog --rev xyz      # another change
-triad-merge diff src/lib.rs --evolog --from 1a2b3c4d   # a chosen version, from jj evolog
-triad-merge diff src/lib.rs --evolog --inspect      # regions as text; exit 1 when they differ
-```
-
-Both sides are read-only. A rebase that conflicts shows jj's conflict markers on the left.
-
 ### Absorb working-copy edits into the commits that wrote the lines
 
 Fix lines across a stack of commits in the working copy, then send each hunk to the commit that last changed the lines it replaces.
@@ -269,7 +240,7 @@ In a jj repository triad merges as jj does: jj's diff, `merge.same-change` and `
 
 ## 4. git
 
-The features of §3 that rest on what jj records have no git form: conflicts in commits (`stack`, `resolve -r`, `--pair`), change IDs (`diverge`), the operation log (`history`, `diff --op`), the evolog (`diff --evolog`) and `absorb`. In a git repository each says `COMMAND needs a jj repository` and exits 3. Everything else works the same in git.
+The features of §3 that rest on what jj records have no git form: conflicts in commits (`stack`, `resolve -r`, `--pair`), the operation log (`history`, `diff --op`) and `absorb`. In a git repository each says `COMMAND needs a jj repository` and exits 3. Everything else works the same in git.
 
 ### From git's own commands
 
@@ -354,14 +325,12 @@ triad-merge inspect --json BASE LEFT RIGHT                         # the merge's
 triad-merge diff --inspect --json LEFT RIGHT                       # the diff's regions
 triad-merge resolve PATH -r REV --headless --commands FILE --dry-run   # jj: picks applied in a commit, reported, not written
 triad-merge resolve PATH --pair N --headless                       # jj: the automatic merge of one pair
-triad-merge diff PATH --evolog --inspect --json
 triad-merge stack --list
 triad-merge stack --json
 triad-merge history PATH --list
 triad-merge history PATH --json
 triad-merge absorb --list
 triad-merge absorb --json
-triad-merge diverge CHANGE --dry-run --json
 ```
 
 `--commands` takes JSON Lines, one command per line, each naming a region by its index in `inspect`'s output. `docs/json-schema.md` defines the commands and every JSON output.
@@ -382,6 +351,6 @@ Bind a key with `keybind = CHORD=ACTION`, for example `keybind = cmd+j=next-conf
 | Code | Merge, `resolve` | `diff --inspect` | `stack` | Other commands |
 |---|---|---|---|---|
 | 0 | All resolved | Equal | No conflicted commit | Done |
-| 1 | Conflicts left | Different | Conflicted commits listed or left | `diverge`: the merged commit holds conflicts |
+| 1 | Conflicts left | Different | Conflicted commits listed or left | — |
 | 2 | Cancelled | — | — | — |
 | 3 | Error, or a jj-only command in git | Error | Error | Error |

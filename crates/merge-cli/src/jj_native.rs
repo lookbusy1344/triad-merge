@@ -6,8 +6,7 @@ use camino::Utf8Path;
 use serde_json::json;
 use vcs::IdKind;
 use vcs_jj::{
-    Absorbed, DescendantEffect, Divergence, FileVersion, Rewrite, SHORT_OPERATION, StackCommit,
-    VersionState,
+    Absorbed, DescendantEffect, FileVersion, Rewrite, SHORT_OPERATION, StackCommit, VersionState,
 };
 
 use crate::ExitCode;
@@ -114,72 +113,6 @@ fn list(paths: &[camino::Utf8PathBuf]) -> String {
             .collect::<Vec<_>>()
             .join(", ")
     }
-}
-
-/// `diverge`'s report: the kept and abandoned commits and the bases, the merged commit's
-/// conflicts, a description changed two ways, then the rebased descendants; or as JSON. 0
-/// when the merged commit is resolved, else 1.
-///
-/// # Errors
-///
-/// [`serde_json::Error`] when the JSON cannot be written.
-pub fn divergence_report(
-    divergence: &Divergence,
-    dry_run: bool,
-    json: bool,
-) -> Result<(String, ExitCode), serde_json::Error> {
-    let rewrite = &divergence.rewrite;
-    let code = if rewrite.resolved { ExitCode::Resolved } else { ExitCode::Conflicts };
-    let ids = |changes: &[vcs::ChangeInfo]| -> Vec<String> {
-        changes.iter().map(|c| c.id(IdKind::Commit).to_owned()).collect()
-    };
-    let kept = rewrite.target.id(IdKind::Commit);
-    if json {
-        let descendants: Vec<_> = rewrite
-            .descendants
-            .iter()
-            .map(|d| {
-                json!({
-                    "change_id": d.change.change_id,
-                    "before": d.before.iter().map(|p| p.as_str()).collect::<Vec<_>>(),
-                    "after": d.after.iter().map(|p| p.as_str()).collect::<Vec<_>>(),
-                })
-            })
-            .collect();
-        let value = json!({
-            "change_id": rewrite.target.change_id,
-            "kept": kept,
-            "abandoned": ids(&divergence.abandoned),
-            "bases": ids(&divergence.bases),
-            "conflicted": divergence.conflicted.iter().map(|p| p.as_str()).collect::<Vec<_>>(),
-            "description_kept": divergence.description_kept,
-            "written": rewrite.written,
-            "descendants": descendants,
-        });
-        return Ok((format!("{}\n", serde_json::to_string_pretty(&value)?), code));
-    }
-    let verb = if dry_run { "would merge" } else { "merged" };
-    let mut text = String::new();
-    line(
-        &mut text,
-        format_args!(
-            "{verb} change {}: kept {kept}, abandoned {} over {}",
-            rewrite.target.id(IdKind::Change),
-            ids(&divergence.abandoned).join(", "),
-            ids(&divergence.bases).join(", "),
-        ),
-    );
-    if !divergence.conflicted.is_empty() {
-        line(&mut text, format_args!("  conflicted: {}", list(&divergence.conflicted)));
-    }
-    if divergence.description_kept {
-        line(
-            &mut text,
-            format_args!("  the copies changed the description two ways; kept {kept}'s"),
-        );
-    }
-    descendant_lines(&mut text, &rewrite.descendants);
-    Ok((text, code))
 }
 
 /// `history`'s report: one line per version, newest first: the operation's short ID, its
@@ -385,50 +318,6 @@ mod tests {
             }],
             written,
         }
-    }
-
-    fn divergence(conflicted: bool, kept: bool) -> Divergence {
-        Divergence {
-            rewrite: rewrite(!conflicted, true),
-            bases: vec![change("bbbb", Some("change"))],
-            abandoned: vec![change("mmmm", None)],
-            conflicted: if conflicted { vec!["a.txt".into()] } else { vec![] },
-            description_kept: kept,
-        }
-    }
-
-    #[test]
-    fn a_divergence_names_the_kept_abandoned_and_base_commits() {
-        let (text, code) =
-            divergence_report(&divergence(false, false), false, false).expect("a report");
-        assert_eq!(
-            text,
-            "merged change kkkk: kept c-kkkk, abandoned c-mmmm over c-bbbb\n  llll: a.txt, b.txt -> none\n"
-        );
-        assert_eq!(code, ExitCode::Resolved);
-        let (text, code) =
-            divergence_report(&divergence(true, true), true, false).expect("a report");
-        assert_eq!(
-            text.lines().take(3).collect::<Vec<_>>(),
-            [
-                "would merge change kkkk: kept c-kkkk, abandoned c-mmmm over c-bbbb",
-                "  conflicted: a.txt",
-                "  the copies changed the description two ways; kept c-kkkk's",
-            ]
-        );
-        assert_eq!(code, ExitCode::Conflicts);
-    }
-
-    #[test]
-    fn a_divergence_as_json_lists_each_part() {
-        let (text, _) = divergence_report(&divergence(true, true), false, true).expect("a report");
-        let value: serde_json::Value = serde_json::from_str(&text).expect("JSON");
-        assert_eq!(value["kept"], "c-kkkk");
-        assert_eq!(value["abandoned"], json!(["c-mmmm"]));
-        assert_eq!(value["bases"], json!(["c-bbbb"]));
-        assert_eq!(value["conflicted"], json!(["a.txt"]));
-        assert_eq!(value["description_kept"], true);
-        assert_eq!(value["descendants"][0]["before"], json!(["a.txt", "b.txt"]));
     }
 
     fn version(operation: &str, description: &str, state: VersionState) -> FileVersion {

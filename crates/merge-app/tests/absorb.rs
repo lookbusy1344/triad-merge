@@ -1,4 +1,4 @@
-//! Headless tests of the absorb window (spec §7.5.6): the working copy's hunks, each with
+//! Headless tests of the absorb window (spec §7.5.4): the working copy's hunks, each with
 //! the commit it goes into, sent elsewhere or kept by a click, and written by Apply.
 
 mod jj {
