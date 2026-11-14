@@ -387,6 +387,28 @@ fn a_change_next_to_a_line_a_later_commit_removed_stays() {
 }
 
 #[test]
+fn a_hunk_that_conflicts_only_beside_another_hunk_into_the_same_commit_stays() {
+    // `one` wrote every line `two` keeps; `two` removed c. Each hunk alone merges into `one`
+    // cleanly, but both together conflict with `two`'s deletion: the first goes, the
+    // second stays.
+    let (fixture, one, two) = two_commits(b"a\na\nc\nb\nb\n", b"a\na\nb\nb\n", b"a\nb\na\nb\n");
+    let goes = |absorbed: &Absorbed| -> Vec<String> {
+        absorbed.hunks.iter().map(|hunk| shown(&hunk.goes)).collect()
+    };
+    assert_eq!(goes(&listed(&fixture, &[], false)), [into(&one), conflicts_in(&one)]);
+    let applied = listed(&fixture, &[], true);
+    assert!(applied.rewrite.written, "{:?}", applied.rewrite);
+    for commit in [&one, &two] {
+        let held = fixture.held_in(&fixture.latest(commit), "a.txt");
+        assert!(matches!(held, Held::File(_)), "{}: {held:?}", commit.commit);
+    }
+    let on_disk = std::fs::read(fixture.root().join("a.txt")).expect("a.txt reads");
+    assert_eq!(on_disk, b"a\nb\na\nb\n");
+    let left: Vec<usize> = listed(&fixture, &[], false).hunks.iter().map(|h| h.number).collect();
+    assert_eq!(left, [1], "the second hunk stays in the working copy");
+}
+
+#[test]
 fn apply_reports_each_commit_it_moved_hunks_into_with_its_conflicts() {
     let (fixture, one, two) = stack(b"1\n2\nTHREE\n4\n5\n", b"x\nY\nz\n");
     let absorbed = listed(&fixture, &[], true);

@@ -322,6 +322,9 @@ impl JjRepository {
                 .collect();
             // Each target's text of the file, read once; none when it holds no plain file.
             let mut texts: BTreeMap<CommitId, Option<Vec<u8>>> = BTreeMap::new();
+            // The hunks of the file each target takes so far, in line order: a hunk goes in
+            // only when jj's merge takes it together with them.
+            let mut taken: BTreeMap<CommitId, Vec<RangePair>> = BTreeMap::new();
             let diff = ContentDiff::by_line([&file.left, &file.right]);
             for hunk in diff.hunk_ranges().filter(|hunk| hunk.kind == DiffHunkKind::Different) {
                 let (left, right) = (hunk.ranges[0].clone(), hunk.ranges[1].clone());
@@ -334,10 +337,16 @@ impl JjRepository {
                             }
                         };
                         match text.as_deref() {
-                            Some(text) if merges_cleanly(repo, text, file, &left, &right) => {
-                                Goes::Into(commit)
+                            Some(text) => {
+                                let ranges = taken.entry(commit.clone()).or_default();
+                                ranges.push((left.clone(), right.clone()));
+                                if merges_cleanly(repo, text, file, ranges) {
+                                    Goes::Into(commit)
+                                } else {
+                                    ranges.pop();
+                                    Goes::Stays(Stay::WouldConflict(commit))
+                                }
                             }
-                            Some(_) => Goes::Stays(Stay::WouldConflict(commit)),
                             None => Goes::Stays(Stay::NoCommit),
                         }
                     }
@@ -425,17 +434,17 @@ impl JjRepository {
     }
 }
 
-/// jj's merge takes the hunk replacing `left` of `file`'s parents' text with `right` of its
-/// working-copy text into `target`, the file in the hunk's commit, without a conflict, as
-/// `absorb_hunks` merges it: the commit's text, less the parents', plus the hunk.
+/// jj's merge takes the hunks `ranges`, each replacing its left range of `file`'s parents'
+/// text with its right range of the working-copy text, into `target`, the file in the
+/// hunks' commit, without a conflict, as `absorb_hunks` merges them: the commit's text, less
+/// the parents', plus the hunks.
 fn merges_cleanly(
     repo: &MutableRepo,
     target: &[u8],
     file: &ChangedFile,
-    left: &Range<usize>,
-    right: &Range<usize>,
+    ranges: &[RangePair],
 ) -> bool {
-    let applied = combine(&file.left, &file.right, &[(left.clone(), right.clone())]);
+    let applied = combine(&file.left, &file.right, ranges);
     let inputs = Merge::from_vec(vec![target, file.left.as_slice(), applied.as_slice()]);
     try_merge(&inputs, repo.store().merge_options()).is_some()
 }
