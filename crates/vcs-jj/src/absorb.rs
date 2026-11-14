@@ -71,7 +71,8 @@ pub struct Absorbed {
     /// The commits a hunk may go into: the mutable ancestors of the working copy's parents
     /// that `--into` names, children first.
     pub destinations: Vec<Destination>,
-    /// Paths it cannot split into hunks, with the reason: a conflict, a symlink, a binary.
+    /// Paths it cannot split into hunks, with the reason: a conflict, or a symlink or
+    /// submodule on either side.
     pub skipped: Skipped,
     pub rewrite: Rewrite,
 }
