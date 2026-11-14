@@ -65,6 +65,8 @@ In order. Each is one or more commits.
 | Review and diff features, §G4–§G14 | Owner's choices on §G15's open points | G |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
 | Absorb: split one hunk between commits | Part H's line selection (§H6) | §I7 |
+| The stack, history and absorb windows checked on screen: layout, keys, focus and the accessibility tree; their tests run headless only | — | §I2, §I5, §I7 |
+| Whether `diverge` gets a window; it runs from the command line only | The owner's choice | §I3 |
 
 ## 4. Risks
 
