@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use merge_config::settings::{self, Settings};
 use merge_core::document::OutputEnding;
 use merge_session::env::Env;
-use merge_session::invocation::{History, Merge, Resolve, SemanticsFlags, Stack, Window};
+use merge_session::invocation::{Absorb, History, Merge, Resolve, SemanticsFlags, Stack, Window};
 use merge_session::repository::RunRepository;
 use merge_session::{
     EncodedOutput, SaveError, SessionError, choose_marker_style, choose_semantics, jj_config, load,
@@ -202,6 +202,23 @@ fn window_form(
                 .and_then(|cwd| history_prepare(&history, cwd, env));
             match result {
                 Ok(repo) => (Window::History(history), repo),
+                Err(error) => {
+                    return Outcome::Exit(report(
+                        stderr,
+                        &format!("{PROGRAM}: {error}\n"),
+                        ExitCode::Error,
+                    ));
+                }
+            }
+        }
+        Window::Absorb(absorb) => {
+            let result = cwd
+                .as_deref()
+                .ok_or(CliError::NoWorkingDirectory)
+                .and_then(|cwd| absorb_prepare(&absorb, cwd, env));
+            match result {
+                Ok(Some(repo)) => (Window::Absorb(absorb), repo),
+                Ok(None) => return Outcome::Exit(ExitCode::Resolved),
                 Err(error) => {
                     return Outcome::Exit(report(
                         stderr,
@@ -411,6 +428,33 @@ fn stack_prepare(
     stack.options.hunk_level = mode.hunk_level;
     stack.options.marker_style = choose_marker_style(mode.semantics, settings, &mut repo);
     Ok(Some(repo))
+}
+
+/// List `absorb`'s hunks once before its window opens. None when there is no hunk, so no
+/// window opens; else the run's repository, with the user's jj config.
+///
+/// # Errors
+///
+/// [`CliError`] outside a jj repository, for a path outside it, or when `--into` does not
+/// resolve.
+fn absorb_prepare(
+    absorb: &Absorb,
+    cwd: &Path,
+    env: &Env,
+) -> Result<Option<RunRepository>, CliError> {
+    const LIST_ONLY: bool = false;
+    let config = jj_config::snapshot_config(env);
+    let listed = merge_session::jj_native::absorb(
+        cwd,
+        &absorb.paths,
+        absorb.into.as_deref(),
+        &[],
+        LIST_ONLY,
+        None,
+        Some(config.clone()),
+    )?;
+    Ok((!listed.hunks.is_empty())
+        .then(|| RunRepository::of_resolve(cwd, None).with_jj_config(config)))
 }
 
 /// Check that `history PATH` can list before its window opens: a jj repository holding

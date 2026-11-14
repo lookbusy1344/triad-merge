@@ -38,6 +38,18 @@ pub struct AbsorbHunk {
     pub right: Range<usize>,
     /// The commit it goes into; none when it stays in the working copy.
     pub target: Option<ChangeInfo>,
+    /// The lines it replaces, as the parents' file holds them.
+    pub before: Vec<u8>,
+    /// The lines it holds, as the working copy's file holds them.
+    pub after: Vec<u8>,
+}
+
+/// A commit a hunk may go into.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Destination {
+    /// The commit's full ID.
+    pub id: vcs::CommitId,
+    pub change: ChangeInfo,
 }
 
 /// A choice that overrides where a hunk goes.
@@ -56,6 +68,9 @@ pub struct Absorbed {
     /// with choices names it, so the hunk numbers mean what the listing showed.
     pub operation: String,
     pub hunks: Vec<AbsorbHunk>,
+    /// The commits a hunk may go into: the mutable ancestors of the working copy's parents
+    /// that `--into` names, children first.
+    pub destinations: Vec<Destination>,
     /// Paths it cannot split into hunks, with the reason: a conflict, a symlink, a binary.
     pub skipped: Skipped,
     pub rewrite: Rewrite,
@@ -187,10 +202,21 @@ impl JjRepository {
                         left: lines(&file.left, &hunk.left),
                         right: lines(&file.right, &hunk.right),
                         target,
+                        before: file.left[hunk.left.clone()].to_vec(),
+                        after: file.right[hunk.right.clone()].to_vec(),
                     })
                 })
                 .collect::<Result<Vec<_>, VcsError>>()?;
-            found = Some((operation, hunks, skipped));
+            let destinations = destinations
+                .iter()
+                .map(|commit| {
+                    Ok(Destination {
+                        id: vcs::CommitId::new(commit.id().hex()),
+                        change: this.change_info(commit)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, VcsError>>()?;
+            found = Some((operation, hunks, destinations, skipped));
             Ok(Mutated {
                 description: "absorb in triad".to_owned(),
                 target: source,
@@ -198,8 +224,8 @@ impl JjRepository {
                 roots,
             })
         })?;
-        let (operation, hunks, skipped) = found.unwrap_or_default();
-        Ok(Absorbed { operation, hunks, skipped, rewrite })
+        let (operation, hunks, destinations, skipped) = found.unwrap_or_default();
+        Ok(Absorbed { operation, hunks, destinations, skipped, rewrite })
     }
 
     /// The hunk `choice` names and the commit it now goes into; none to keep it.

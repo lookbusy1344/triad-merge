@@ -24,7 +24,7 @@ not (
     | package(vcs-jj)
     | test(/^native::jj::/)
     | (package(merge-session) & test(/^(origin|resolve|discovery|diff_tool)::jj::/))
-    | (package(merge-app) & test(/^(history|in_commit|origins|resolve_queue|stack)::jj::/))
+    | (package(merge-app) & test(/^(absorb|history|in_commit|origins|resolve_queue|stack)::jj::/))
     | (package(merge-cli) & test(/^resolve::jj::/))
     | (package(triad-merge) & test(/^(headless|jj_native|resolve|semantics|tool_integration)::jj::/))
     | (package(merge-app) & test(/^scroll::/))

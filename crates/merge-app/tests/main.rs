@@ -7,6 +7,7 @@
 
 mod a11y;
 mod about;
+mod absorb;
 mod choices;
 mod collapse;
 mod common;

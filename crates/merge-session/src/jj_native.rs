@@ -7,11 +7,12 @@ use camino::{Utf8Path, Utf8PathBuf};
 use merge_core::text::Text;
 use vcs::{IdKind, RepoKind, Repository as _, VcsError};
 use vcs_jj::config::ConfigEnv;
-use vcs_jj::{Absorbed, Divergence, HunkChoice, JjRepository};
 /// The reports the front ends show.
 pub use vcs_jj::{
-    DescendantEffect, FileVersion, Rewrite, SHORT_OPERATION, StackCommit, StackPath, VersionState,
+    AbsorbHunk, Absorbed, DescendantEffect, Destination, FileVersion, HunkChoice, Rewrite,
+    SHORT_OPERATION, StackCommit, StackPath, VersionState,
 };
+use vcs_jj::{Divergence, JjRepository};
 
 use crate::resolve::ResolveError;
 

@@ -33,7 +33,7 @@ fn summary(absorbed: &Absorbed) -> Vec<(usize, &str, [usize; 4], Option<&str>)> 
     absorbed
         .hunks
         .iter()
-        .map(|AbsorbHunk { number, path, left, right, target }| {
+        .map(|AbsorbHunk { number, path, left, right, target, .. }| {
             (
                 *number,
                 path.as_str(),
@@ -64,6 +64,30 @@ fn each_hunk_goes_to_the_commit_that_wrote_its_lines() {
         fixture.held_in(&fixture.latest(&one), "a.txt"),
         Held::File(b"1\n2\n3\n4\n5\n".to_vec())
     );
+}
+
+#[test]
+fn each_hunk_carries_its_lines_before_and_after() {
+    let (fixture, ..) = stack(b"1\n2\nTHREE\n4\n5\n", b"x\nY\nY2\nz\n");
+    let texts: Vec<_> =
+        listed(&fixture, &[], false).hunks.into_iter().map(|h| (h.before, h.after)).collect();
+    assert_eq!(
+        texts,
+        [(b"3\n".to_vec(), b"THREE\n".to_vec()), (b"y\n".to_vec(), b"Y\nY2\n".to_vec())]
+    );
+}
+
+#[test]
+fn the_listing_names_the_commits_a_hunk_may_go_into_children_first() {
+    let (fixture, one, two) = stack(b"1\n2\nTHREE\n4\n5\n", b"x\ny\nz\n");
+    let commits = |absorbed: &Absorbed| -> Vec<String> {
+        absorbed.destinations.iter().map(|d| d.id.as_str().to_owned()).collect()
+    };
+    assert_eq!(commits(&listed(&fixture, &[], false)), [two.commit.clone(), one.commit.clone()]);
+    let only_one = open(&fixture)
+        .absorb(&[], Some(&one.commit), &[], false, None)
+        .expect("the hunks are listed");
+    assert_eq!(commits(&only_one), [one.commit]);
 }
 
 #[test]

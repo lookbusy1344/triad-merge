@@ -39,6 +39,17 @@ pub enum Window {
     /// `history PATH`: a file's versions across jj's operation log, each opening in the diff
     /// window against the working-copy file.
     History(History),
+    /// `absorb [PATH...]`: the working copy's hunks, each sent to a commit or kept.
+    Absorb(Absorb),
+}
+
+/// `absorb [PATH...] [--into REVSET]` in a window (spec §7.5.6).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Absorb {
+    /// Only the hunks under these paths; none for every path.
+    pub paths: Vec<PathBuf>,
+    /// The commits a hunk may go into; none for `mutable()`.
+    pub into: Option<String>,
 }
 
 /// `history PATH` in a window (spec §7.5.4).

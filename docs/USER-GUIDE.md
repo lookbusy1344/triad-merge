@@ -226,11 +226,17 @@ Both sides are read-only. A rebase that conflicts shows jj's conflict markers on
 
 ### Absorb working-copy edits into the commits that wrote the lines
 
-Fix lines across a stack of commits in the working copy, then send each hunk to the commit that last changed the lines it replaces. `absorb` lists first and writes only with `--apply`:
+Fix lines across a stack of commits in the working copy, then send each hunk to the commit that last changed the lines it replaces.
 
 ```sh
-triad-merge absorb
+triad-merge absorb                  # a window of the hunks and the commits they go into
+triad-merge absorb src/ --into @-   # only these paths, only these commits
+triad-merge absorb --list           # print the list instead
 ```
+
+`absorb` opens a window listing each hunk, its lines and the commit it goes into, beside the commits a hunk may go into and Working copy. Click a hunk, then a commit to send it there or Working copy to keep it; the next hunk is then selected. Each commit shows how many hunks go into it. Apply writes the choices, says how many hunks went into how many commits, and lists what is left. Apply refuses when the repository moved on since the list: Refresh and choose again. Closing the window exits 0. With nothing to absorb, `absorb` opens no window and exits 0.
+
+`absorb --list` prints the list; it writes only with `--apply`:
 
 ```
 at operation 6c1e0e2b7f3a
@@ -353,6 +359,7 @@ triad-merge stack --list
 triad-merge stack --json
 triad-merge history PATH --list
 triad-merge history PATH --json
+triad-merge absorb --list
 triad-merge absorb --json
 triad-merge diverge CHANGE --dry-run --json
 ```

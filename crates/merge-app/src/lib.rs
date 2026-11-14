@@ -1,6 +1,7 @@
 //! GPUI shell: windows, panes, toolbar, menus and shortcuts. A thin renderer over `merge-view`.
 
 pub mod about;
+pub mod absorb_window;
 mod assets;
 mod blink;
 mod choice;

@@ -469,6 +469,8 @@ mod tests {
             left: 2..3,
             right: 2..4,
             target,
+            before: b"c\n".to_vec(),
+            after: b"C\nD\n".to_vec(),
         };
         Absorbed {
             operation: "0123456789abcdef0123".to_owned(),
@@ -477,6 +479,7 @@ mod tests {
                 hunk(2, None),
                 hunk(3, Some(change("kkkk", None))),
             ],
+            destinations: Vec::new(),
             skipped: vec![("b.bin".into(), "conflicted in the parents".to_owned())],
             rewrite: rewrite(true, true),
         }

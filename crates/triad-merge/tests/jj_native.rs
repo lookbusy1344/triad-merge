@@ -359,7 +359,7 @@ mod jj {
         fixture.check_out_to_disk();
         std::fs::write(fixture.root().join("a.txt"), b"1\nTWO\n3\n").expect("written");
         std::fs::write(fixture.root().join("b.txt"), b"x\nY\n").expect("written");
-        let (code, out, err) = outcome(&triad(fixture.root(), &["absorb"]));
+        let (code, out, err) = outcome(&triad(fixture.root(), &["absorb", "--list"]));
         assert_eq!((code, err.as_str()), (Some(RESOLVED), ""), "{out}");
         let operation = &fixture.operation_ids()[0][..vcs_jj::SHORT_OPERATION];
         assert_eq!(
@@ -400,6 +400,27 @@ mod jj {
                 .as_str()
             )
         );
+    }
+
+    #[test]
+    fn absorb_with_nothing_to_absorb_opens_no_window_and_exits_0() {
+        let fixture = Fixture::new();
+        fixture.commit("one", &[("a.txt", b"a\n")]);
+        fixture.check_out_to_disk();
+        assert_eq!(
+            outcome(&triad(fixture.root(), &["absorb"])),
+            (Some(RESOLVED), String::new(), String::new())
+        );
+    }
+
+    #[test]
+    fn absorb_into_a_revset_jj_cannot_resolve_fails_before_any_window() {
+        let fixture = Fixture::new();
+        fixture.check_out_to_disk();
+        let args = ["absorb", "--into", "no_such_function()"];
+        let (code, out, err) = outcome(&triad(fixture.root(), &args));
+        assert_eq!((code, out.as_str()), (Some(ERROR), ""));
+        assert!(err.starts_with("triad-merge: "), "{err}");
     }
 
     #[test]

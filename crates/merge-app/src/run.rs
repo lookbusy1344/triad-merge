@@ -10,13 +10,14 @@ use merge_config::settings::Settings as Stored;
 use merge_core::diff::DiffOptions;
 use merge_core::document::{MergeDocument, MergeOptions};
 use merge_session::WindowForm;
-use merge_session::invocation::{Evolog, Resolve, Stack, Window};
+use merge_session::invocation::{Absorb, Evolog, History, Resolve, Stack, Window};
 use merge_session::repository::{Handoff, RunRepository};
 use merge_session::resolve::Snapshot;
 use merge_session::semantics::Caller;
 use merge_view::status::FileNames;
 use vcs::RepoKind;
 
+use crate::absorb_window::{self, AbsorbStart};
 use crate::assets::AppAssets;
 use crate::diff_window::{self, DiffFile, DiffLookup, DiffSettings, Origin};
 use crate::history_window::{self, HistoryStart};
@@ -115,22 +116,50 @@ pub fn run(form: WindowForm) -> ExitCode {
             run_native_diff(window, repo, base, errors, bindings)
         }
         Window::DiffEvolog(evolog) => run_evolog_diff(evolog, base, errors, bindings),
-        Window::History(history) => {
-            let start = HistoryStart {
-                cwd: working_dir(dir),
-                path: history.path,
-                limit: history.limit,
-                jj_config: repo.jj_config().cloned(),
-                settings: base,
-                watch: WATCH_FILES,
-            };
-            launch(bindings, move |cx| {
-                history_window::start(start, |code, _| exit(code), cx).map(drop)?;
-                Ok(())
-            })
-        }
+        Window::History(history) => run_history(history, &repo, base, bindings),
         Window::Stack(stack) => run_stack(stack, &repo, base, bindings),
+        Window::Absorb(absorb) => run_absorb(absorb, &repo, working_dir(dir), bindings),
     }
+}
+
+/// The history window on `history`'s file, whose diff windows watch their files.
+fn run_history(
+    history: History,
+    repo: &RunRepository,
+    base: WindowSettings,
+    bindings: KeyBindings,
+) -> ExitCode {
+    let start = HistoryStart {
+        cwd: working_dir(base.cwd.as_deref()),
+        path: history.path,
+        limit: history.limit,
+        jj_config: repo.jj_config().cloned(),
+        settings: base,
+        watch: WATCH_FILES,
+    };
+    launch(bindings, move |cx| {
+        history_window::start(start, |code, _| exit(code), cx).map(drop)?;
+        Ok(())
+    })
+}
+
+/// The absorb window on `absorb`'s paths and `--into`, from the working directory `cwd`.
+fn run_absorb(
+    absorb: Absorb,
+    repo: &RunRepository,
+    cwd: PathBuf,
+    bindings: KeyBindings,
+) -> ExitCode {
+    let start = AbsorbStart {
+        cwd,
+        paths: absorb.paths,
+        into: absorb.into,
+        jj_config: repo.jj_config().cloned(),
+    };
+    launch(bindings, move |cx| {
+        absorb_window::start(start, |code, _| exit(code), cx).map(drop)?;
+        Ok(())
+    })
 }
 
 /// The stack window on `stack`'s revset, whose merge windows read with the run's jj config.

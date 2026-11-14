@@ -779,7 +779,7 @@ Features git cannot have (spec §1.2, §7.5). Each rests on something jj records
 | `diff PATH --evolog` | The evolog |
 | `absorb` | Annotation; descendants rebase on a rewrite |
 
-Each ships a command line with `--json`, `--headless` or `--inspect` for scripts, tests and agents. A command that fits a window triad has opens it; `stack` and `history` have windows of their own (§I2, §I5). A window for `absorb` is open work (`PLAN.md` §3). In a git repository each refuses with `needs a jj repository` and exits with 3.
+Each ships a command line with `--json`, `--headless` or `--inspect` for scripts, tests and agents. A command that fits a window triad has opens it; `stack`, `history` and `absorb` have windows of their own (§I2, §I5, §I7). In a git repository each refuses with `needs a jj repository` and exits with 3.
 
 ### I1 Rewrites
 
@@ -835,6 +835,8 @@ Each ships a command line with `--json`, `--headless` or `--inspect` for scripts
 
 - `JjRepository::absorb` follows jj-lib's `split_hunks_to_trees`, which gives no per-hunk control, then hands the result to jj-lib's `absorb_hunks`. It diffs the working copy's tree against its parents' merged tree, annotates each changed file's parent text with `FileAnnotator` over `(INTO) & ::parents`, and splits the file with `ContentDiff::by_line`. Hunk ranges are byte ranges; the report counts newlines for line numbers.
 - The rule for a hunk is jj's for one that is not a pure deletion: the first compacted annotation range that ends at or past the hunk must start at or before it, and an insertion at the seam of two ranges stays. A pure deletion takes the same rule, so a deletion over two commits' lines stays where jj would split it.
+- Each `AbsorbHunk` carries its bytes before and after, and `Absorbed::destinations` the commits `--into` allows with their full IDs, children first: what the absorb window shows and sends.
+- The absorb window (`merge-app::absorb_window`) holds one choice per hunk, an index into the destinations or none to keep it. Apply sends every hunk's choice explicitly, a full commit ID for a move, with `--listed-at` the listing's operation, so the write uses the numbers the window showed or refuses. It runs off the UI thread; a success lists again, a refusal keeps the choices. Choosing is by click: a hunk, then a commit. `merge-cli` lists once before the window opens, so a run with no hunk, a git repository or a bad `--into` exits without one.
 - Choices rewrite the plan before any tree is built. Each target commit gets the parents' tree with its hunks spliced into each file; `absorb_hunks` merges that over the parents' tree into the target, rewrites descendants in topological order and abandons an emptied working copy.
 - Listing and `--apply` run the same code inside `JjRepository::rewrite`: a listing is a dry run, which snapshots and drops the transaction. The listing reports the head operation after its snapshot. `--listed-at OP` is checked inside the rewrite, after the snapshot, against the head: hunk numbers come from a diff of the working copy, so any operation since the listing, an edit snapshotted or a jj command, may renumber them. The command line asks for it whenever `--apply` carries choices; `--apply` alone recomputes the plan and needs none. An abandoned working copy leaves its change with no visible commit; the rewrite then counts the target as resolved.
 

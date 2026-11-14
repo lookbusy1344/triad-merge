@@ -13,7 +13,7 @@ mod reduce;
 pub mod testing;
 pub mod tool_config;
 
-pub use absorb::{AbsorbHunk, Absorbed, DEFAULT_INTO, HunkChoice};
+pub use absorb::{AbsorbHunk, Absorbed, DEFAULT_INTO, Destination, HunkChoice};
 pub use diverge::Divergence;
 pub use evolog::EvologDiff;
 pub use history::{FileVersion, SHORT_OPERATION, VersionState};

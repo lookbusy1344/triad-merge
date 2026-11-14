@@ -13,7 +13,8 @@ use merge_config::named::Named;
 use merge_config::settings::{Algorithm, Settings, Whitespace};
 use merge_config::settings::{Choice, HunkLevelArg, SameChangeArg};
 use merge_session::invocation::{
-    Diff, DiffFlags, Evolog, History, Merge, MergeFiles, Resolve, SemanticsFlags, Stack, Window,
+    Absorb, Diff, DiffFlags, Evolog, History, Merge, MergeFiles, Resolve, SemanticsFlags, Stack,
+    Window,
 };
 use vcs_jj::HunkChoice;
 
@@ -251,8 +252,8 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// List the working copy's hunks, each with the commit that wrote its lines; move them
-    /// there with --apply (jj only).
+    /// The working copy's hunks, each with the commit that wrote its lines, in a window to
+    /// send them there; or listed, and moved with --apply (jj only).
     Absorb {
         /// Only the hunks under these paths.
         #[arg(value_name = "PATH")]
@@ -270,6 +271,9 @@ enum Command {
         /// Move the hunks; without it, only list them.
         #[arg(long)]
         apply: bool,
+        /// Print the list instead of opening the window.
+        #[arg(long)]
+        list: bool,
         /// The operation the listing printed: --apply refuses when the repository has moved
         /// past it, so hunk numbers mean what the listing showed.
         #[arg(long, value_name = "OP", requires = "apply")]
@@ -503,7 +507,10 @@ impl Cli {
                 let options = DiffFlags::default().merge_options(settings, MergeOptions::default());
                 Invocation::Window(Window::Stack(Stack { revset, options }))
             }),
-            Some(Command::Absorb { paths, into, moves, keeps, apply, listed_at, json }) => {
+            Some(Command::Absorb { paths, into, moves, keeps, apply, list, listed_at, json }) => {
+                if !(list || json || apply) && moves.is_empty() && keeps.is_empty() {
+                    return Ok(Invocation::Window(Window::Absorb(Absorb { paths, into })));
+                }
                 if apply && listed_at.is_none() && !(moves.is_empty() && keeps.is_empty()) {
                     return Err(UsageError::ChoicesWithoutListing);
                 }
@@ -1304,7 +1311,7 @@ mod tests {
             Invocation::Batch(Batch::Jj(JjBatch::Absorb { apply: true, listed_at: None, .. }))
         ));
         assert_eq!(
-            ok(&["absorb"]),
+            ok(&["absorb", "--list"]),
             Invocation::Batch(Batch::Jj(JjBatch::Absorb {
                 paths: vec![],
                 into: None,
@@ -1312,6 +1319,17 @@ mod tests {
                 apply: false,
                 listed_at: None,
                 json: false
+            }))
+        );
+        assert_eq!(
+            ok(&["absorb"]),
+            Invocation::Window(Window::Absorb(Absorb { paths: vec![], into: None }))
+        );
+        assert_eq!(
+            ok(&["absorb", "a.txt", "--into", "@-"]),
+            Invocation::Window(Window::Absorb(Absorb {
+                paths: vec!["a.txt".into()],
+                into: Some("@-".to_owned())
             }))
         );
         for bad in ["1", "x=kx", "1="] {
