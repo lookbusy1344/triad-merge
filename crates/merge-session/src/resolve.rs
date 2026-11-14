@@ -2,7 +2,7 @@
 //! file's conflict markers (spec §7.4).
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use camino::{Utf8Path, Utf8PathBuf};
 use merge_core::boundaries::Boundaries;
@@ -63,7 +63,12 @@ pub struct InCommit {
     /// The conflicted path, relative to the root.
     path: Utf8PathBuf,
     jj_config: Option<ConfigEnv>,
+    /// The commit the conflict was read from: saved markers parse against its terms.
     id: CommitId,
+    /// What the change must hold at the path for a save to go in: `id` before any save,
+    /// then the commit the last save wrote. Every copy of the record shares it, so a save
+    /// run on a copy moves it for all.
+    held: Arc<Mutex<CommitId>>,
     /// The shortest markers jj parses back as this conflict.
     marker_length: usize,
     /// The temporary file the result is saved to.
@@ -188,9 +193,20 @@ impl InCommit {
     fn write(&self, content: &[u8], dry_run: bool) -> Result<Rewrite, VcsError> {
         let config = self.jj_config.clone().unwrap_or_else(ConfigEnv::from_process);
         let mut repo = JjRepository::discover(&self.root)?.with_config(config);
-        let rewrite =
-            repo.write_conflict(&self.id, &self.path, content, self.marker_length, dry_run)?;
-        tracing::info!(path = %self.path, commit = %self.id, ?rewrite, "wrote the result into the commit");
+        // A poisoned lock still holds a whole commit ID: the lock guards one assignment.
+        let mut held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
+        let rewrite = repo.write_conflict_since(
+            &self.id,
+            &held,
+            &self.path,
+            content,
+            self.marker_length,
+            dry_run,
+        )?;
+        tracing::info!(path = %self.path, commit = %self.id, held = %*held, ?rewrite, "wrote the result into the commit");
+        if let Some(latest) = &rewrite.latest {
+            held.clone_from(latest);
+        }
         Ok(rewrite)
     }
 }
@@ -465,6 +481,7 @@ pub fn load_at_commit(
         root: root.clone(),
         path: relative.clone(),
         jj_config: jj_config.clone(),
+        held: Arc::new(Mutex::new(id.clone())),
         id,
         marker_length,
         file: temporary.clone(),

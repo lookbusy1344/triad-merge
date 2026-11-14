@@ -1081,6 +1081,35 @@ mod jj {
     }
 
     #[test]
+    fn a_second_save_after_one_that_kept_markers_is_written() {
+        let (fixture, merge) = stacked();
+        let opened = at_commit(&fixture, &merge.commit)
+            .open(merge_core::document::MergeOptions::default())
+            .expect("labels fit");
+        let markers = EncodedOutput::new(&opened.doc, merge_core::document::OutputEnding::Keep);
+        let text = String::from_utf8(markers.bytes().to_vec()).expect("UTF-8");
+        let edited = text.replacen("\nleft\n", "\nleft edited\n", 1);
+        assert_ne!(edited, text, "the left side is in the markers");
+        let record = opened.record.expect("a commit's record");
+        std::fs::write(&opened.file, &edited).expect("written");
+        record.saved(ExitCode::Conflicts).expect("the first save is written");
+        assert_eq!(
+            fixture.held_in(&fixture.latest(&merge), "a.txt"),
+            vcs_jj::testing::Held::Conflict
+        );
+        // A clone shares the commit the save wrote, as a save job's copy of the record does.
+        let copy = record.clone();
+        let preview = commit(&copy).preview(RIGHT).expect("previewed after the save");
+        assert!(preview.resolved, "{preview:?}");
+        std::fs::write(&opened.file, RIGHT).expect("written");
+        copy.saved(ExitCode::Resolved).expect("the second save is written");
+        assert_eq!(
+            fixture.held_in(&fixture.latest(&merge), "a.txt"),
+            vcs_jj::testing::Held::File(RIGHT.to_vec())
+        );
+    }
+
+    #[test]
     fn the_working_copys_conflict_has_no_preview() {
         let fixture = jj_on_disk(LEFT, RIGHT);
         let loaded = load(fixture.root().as_std_path(), Path::new("a.txt")).expect("it loads");

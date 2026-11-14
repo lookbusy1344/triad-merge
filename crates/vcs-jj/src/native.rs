@@ -13,6 +13,7 @@ use jj_lib::commit::Commit;
 use jj_lib::conflict_labels::ConflictLabels;
 use jj_lib::conflicts::{resolve_file_executable, update_from_content};
 use jj_lib::merge::Merge;
+use jj_lib::merged_tree::MergedTree;
 use jj_lib::merged_tree_builder::MergedTreeBuilder;
 use jj_lib::object_id::ObjectId as _;
 use jj_lib::repo::{MutableRepo, ReadonlyRepo, Repo};
@@ -87,6 +88,14 @@ pub struct Rewrite {
     pub rewritten: Vec<CommitEffect>,
     /// The rewrite is written: false on a dry run.
     pub written: bool,
+    /// The target's commit once the rewrite is done: the commit a later write into the
+    /// change holds its conflict against ([`JjRepository::write_conflict_since`]). The
+    /// target itself when the rewrite changed nothing. None on a dry run, and when the
+    /// rewrite abandoned the target.
+    pub latest: Option<vcs::CommitId>,
+    /// The operation is written but the working copy could not be checked out to it:
+    /// `jj workspace update-stale` updates it.
+    pub stale: bool,
 }
 
 /// One rewritten commit's conflicted paths before and after a rewrite.
@@ -219,16 +228,40 @@ impl JjRepository {
         marker_length: usize,
         dry_run: bool,
     ) -> Result<Rewrite, VcsError> {
+        self.write_conflict_since(id, id, path, content, marker_length, dry_run)
+    }
+
+    /// Write `content` as `path` into the change of commit `read`, as
+    /// [`JjRepository::write_conflict`] does, after an earlier write left `held`: the
+    /// markers parse against the conflict in `read`, and the change's visible commit must
+    /// hold at `path` what `held` holds there. `held` is the [`Rewrite::latest`] of the
+    /// earlier write, or `read` before any.
+    ///
+    /// # Errors
+    ///
+    /// As for [`JjRepository::write_conflict`], with [`JjError::ConflictChanged`] when the
+    /// change's visible commit holds another value at `path` than `held`.
+    pub fn write_conflict_since(
+        &mut self,
+        read: &vcs::CommitId,
+        held: &vcs::CommitId,
+        path: &Utf8Path,
+        content: &[u8],
+        marker_length: usize,
+        dry_run: bool,
+    ) -> Result<Rewrite, VcsError> {
         let repo_path = RepoPathBuf::from_relative_path(path)
             .map_err(|_| VcsError::OutsideRepository(path.to_owned()))?;
-        let named = self.commit_by_id(id)?;
+        let named = self.commit_by_id(read)?;
+        let held = self.commit_by_id(held)?;
         let revsets = self.revsets()?;
-        self.check_mutable(std::slice::from_ref(&named), &revsets)?;
+        self.check_mutable(std::slice::from_ref(&held), &revsets)?;
         self.rewrite(&revsets, dry_run, |this, repo| {
-            let commit = current(repo, &named)?;
-            let value = this.held_conflict(&named, &commit, &repo_path, path)?;
+            let commit = current(repo, &held)?;
+            let value = this.held_conflict(&named, &held, &commit, &repo_path, path)?;
             let new_value = parse_back(repo, &repo_path, &value, content, marker_length)?;
-            let mut builder = MergedTreeBuilder::new(commit.tree());
+            let mut builder =
+                MergedTreeBuilder::new(widened(commit.tree(), &named.tree(), &new_value));
             builder
                 .set_or_remove_merge(repo_path.clone(), new_value)
                 .map_err(backend("writing the resolved path"))?;
@@ -259,18 +292,20 @@ impl JjRepository {
         })
     }
 
-    /// The conflict at `path` in `current`, the visible commit of `read`'s change, when it
-    /// is the conflict triad read from `read`, as jj simplifies both, with the executable
-    /// bit a resolved file would take.
+    /// The conflict at `path` in `read`, when `current`, the visible commit of the change,
+    /// holds there what `held` holds: the same value as jj simplifies both, with the
+    /// executable bit a resolved file would take. `held` is `read` before any write by
+    /// triad, else the commit triad's last write left.
     ///
     /// # Errors
     ///
     /// [`VcsError::NotConflicted`] when `read` holds no conflict at `path`, and
     /// [`VcsError::Backend`] holding [`JjError::ConflictChanged`] when `current` holds
-    /// another value there.
+    /// another value there than `held`.
     pub(crate) fn held_conflict(
         &self,
         read: &Commit,
+        held: &Commit,
         current: &Commit,
         repo_path: &RepoPath,
         path: &Utf8Path,
@@ -286,21 +321,24 @@ impl JjRepository {
         if was.is_resolved() {
             return Err(VcsError::NotConflicted { path: path.to_owned(), rev: read.id().hex() });
         }
+        let expected = value_in(held)?;
         let now = value_in(current)?;
         // The simplified terms, and the bit a resolved file takes from every term: a term
         // that cancels by content still counts toward it.
-        let held = |value: &MergedTreeValue, commit: &Commit| {
+        let key = |value: &MergedTreeValue, commit: &Commit| {
             let bit = value.to_executable_merge().map(|bits| resolve_file_executable(&bits));
             (simplified(value, commit.tree().labels()).0, bit)
         };
-        if held(&was, read) != held(&now, current) {
+        if key(&expected, held) != key(&now, current) {
             let change = self.change_info(current)?;
             return Err(backend("writing into the commit")(JjError::ConflictChanged {
                 path: path.to_owned(),
                 change: change.id(vcs::IdKind::Change).to_owned(),
             }));
         }
-        Ok(now)
+        // Before triad writes, the change's own terms, as `jj resolve -r` reads them. After,
+        // the terms triad read, which its markers follow.
+        Ok(if read.id() == held.id() { now } else { was })
     }
 
     /// Refuse a write to any of `commits` that jj's `immutable()` holds, with the user's
@@ -416,7 +454,10 @@ impl JjRepository {
         } else {
             std::sync::Arc::clone(&repo)
         };
-        let (resolved, sides) = match successor(&after, &target)? {
+        let now = successor(&after, &target)?;
+        let latest =
+            now.as_ref().filter(|_| !dry_run).map(|now| vcs::CommitId::new(now.id().hex()));
+        let (resolved, sides) = match now {
             Some(now) => {
                 let sides = path
                     .map(|path| {
@@ -444,17 +485,23 @@ impl JjRepository {
                 Ok(CommitEffect { change: self.change_info(&commit)?, before, after })
             })
             .collect::<Result<Vec<_>, VcsError>>()?;
+        let report = |stale| Rewrite { target, resolved, sides, rewritten, written, latest, stale };
         if !written {
-            return Ok(Rewrite { target, resolved, sides, rewritten, written });
+            return Ok(report(false));
         }
-        if let Some(new_wc) = &new_wc {
+        // The operation is published: a failed checkout leaves the rewrite in place, and
+        // the working copy stale until `jj workspace update-stale`.
+        let stale = new_wc.as_ref().is_some_and(|new_wc| {
             workspace
                 .check_out(after.op_id().clone(), Some(&old_wc.tree()), new_wc)
                 .block_on()
-                .map_err(backend("checking out the working copy"))?;
-        }
+                .inspect_err(|error| {
+                    tracing::warn!(%error, "the rewrite is written; the working copy is stale");
+                })
+                .is_err()
+        });
         self.repo = after;
-        Ok(Rewrite { target, resolved, sides, rewritten, written })
+        Ok(report(stale))
     }
 }
 
@@ -486,6 +533,20 @@ pub(crate) fn current(repo: &dyn Repo, named: &Commit) -> Result<Commit, VcsErro
         [id] => read(id),
         [] => Err(VcsError::UnknownRevision(change())),
         _ => Err(VcsError::AmbiguousRevision(change())),
+    }
+}
+
+/// `tree`, with as many sides as `value` when `tree` is resolved and `value` a conflict:
+/// each side and base the same tree, labelled as `read`, the tree the conflict came from.
+/// A save that brings back the conflict an earlier save resolved writes into it.
+fn widened(tree: MergedTree, read: &MergedTree, value: &MergedTreeValue) -> MergedTree {
+    match tree.tree_ids().as_resolved() {
+        Some(id) if !value.is_resolved() => MergedTree::new(
+            std::sync::Arc::clone(tree.store()),
+            Merge::repeated(id.clone(), value.num_sides()),
+            read.labels().clone(),
+        ),
+        _ => tree,
     }
 }
 

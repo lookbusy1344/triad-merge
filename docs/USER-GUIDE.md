@@ -182,7 +182,7 @@ resolved src/lib.rs in xyz
 
 In the window, Save & Exit first works out what the save would do, changing nothing. When it changes the conflicts of any descendant, it asks first, and lists each such descendant as above: Save writes, Keep Editing writes nothing.
 
-jj refuses a write to an immutable commit, and so does triad, with your `revset-aliases`. A save is also refused when the conflict in the commit changed after triad read it, for example by a `jj rebase` while the window was open; nothing is written, and you open it again.
+jj refuses a write to an immutable commit, and so does triad, with your `revset-aliases`. A save is also refused when the conflict in the commit changed after triad read it, or after triad's last save, for example by a `jj rebase` while the window was open; nothing is written, and you open it again. If the working copy cannot be updated after a write, the write stands and triad tells you to run `jj workspace update-stale`.
 
 ### Absorb working-copy edits into the commits that wrote the lines (jj-enabled)
 

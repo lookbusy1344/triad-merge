@@ -68,8 +68,6 @@ In order. Each is one or more commits.
 | The absorb oracle's generator builds text files only: no renames, executable bits, symlinks, conflicted inputs or immutable commits | — | §I5 |
 | jj-cli's config defaults other than the revset aliases: none checked for whether triad depends on one | — | §I5 |
 | Absorb: split one hunk between commits | Part H's line selection (§H6) | §I4 |
-| `write_conflict` checks the conflict against the commit `InCommit` read, never the commit a save wrote: a second write after one that kept markers is refused as `ConflictChanged`. Every save ends the session today, so only Try Again after a failed record reaches it; a plain Save would. `Rewrite` returns the new commit and `InCommit` takes it. First a test: two writes into one commit, the first with markers | — | §I2 |
-| `rewrite` publishes the operation before `Workspace::check_out`: a checkout that fails returns an error though the commit is rewritten, and Try Again meets `ConflictChanged` or `NotConflicted`. Report the save as written with a stale working copy, naming `jj workspace update-stale` | — | §I1 |
 | The stack, history and absorb windows checked on screen: layout, keys, focus and the accessibility tree; their tests run headless only | — | §I2, §I3, §I4 |
 
 ## 4. Risks

@@ -487,3 +487,188 @@ fn each_copy_of_a_divergent_descendant_reports_its_own_conflicts() {
     let a = || vec!["a.txt".to_owned()];
     assert_eq!(found, [("child", a(), vec![]), ("child", a(), a()), ("working copy", a(), vec![])]);
 }
+
+/// `MARKERS` with `from` replaced by `to` in one side.
+fn markers_with(from: &str, to: &str) -> Vec<u8> {
+    let markers = String::from_utf8(MARKERS.to_vec()).expect("UTF-8");
+    let edited = markers.replacen(from, to, 1);
+    assert_ne!(edited, markers, "{from:?} is in the markers");
+    edited.into_bytes()
+}
+
+/// The sides of the conflict at `a.txt` in `commit`.
+fn sides_in(fixture: &Fixture, commit: &Committed) -> Vec<vcs::TermContent> {
+    open(fixture)
+        .conflict_at(&id(commit), a_txt())
+        .expect("the conflict reads")
+        .expect("a.txt is conflicted")
+        .sides
+        .into_iter()
+        .map(|side| side.content)
+        .collect()
+}
+
+fn file(bytes: &[u8]) -> vcs::TermContent {
+    vcs::TermContent::File { bytes: bytes.to_vec(), executable: false }
+}
+
+#[test]
+fn a_write_names_the_commit_it_wrote_and_a_dry_run_none() {
+    let Stack { fixture, merge, .. } = stack(Fixture::new());
+    let dry = open(&fixture)
+        .write_conflict(&id(&merge), a_txt(), MERGED, MARKER_LENGTH, true)
+        .expect("the dry run runs");
+    assert_eq!(dry.latest, None);
+    let unchanged = open(&fixture)
+        .write_conflict(&id(&merge), a_txt(), MARKERS, MARKER_LENGTH, false)
+        .expect("the markers are written");
+    assert_eq!(unchanged.latest, Some(id(&merge)), "a write that changes nothing keeps the commit");
+    let rewrite = open(&fixture)
+        .write_conflict(&id(&merge), a_txt(), MERGED, MARKER_LENGTH, false)
+        .expect("the resolution is written");
+    let latest = fixture.latest(&merge);
+    assert_ne!(latest.commit, merge.commit);
+    assert_eq!(rewrite.latest, Some(id(&latest)));
+}
+
+#[test]
+fn a_second_write_after_one_that_kept_markers_takes_the_save() {
+    for (Stack { fixture, merge, .. }, store) in both_stores() {
+        let first = open(&fixture)
+            .write_conflict(
+                &id(&merge),
+                a_txt(),
+                &markers_with("left\n", "LEFT\n"),
+                MARKER_LENGTH,
+                false,
+            )
+            .expect("the first save is written");
+        let held = first.latest.expect("the first save names its commit");
+        let second = open(&fixture)
+            .write_conflict_since(&id(&merge), &held, a_txt(), MERGED, MARKER_LENGTH, false)
+            .expect("the second save is written");
+        assert!(second.written && second.resolved, "{store}: {second:?}");
+        let latest = fixture.latest(&merge);
+        assert_eq!(second.latest, Some(id(&latest)), "{store}");
+        assert_eq!(fixture.held_in(&latest, "a.txt"), Held::File(MERGED.to_vec()), "{store}");
+    }
+}
+
+#[test]
+fn a_second_write_parses_its_markers_against_the_conflict_triad_read() {
+    let Stack { fixture, merge, .. } = stack(Fixture::new());
+    let first = open(&fixture)
+        .write_conflict(
+            &id(&merge),
+            a_txt(),
+            &markers_with("left\n", "LEFT\n"),
+            MARKER_LENGTH,
+            false,
+        )
+        .expect("the first save is written");
+    let held = first.latest.expect("the first save names its commit");
+    // The whole file again, from the sides triad read: the left edit is undone and the right
+    // one made.
+    open(&fixture)
+        .write_conflict_since(
+            &id(&merge),
+            &held,
+            a_txt(),
+            &markers_with("right\n", "RIGHT\n"),
+            MARKER_LENGTH,
+            false,
+        )
+        .expect("the second save is written");
+    assert_eq!(sides_in(&fixture, &fixture.latest(&merge)), [file(LEFT), file(b"RIGHT\n")]);
+}
+
+#[test]
+fn markers_written_after_a_resolving_save_make_the_path_a_conflict_again() {
+    let Stack { fixture, merge, .. } = stack(Fixture::new());
+    let first = open(&fixture)
+        .write_conflict(&id(&merge), a_txt(), MERGED, MARKER_LENGTH, false)
+        .expect("the resolution is written");
+    let held = first.latest.expect("the first save names its commit");
+    let second = open(&fixture)
+        .write_conflict_since(&id(&merge), &held, a_txt(), MARKERS, MARKER_LENGTH, false)
+        .expect("the markers are written");
+    assert!(second.written && !second.resolved, "{second:?}");
+    assert_eq!(second.sides, Some(2));
+    assert_eq!(sides_in(&fixture, &fixture.latest(&merge)), [file(LEFT), file(RIGHT)]);
+}
+
+#[test]
+fn a_change_by_another_writer_after_triad_s_save_is_refused() {
+    let Stack { fixture, merge, .. } = stack(Fixture::new());
+    let first = open(&fixture)
+        .write_conflict(
+            &id(&merge),
+            a_txt(),
+            &markers_with("left\n", "LEFT\n"),
+            MARKER_LENGTH,
+            false,
+        )
+        .expect("the first save is written");
+    let held = first.latest.expect("the first save names its commit");
+    // Another writer edits the right side of the conflict triad's save left.
+    let theirs = String::from_utf8(markers_with("left\n", "LEFT\n"))
+        .expect("UTF-8")
+        .replacen("right\n", "THEIRS\n", 1);
+    open(&fixture)
+        .write_conflict(
+            &id(&fixture.latest(&merge)),
+            a_txt(),
+            theirs.as_bytes(),
+            MARKER_LENGTH,
+            false,
+        )
+        .expect("the other writer's edit is written");
+    let operations = fixture.operation_count();
+    changed_refusal(open(&fixture).write_conflict_since(
+        &id(&merge),
+        &held,
+        a_txt(),
+        MERGED,
+        MARKER_LENGTH,
+        false,
+    ));
+    assert_eq!(sides_in(&fixture, &fixture.latest(&merge)), [file(b"LEFT\n"), file(b"THEIRS\n")]);
+    assert_eq!(fixture.operation_count(), operations);
+}
+
+/// A checkout that fails after the operation is written leaves the commit rewritten: the
+/// write reports it written, with a stale working copy, and jj then asks for
+/// `jj workspace update-stale`. Unix only: a read-only directory blocks the checkout.
+#[cfg(unix)]
+#[test]
+fn a_checkout_that_fails_after_the_write_reports_it_written_with_a_stale_working_copy() {
+    use std::os::unix::fs::PermissionsExt as _;
+    const READ_ONLY_DIR: u32 = 0o555;
+    const WRITABLE_DIR: u32 = 0o755;
+
+    let Stack { fixture, merge, .. } = stack(Fixture::new());
+    let root = fixture.root().as_std_path().to_owned();
+    let set_mode = |mode| {
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(mode)).expect("chmod");
+    };
+    set_mode(READ_ONLY_DIR);
+    let result = open(&fixture).write_conflict(&id(&merge), a_txt(), MERGED, MARKER_LENGTH, false);
+    set_mode(WRITABLE_DIR);
+    let rewrite = result.expect("the write is reported");
+    assert!(rewrite.written && rewrite.resolved && rewrite.stale, "{rewrite:?}");
+    let latest = fixture.latest(&merge);
+    assert_eq!(rewrite.latest, Some(id(&latest)));
+    assert_eq!(fixture.held_in(&latest, "a.txt"), Held::File(MERGED.to_vec()));
+    let error =
+        vcs::Repository::snapshot(&mut open(&fixture)).expect_err("the working copy is stale");
+    assert!(matches!(&error, VcsError::StaleWorkspace(_)), "{error:?}");
+}
+
+#[test]
+fn a_write_that_checks_out_reports_a_fresh_working_copy() {
+    let Stack { fixture, merge, .. } = stack(Fixture::new());
+    let rewrite = open(&fixture)
+        .write_conflict(&id(&merge), a_txt(), MERGED, MARKER_LENGTH, false)
+        .expect("the resolution is written");
+    assert!(rewrite.written && !rewrite.stale, "{rewrite:?}");
+}

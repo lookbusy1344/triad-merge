@@ -85,7 +85,15 @@ pub fn rewrite_report(path: &Utf8Path, rewrite: &Rewrite, dry_run: bool) -> Stri
     };
     let mut text = heading;
     descendant_lines(&mut text, &rewrite.rewritten);
+    stale_line(&mut text, rewrite);
     text
+}
+
+/// What a stale working copy after a written rewrite needs; nothing when it is fresh.
+fn stale_line(text: &mut String, rewrite: &Rewrite) {
+    if rewrite.stale {
+        line(text, format_args!("the working copy is stale; run jj workspace update-stale"));
+    }
 }
 
 /// One line per descendant: its change and its conflicted paths before and after.
@@ -195,6 +203,7 @@ pub fn absorb_report(
             "hunks": hunks,
             "skipped": skipped,
             "written": absorbed.rewrite.written,
+            "stale": absorbed.rewrite.stale,
         });
         return Ok(format!("{}\n", serde_json::to_string_pretty(&value)?));
     }
@@ -230,6 +239,7 @@ pub fn absorb_report(
             format_args!("absorbed {} hunks into {} commits", moved.len(), commits.len()),
         );
         descendant_lines(&mut text, &absorbed.rewrite.rewritten);
+        stale_line(&mut text, &absorbed.rewrite);
     }
     Ok(text)
 }
@@ -326,6 +336,8 @@ mod tests {
                 after: vec![],
             }],
             written,
+            latest: None,
+            stale: false,
         }
     }
 
@@ -439,5 +451,38 @@ mod tests {
             rewrite_report(path, &rewrite(false, false), false).lines().next(),
             Some("a.txt in kkkk is unchanged")
         );
+    }
+
+    #[test]
+    fn a_rewrite_with_a_stale_working_copy_says_how_to_update_it() {
+        let stale = Rewrite { stale: true, ..rewrite(true, true) };
+        assert_eq!(
+            rewrite_report(Utf8Path::new("a.txt"), &stale, false),
+            "resolved a.txt in kkkk\n  llll: a.txt, b.txt -> none\n\
+             the working copy is stale; run jj workspace update-stale\n"
+        );
+    }
+
+    #[test]
+    fn an_absorb_with_a_stale_working_copy_says_how_to_update_it() {
+        let stale =
+            Absorbed { rewrite: Rewrite { stale: true, ..rewrite(true, true) }, ..absorbed() };
+        let applied = absorb_report(&stale, true, false).expect("a report");
+        assert_eq!(
+            applied.lines().skip(6).collect::<Vec<_>>(),
+            [
+                "absorbed 2 hunks into 1 commits",
+                "  llll: a.txt, b.txt -> none",
+                "the working copy is stale; run jj workspace update-stale"
+            ]
+        );
+        let value: serde_json::Value =
+            serde_json::from_str(&absorb_report(&stale, true, true).expect("a report"))
+                .expect("JSON");
+        assert_eq!(value["stale"], true);
+        let fresh: serde_json::Value =
+            serde_json::from_str(&absorb_report(&absorbed(), true, true).expect("a report"))
+                .expect("JSON");
+        assert_eq!(fresh["stale"], false);
     }
 }

@@ -341,11 +341,16 @@ pub(crate) fn absorb_note(absorbed: &Absorbed) -> String {
     );
     let mut changed =
         absorbed.rewrite.rewritten.iter().filter(|effect| effect.before != effect.after).peekable();
-    if changed.peek().is_none() {
-        return summary;
-    }
-    format!("{summary}\n{}", descendant_effects(changed))
+    let note = if changed.peek().is_none() {
+        summary
+    } else {
+        format!("{summary}\n{}", descendant_effects(changed))
+    };
+    if absorbed.rewrite.stale { format!("{note}\n{STALE_WORKING_COPY}") } else { note }
 }
+
+/// A written rewrite whose working copy could not be checked out.
+const STALE_WORKING_COPY: &str = "The working copy is stale: run jj workspace update-stale.";
 
 /// A path absorb cannot split, and why.
 pub(crate) fn absorb_skipped(path: &str, reason: &str) -> String {
@@ -843,6 +848,8 @@ mod tests {
                 resolved: true,
                 sides: None,
                 rewritten: Vec::new(),
+                latest: None,
+                stale: false,
             },
         };
         let note = |hunks| absorb_note(&absorbed(hunks));
@@ -892,9 +899,35 @@ mod tests {
                     effect("kkkk", &[], &["a.txt"]),
                     effect("mmmm", &["b.txt"], &["b.txt"]),
                 ],
+                latest: None,
+                stale: false,
             },
         };
         assert_eq!(absorb_note(&absorbed), "Absorbed 1 hunk into 1 commit.\nkkkk: none -> a.txt");
+    }
+
+    #[test]
+    fn the_apply_note_says_how_to_update_a_stale_working_copy() {
+        let absorbed = Absorbed {
+            operation: String::new(),
+            hunks: vec![hunk(1, Goes::Into(change("kkkk", None)))],
+            destinations: Vec::new(),
+            skipped: Vec::new(),
+            rewrite: Rewrite {
+                target: change("wwww", None),
+                written: true,
+                resolved: true,
+                sides: None,
+                rewritten: Vec::new(),
+                latest: None,
+                stale: true,
+            },
+        };
+        assert_eq!(
+            absorb_note(&absorbed),
+            "Absorbed 1 hunk into 1 commit.\n\
+             The working copy is stale: run jj workspace update-stale."
+        );
     }
 
     fn version(state: VersionState) -> FileVersion {
@@ -1156,6 +1189,8 @@ mod tests {
             sides: None,
             rewritten,
             written: false,
+            latest: None,
+            stale: false,
         }
     }
 
