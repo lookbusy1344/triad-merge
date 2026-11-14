@@ -11,7 +11,7 @@ use jj_lib::repo_path::RepoPathBuf;
 use pollster::FutureExt as _;
 use vcs::{IdKind, VcsError};
 
-use crate::native::{Mutated, Rewrite, pad, simplified, visible};
+use crate::native::{Mutated, Rewrite, kept_terms, visible};
 use crate::{JjError, JjRepository, backend};
 
 /// Terms per side in jj's order: a side, then the base after it.
@@ -67,17 +67,19 @@ impl JjRepository {
         self.rewrite(&revsets, dry_run, |this, repo| {
             let commit = visible(repo, &change_id)?;
             let value = this.held_conflict(&named, &commit, &repo_path, path)?;
-            // Sides count as jj shows them: the pair indexes the simplified conflict.
-            let (value, _) = simplified(&value, commit.tree().labels());
+            // Sides count as jj shows them: the pair indexes the simplified conflict, whose
+            // terms sit at `kept`'s positions in the tree's value.
+            let kept = kept_terms(&value);
             let refused = |error| backend("reducing a conflict")(error);
-            check_pair(path, pair, value.num_sides()).map_err(refused)?;
+            check_pair(path, pair, kept.num_sides()).map_err(refused)?;
             let executable = value
                 .to_executable_merge()
                 .ok_or_else(|| refused(JjError::NotAFileConflict(path.to_owned())))?;
             let first = TERMS_PER_SIDE * (pair - 1);
-            let range = first..=first + TERMS_PER_SIDE;
+            let [side, base, next] =
+                [first, first + 1, first + TERMS_PER_SIDE].map(|index| kept.as_slice()[index]);
             let bits = Merge::from_vec(
-                executable.iter().skip(first).take(TERMS_PER_SIDE + 1).copied().collect::<Vec<_>>(),
+                [side, base, next].map(|index| executable.as_slice()[index]).to_vec(),
             );
             let id = repo
                 .store()
@@ -89,12 +91,16 @@ impl JjRepository {
                 executable: resolve_file_executable(&bits).unwrap_or_default(),
                 copy_id: CopyId::placeholder(),
             });
+            // The merged file takes side N's place and side N + 1 takes base N's value, which
+            // cancels it: each term stays where the tree's labels name it.
             let mut terms: Vec<Option<TreeValue>> = value.iter().cloned().collect();
-            terms.splice(range, [merged]);
-            let reduced = Merge::from_vec(terms).simplify();
-            let reduced = match reduced.into_resolved() {
+            let cancelling = terms[base].clone();
+            terms[next] = cancelling;
+            terms[side] = merged;
+            let reduced = Merge::from_vec(terms);
+            let reduced = match reduced.simplify().into_resolved() {
                 Ok(resolved) => Merge::resolved(resolved),
-                Err(conflict) => pad(conflict, commit.tree().tree_ids().num_sides()),
+                Err(_) => reduced,
             };
             let mut builder = MergedTreeBuilder::new(commit.tree());
             builder

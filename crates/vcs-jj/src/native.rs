@@ -515,14 +515,7 @@ pub(crate) fn simplified(
     value: &MergedTreeValue,
     labels: &ConflictLabels,
 ) -> (MergedTreeValue, ConflictLabels) {
-    let key = |term: &Option<TreeValue>| {
-        term.as_ref().map(|term| match term {
-            TreeValue::File { id, .. } => Ok(id.clone()),
-            other => Err(other.clone()),
-        })
-    };
-    let keys: Vec<_> = value.iter().map(key).collect();
-    let kept = Merge::from_vec((0..keys.len()).collect::<Vec<usize>>()).simplify_by(|&i| &keys[i]);
+    let kept = kept_terms(value);
     let terms = value.as_slice();
     let names = labels.as_slice();
     let labels = if names.is_empty() {
@@ -531,6 +524,19 @@ pub(crate) fn simplified(
         ConflictLabels::from_vec(kept.iter().map(|&i| names[i].clone()).collect())
     };
     (kept.map(|&i| terms[i].clone()), labels)
+}
+
+/// The positions in `value` of the terms jj keeps when it simplifies the conflict by file
+/// contents, in jj's order: side, base, side, … A tree's labels index the same positions.
+pub(crate) fn kept_terms(value: &MergedTreeValue) -> Merge<usize> {
+    let key = |term: &Option<TreeValue>| {
+        term.as_ref().map(|term| match term {
+            TreeValue::File { id, .. } => Ok(id.clone()),
+            other => Err(other.clone()),
+        })
+    };
+    let keys: Vec<_> = value.iter().map(key).collect();
+    Merge::from_vec((0..keys.len()).collect::<Vec<usize>>()).simplify_by(|&i| &keys[i])
 }
 
 /// The conflicted paths of `commit`'s tree, in path order.

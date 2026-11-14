@@ -220,3 +220,43 @@ fn markers_of_jj_s_sides_save_back_into_a_tree_of_more() {
     assert_eq!(bytes(&b.sides), [b"ONE\n".to_vec(), TWO.to_vec()]);
     assert_eq!(terms(&fixture, &merge).0.len(), 3, "a.txt keeps its three sides");
 }
+
+/// Each side's label of `a.txt` in `commit`'s change now, by the commit description it ends
+/// with, and each base's.
+fn label_names(fixture: &Fixture, commit: &Committed) -> (Vec<String>, Vec<String>) {
+    let latest = fixture.latest(commit);
+    let conflict =
+        open(fixture).conflict_at(&id(&latest), a_txt()).expect("reads").expect("a conflict");
+    let names = |terms: &[ConflictTerm]| {
+        terms
+            .iter()
+            .map(|term| {
+                let label = term.term.label.as_deref().expect("a labelled term");
+                let (_, quoted) = label.split_once('"').expect("a description in quotes");
+                quoted.trim_end_matches('"').to_owned()
+            })
+            .collect()
+    };
+    (names(&conflict.sides), names(&conflict.bases))
+}
+
+#[test]
+fn the_merged_side_takes_side_n_s_label_and_every_other_term_keeps_its_own() {
+    let owned = |names: &[&str]| names.iter().map(|&n| n.to_owned()).collect::<Vec<_>>();
+    let cases: [(usize, &[&str]); 2] = [(1, &["one", "three"]), (2, &["one", "two"])];
+    for (pair, sides) in cases {
+        let fixture = Fixture::new();
+        let merge = three_sides(&fixture);
+        open(&fixture).reduce_pair(&id(&merge), a_txt(), pair, MERGED, false).expect("reduces");
+        assert_eq!(label_names(&fixture, &merge), (owned(sides), owned(&["base"])), "pair {pair}");
+    }
+    // In a tree of four sides, a.txt's three are `one`, `three` and `four`.
+    let cases: [(usize, &[&str]); 2] = [(1, &["one", "four"]), (2, &["one", "three"])];
+    for (pair, sides) in cases {
+        let fixture = Fixture::new();
+        let merge = four_parents(&fixture);
+        assert_eq!(label_names(&fixture, &merge).0, owned(&["one", "three", "four"]));
+        open(&fixture).reduce_pair(&id(&merge), a_txt(), pair, MERGED, false).expect("reduces");
+        assert_eq!(label_names(&fixture, &merge), (owned(sides), owned(&["base"])), "pair {pair}");
+    }
+}
