@@ -519,7 +519,7 @@ impl DiffWindow {
         cx: &mut Context<Self>,
     ) -> Self {
         let [left, right] = &files;
-        let mut doc = DiffDocument::new(&left.text, &right.text, settings.options);
+        let mut doc = DiffDocument::new(&left.text, &right.text, settings.options.clone());
         if let Some(lookup) = settings.origins.clone() {
             // Texts share their content, so the copies are O(1).
             Self::load_origins(lookup, [left.text.clone(), right.text.clone()], window, cx);

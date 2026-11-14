@@ -36,6 +36,8 @@ pub struct Status {
     pub line_endings: LineEndingRule,
     /// Whether letter case takes part in comparison (spec §4.2).
     pub case: CaseRule,
+    /// How many `ignore-pattern` patterns lines drop before comparison (spec §4.2).
+    pub patterns: usize,
     /// Whose merge this is, and its rules (spec §4.3).
     pub semantics: Semantics,
     pub same_change: SameChange,
@@ -52,6 +54,8 @@ pub enum Divergence {
     Whitespace,
     /// Case ignored under either semantics: neither git nor jj folds case.
     Case,
+    /// `ignore-pattern` under either semantics: neither git nor jj cuts text before comparing.
+    Patterns,
     /// `keep` under git's semantics: git resolves a change both sides made.
     SameChangeKept,
     /// The word level under git's semantics: git merges lines only.
@@ -73,6 +77,7 @@ impl Status {
                 Divergence::Whitespace,
             ),
             (self.case == CaseRule::Ignore, Divergence::Case),
+            (self.patterns > 0, Divergence::Patterns),
             (!jj && self.same_change == SameChange::Keep, Divergence::SameChangeKept),
             (!jj && self.hunk_level == HunkLevel::Word, Divergence::WordLevel),
             (self.refine == Refine::Deep, Divergence::DeepRefine),
@@ -107,6 +112,7 @@ pub fn status(doc: &MergeDocument, ending: OutputEnding) -> Status {
         whitespace: doc.options().diff.whitespace,
         line_endings: doc.options().diff.line_endings,
         case: doc.options().diff.case,
+        patterns: doc.options().diff.patterns.len(),
         semantics: doc.options().semantics,
         same_change: doc.options().same_change,
         hunk_level: doc.options().hunk_level,
@@ -238,6 +244,7 @@ mod tests {
     use merge_core::document::{Command, EditBatch, Labels, MergeOptions, TextPatch};
     use merge_core::index::RegionIx;
     use merge_core::merge3::Inputs;
+    use merge_core::pattern::Patterns;
     use merge_core::text::Text;
 
     use super::*;
@@ -314,7 +321,11 @@ mod tests {
     fn whitespace_modes_diverge_from_jj_only() {
         for whitespace in [Whitespace::Trailing, Whitespace::Amount, Whitespace::All] {
             let diff = DiffOptions { whitespace, ..DiffOptions::default() };
-            let jj = MergeOptions { semantics: Semantics::Jj, diff, ..MergeOptions::default() };
+            let jj = MergeOptions {
+                semantics: Semantics::Jj,
+                diff: diff.clone(),
+                ..MergeOptions::default()
+            };
             assert_eq!(mode_of(jj).2, [Divergence::Whitespace], "{whitespace:?}");
             let git = MergeOptions { diff, ..MergeOptions::default() };
             assert_eq!(mode_of(git).2, [], "git ignores whitespace by choice: {whitespace:?}");
@@ -324,7 +335,11 @@ mod tests {
     #[test]
     fn ignoring_line_endings_diverges_from_jj_only() {
         let diff = DiffOptions { line_endings: LineEndingRule::Ignore, ..DiffOptions::default() };
-        let jj = MergeOptions { semantics: Semantics::Jj, diff, ..MergeOptions::default() };
+        let jj = MergeOptions {
+            semantics: Semantics::Jj,
+            diff: diff.clone(),
+            ..MergeOptions::default()
+        };
         assert_eq!(mode_of(jj).2, [Divergence::Whitespace]);
         let git = MergeOptions { diff, ..MergeOptions::default() };
         assert_eq!(mode_of(git).2, [], "git merge takes -Xignore-cr-at-eol");
@@ -333,13 +348,34 @@ mod tests {
     #[test]
     fn ignoring_case_diverges_from_both() {
         let diff = DiffOptions { case: CaseRule::Ignore, ..DiffOptions::default() };
-        let git = MergeOptions { diff, ..MergeOptions::default() };
+        let git = MergeOptions { diff: diff.clone(), ..MergeOptions::default() };
         assert_eq!(mode_of(git).2, [Divergence::Case], "git merge-file has no case option");
-        let jj = MergeOptions { semantics: Semantics::Jj, diff, ..MergeOptions::default() };
-        assert_eq!(mode_of(jj).2, [Divergence::Case]);
+        let jj = MergeOptions {
+            semantics: Semantics::Jj,
+            diff: diff.clone(),
+            ..MergeOptions::default()
+        };
+        assert_eq!(mode_of(jj.clone()).2, [Divergence::Case]);
         let spaces = DiffOptions { whitespace: Whitespace::All, ..diff };
         let jj = MergeOptions { diff: spaces, ..jj };
         assert_eq!(mode_of(jj).2, [Divergence::Whitespace, Divergence::Case]);
+    }
+
+    #[test]
+    fn ignore_patterns_diverge_from_both_and_are_counted() {
+        let diff = DiffOptions {
+            patterns: Patterns::new(["//.*", r"\d"]).expect("valid"),
+            ..DiffOptions::default()
+        };
+        let git = MergeOptions { diff: diff.clone(), ..MergeOptions::default() };
+        assert_eq!(mode_of(git.clone()).2, [Divergence::Patterns]);
+        let jj = MergeOptions { semantics: Semantics::Jj, ..git.clone() };
+        assert_eq!(mode_of(jj).2, [Divergence::Patterns]);
+        let s = status(&with(b"a\n", b"a\n", b"a\n", git, Labels::none()));
+        assert_eq!(s.patterns, 2);
+        let cased = DiffOptions { case: CaseRule::Ignore, ..diff };
+        let both = MergeOptions { diff: cased, ..MergeOptions::default() };
+        assert_eq!(mode_of(both).2, [Divergence::Case, Divergence::Patterns]);
     }
 
     #[test]
@@ -376,11 +412,11 @@ mod tests {
     #[test]
     fn syntax_boundaries_diverge_only_with_a_refinement_they_act_on() {
         let on = MergeOptions { syntax_boundaries: true, ..MergeOptions::default() };
-        assert_eq!(mode_of(on).2, [], "nothing for them to act on");
-        let deep = MergeOptions { refine: Refine::Deep, ..on };
+        assert_eq!(mode_of(on.clone()).2, [], "nothing for them to act on");
+        let deep = MergeOptions { refine: Refine::Deep, ..on.clone() };
         assert_eq!(mode_of(deep).2, [Divergence::DeepRefine, Divergence::SyntaxBoundaries]);
         let word = MergeOptions { semantics: Semantics::Jj, hunk_level: HunkLevel::Word, ..on };
-        assert_eq!(mode_of(word).2, [Divergence::SyntaxBoundaries], "jj word merges");
+        assert_eq!(mode_of(word.clone()).2, [Divergence::SyntaxBoundaries], "jj word merges");
         let off = MergeOptions { syntax_boundaries: false, ..word };
         assert_eq!(mode_of(off).2, []);
     }

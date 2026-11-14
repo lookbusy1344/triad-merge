@@ -300,7 +300,7 @@ fn batch_form(
             Ok(report(stdout, &text, code))
         }
         Batch::DiffInspect { left, right, diff, json } => {
-            let (text, code) = inspect::diff_inspect(&left, &right, diff, json)?;
+            let (text, code) = inspect::diff_inspect(&left, &right, &diff, json)?;
             Ok(report(stdout, &text, code))
         }
         Batch::Install { vcs, config } => {
@@ -471,7 +471,7 @@ fn resolve_in_commit(
     stdout: &mut impl Write,
 ) -> Result<ExitCode, CliError> {
     let loaded = resolve::load_at_commit(cwd, rev, path, Some(jj_config::snapshot_config(env)))?;
-    let mut opened = loaded.open(resolve.options).map_err(SessionError::from)?;
+    let mut opened = loaded.open(resolve.options.clone()).map_err(SessionError::from)?;
     if let Some(commands) = &resolve.commands {
         replay::apply_file(&mut opened.doc, commands)?;
     }
@@ -517,7 +517,7 @@ fn resolve_headless(
             }
             loaded => loaded?,
         };
-        let mut opened = loaded.open(resolve.options).map_err(SessionError::from)?;
+        let mut opened = loaded.open(resolve.options.clone()).map_err(SessionError::from)?;
         if let Some(path) = &resolve.commands {
             replay::apply_file(&mut opened.doc, path)?;
         }
@@ -591,7 +591,8 @@ pub fn headless(
     commands: Option<&Path>,
     ending: OutputEnding,
 ) -> Result<ExitCode, CliError> {
-    let mut document = load(&merge.files, merge.options, merge.labels.clone(), merge.language())?;
+    let mut document =
+        load(&merge.files, merge.options.clone(), merge.labels.clone(), merge.language())?;
     if let Some(path) = commands {
         replay::apply_file(&mut document, path)?;
     }

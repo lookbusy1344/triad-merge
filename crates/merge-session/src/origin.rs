@@ -458,7 +458,7 @@ fn is_utf8(input: &Text) -> bool {
 /// `to` shares with `from` takes its origin; inserted and changed lines have none.
 #[must_use]
 pub fn carry(annotation: &Annotation, from: &Text, to: &Text) -> Annotation {
-    let hunks = diff_lines(from, to, DiffOptions::default());
+    let hunks = diff_lines(from, to, &DiffOptions::default());
     // The stretches both texts share: `from`'s lines, and where they start in `to`.
     let ends = hunks
         .iter()

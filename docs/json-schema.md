@@ -74,7 +74,7 @@ Exit code: 0 with no conflicts, 1 with conflicts, 3 on error.
 
 `encodings` has the keys `left` and `right`. Each region has `kind`, `"unchanged"` or `"changed"`, and the ranges `left` and `right`. Either range of a `changed` region may be empty, for a pure insertion or deletion. Identical inputs give one `unchanged` region.
 
-Exit code, as `diff(1)`: 0 if the inputs are equal under the whitespace mode, `diff-ignore-line-endings` and `ignore-case` (spec §4.2), 1 if they differ, 3 on error.
+Exit code, as `diff(1)`: 0 if the inputs are equal under the whitespace mode, `diff-ignore-line-endings`, `ignore-case` and `ignore-pattern` (spec §4.2), 1 if they differ, 3 on error.
 
 ```json
 {

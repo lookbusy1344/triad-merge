@@ -251,7 +251,7 @@ impl StackWindow {
         let rev = listed.id.as_str().to_owned();
         let change = listed.change.id(IdKind::Change).to_owned();
         let path = conflict.path.to_string();
-        let (options, config) = (self.start.options, self.start.jj_config.clone());
+        let (options, config) = (self.start.options.clone(), self.start.jj_config.clone());
         let load_path = PathBuf::from(&path);
         let loaded = cx.background_spawn(async move {
             let loaded =

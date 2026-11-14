@@ -12,6 +12,7 @@ use imara_diff::{Diff, InternedInput};
 use serde::{Deserialize, Serialize};
 
 use crate::histogram;
+use crate::pattern::{self, Patterns};
 use crate::text::Text;
 
 /// Lines with more characters than this get no character-level diff; the view highlights
@@ -58,7 +59,7 @@ pub enum CaseRule {
     Ignore,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct DiffOptions {
     pub algorithm: Algorithm,
     pub whitespace: Whitespace,
@@ -68,26 +69,46 @@ pub struct DiffOptions {
     /// Journals written before the field compared case.
     #[serde(default)]
     pub case: CaseRule,
+    /// Journals written before the field cut no patterns.
+    #[serde(default)]
+    pub patterns: Patterns,
 }
 
 impl DiffOptions {
     /// The rule lines compare by under these options.
     #[must_use]
-    pub fn comparison(self) -> Comparison {
-        Comparison { whitespace: self.whitespace, line_endings: self.line_endings, case: self.case }
+    pub fn comparison(&self) -> Comparison<'_> {
+        Comparison {
+            whitespace: self.whitespace,
+            line_endings: self.line_endings,
+            case: self.case,
+            patterns: &self.patterns,
+        }
     }
 }
 
-/// How two lines compare: by their [`line_key`] under a whitespace mode, a line-ending rule
-/// and a case rule.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Comparison {
+/// How two lines compare: by their [`line_key`] under a whitespace mode, a line-ending rule,
+/// a case rule and the patterns whose matches lines drop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Comparison<'p> {
     pub whitespace: Whitespace,
     pub line_endings: LineEndingRule,
     pub case: CaseRule,
+    pub patterns: &'p Patterns,
 }
 
-impl Comparison {
+impl Default for Comparison<'_> {
+    fn default() -> Self {
+        Self {
+            whitespace: Whitespace::None,
+            line_endings: LineEndingRule::Compare,
+            case: CaseRule::Compare,
+            patterns: &pattern::NONE,
+        }
+    }
+}
+
+impl Comparison<'_> {
     /// Lines compare byte for byte.
     #[must_use]
     pub fn is_exact(self) -> bool {
@@ -95,7 +116,7 @@ impl Comparison {
     }
 }
 
-impl From<Whitespace> for Comparison {
+impl From<Whitespace> for Comparison<'_> {
     fn from(whitespace: Whitespace) -> Self {
         Self { whitespace, ..Self::default() }
     }
@@ -112,13 +133,13 @@ pub struct Hunk {
 /// The changes that turn `before` into `after`, in order, as line ranges. Ambiguous hunks
 /// are placed by the indent heuristic, as in git `diff`.
 #[must_use]
-pub fn diff_lines(before: &Text, after: &Text, opts: DiffOptions) -> Vec<Hunk> {
+pub fn diff_lines(before: &Text, after: &Text, opts: &DiffOptions) -> Vec<Hunk> {
     diff_lines_by(before, after, opts, Sliders::IndentHeuristic)
 }
 
 /// As [`diff_lines`], placing hunks as git `merge-file` does: no indent heuristic, and
 /// git's own histogram algorithm.
-pub(crate) fn diff_lines_for_merge(before: &Text, after: &Text, opts: DiffOptions) -> Vec<Hunk> {
+pub(crate) fn diff_lines_for_merge(before: &Text, after: &Text, opts: &DiffOptions) -> Vec<Hunk> {
     match opts.algorithm {
         Algorithm::Histogram => {
             let input = interned(before, after, opts.comparison());
@@ -137,7 +158,7 @@ pub(crate) fn diff_line_ranges(
     before_lines: Range<usize>,
     after: &Text,
     after_lines: Range<usize>,
-    mode: Comparison,
+    mode: Comparison<'_>,
 ) -> Vec<Hunk> {
     let mut input = InternedInput::default();
     input.update_before(before_lines.map(|n| Key(line_key(before.line(n), mode))));
@@ -152,7 +173,7 @@ enum Sliders {
     Down,
 }
 
-fn diff_lines_by(before: &Text, after: &Text, opts: DiffOptions, sliders: Sliders) -> Vec<Hunk> {
+fn diff_lines_by(before: &Text, after: &Text, opts: &DiffOptions, sliders: Sliders) -> Vec<Hunk> {
     let input = interned(before, after, opts.comparison());
     let mut diff = Diff::compute(opts.algorithm.into(), &input);
     match sliders {
@@ -162,14 +183,14 @@ fn diff_lines_by(before: &Text, after: &Text, opts: DiffOptions, sliders: Slider
     diff.hunks().map(|h| Hunk { before: widen(h.before), after: widen(h.after) }).collect()
 }
 
-fn interned<'a>(before: &'a Text, after: &'a Text, mode: Comparison) -> InternedInput<Key<'a>> {
+fn interned<'a>(before: &'a Text, after: &'a Text, mode: Comparison<'_>) -> InternedInput<Key<'a>> {
     let mut input = InternedInput::default();
     input.update_before(keys(before, mode));
     input.update_after(keys(after, mode));
     input
 }
 
-fn keys(text: &Text, mode: Comparison) -> impl Iterator<Item = Key<'_>> {
+fn keys<'t>(text: &'t Text, mode: Comparison<'_>) -> impl Iterator<Item = Key<'t>> {
     text.lines().map(move |line| Key(line_key(line, mode)))
 }
 
@@ -202,8 +223,11 @@ pub fn intraline_hunks(before: &str, after: &str) -> Option<Vec<Hunk>> {
 
 /// The key a line compares under by `mode`.
 #[must_use]
-pub fn line_key(line: &str, mode: Comparison) -> Cow<'_, str> {
-    let key = spaced_key(line, mode);
+pub fn line_key<'t>(line: &'t str, mode: Comparison<'_>) -> Cow<'t, str> {
+    let key = match cut_patterns(line, mode.patterns) {
+        Cow::Borrowed(line) => spaced_key(line, mode),
+        Cow::Owned(line) => Cow::Owned(spaced_key(&line, mode).into_owned()),
+    };
     match mode.case {
         CaseRule::Compare => key,
         CaseRule::Ignore => fold_case(key),
@@ -219,8 +243,23 @@ fn fold_case(key: Cow<'_, str>) -> Cow<'_, str> {
     }
 }
 
+/// `line` with `patterns`' matches cut from its text; the terminator stays, unseen by them.
+fn cut_patterns<'t>(line: &'t str, patterns: &Patterns) -> Cow<'t, str> {
+    if patterns.is_empty() {
+        return Cow::Borrowed(line);
+    }
+    let body = line.strip_suffix('\n').map_or(line, |l| l.strip_suffix('\r').unwrap_or(l));
+    match patterns.cut(body) {
+        Cow::Borrowed(_) => Cow::Borrowed(line),
+        Cow::Owned(mut cut) => {
+            cut.push_str(&line[body.len()..]);
+            Cow::Owned(cut)
+        }
+    }
+}
+
 /// The key a line compares under by `mode`'s whitespace mode and line-ending rule.
-fn spaced_key(line: &str, mode: Comparison) -> Cow<'_, str> {
+fn spaced_key<'t>(line: &'t str, mode: Comparison<'_>) -> Cow<'t, str> {
     let body = || line.strip_suffix('\n').unwrap_or(line).trim_end_matches(is_blank);
     match (mode.whitespace, mode.line_endings) {
         (Whitespace::None, LineEndingRule::Compare) => Cow::Borrowed(line),
@@ -315,7 +354,7 @@ mod tests {
         diff_lines(
             &text(before),
             &text(after),
-            DiffOptions { algorithm, whitespace, ..DiffOptions::default() },
+            &DiffOptions { algorithm, whitespace, ..DiffOptions::default() },
         )
     }
 
@@ -436,7 +475,7 @@ mod tests {
         let hunks = diff_lines_for_merge(
             &text("{\n  a\n\n}\n  b\n"),
             &text("{\n}\n    c\n{\n  a\n\n}\n  b\n"),
-            DiffOptions::default(),
+            &DiffOptions::default(),
         );
         assert_eq!(hunks, [hunk(1..1, 1..4)]);
     }
@@ -447,7 +486,7 @@ mod tests {
         let hunks = diff_lines_for_merge(
             &text("{\n  a\n\n}\n  b\n"),
             &text("{\n}\n    c\n{\n  a\n\n}\n  b\n"),
-            DiffOptions {
+            &DiffOptions {
                 algorithm: Algorithm::Myers,
                 whitespace: Whitespace::None,
                 ..DiffOptions::default()
@@ -461,7 +500,7 @@ mod tests {
         let hunks = diff_lines_for_merge(
             &text("a\nb \nc\n"),
             &text("a\nb\r\nC\n"),
-            DiffOptions {
+            &DiffOptions {
                 algorithm: Algorithm::Histogram,
                 whitespace: Whitespace::Trailing,
                 ..DiffOptions::default()
@@ -504,6 +543,7 @@ mod tests {
         whitespace: Whitespace::None,
         line_endings: LineEndingRule::Ignore,
         case: CaseRule::Compare,
+        patterns: &pattern::NONE,
     };
 
     #[test]
@@ -528,6 +568,7 @@ mod tests {
                 whitespace,
                 line_endings: LineEndingRule::Ignore,
                 case: CaseRule::Compare,
+                ..Comparison::default()
             };
             assert_eq!(
                 line_key(" a  b \r\n", ignoring),
@@ -541,14 +582,15 @@ mod tests {
     fn crlf_against_lf_differs_on_every_line_unless_line_endings_are_ignored() {
         let (crlf, lf) = (text("a\r\nb\r\nc\r\n"), text("a\nB\nc"));
         let with = |line_endings| DiffOptions { line_endings, ..DiffOptions::default() };
-        assert_eq!(diff_lines(&crlf, &lf, with(LineEndingRule::Compare)), [hunk(0..3, 0..3)]);
-        assert_eq!(diff_lines(&crlf, &lf, with(LineEndingRule::Ignore)), [hunk(1..2, 1..2)]);
+        assert_eq!(diff_lines(&crlf, &lf, &with(LineEndingRule::Compare)), [hunk(0..3, 0..3)]);
+        assert_eq!(diff_lines(&crlf, &lf, &with(LineEndingRule::Ignore)), [hunk(1..2, 1..2)]);
     }
 
     const IGNORE_CASE: Comparison = Comparison {
         whitespace: Whitespace::None,
         line_endings: LineEndingRule::Compare,
         case: CaseRule::Ignore,
+        patterns: &pattern::NONE,
     };
 
     #[test]
@@ -578,6 +620,7 @@ mod tests {
             whitespace,
             line_endings,
             case: CaseRule::Ignore,
+            ..Comparison::default()
         };
         assert_eq!(line_key(" A \r\n", with(Whitespace::None, LineEndingRule::Ignore)), " a ");
         assert_eq!(line_key(" A \r\n", with(Whitespace::Trailing, LineEndingRule::Compare)), " a");
@@ -595,11 +638,73 @@ mod tests {
     fn lines_that_differ_only_in_case_differ_unless_case_is_ignored() {
         let (before, after) = (text("a\nB\nc\n"), text("A\nb\nd\n"));
         let with = |case| DiffOptions { case, ..DiffOptions::default() };
-        assert_eq!(diff_lines(&before, &after, with(CaseRule::Compare)), [hunk(0..3, 0..3)]);
-        assert_eq!(diff_lines(&before, &after, with(CaseRule::Ignore)), [hunk(2..3, 2..3)]);
+        assert_eq!(diff_lines(&before, &after, &with(CaseRule::Compare)), [hunk(0..3, 0..3)]);
+        assert_eq!(diff_lines(&before, &after, &with(CaseRule::Ignore)), [hunk(2..3, 2..3)]);
         assert_eq!(
-            diff_lines_for_merge(&before, &after, with(CaseRule::Ignore)),
+            diff_lines_for_merge(&before, &after, &with(CaseRule::Ignore)),
             [hunk(2..3, 2..3)]
+        );
+    }
+
+    fn cutting(sources: &[&str]) -> Patterns {
+        Patterns::new(sources).expect("valid patterns")
+    }
+
+    #[test]
+    fn keys_cut_pattern_matches_before_the_whitespace_mode() {
+        let digits = cutting(&[r"\d"]);
+        let amount = Comparison {
+            whitespace: Whitespace::Amount,
+            patterns: &digits,
+            ..Comparison::default()
+        };
+        assert_eq!(line_key("a 1 b\n", amount), "a b");
+        let exact = Comparison { patterns: &digits, ..Comparison::default() };
+        assert_eq!(line_key("a 1 b\n", exact), "a  b\n");
+    }
+
+    #[test]
+    fn patterns_never_see_the_line_terminator() {
+        let ends = cutting(&["x$"]);
+        let mode = Comparison { patterns: &ends, ..Comparison::default() };
+        assert_eq!(line_key("ax\r\n", mode), "a\r\n");
+        assert_eq!(line_key("ax\n", mode), "a\n");
+        assert_eq!(line_key("ax", mode), "a");
+        assert_eq!(line_key("a\rx\n", mode), "a\r\n", "a lone \\r is text");
+    }
+
+    #[test]
+    fn a_line_a_pattern_empties_compares_equal_to_a_blank_line() {
+        let comments = cutting(&["//.*"]);
+        let mode = Comparison { patterns: &comments, ..Comparison::default() };
+        assert_eq!(line_key("// note\n", mode), "\n");
+        assert_eq!(line_key("// note\n", mode), line_key("\n", mode));
+        assert!(matches!(line_key("code\n", mode), Cow::Borrowed("code\n")));
+    }
+
+    #[test]
+    fn patterns_match_the_line_as_written_before_case_folding() {
+        let todo = cutting(&["TODO"]);
+        let mode = Comparison { case: CaseRule::Ignore, patterns: &todo, ..Comparison::default() };
+        assert_eq!(line_key("todo TODO\n", mode), "todo \n");
+    }
+
+    #[test]
+    fn a_comparison_with_patterns_is_not_exact() {
+        let any = cutting(&["x"]);
+        assert!(!Comparison { patterns: &any, ..Comparison::default() }.is_exact());
+    }
+
+    #[test]
+    fn lines_that_differ_only_in_pattern_matches_compare_equal() {
+        let (before, after) = (text("x = 1; // a\nb\n"), text("x = 1; // b\nc\n"));
+        let opts = DiffOptions { patterns: cutting(&["//.*"]), ..DiffOptions::default() };
+        assert_eq!(diff_lines(&before, &after, &opts), [hunk(1..2, 1..2)]);
+        assert_eq!(diff_lines_for_merge(&before, &after, &opts), [hunk(1..2, 1..2)]);
+        assert_eq!(
+            diff_lines(&before, &after, &DiffOptions::default()),
+            [hunk(0..2, 0..2)],
+            "without the pattern"
         );
     }
 
@@ -803,7 +908,7 @@ mod tests {
             algorithm in algorithm_strategy(),
         ) {
             let (b, a) = (text(&before), text(&after));
-            let hunks = diff_lines(&b, &a, DiffOptions { algorithm, ..DiffOptions::default() });
+            let hunks = diff_lines(&b, &a, &DiffOptions { algorithm, ..DiffOptions::default() });
             check_line_hunks(&b, &a, &hunks, Whitespace::None);
             prop_assert_eq!(apply_line_hunks(&b, &a, &hunks), after);
         }
@@ -816,7 +921,7 @@ mod tests {
             mode in mode_strategy(),
         ) {
             let (b, a) = (text(&before), text(&after));
-            let hunks = diff_lines(&b, &a, DiffOptions { algorithm, whitespace: mode, ..DiffOptions::default() });
+            let hunks = diff_lines(&b, &a, &DiffOptions { algorithm, whitespace: mode, ..DiffOptions::default() });
             check_line_hunks(&b, &a, &hunks, mode);
         }
 
@@ -827,7 +932,7 @@ mod tests {
             mode in mode_strategy(),
         ) {
             let t = text(&file);
-            prop_assert_eq!(diff_lines(&t, &t, DiffOptions { algorithm, whitespace: mode, ..DiffOptions::default() }), vec![]);
+            prop_assert_eq!(diff_lines(&t, &t, &DiffOptions { algorithm, whitespace: mode, ..DiffOptions::default() }), vec![]);
         }
 
         #[test]

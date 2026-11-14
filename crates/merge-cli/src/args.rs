@@ -342,7 +342,7 @@ impl ResolveCli {
             path: self.path,
             target: None,
             commands: self.commands,
-            options: flags.merge_options(settings, chosen),
+            options: flags.merge_options(settings, &chosen),
             flags,
             semantics: self.semantics.flags(),
             rev: self.revision,
@@ -447,7 +447,7 @@ impl DiffArgs {
     }
 
     /// `settings` with the flags given applied.
-    fn over(self, settings: DiffOptions) -> DiffOptions {
+    fn over(self, settings: &DiffOptions) -> DiffOptions {
         self.flags().over(settings)
     }
 }
@@ -460,7 +460,7 @@ impl Cli {
                     .map_err(|files| UsageError::MergeFiles(files.len()))?;
                 Ok(Invocation::Batch(Batch::Inspect {
                     files: MergeFiles { base, left, right },
-                    options: diff.flags().merge_options(settings, MergeOptions::default()),
+                    options: diff.flags().merge_options(settings, &MergeOptions::default()),
                     semantics: semantics.flags(),
                     json,
                 }))
@@ -471,7 +471,8 @@ impl Cli {
             Some(Command::Stack { revset, list, json }) => Ok(if list || json {
                 Invocation::Batch(Batch::Jj(JjBatch::Stack { revset, json }))
             } else {
-                let options = DiffFlags::default().merge_options(settings, MergeOptions::default());
+                let options =
+                    DiffFlags::default().merge_options(settings, &MergeOptions::default());
                 Invocation::Window(Window::Stack(Stack { revset, options }))
             }),
             Some(Command::Absorb { paths, into, moves, keeps, apply, list, listed_at, json }) => {
@@ -559,7 +560,7 @@ impl DiffCli {
                 path,
                 rev,
                 op: self.op,
-                diff: self.diff.over(settings.two_way()),
+                diff: self.diff.over(&settings.two_way()),
                 title: self.title,
             })),
             ((Some(_), Some(_), None), Some(_), _) => Err(UsageError::RevWithTwoFiles),
@@ -570,14 +571,14 @@ impl DiffCli {
                 Invocation::Batch(Batch::DiffInspect {
                     left,
                     right,
-                    diff: self.diff.over(settings.two_way()),
+                    diff: self.diff.over(&settings.two_way()),
                     json: self.json,
                 })
             } else {
                 Invocation::Window(Window::Diff(Diff {
                     left,
                     right,
-                    diff: self.diff.over(settings.two_way()),
+                    diff: self.diff.over(&settings.two_way()),
                     title: self.title,
                     readonly_left: self.readonly_left,
                     readonly_right: self.readonly_right,
@@ -632,7 +633,7 @@ mod tests {
             ..MergeOptions::default()
         };
         let settings = Settings { refine: Refine::Off, ..Settings::default() };
-        let options = DiffFlags::default().merge_options(&settings, chosen);
+        let options = DiffFlags::default().merge_options(&settings, &chosen);
         assert_eq!(options, MergeOptions { refine: Refine::Off, ..chosen });
     }
 

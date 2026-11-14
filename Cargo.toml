@@ -91,6 +91,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Already in the tree through gix; the journal hashes its inputs with it.
 sha2 = "0.11"
+# Already in the tree through jj-core; `ignore-pattern` (spec §4.2).
+regex = "1.13"
 # Already in the tree through gpui; full Unicode case folding for `ignore-case` (spec §4.2).
 unicase = "2.10"
 # Exact pins: the versions gpui-component builds, so the build holds one tree-sitter. The top

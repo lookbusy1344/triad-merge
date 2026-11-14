@@ -19,7 +19,7 @@ As of 2026-11-14.
 | M6 native resolution | Done: git stages a resolved save; jj snapshots before the read and after each save | D |
 | M7 syntax highlighting | Done: Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS | F |
 | p4merge parity | Done | E |
-| Review and diff features | Bulk takes (§G3), line endings and case in comparison (§G4) and collapsed unchanged regions in both windows (§G2) done; the rest open | G |
+| Review and diff features | Bulk takes (§G3), line endings, case and ignore patterns in comparison (§G4) and collapsed unchanged regions in both windows (§G2) done; the rest open | G |
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
 | jj-native features | Done: conflicts across a stack (`stack`, `resolve -r`), operation-log history (`history`, `diff --op`) and absorb by hunk (`absorb`); the stack window, with a preview of a save's effect on the descendants and a confirmation before a save changes them; the history window; the absorb window, by hunk; the three windows' lists follow `docs/STYLE.md` and work from the keys; the conflict badge names the sides a conflict keeps; absorb, `resolve -r` and the default revset aliases checked against jj's CLI (§I5) | I |
 
@@ -35,7 +35,7 @@ In order. Each is one or more commits.
 
 1. **Close M3.** Skipped for now by the owner. The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
 2. **Screen-reader support** (part J). Skipped for now by the owner: live status, conflict regions, scrolling the row table, in the order of §J7.
-3. **Review and diff features** (part G): `ignore-pattern` and two-way `ignore-blank-lines` (§G4), moved code in the two-way diff (§G5); then §G6–§G14.
+3. **Review and diff features** (part G): two-way `ignore-blank-lines` (§G4), moved code in the two-way diff (§G5); then §G6–§G14.
 4. **More grammars,** one commit each: C, C++, Java and Kotlin; then Markdown; then Bash, Ruby, PHP and SQL.
 5. **M4b** (§3) once the owner has the machines and the certificate.
 6. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
@@ -108,9 +108,8 @@ Done: `Command::PickAll` with `PickScope::Unresolved` and `PickScope::All` (spec
 
 ### G4 Comparison filters
 
-Each filter applies when lines are interned (`diff::line_key`), under both semantics, beside the whitespace mode. Done: line endings (`merge-ignore-line-endings`, `diff-ignore-line-endings`) and `ignore-case`, full Unicode case folding with its own status bar item in both windows (spec §4.2).
+Each filter applies when lines are interned (`diff::line_key`), under both semantics, beside the whitespace mode. Done: line endings (`merge-ignore-line-endings`, `diff-ignore-line-endings`), `ignore-case`, full Unicode case folding, and `ignore-pattern`, regular expressions whose matches lines drop before comparison; each has its own status bar item in both windows (spec §4.2).
 
-- `ignore-pattern = REGEX`, on as many lines as needed, as `keybind`: every match is cut out of the line before comparison (Beyond Compare's "unimportant text"). A pattern that does not compile, or one that matches the empty string, is a bad config line. `regex` is in the tree through `jj-core`.
 - `ignore-blank-lines`: a change made only of blank lines is no difference. Two-way diff first; in a merge it changes which hunks touch, and so which regions conflict, so design it after the two-way case.
 - Output bytes follow spec §4.2. The status bar shows one item per filter in force, `unlike git` or `unlike jj`. The git oracle runs without filters.
 - Tests: per filter, the equality decision and the output bytes; filters with each whitespace mode; an invalid and an empty-matching pattern; a pattern that empties a line.

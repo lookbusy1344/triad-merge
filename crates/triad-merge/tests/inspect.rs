@@ -216,6 +216,60 @@ fn inspect_merges_a_side_that_only_changed_case_when_ignore_case_is_on() {
     assert_eq!(ignoring.status.code(), Some(0), "{}", String::from_utf8_lossy(&ignoring.stdout));
 }
 
+#[test]
+fn diff_inspect_cuts_each_ignore_pattern_before_comparing() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let left = dir.path().join("left.txt");
+    let right = dir.path().join("right.txt");
+    std::fs::write(&left, "x = 1; // one\nid 17\nz\n").expect("written");
+    std::fs::write(&right, "x = 1; // two\nid 18\nw\n").expect("written");
+    let config = dir.path().join("config.triad");
+    std::fs::write(&config, "ignore-pattern = //.*\nignore-pattern = \\d+\n").expect("written");
+    let diff = |config: Option<&std::path::Path>| {
+        let mut command = command();
+        if let Some(config) = config {
+            command.env("TRIAD_CONFIG", config);
+        }
+        command
+            .arg("diff")
+            .args(["--inspect".as_ref(), left.as_os_str(), right.as_os_str()])
+            .output()
+            .expect("binary runs")
+    };
+    assert_eq!(
+        String::from_utf8_lossy(&diff(None).stdout),
+        "changed left 0..3 right 0..3\nchanges: 1\n"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&diff(Some(&config)).stdout),
+        "unchanged left 0..2 right 0..2\n\
+         changed left 2..3 right 2..3\n\
+         changes: 1\n"
+    );
+}
+
+#[test]
+fn a_bad_ignore_pattern_is_reported_with_its_line_and_the_run_goes_on() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config = dir.path().join("config.triad");
+    std::fs::write(&config, "ignore-pattern = (\n").expect("written");
+    let (left, right) = (dir.path().join("l.txt"), dir.path().join("r.txt"));
+    std::fs::write(&left, "a\n").expect("written");
+    std::fs::write(&right, "a\n").expect("written");
+    let out = command()
+        .env("TRIAD_CONFIG", &config)
+        .arg("diff")
+        .args(["--inspect".as_ref(), left.as_os_str(), right.as_os_str()])
+        .output()
+        .expect("binary runs");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.ends_with("config.triad:1: ignore-pattern: `(` is not a regular expression\n"),
+        "{stderr}"
+    );
+    assert_eq!(out.status.code(), Some(0), "equal files");
+}
+
 /// `inspect` on `base`, `left` and `right`, written to files named with `extension`, with a
 /// settings file holding `settings`.
 fn inspect_texts(settings: &str, extension: &str, [base, left, right]: [&str; 3]) -> Output {

@@ -58,7 +58,7 @@ Rejected (owner, 2026-10-27):
 
 #### A4.3 Diffing (`merge_core::diff`)
 
-Line diffs run imara's indent heuristic, as git's diff does; the merge's diffs do not (§A4.4). Character diffs use Myers, since histogram does badly on small alphabets, and stop above `MAX_INTRALINE_DIFF_CHARS` (10 000). Whitespace modes rewrite only the interning key (`diff::line_key`): `Trailing` drops trailing spaces, tabs, `\r` and the `\n`; `Amount` also collapses runs; `All` removes all whitespace. Whitespace is space, tab and `\r`, as in git's `isspace`. `CaseRule::Ignore` folds the key last, with `unicase`'s full Unicode case folding, already in the tree through GPUI; a key of ASCII without capitals stays borrowed.
+Line diffs run imara's indent heuristic, as git's diff does; the merge's diffs do not (§A4.4). Character diffs use Myers, since histogram does badly on small alphabets, and stop above `MAX_INTRALINE_DIFF_CHARS` (10 000). Whitespace modes rewrite only the interning key (`diff::line_key`): `Trailing` drops trailing spaces, tabs, `\r` and the `\n`; `Amount` also collapses runs; `All` removes all whitespace. Whitespace is space, tab and `\r`, as in git's `isspace`. `CaseRule::Ignore` folds the key last, with `unicase`'s full Unicode case folding, already in the tree through GPUI; a key of ASCII without capitals stays borrowed. `ignore-pattern` cuts first, on the line without its terminator (`merge_core::pattern::Patterns`, compiled once and shared by `Arc`). `Comparison<'p>` borrows the patterns, so it stays `Copy`; `DiffOptions` and `MergeOptions` own them and are `Clone` only, and functions take them by reference. A comparison without filters borrows the static `pattern::NONE`, and a line no pattern matches stays borrowed.
 
 #### A4.4 Three-way alignment (`merge_core::merge3`)
 
@@ -389,7 +389,7 @@ In jj mode, `merge.hunk-level` and `merge.same-change` come from the user's jj c
 | `hunk_level` | `line`, `word` | `line` | from jj config |
 
 - `diff-algorithm` applies in git mode only; jj mode has one diff.
-- `ignore-whitespace` applies in both modes: jj mode passes `ContentDiff::for_tokenizer` a `CompareBytes` keyed by `diff::line_key`. Spec §4.2's output rule applies, so any mode other than `none` diverges from jj and the status bar marks it. `ignore-case` takes the same path and diverges from both git and jj: neither folds case.
+- `ignore-whitespace` applies in both modes: jj mode passes `ContentDiff::for_tokenizer` a `CompareBytes` keyed by `diff::line_key`. Spec §4.2's output rule applies, so any mode other than `none` diverges from jj and the status bar marks it. `ignore-case` and `ignore-pattern` take the same path and diverge from both git and jj: neither folds case or cuts text.
 - `same_change = keep` in git mode and `hunk_level = word` in git mode diverge from git and are marked.
 - `refine-conflicts` changes no output, so it stays on in both modes.
 

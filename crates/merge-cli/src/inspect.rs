@@ -157,7 +157,7 @@ pub fn inspect(
 pub fn diff_inspect(
     left: &Path,
     right: &Path,
-    diff: DiffOptions,
+    diff: &DiffOptions,
     json: bool,
 ) -> Result<(String, ExitCode), CliError> {
     let left = read_text(left)?;
@@ -518,7 +518,7 @@ mod tests {
     fn diff_json_lists_regions_and_changes() {
         let files = two(b"a\nb\nc\n", b"a\nB\nc\n");
         let (out, code) =
-            diff_inspect(&files.path("left"), &files.path("right"), DiffOptions::default(), true)
+            diff_inspect(&files.path("left"), &files.path("right"), &DiffOptions::default(), true)
                 .expect("ok");
         assert_eq!(code, ExitCode::Conflicts);
         assert_eq!(
@@ -542,7 +542,7 @@ mod tests {
     fn diff_text_and_equal_files_exit_0() {
         let files = two(b"a\n", b"x\na\n");
         let (out, code) =
-            diff_inspect(&files.path("left"), &files.path("right"), DiffOptions::default(), false)
+            diff_inspect(&files.path("left"), &files.path("right"), &DiffOptions::default(), false)
                 .expect("ok");
         assert_eq!(code, ExitCode::Conflicts);
         assert_eq!(
@@ -552,7 +552,7 @@ mod tests {
         let equal = two(b"a \n", b"a\r\n");
         let trailing = DiffOptions { whitespace: Whitespace::Trailing, ..DiffOptions::default() };
         let (out, code) =
-            diff_inspect(&equal.path("left"), &equal.path("right"), trailing, false).expect("ok");
+            diff_inspect(&equal.path("left"), &equal.path("right"), &trailing, false).expect("ok");
         assert_eq!(code, ExitCode::Resolved);
         assert_eq!(out, "unchanged left 0..1 right 0..1\nchanges: 0\n");
     }
@@ -561,7 +561,7 @@ mod tests {
     fn diff_warns_on_mixed_encodings() {
         let files = two(b"a\n", &utf16le("a\n"));
         let (out, code) =
-            diff_inspect(&files.path("left"), &files.path("right"), DiffOptions::default(), true)
+            diff_inspect(&files.path("left"), &files.path("right"), &DiffOptions::default(), true)
                 .expect("ok");
         assert_eq!(code, ExitCode::Resolved);
         let value = json_of(&out);

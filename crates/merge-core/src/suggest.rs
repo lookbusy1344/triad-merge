@@ -206,7 +206,7 @@ mod tests {
         let inputs = three(base, left, right);
         let [git, jj] = [Semantics::Git, Semantics::Jj].map(|semantics| {
             let options = MergeOptions { semantics, ..MergeOptions::default() };
-            let regions = align(&inputs, options.alignment());
+            let regions = align(&inputs, &options.alignment());
             (0..regions.len())
                 .map(|region| suggestions(&inputs, &regions, RegionIx::new(region)))
                 .collect::<Vec<_>>()
@@ -272,7 +272,7 @@ mod tests {
             vec![text("a\n"), text("a\n")],
         )
         .unwrap();
-        let regions = align(&inputs, MergeOptions::default().alignment());
+        let regions = align(&inputs, &MergeOptions::default().alignment());
         assert_eq!(regions[1].kind, Kind::Conflict);
         assert_eq!(suggestions(&inputs, &regions, RegionIx::new(1)), NONE);
     }
@@ -285,7 +285,7 @@ mod tests {
             vec![text("a\n"), text("a\n")],
         )
         .unwrap();
-        let regions = align(&inputs, MergeOptions::default().alignment());
+        let regions = align(&inputs, &MergeOptions::default().alignment());
         assert_eq!(regions[1].kind, Kind::Conflict);
         assert_eq!(suggestions(&inputs, &regions, RegionIx::new(1)), [Suggestion::EverySide]);
     }
@@ -514,7 +514,7 @@ mod tests {
             vec![base.clone(), base],
         )
         .unwrap();
-        let regions = align(&inputs, MergeOptions::default().alignment());
+        let regions = align(&inputs, &MergeOptions::default().alignment());
         assert_eq!(regions[0].kind, Kind::Conflict);
         assert_eq!(suggestions(&inputs, &regions, RegionIx::new(0)), NONE);
     }

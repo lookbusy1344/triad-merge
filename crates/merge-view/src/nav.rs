@@ -108,7 +108,7 @@ pub fn conflict_sides(doc: &MergeDocument, region: RegionIx) -> Option<Sides> {
     let of = doc.inputs().sides().len();
     let region = doc.regions().get(region.get())?;
     (of > THREE_WAY_SIDES && region.kind == Kind::Conflict)
-        .then(|| Sides { kept: simplified_sides(doc.inputs(), region, doc.options().diff), of })
+        .then(|| Sides { kept: simplified_sides(doc.inputs(), region, &doc.options().diff), of })
 }
 
 /// The sides of a three-way merge.

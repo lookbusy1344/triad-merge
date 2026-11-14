@@ -252,7 +252,7 @@ fn restore_uses_the_journals_options_over_the_current_ones(cx: &mut TestAppConte
     let (_, after, _) = session.open(cx, conflict(all));
     cx.simulate_prompt_answer(RESTORE);
     cx.run_until_parked();
-    let options = cx.read(|cx| after.read(cx).document().options());
+    let options = cx.read(|cx| after.read(cx).document().options().clone());
     assert_eq!(options, MergeOptions::default());
     assert_eq!(output(cx, &after).0, "xa\nR\nc\n");
 }

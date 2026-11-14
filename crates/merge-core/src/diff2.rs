@@ -31,7 +31,7 @@ pub struct Region2 {
 /// between changes are `Unchanged`. Identical files, empty ones included, give one
 /// `Unchanged` region.
 #[must_use]
-pub fn regions(left: &Text, right: &Text, opts: DiffOptions) -> Vec<Region2> {
+pub fn regions(left: &Text, right: &Text, opts: &DiffOptions) -> Vec<Region2> {
     let hunks = diff_lines(left, right, opts);
     let mut regions = Vec::with_capacity(2 * hunks.len() + 1);
     let mut at = (0, 0);
@@ -201,7 +201,7 @@ impl Recompute {
         // The encoding plays no part in diffing.
         let text = |rope: Rope| Text::new(Encoding::Utf8, rope.to_string());
         let (left, right) = (text(self.left), text(self.right));
-        let regions = regions(&left, &right, self.options);
+        let regions = regions(&left, &right, &self.options);
         (self.version, regions, also([&left, &right]))
     }
 }
@@ -210,7 +210,7 @@ impl DiffDocument {
     #[must_use]
     pub fn new(left: &Text, right: &Text, options: DiffOptions) -> Self {
         Self {
-            regions: regions(left, right, options),
+            regions: regions(left, right, &options),
             left: Buffer::new(left),
             right: Buffer::new(right),
             options,
@@ -318,7 +318,7 @@ impl DiffDocument {
             version: self.version,
             left: self.left.text.clone(),
             right: self.right.text.clone(),
-            options: self.options,
+            options: self.options.clone(),
         }
     }
 
@@ -372,7 +372,7 @@ mod tests {
     use crate::testing::text;
 
     fn of(left: &str, right: &str) -> Vec<Region2> {
-        regions(&text(left), &text(right), DiffOptions::default())
+        regions(&text(left), &text(right), &DiffOptions::default())
     }
 
     fn same(left: Range<usize>, right: Range<usize>) -> Region2 {
@@ -492,7 +492,7 @@ mod tests {
     fn each_whitespace_mode_decides_equality() {
         let with = |whitespace, left: &str, right: &str| {
             let opts = DiffOptions { whitespace, ..DiffOptions::default() };
-            regions(&text(left), &text(right), opts)
+            regions(&text(left), &text(right), &opts)
         };
         let one_line_differs = [changed(0..1, 0..1)];
         let equal = [same(0..1, 0..1)];
@@ -512,7 +512,7 @@ mod tests {
     #[test]
     fn a_whitespace_mode_can_make_files_equal() {
         let opts = DiffOptions { whitespace: Whitespace::Trailing, ..DiffOptions::default() };
-        assert_eq!(regions(&text("a \nb\n"), &text("a\nb\r\n"), opts), [same(0..2, 0..2)]);
+        assert_eq!(regions(&text("a \nb\n"), &text("a\nb\r\n"), &opts), [same(0..2, 0..2)]);
     }
 
     // DiffDocument

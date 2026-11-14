@@ -605,7 +605,7 @@ fn line_ending(ending: LineEnding) -> &'static str {
 }
 
 /// The status bar's item for how lines compare. Every whitespace mode drops line endings.
-pub(crate) fn comparison(mode: Comparison) -> &'static str {
+pub(crate) fn comparison(mode: Comparison<'_>) -> &'static str {
     match (mode.whitespace, mode.line_endings) {
         (Whitespace::None, LineEndingRule::Compare) => "whitespace significant",
         (Whitespace::None, LineEndingRule::Ignore) => "line endings ignored",
@@ -615,12 +615,18 @@ pub(crate) fn comparison(mode: Comparison) -> &'static str {
     }
 }
 
-/// The diff window's items for how lines compare: [`comparison`]'s, then `case ignored`.
-pub(crate) fn diff_comparison(mode: Comparison) -> String {
-    match mode.case {
-        CaseRule::Compare => comparison(mode).to_owned(),
-        CaseRule::Ignore => format!("{} · case ignored", comparison(mode)),
-    }
+/// The diff window's items for how lines compare: [`comparison`]'s, then `case ignored` and
+/// `patterns ignored` where they apply.
+pub(crate) fn diff_comparison(mode: Comparison<'_>) -> String {
+    [
+        Some(comparison(mode)),
+        (mode.case == CaseRule::Ignore).then_some("case ignored"),
+        (!mode.patterns.is_empty()).then_some("patterns ignored"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" · ")
 }
 
 fn count(n: usize, one: &str, many: &str) -> String {
@@ -682,6 +688,8 @@ fn divergence(divergence: Divergence, semantics: Semantics) -> &'static str {
         (Divergence::Whitespace, _) => "whitespace compared unlike jj",
         (Divergence::Case, Semantics::Git) => "case ignored, unlike git",
         (Divergence::Case, Semantics::Jj) => "case ignored, unlike jj",
+        (Divergence::Patterns, Semantics::Git) => "patterns ignored, unlike git",
+        (Divergence::Patterns, Semantics::Jj) => "patterns ignored, unlike jj",
         (Divergence::SameChangeKept, _) => "same changes kept, unlike git",
         (Divergence::WordLevel, _) => "words merged, unlike git",
         (Divergence::DeepRefine, Semantics::Git) => "conflicts split inside, unlike git",
@@ -728,7 +736,7 @@ pub(crate) fn status(kind: Option<RepoKind>, status: &Status) -> String {
         comparison(Comparison {
             whitespace: status.whitespace,
             line_endings: status.line_endings,
-            case: status.case,
+            ..Comparison::default()
         }),
     )
 }
@@ -779,6 +787,7 @@ pub(crate) mod edit_menu {
 mod tests {
     use super::*;
     use merge_core::merge3::{Refine, SameChange};
+    use merge_core::pattern::Patterns;
 
     fn change(id: &str, summary: Option<&str>) -> ChangeInfo {
         ChangeInfo {
@@ -1079,7 +1088,7 @@ mod tests {
     #[test]
     fn ignored_line_endings_show_unless_a_whitespace_mode_drops_them_anyway() {
         let by = |whitespace, line_endings| {
-            comparison(Comparison { whitespace, line_endings, case: CaseRule::Compare })
+            comparison(Comparison { whitespace, line_endings, ..Comparison::default() })
         };
         assert_eq!(by(Whitespace::None, LineEndingRule::Compare), "whitespace significant");
         assert_eq!(by(Whitespace::None, LineEndingRule::Ignore), "line endings ignored");
@@ -1093,6 +1102,37 @@ mod tests {
         let spaces = Comparison { whitespace: Whitespace::All, ..ignoring };
         assert_eq!(diff_comparison(spaces), "all whitespace ignored · case ignored");
         assert_eq!(diff_comparison(Comparison::default()), "whitespace significant");
+    }
+
+    #[test]
+    fn the_diff_status_adds_an_item_when_patterns_are_in_force() {
+        let digits = Patterns::new([r"\d"]).expect("valid");
+        let cutting = Comparison { patterns: &digits, ..Comparison::default() };
+        assert_eq!(diff_comparison(cutting), "whitespace significant · patterns ignored");
+        let both = Comparison { case: CaseRule::Ignore, ..cutting };
+        assert_eq!(
+            diff_comparison(both),
+            "whitespace significant · case ignored · patterns ignored"
+        );
+    }
+
+    #[test]
+    fn ignore_patterns_show_as_a_divergence_under_either_semantics() {
+        let git = Status { patterns: 1, ..with(1, 0, 0) };
+        assert!(
+            status(None, &git).starts_with(
+                "no repo · git merge · patterns ignored, unlike git · 1 difference · "
+            ),
+            "{}",
+            status(None, &git)
+        );
+        let jj = Status { semantics: Semantics::Jj, ..git };
+        assert!(
+            status(None, &jj)
+                .starts_with("no repo · jj merge · patterns ignored, unlike jj · 1 difference · "),
+            "{}",
+            status(None, &jj)
+        );
     }
 
     #[test]
@@ -1125,6 +1165,7 @@ mod tests {
             whitespace: Whitespace::None,
             line_endings: LineEndingRule::Compare,
             case: CaseRule::Compare,
+            patterns: 0,
             word_merged: 0,
             semantics: Semantics::Git,
             same_change: SameChange::Accept,

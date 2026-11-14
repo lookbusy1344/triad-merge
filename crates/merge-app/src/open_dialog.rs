@@ -123,8 +123,9 @@ impl Load {
         match self {
             Self::Merge { files, output, settings } => {
                 let language = Language::of_run(files.paths(), Some(&output), None);
-                let doc = merge_session::load(&files, settings.options, Labels::none(), language)
-                    .map_err(|e| e.to_string())?;
+                let doc =
+                    merge_session::load(&files, settings.options.clone(), Labels::none(), language)
+                        .map_err(|e| e.to_string())?;
                 let settings = WindowSettings {
                     repo: run::repo_kind(settings.cwd.as_deref(), &output),
                     output: Some(output),
@@ -152,7 +153,7 @@ impl Load {
                 };
                 let left = read(left)?;
                 let right = read(right)?;
-                let diff_options = settings.diff_options;
+                let diff_options = settings.diff_options.clone();
                 let settings = diff_window::DiffSettings {
                     watch,
                     ..run::diff_settings(None, diff_options, settings, origins, kind)

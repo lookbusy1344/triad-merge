@@ -95,10 +95,10 @@ fn benches(c: &mut Criterion) {
     let mut group = c.benchmark_group("merge");
     group.sample_size(SAMPLES);
     for lines in SIZES {
-        for (name, conflict, options) in cases {
+        for (name, conflict, options) in cases.iter().cloned() {
             let triple = rust(lines, conflict);
             let conflicts = |syntax_boundaries| {
-                let options = MergeOptions { syntax_boundaries, ..options };
+                let options = MergeOptions { syntax_boundaries, ..options.clone() };
                 load(&triple, options, &rust_boundaries)
                     .regions()
                     .iter()
@@ -113,10 +113,10 @@ fn benches(c: &mut Criterion) {
             };
             assert_eq!((conflicts(false), conflicts(true)), expected, "{name}/{lines}");
             for (setting, syntax_boundaries) in [("", false), ("-bounded", true)] {
-                let options = MergeOptions { syntax_boundaries, ..options };
+                let options = MergeOptions { syntax_boundaries, ..options.clone() };
                 let id = BenchmarkId::new(format!("load-{name}-rust{setting}"), lines);
                 group.bench_with_input(id, &triple, |b, t| {
-                    b.iter(|| load(black_box(t), options, &rust_boundaries));
+                    b.iter(|| load(black_box(t), options.clone(), &rust_boundaries));
                 });
             }
         }

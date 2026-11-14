@@ -259,7 +259,7 @@ impl HistoryWindow {
         let origins =
             DiffLookup::Native { path: file, rev: Some(commit), repo: Handoff::new(repo) };
         let base = self.start.settings.clone();
-        let options = base.diff_options;
+        let options = base.diff_options.clone();
         let settings = DiffSettings {
             watch: self.start.watch,
             ..crate::run::diff_settings(None, options, base, origins, Some(RepoKind::Jj))

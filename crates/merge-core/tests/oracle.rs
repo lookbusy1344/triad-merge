@@ -212,7 +212,7 @@ fn alignment_matches_git_outside_conflicts_in_both_modes() {
                 .filter_map(move |(refine, merge, mode)| {
                     let regions = align(
                         &inputs,
-                        MergeOptions { refine, ..MergeOptions::default() }.alignment(),
+                        &MergeOptions { refine, ..MergeOptions::default() }.alignment(),
                     );
                     let conflicts = regions.iter().filter(|r| r.kind == Kind::Conflict).count();
                     let ours = (conflicts, segments_between_conflicts(&inputs, &regions));

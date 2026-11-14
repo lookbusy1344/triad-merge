@@ -463,7 +463,7 @@ fn jj_mode_matches_every_case_hunk_for_hunk() {
         .flat_map(|case| {
             let inputs = inputs(case);
             JJ_MODES.into_iter().filter_map(move |(mode, same_change, level)| {
-                let regions = align(&inputs, options(same_change, level, false).alignment());
+                let regions = align(&inputs, &options(same_change, level, false).alignment());
                 (&hunks(&inputs, &regions, same_change) != case.merge(mode))
                     .then(|| format!("{} {mode}", case.id))
             })
@@ -503,7 +503,7 @@ fn word_mode_merges_the_resolvable_seed_into_one_word_merged_region() {
     let inputs = inputs(&case);
     for refine in [false, true] {
         let regions =
-            align(&inputs, options(SameChange::Accept, HunkLevel::Word, refine).alignment());
+            align(&inputs, &options(SameChange::Accept, HunkLevel::Word, refine).alignment());
         assert_eq!(
             regions,
             [Region { kind: Kind::WordMerged, bases: vec![0..1], sides: vec![0..1, 0..1] }],

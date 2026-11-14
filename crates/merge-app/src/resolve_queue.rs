@@ -136,7 +136,7 @@ impl Finder {
             self.opened.push(file.clone());
             let loaded = merge_session::resolve::load(&mut repo, &self.cwd, &file, Snapshot::Taken)
                 .map_err(QueueError::from)
-                .and_then(|loaded| Ok(loaded.open(self.options)?));
+                .and_then(|loaded| Ok(loaded.open(self.options.clone())?));
             match loaded {
                 Ok(opened) => {
                     return Found { refused, next: Ok(Some(Next { file, opened, repo })) };

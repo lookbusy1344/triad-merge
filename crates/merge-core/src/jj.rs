@@ -81,9 +81,9 @@ impl<'a> LineDiff<'a> {
 }
 
 /// Compares lines by their [`line_key`] under a [`Comparison`].
-struct LineKeys(Comparison);
+struct LineKeys<'p>(Comparison<'p>);
 
-impl LineKeys {
+impl LineKeys<'_> {
     #[expect(clippy::expect_used, reason = "invariant: jj-lib splits a `str` into lines at `\\n`")]
     fn key<'t>(&self, line: &'t [u8]) -> Cow<'t, str> {
         let line = std::str::from_utf8(line).expect("a line of a `str` is UTF-8: it ends at `\\n`");
@@ -91,7 +91,7 @@ impl LineKeys {
     }
 }
 
-impl CompareBytes for LineKeys {
+impl CompareBytes for LineKeys<'_> {
     fn eq(&self, left: &[u8], right: &[u8]) -> bool {
         self.key(left) == self.key(right)
     }

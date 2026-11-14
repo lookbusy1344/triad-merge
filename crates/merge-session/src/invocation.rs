@@ -108,7 +108,7 @@ impl Merge {
     /// line's flags and marker length over them (spec §6.4).
     #[must_use]
     pub fn options_with(&self, settings: &Settings) -> MergeOptions {
-        self.flags.merge_options(settings, self.options)
+        self.flags.merge_options(settings, &self.options)
     }
 }
 
@@ -130,23 +130,23 @@ pub struct DiffFlags {
 impl DiffFlags {
     /// `settings` with the flags given applied.
     #[must_use]
-    pub fn over(self, settings: DiffOptions) -> DiffOptions {
+    pub fn over(self, settings: &DiffOptions) -> DiffOptions {
         DiffOptions {
             algorithm: self.algorithm.unwrap_or(settings.algorithm),
             whitespace: self.whitespace.unwrap_or(settings.whitespace),
-            ..settings
+            ..settings.clone()
         }
     }
 
     /// A merge's options from `settings`, with these flags over them. The marker length,
     /// semantics and same-change rule stay `chosen`'s: they hold for the whole run.
     #[must_use]
-    pub fn merge_options(self, settings: &Settings, chosen: MergeOptions) -> MergeOptions {
+    pub fn merge_options(self, settings: &Settings, chosen: &MergeOptions) -> MergeOptions {
         MergeOptions {
-            diff: self.over(settings.diff),
+            diff: self.over(&settings.diff),
             refine: settings.refine,
             syntax_boundaries: settings.syntax_boundaries,
-            ..chosen
+            ..*chosen
         }
     }
 }

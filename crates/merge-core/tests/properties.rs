@@ -328,7 +328,7 @@ proptest! {
     ) {
         for (a, b) in [(&left, &right), (&right, &left)] {
             let (ta, tb) = (text(a), text(b));
-            let regions = diff2::regions(&ta, &tb, DiffOptions::default());
+            let regions = diff2::regions(&ta, &tb, &DiffOptions::default());
             prop_assert_eq!(&concat_lines(&ta, regions.iter().map(|x| x.left.clone())), a);
             prop_assert_eq!(&concat_lines(&tb, regions.iter().map(|x| x.right.clone())), b);
             prop_assert!(regions.iter().all(|x| !(x.left.is_empty() && x.right.is_empty())) || regions.len() == 1);

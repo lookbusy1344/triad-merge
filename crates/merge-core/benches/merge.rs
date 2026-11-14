@@ -70,7 +70,7 @@ fn benches(c: &mut Criterion) {
         let inputs = decode(&triple);
         for (name, options) in [("align", MergeOptions::default()), ("align-jj", jj())] {
             group.bench_with_input(BenchmarkId::new(name, lines), &inputs, |b, i| {
-                b.iter(|| align(black_box(i), options.alignment()));
+                b.iter(|| align(black_box(i), &options.alignment()));
             });
         }
         group.bench_with_input(BenchmarkId::new("output", lines), &doc, |b, d| {

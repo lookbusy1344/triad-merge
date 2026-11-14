@@ -699,7 +699,7 @@ mod tests {
             ..MergeOptions::default()
         };
         let regions =
-            |path| shared_brace(path).open(options).expect("no labels").doc.regions().len();
+            |path| shared_brace(path).open(options.clone()).expect("no labels").doc.regions().len();
         // Unchanged, conflict, unchanged: the shared `}` stays inside the conflict.
         assert_eq!(regions("src/f.rs"), 3);
         // No grammar: the `}` splits off between two conflicts.

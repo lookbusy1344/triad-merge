@@ -28,7 +28,7 @@ use crate::text::{EndingCounts, LineEnding, LineEndings, Text, typed_ending, wit
 /// git's and jj's conflict marker length.
 pub const DEFAULT_MARKER_LENGTH: usize = 7;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MergeOptions {
     /// git's or jj's merge (spec §4.3). Absent from a version-2 journal header, which restore
     /// then refuses by its version.
@@ -98,7 +98,7 @@ impl MergeOptions {
     pub fn alignment(&self) -> Alignment {
         Alignment {
             semantics: self.semantics,
-            diff: self.diff,
+            diff: self.diff.clone(),
             same_change: self.same_change,
             hunk_level: self.hunk_level,
             refine: self.refine,
@@ -383,7 +383,7 @@ impl MergeDocument {
         }
         let Aligned { mut regions, word_merged } = align_bounded(
             &inputs,
-            options.alignment(),
+            &options.alignment(),
             boundaries.filter(|_| options.syntax_boundaries),
         );
         if regions.is_empty() {
@@ -453,14 +453,14 @@ impl MergeDocument {
     }
 
     #[must_use]
-    pub fn options(&self) -> MergeOptions {
-        self.options
+    pub fn options(&self) -> &MergeOptions {
+        &self.options
     }
 
     /// The options and the alignment the document started from. Commands leave it as it is.
     #[must_use]
     pub fn start(&self) -> Start {
-        Start { options: self.options, alignment: self.alignment.clone() }
+        Start { options: self.options.clone(), alignment: self.alignment.clone() }
     }
 
     #[must_use]
@@ -2182,7 +2182,7 @@ mod tests {
             diff: DiffOptions { whitespace: Whitespace::Trailing, ..DiffOptions::default() },
             ..MergeOptions::default()
         };
-        let d = doc_with("a\nb\nc\n", "a \nb\nc \n", "a\nb\t\nc\t\n", options);
+        let d = doc_with("a\nb\nc\n", "a \nb\nc \n", "a\nb\t\nc\t\n", options.clone());
         assert_eq!(d.regions().len(), 1);
         assert_eq!(d.output(), Output::Resolved("a \nb\t\nc \n".to_owned()));
         // jj would keep base's `a`; triad takes left's changed bytes, then right's change.
@@ -2258,6 +2258,29 @@ mod tests {
             assert_eq!(
                 doc_with(base, left, right, options).output(),
                 Output::Resolved("a\nX\nc\n".to_owned()),
+                "{semantics:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn sides_that_differ_only_in_pattern_matches_agree_and_left_s_bytes_win() {
+        let (base, left, right) = ("v1 // a\nb\n", "v1 // L\nb\n", "v1 // R\nB\n");
+        let conflicted = doc_with(base, left, right, MergeOptions::default());
+        assert!(matches!(conflicted.output(), Output::Conflicted(_)), "the comments differ");
+        for semantics in [Semantics::Git, Semantics::Jj] {
+            let options = MergeOptions {
+                semantics,
+                diff: DiffOptions {
+                    patterns: crate::pattern::Patterns::new(["//.*"]).expect("valid"),
+                    ..DiffOptions::default()
+                },
+                ..MergeOptions::default()
+            };
+            // Line 1 compares equal on every side: left's changed bytes. Line 2: right's change.
+            assert_eq!(
+                doc_with(base, left, right, options).output(),
+                Output::Resolved("v1 // L\nB\n".to_owned()),
                 "{semantics:?}"
             );
         }
@@ -2795,7 +2818,7 @@ mod tests {
             syntax_boundaries: true,
             ..MergeOptions::default()
         };
-        let off = MergeOptions { syntax_boundaries: false, ..on };
+        let off = MergeOptions { syntax_boundaries: false, ..on.clone() };
         let split = [
             region(Kind::Unchanged, 0..1, 0..1, 0..1),
             region(Kind::Conflict, 1..1, 1..2, 1..2),
@@ -2814,7 +2837,7 @@ mod tests {
                 .regions()
                 .to_vec()
         };
-        assert_eq!(open(on, None), split, "no grammar");
+        assert_eq!(open(on.clone(), None), split, "no grammar");
         assert_eq!(open(off, Some(&marked)), split, "the option off");
         assert_eq!(open(on, Some(&marked)), whole);
     }
@@ -2936,11 +2959,11 @@ mod tests {
         // The merge marker style saves no base section.
         let merge_style =
             MergeOptions { marker_style: MarkerStyle::Merge, ..MergeOptions::default() };
-        let d = doc_with("a\nb\r\nc\n", "a\nL\nc\n", "a\nR\nc\n", merge_style);
+        let d = doc_with("a\nb\r\nc\n", "a\nL\nc\n", "a\nR\nc\n", merge_style.clone());
         assert_eq!(d.output_endings(), LineEndings::Lf);
         // Left deletes the line, right's line has no newline: the result breaks no line, so
         // the markers alone hold an ending, base's first one.
-        let crlf = doc_with("b\r\n", "", "R", merge_style);
+        let crlf = doc_with("b\r\n", "", "R", merge_style.clone());
         assert_eq!((crlf.text(), crlf.output_endings()), ("R".to_owned(), LineEndings::CrLf));
         let lf = doc_with("b\n", "", "R", merge_style);
         assert_eq!(lf.output_endings(), LineEndings::Lf);

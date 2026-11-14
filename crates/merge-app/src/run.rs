@@ -412,7 +412,7 @@ fn window_settings(stored: &Stored) -> WindowSettings {
         revision_id: stored.revision_id.into(),
         diff_options: stored.two_way(),
         options: MergeOptions {
-            diff: stored.diff,
+            diff: stored.diff.clone(),
             refine: stored.refine,
             syntax_boundaries: stored.syntax_boundaries,
             marker_style: stored.conflict_style.map_or_else(Default::default, Into::into),
@@ -455,6 +455,7 @@ fn exit(code: ExitCode) -> ! {
 mod tests {
     use merge_core::diff::{Algorithm, CaseRule, DiffOptions, LineEndingRule, Whitespace};
     use merge_core::merge3::Refine;
+    use merge_core::pattern::Patterns;
 
     use super::*;
     use crate::origin_column::Visibility;
@@ -544,6 +545,7 @@ mod tests {
                 whitespace: Whitespace::All,
                 line_endings: LineEndingRule::Ignore,
                 case: CaseRule::Ignore,
+                patterns: Patterns::new(["x"]).expect("valid"),
             },
             diff_line_endings: LineEndingRule::Compare,
             refine: Refine::Off,
@@ -611,6 +613,7 @@ mod tests {
                 whitespace: Whitespace::All,
                 line_endings: LineEndingRule::Compare,
                 case: CaseRule::Ignore,
+                patterns: Patterns::new(["x"]).expect("valid"),
             }
         );
         assert_eq!(settings.options.refine, Refine::Off);

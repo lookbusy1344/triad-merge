@@ -18,7 +18,7 @@ use crate::document::{
 use crate::merge3::{Inputs, Kind, Region};
 
 /// The format of the journal. A journal of another version is not restored.
-pub const JOURNAL_VERSION: u32 = 11;
+pub const JOURNAL_VERSION: u32 = 12;
 
 const HEX_DIGITS_PER_BYTE: usize = 2;
 
@@ -162,8 +162,8 @@ impl Journal {
     }
 
     #[must_use]
-    pub fn options(&self) -> MergeOptions {
-        self.header.options
+    pub fn options(&self) -> &MergeOptions {
+        &self.header.options
     }
 
     /// The journal's file name: its [key](Journal::key) with the JSON Lines extension.
@@ -220,7 +220,8 @@ impl Journal {
         if input_hashes(&inputs).0 != self.header.inputs {
             return Err(RestoreError::Inputs);
         }
-        let mut doc = MergeDocument::new_bounded(inputs, self.header.options, labels, boundaries)?;
+        let mut doc =
+            MergeDocument::new_bounded(inputs, self.header.options.clone(), labels, boundaries)?;
         // The commands name regions and byte offsets of the alignment they were made on.
         if doc.start().alignment != self.header.alignment {
             return Err(RestoreError::Alignment);
@@ -483,19 +484,20 @@ mod tests {
     }
 
     #[test]
-    fn the_format_version_is_eleven() {
-        assert_eq!(JOURNAL_VERSION, 11);
+    fn the_format_version_is_twelve() {
+        assert_eq!(JOURNAL_VERSION, 12);
         let (d, journal) = session();
         let all = bytes(&journal);
         let header =
             std::str::from_utf8(&all).expect("JSON is UTF-8").lines().next().expect("a header");
-        assert!(header.starts_with(r#"{"version":11,"#), "{header}");
+        assert!(header.starts_with(r#"{"version":12,"#), "{header}");
         let alignment = format!(r#""alignment":"{}""#, d.start().alignment);
         assert!(header.contains(&alignment), "{header}");
         assert!(header.contains(r#""refine":"ends""#), "{header}");
         assert!(header.contains(r#""syntax_boundaries":false"#), "{header}");
         assert!(header.contains(r#""line_endings":"Compare""#), "{header}");
         assert!(header.contains(r#""case":"Compare""#), "{header}");
+        assert!(header.contains(r#""patterns":[]"#), "{header}");
     }
 
     /// The session's journal written as `version`, with each `(from, to)` replaced once, is
@@ -582,7 +584,7 @@ mod tests {
         let (d, journal) = session();
         let start = d.start();
         assert_eq!(start.options, MergeOptions::default());
-        assert_eq!(journal.options(), start.options);
+        assert_eq!(journal.options(), &start.options);
         // `a`, the conflict `b`/`L`/`R`, `c`; the conflict shows `L` then `R`.
         let regions = [
             region(Kind::Unchanged, 0..1, [0..1, 0..1]),
@@ -590,6 +592,11 @@ mod tests {
             region(Kind::Unchanged, 2..3, [2..3, 2..3]),
         ];
         assert_eq!(start.alignment, alignment_hash(&regions, [2, 4, 2]));
+    }
+
+    #[test]
+    fn a_version_eleven_journal_without_patterns_is_refused_by_its_version() {
+        assert_refused_by_version(11, &[(r#","patterns":[]"#, "")]);
     }
 
     #[test]
@@ -658,12 +665,12 @@ mod tests {
             ..MergeOptions::default()
         };
         // Left changes only whitespace: one region when whitespace is ignored, three when not.
-        let d = doc_with("a\nb\nc\n", "a\nb \nc\n", "a\nb\nc\n", all);
+        let d = doc_with("a\nb\nc\n", "a\nb \nc\n", "a\nb\nc\n", all.clone());
         let journal = Journal::new(&d);
         let restored = journal
             .restore(three("a\nb\nc\n", "a\nb \nc\n", "a\nb\nc\n"), Labels::none())
             .expect("restores");
-        assert_eq!(restored.options(), all);
+        assert_eq!(restored.options(), &all);
         assert_eq!(d.regions().len(), 1);
         assert_eq!(restored.regions().len(), 1);
     }
@@ -676,9 +683,9 @@ mod tests {
             ..MergeOptions::default()
         };
         let same = || three("a\nb\n", "a\nB\n", "a\nB\n");
-        let d = MergeDocument::new(same(), jj_keep, Labels::none()).expect("no labels");
+        let d = MergeDocument::new(same(), jj_keep.clone(), Labels::none()).expect("no labels");
         let restored = Journal::new(&d).restore(same(), Labels::none()).expect("restores");
-        assert_eq!(restored.options(), jj_keep);
+        assert_eq!(restored.options(), &jj_keep);
         // Accepted, the same change would resolve; kept, it stays a conflict.
         assert_eq!(restored.regions()[1].kind, Kind::Conflict);
         assert_eq!(restored.regions(), d.regions());
@@ -698,6 +705,7 @@ mod tests {
             whitespace: Whitespace::None,
             line_endings: crate::diff::LineEndingRule::Compare,
             case: crate::diff::CaseRule::Compare,
+            patterns: crate::pattern::Patterns::empty(),
         },
         refine: crate::merge3::Refine::Ends,
         syntax_boundaries: false,
@@ -710,7 +718,7 @@ mod tests {
         let d = MergeDocument::new(words(), BY_WORD, Labels::none()).expect("no labels");
         assert_eq!(d.regions()[1].kind, Kind::WordMerged);
         let restored = Journal::new(&d).restore(words(), Labels::none()).expect("restores");
-        assert_eq!(restored.options(), BY_WORD);
+        assert_eq!(restored.options(), &BY_WORD);
         assert_eq!(restored.regions(), d.regions());
         assert_eq!(restored.text(), "a\nlet y = 2;\n");
     }
@@ -847,10 +855,10 @@ mod tests {
             diff: DiffOptions { whitespace: Whitespace::All, ..DiffOptions::default() },
             ..MergeOptions::default()
         };
-        let d = doc_with("b\n", "l\n", "r\n", all);
+        let d = doc_with("b\n", "l\n", "r\n", all.clone());
         let journal = Journal::with_hashes(input_hashes(d.inputs()), d.start());
         assert_eq!(journal.header.inputs, [SHA256_L_NEWLINE, SHA256_R_NEWLINE, SHA256_B_NEWLINE]);
-        assert_eq!(journal.options(), all);
+        assert_eq!(journal.options(), &all);
         assert_eq!(journal.header.alignment, d.start().alignment);
         assert_eq!(journal.commands(), []);
     }

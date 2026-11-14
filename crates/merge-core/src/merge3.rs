@@ -62,7 +62,7 @@ pub enum HunkLevel {
 }
 
 /// How [`align`] finds and classifies regions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Alignment {
     pub semantics: Semantics,
     /// The algorithm applies to git semantics only; the whitespace mode to both.
@@ -219,7 +219,7 @@ pub struct Region {
 ///
 /// The regions cover every input's lines in order, without gaps or overlaps.
 #[must_use]
-pub fn align(inputs: &Inputs, opts: Alignment) -> Vec<Region> {
+pub fn align(inputs: &Inputs, opts: &Alignment) -> Vec<Region> {
     align_merged(inputs, opts).regions
 }
 
@@ -232,7 +232,7 @@ pub struct Aligned {
 
 /// [`align`], keeping the text of each word-merged region, which classifying it computes.
 #[must_use]
-pub fn align_merged(inputs: &Inputs, opts: Alignment) -> Aligned {
+pub fn align_merged(inputs: &Inputs, opts: &Alignment) -> Aligned {
     align_bounded(inputs, opts, None)
 }
 
@@ -242,7 +242,7 @@ pub fn align_merged(inputs: &Inputs, opts: Alignment) -> Aligned {
 #[must_use]
 pub fn align_bounded(
     inputs: &Inputs,
-    opts: Alignment,
+    opts: &Alignment,
     boundaries: Option<&dyn Boundaries>,
 ) -> Aligned {
     let mut classified = Vec::new();
@@ -251,7 +251,7 @@ pub fn align_bounded(
         classified.push(Region { kind, bases, sides });
     };
     match opts.semantics {
-        Semantics::Git => git_regions(inputs, opts.diff, &mut add),
+        Semantics::Git => git_regions(inputs, &opts.diff, &mut add),
         Semantics::Jj => LineDiff::new(inputs, opts.diff.comparison())
             .hunks()
             .for_each(|hunk| add(hunk.kind == HunkKind::Different, hunk.bases, hunk.sides)),
@@ -337,7 +337,7 @@ fn spans<'t>(texts: &'t [Text], ranges: &[Range<usize>]) -> Vec<&'t str> {
 /// git `merge-file`'s regions in order, as `add(changed, bases, sides)`.
 fn git_regions(
     inputs: &Inputs,
-    opts: DiffOptions,
+    opts: &DiffOptions,
     add: &mut impl FnMut(bool, Vec<Range<usize>>, Vec<Range<usize>>),
 ) {
     let mut shift = Shift::new(inputs);
@@ -372,7 +372,7 @@ struct Cluster {
 }
 
 /// Every hunk from the reference base to each other input, ordered by reference range.
-fn changes(inputs: &Inputs, opts: DiffOptions) -> Vec<Change> {
+fn changes(inputs: &Inputs, opts: &DiffOptions) -> Vec<Change> {
     let reference = &inputs.bases[REFERENCE];
     let others = (0..inputs.sides.len())
         .map(Source::Side)
@@ -473,7 +473,7 @@ fn classify(
     inputs: &Inputs,
     bases: &[Range<usize>],
     sides: &[Range<usize>],
-    opts: Alignment,
+    opts: &Alignment,
 ) -> Kind {
     let mode = opts.diff.comparison();
     let sides = keys_each(&inputs.sides, sides, mode);
@@ -485,7 +485,7 @@ fn classify(
 /// the same lines, compared under `diff` (spec §7.5.1). A region of a three-way merge keeps
 /// two, or one when it resolves.
 #[must_use]
-pub fn simplified_sides(inputs: &Inputs, region: &Region, diff: DiffOptions) -> usize {
+pub fn simplified_sides(inputs: &Inputs, region: &Region, diff: &DiffOptions) -> usize {
     let mode = diff.comparison();
     let sides = keys_each(&inputs.sides, &region.sides, mode);
     let bases = keys_each(&inputs.bases, &region.bases, mode);
@@ -727,7 +727,7 @@ mod tests {
         opts: DiffOptions,
         refine: bool,
     ) -> Vec<Region> {
-        align(&three(base, left, right), git(opts, refine))
+        align(&three(base, left, right), &git(opts, refine))
     }
 
     /// Refinement on, no whitespace mode.
@@ -1092,7 +1092,7 @@ mod tests {
         let abc = "a\nb\nc\n";
         let inputs = five("a\nX\nc\n", abc, abc, abc, "a\nY\nc\n");
         assert_eq!(
-            align(&inputs, git(DiffOptions::default(), true)),
+            align(&inputs, &git(DiffOptions::default(), true)),
             [
                 r5(Kind::Unchanged, [0..1, 0..1], [0..1, 0..1, 0..1]),
                 r5(Kind::Conflict, [1..2, 1..2], [1..2, 1..2, 1..2]),
@@ -1106,7 +1106,7 @@ mod tests {
         // s0 = b0 = P and s1 = b1 = Q cancel, leaving s2.
         let inputs = five("a\nP\n", "a\nP\n", "a\nQ\n", "a\nQ\n", "a\nR\n");
         assert_eq!(
-            align(&inputs, git(DiffOptions::default(), true)),
+            align(&inputs, &git(DiffOptions::default(), true)),
             [
                 r5(Kind::Unchanged, [0..1, 0..1], [0..1, 0..1, 0..1]),
                 r5(Kind::OneSide(2), [1..2, 1..2], [1..2, 1..2, 1..2]),
@@ -1119,7 +1119,7 @@ mod tests {
         let ab = "a\nb\n";
         let inputs = five(ab, ab, "a\nX\nb\n", ab, ab);
         assert_eq!(
-            align(&inputs, git(DiffOptions::default(), true)),
+            align(&inputs, &git(DiffOptions::default(), true)),
             [
                 r5(Kind::Unchanged, [0..1, 0..1], [0..1, 0..1, 0..1]),
                 r5(Kind::OneSide(1), [1..1, 1..1], [1..1, 1..2, 1..1]),
@@ -1134,7 +1134,7 @@ mod tests {
         let ab = "a\nb\n";
         let inputs = five(ab, ab, ab, "a\nX\nb\n", ab);
         assert_eq!(
-            align(&inputs, git(DiffOptions::default(), true)),
+            align(&inputs, &git(DiffOptions::default(), true)),
             [
                 r5(Kind::Unchanged, [0..1, 0..1], [0..1, 0..1, 0..1]),
                 r5(Kind::AllSame, [1..1, 1..2], [1..1, 1..1, 1..1]),
@@ -1148,7 +1148,7 @@ mod tests {
         let ab = "a\nb\n";
         let inputs = five("a\nS\nX\n", ab, "a\nS\nY\n", ab, "a\nS\nZ\n");
         assert_eq!(
-            align(&inputs, git(DiffOptions::default(), true)),
+            align(&inputs, &git(DiffOptions::default(), true)),
             [
                 r5(Kind::Unchanged, [0..1, 0..1], [0..1, 0..1, 0..1]),
                 r5(Kind::AllSame, [1..1, 1..1], [1..2, 1..2, 1..2]),
@@ -1166,14 +1166,14 @@ mod tests {
             r5(Kind::Unchanged, [0..1, 0..1], [0..1, 0..1, 0..1]),
             r5(Kind::OneSide(0), [1..2, 1..2], [1..2, 1..2, 1..2]),
         ];
-        assert_eq!(align(&inputs, git(DiffOptions::default(), true)), expected);
-        assert_eq!(align(&inputs, jj(Whitespace::None, SameChange::Accept, true)), expected);
+        assert_eq!(align(&inputs, &git(DiffOptions::default(), true)), expected);
+        assert_eq!(align(&inputs, &jj(Whitespace::None, SameChange::Accept, true)), expected);
         let kept = [expected[0].clone(), r5(Kind::Conflict, [1..2, 1..2], [1..2, 1..2, 1..2])];
-        assert_eq!(align(&inputs, jj(Whitespace::None, SameChange::Keep, true)), kept);
+        assert_eq!(align(&inputs, &jj(Whitespace::None, SameChange::Keep, true)), kept);
     }
 
     fn sides_in(inputs: &Inputs, region: &Region, whitespace: Whitespace) -> usize {
-        simplified_sides(inputs, region, DiffOptions { whitespace, ..DiffOptions::default() })
+        simplified_sides(inputs, region, &DiffOptions { whitespace, ..DiffOptions::default() })
     }
 
     #[test]
@@ -1242,7 +1242,7 @@ mod tests {
     }
 
     fn jj_merge(base: &str, left: &str, right: &str) -> Vec<Region> {
-        align(&three(base, left, right), jj(Whitespace::None, SameChange::Accept, true))
+        align(&three(base, left, right), &jj(Whitespace::None, SameChange::Accept, true))
     }
 
     #[test]
@@ -1287,7 +1287,7 @@ mod tests {
     fn a_conflict_of_separate_words_word_merges_in_both_semantics() {
         let inputs = three("a\nlet x = 1;\nb\n", "a\nlet y = 1;\nb\n", "a\nlet x = 2;\nb\n");
         for semantics in SEMANTICS {
-            let regions = align(&inputs, by_word(semantics, SameChange::Accept));
+            let regions = align(&inputs, &by_word(semantics, SameChange::Accept));
             assert_eq!(
                 regions,
                 [
@@ -1345,7 +1345,7 @@ mod tests {
             );
             for semantics in SEMANTICS {
                 let aligned =
-                    align_bounded(&inputs, by_word(semantics, SameChange::Accept), Some(&marked));
+                    align_bounded(&inputs, &by_word(semantics, SameChange::Accept), Some(&marked));
                 assert_eq!(
                     aligned.regions,
                     [
@@ -1378,7 +1378,7 @@ mod tests {
     fn align_merged_keeps_each_word_merged_regions_text_in_order() {
         let inputs = three("p q\nk\nr\nk\nu v\n", "P q\nk\ns\nk\nU v\n", "p Q\nk\nt\nk\nu V\n");
         for semantics in SEMANTICS {
-            let aligned = align_merged(&inputs, by_word(semantics, SameChange::Accept));
+            let aligned = align_merged(&inputs, &by_word(semantics, SameChange::Accept));
             let kinds: Vec<Kind> = aligned.regions.iter().map(|r| r.kind).collect();
             assert_eq!(
                 kinds,
@@ -1398,7 +1398,7 @@ mod tests {
     #[test]
     fn align_merged_keeps_no_text_at_the_line_level() {
         let inputs = three("p q\n", "P q\n", "p Q\n");
-        let aligned = align_merged(&inputs, jj(Whitespace::None, SameChange::Accept, true));
+        let aligned = align_merged(&inputs, &jj(Whitespace::None, SameChange::Accept, true));
         assert_eq!(aligned.regions, [r3(Kind::Conflict, 0..1, 0..1, 0..1)]);
         assert_eq!(aligned.word_merged, Vec::<String>::new());
     }
@@ -1407,7 +1407,7 @@ mod tests {
     fn a_conflict_over_several_lines_word_merges_whole() {
         let inputs = three("a b\nc d\n", "A b\nc d\n", "a b\nc D\n");
         for semantics in SEMANTICS {
-            let regions = align(&inputs, by_word(semantics, SameChange::Accept));
+            let regions = align(&inputs, &by_word(semantics, SameChange::Accept));
             assert_eq!(regions, [r3(Kind::WordMerged, 0..2, 0..2, 0..2)], "{semantics:?}");
             assert_eq!(
                 word_merge(&inputs, &regions[0], SameChange::Accept).as_deref(),
@@ -1420,7 +1420,7 @@ mod tests {
     fn a_conflict_that_resolves_only_in_part_stays_a_whole_conflict() {
         let inputs = three("let x = 1;\n", "let y = 1;\n", "let z = 2;\n");
         for semantics in SEMANTICS {
-            let regions = align(&inputs, by_word(semantics, SameChange::Accept));
+            let regions = align(&inputs, &by_word(semantics, SameChange::Accept));
             assert_eq!(regions, [r3(Kind::Conflict, 0..1, 0..1, 0..1)], "{semantics:?}");
             assert_eq!(word_merge(&inputs, &regions[0], SameChange::Accept), None);
         }
@@ -1431,12 +1431,12 @@ mod tests {
         let inputs = three("x = 1;\n", "x = 2;\n", "x = 2;\n");
         for semantics in SEMANTICS {
             assert_eq!(
-                align(&inputs, by_word(semantics, SameChange::Keep)),
+                align(&inputs, &by_word(semantics, SameChange::Keep)),
                 [r3(Kind::Conflict, 0..1, 0..1, 0..1)],
                 "{semantics:?}"
             );
             assert_eq!(
-                align(&inputs, by_word(semantics, SameChange::Accept)),
+                align(&inputs, &by_word(semantics, SameChange::Accept)),
                 [r3(Kind::AllSame, 0..1, 0..1, 0..1)],
                 "{semantics:?}: the line level resolves it first"
             );
@@ -1448,14 +1448,14 @@ mod tests {
         // Both sides change `1` to `2`; left also changes `x` to `y`.
         let inputs = three("x = 1;\n", "y = 2;\n", "x = 2;\n");
         for semantics in SEMANTICS {
-            let regions = align(&inputs, by_word(semantics, SameChange::Accept));
+            let regions = align(&inputs, &by_word(semantics, SameChange::Accept));
             assert_eq!(regions, [r3(Kind::WordMerged, 0..1, 0..1, 0..1)], "{semantics:?}");
             assert_eq!(
                 word_merge(&inputs, &regions[0], SameChange::Accept).as_deref(),
                 Some("y = 2;\n")
             );
             assert_eq!(
-                align(&inputs, by_word(semantics, SameChange::Keep)),
+                align(&inputs, &by_word(semantics, SameChange::Keep)),
                 [r3(Kind::Conflict, 0..1, 0..1, 0..1)],
                 "{semantics:?}: keep"
             );
@@ -1469,7 +1469,7 @@ mod tests {
             let line =
                 Alignment { hunk_level: HunkLevel::Line, ..by_word(semantics, SameChange::Accept) };
             assert_eq!(
-                align(&inputs, line),
+                align(&inputs, &line),
                 [r3(Kind::Conflict, 0..1, 0..1, 0..1)],
                 "{semantics:?}"
             );
@@ -1484,7 +1484,7 @@ mod tests {
             diff: DiffOptions { whitespace: Whitespace::All, ..DiffOptions::default() },
             ..by_word(Semantics::Jj, SameChange::Accept)
         };
-        let regions = align(&inputs, opts);
+        let regions = align(&inputs, &opts);
         assert_eq!(regions, [r3(Kind::WordMerged, 0..1, 0..1, 0..1)]);
         assert_eq!(
             word_merge(&inputs, &regions[0], SameChange::Accept).as_deref(),
@@ -1522,11 +1522,11 @@ mod tests {
         let inputs = three(base, left, right);
         // Byte for byte, left changes line 0 and right line 1: no line is common to all.
         assert_eq!(
-            align(&inputs, jj(Whitespace::None, SameChange::Accept, true)),
+            align(&inputs, &jj(Whitespace::None, SameChange::Accept, true)),
             [r3(Kind::Conflict, 0..2, 0..2, 0..2)]
         );
         assert_eq!(
-            align(&inputs, jj(Whitespace::Trailing, SameChange::Accept, true)),
+            align(&inputs, &jj(Whitespace::Trailing, SameChange::Accept, true)),
             [r3(Kind::Unchanged, 0..1, 0..1, 0..1), r3(RIGHT_ONLY, 1..2, 1..2, 1..2),]
         );
     }
@@ -1538,10 +1538,10 @@ mod tests {
             [r3(Kind::Unchanged, 0..1, 0..1, 0..1), r3(Kind::Conflict, 1..2, 1..2, 1..2)];
         let git_keep =
             Alignment { same_change: SameChange::Keep, ..git(DiffOptions::default(), true) };
-        assert_eq!(align(&inputs, git_keep), expected);
-        assert_eq!(align(&inputs, jj(Whitespace::None, SameChange::Keep, true)), expected);
+        assert_eq!(align(&inputs, &git_keep), expected);
+        assert_eq!(align(&inputs, &jj(Whitespace::None, SameChange::Keep, true)), expected);
         assert_eq!(
-            align(&inputs, jj(Whitespace::None, SameChange::Accept, true)),
+            align(&inputs, &jj(Whitespace::None, SameChange::Accept, true)),
             [r3(Kind::Unchanged, 0..1, 0..1, 0..1), r3(Kind::AllSame, 1..2, 1..2, 1..2),]
         );
     }
@@ -1558,7 +1558,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            align(&three(base, left, right), jj(Whitespace::None, SameChange::Accept, false)),
+            align(&three(base, left, right), &jj(Whitespace::None, SameChange::Accept, false)),
             [r3(Kind::Conflict, 0..1, 0..3, 0..3)]
         );
     }
@@ -1588,7 +1588,7 @@ mod tests {
     fn jj_merges_utf16_inputs_as_their_decoded_text() {
         let (base, left, right) = ("a\nb\nc\n", "a\nb\nC\n", "A\nb\nc\n");
         let inputs = Inputs::three_way(utf16le(base), utf16le(left), utf16le(right));
-        assert_eq!(align(&inputs, jj(Whitespace::None, SameChange::Accept, true)), apart());
+        assert_eq!(align(&inputs, &jj(Whitespace::None, SameChange::Accept, true)), apart());
     }
 
     #[test]
@@ -1597,7 +1597,7 @@ mod tests {
         // not. triad drops the mark on decoding, so every first line is `a` or `A`.
         let inputs =
             Inputs::three_way(utf8_bom("a\nb\nc\n"), text("a\nb\nC\n"), utf8_bom("A\nb\nc\n"));
-        assert_eq!(align(&inputs, jj(Whitespace::None, SameChange::Accept, true)), apart());
+        assert_eq!(align(&inputs, &jj(Whitespace::None, SameChange::Accept, true)), apart());
     }
 
     // Input shape
@@ -1737,8 +1737,8 @@ mod tests {
         // Nodes that end at m's start, and start at its end.
         let marked = Marked(vec![(DEEP_LEFT, node(1..4)), (DEEP_RIGHT, node(6..9))]);
         assert_eq!(
-            align_bounded(&inputs, deep(Semantics::Git), Some(&marked)).regions,
-            align(&inputs, deep(Semantics::Git))
+            align_bounded(&inputs, &deep(Semantics::Git), Some(&marked)).regions,
+            align(&inputs, &deep(Semantics::Git))
         );
     }
 
@@ -1759,7 +1759,7 @@ mod tests {
         ] {
             for semantics in SEMANTICS {
                 assert_eq!(
-                    align_bounded(&inputs, deep(semantics), Some(&marked)).regions,
+                    align_bounded(&inputs, &deep(semantics), Some(&marked)).regions,
                     whole,
                     "{semantics:?}, {marked:?}"
                 );
@@ -1775,7 +1775,7 @@ mod tests {
         let inputs = three("a\np\nq\nr\nz\n", left, "a\nY1\nm\nY2\nn\nY3\nz\n");
         let marked = Marked(vec![(left, node(4..8))]);
         assert_eq!(
-            align_bounded(&inputs, deep(Semantics::Git), Some(&marked)).regions,
+            align_bounded(&inputs, &deep(Semantics::Git), Some(&marked)).regions,
             [
                 r3(Kind::Unchanged, 0..1, 0..1, 0..1),
                 r3(Kind::Conflict, 1..1, 1..4, 1..4),
@@ -1793,8 +1793,8 @@ mod tests {
         for refine in [Refine::Off, Refine::Ends] {
             let opts = Alignment { refine, ..deep(Semantics::Git) };
             assert_eq!(
-                align_bounded(&inputs, opts, Some(&marked)).regions,
-                align(&inputs, opts),
+                align_bounded(&inputs, &opts, Some(&marked)).regions,
+                align(&inputs, &opts),
                 "{refine:?}"
             );
         }
@@ -1808,7 +1808,7 @@ mod tests {
         for semantics in SEMANTICS {
             let ends = Alignment { semantics, ..git(DiffOptions::default(), true) };
             assert_eq!(
-                align(&inputs, ends),
+                align(&inputs, &ends),
                 [
                     r3(Kind::Unchanged, 0..1, 0..1, 0..1),
                     r3(Kind::Conflict, 1..3, 1..4, 1..4),
@@ -1817,7 +1817,7 @@ mod tests {
                 "{semantics:?}: refinement at the ends keeps m inside"
             );
             assert_eq!(
-                align(&inputs, deep(semantics)),
+                align(&inputs, &deep(semantics)),
                 [
                     r3(Kind::Unchanged, 0..1, 0..1, 0..1),
                     r3(Kind::Conflict, 1..1, 1..2, 1..2),
@@ -1835,7 +1835,7 @@ mod tests {
         let inputs =
             three("a\np\nq\nr\nz\n", "a\nX1\nm\nX2\nn\nX3\nz\n", "a\nY1\nm\nY2\nn\nY3\nz\n");
         assert_eq!(
-            align(&inputs, deep(Semantics::Git)),
+            align(&inputs, &deep(Semantics::Git)),
             [
                 r3(Kind::Unchanged, 0..1, 0..1, 0..1),
                 r3(Kind::Conflict, 1..1, 1..2, 1..2),
@@ -1864,14 +1864,14 @@ mod tests {
             r3(Kind::Conflict, 3..5, 7..8, 6..7),
             r3(Kind::Unchanged, 5..6, 8..9, 7..8),
         ];
-        assert_eq!(align(&three(base, left, right), deep(Semantics::Git)), expected);
+        assert_eq!(align(&three(base, left, right), &deep(Semantics::Git)), expected);
         let swapped = expected.map(|Region { kind, bases, sides }| Region {
             kind: swap(kind),
             bases,
             sides: vec![sides[RIGHT].clone(), sides[LEFT].clone()],
         });
         assert_eq!(
-            align(&three(base, right, left), deep(Semantics::Git)),
+            align(&three(base, right, left), &deep(Semantics::Git)),
             swapped,
             "with the sides swapped"
         );
@@ -1881,7 +1881,7 @@ mod tests {
     fn deep_refinement_leaves_a_conflict_of_equal_sides_whole() {
         let inputs = three("a\n", "x\n", "x\n");
         let keep = Alignment { same_change: SameChange::Keep, ..deep(Semantics::Git) };
-        assert_eq!(align(&inputs, keep), [r3(Kind::Conflict, 0..1, 0..1, 0..1)]);
+        assert_eq!(align(&inputs, &keep), [r3(Kind::Conflict, 0..1, 0..1, 0..1)]);
     }
 
     #[test]
@@ -1889,9 +1889,9 @@ mod tests {
         let pq = "p\nq\n";
         let inputs = five("X\nm\nY\n", pq, "Z\nm\nW\n", pq, "V\nm\nU\n");
         let ends = git(DiffOptions::default(), true);
-        let regions = align(&inputs, ends);
+        let regions = align(&inputs, &ends);
         assert_eq!(regions, [r5(Kind::Conflict, [0..2, 0..2], [0..3, 0..3, 0..3])]);
-        assert_eq!(align(&inputs, deep(Semantics::Git)), regions);
+        assert_eq!(align(&inputs, &deep(Semantics::Git)), regions);
     }
 
     fn hunk(before: Range<usize>, after: Range<usize>) -> Hunk {
@@ -1964,7 +1964,7 @@ mod tests {
             refine in refines(), semantics in semantics(),
         ) {
             let inputs = three(&base, &left, &right);
-            let regions = align(&inputs, Alignment { semantics, refine, ..git(DiffOptions::default(), true) });
+            let regions = align(&inputs, &Alignment { semantics, refine, ..git(DiffOptions::default(), true) });
             assert_covers(inputs.bases(), |r| &r.bases, &regions);
             assert_covers(inputs.sides(), |r| &r.sides, &regions);
             prop_assert!(regions.iter().all(|r| r.bases.iter().chain(&r.sides).any(|s| !s.is_empty())));
@@ -1976,8 +1976,8 @@ mod tests {
             refine in any::<bool>(), semantics in semantics(),
         ) {
             let opts = Alignment { semantics, ..git(DiffOptions::default(), refine) };
-            let forward = align(&three(&base, &left, &right), opts);
-            let backward = align(&three(&base, &right, &left), opts);
+            let forward = align(&three(&base, &left, &right), &opts);
+            let backward = align(&three(&base, &right, &left), &opts);
             let swapped: Vec<Region> = forward
                 .into_iter()
                 .map(|r| Region {
@@ -1995,7 +1995,7 @@ mod tests {
             semantics in semantics(),
         ) {
             let opts = Alignment { semantics, refine, ..git(DiffOptions::default(), true) };
-            let regions = align(&three(&base, &base, &other), opts);
+            let regions = align(&three(&base, &base, &other), &opts);
             prop_assert!(
                 regions.iter().all(|r| matches!(r.kind, Kind::Unchanged | Kind::OneSide(RIGHT))),
                 "{regions:?}"

@@ -15,6 +15,7 @@ use crate::named::Named;
 use merge_core::diff::{self, CaseRule, DiffOptions, LineEndingRule};
 use merge_core::document::{MarkerStyle, OutputEnding};
 use merge_core::merge3::{HunkLevel, Refine, SameChange};
+use merge_core::pattern::{PatternError, Patterns};
 
 use crate::config::{self, ConfigError, Disk, Entry, Files};
 use crate::keybind::{KeyBindings, Keybind, KeybindError, Platform};
@@ -77,6 +78,7 @@ const SYNTAX_BOUNDARIES_KEY: &str = "syntax-boundaries";
 const MERGE_IGNORE_LINE_ENDINGS_KEY: &str = "merge-ignore-line-endings";
 const DIFF_IGNORE_LINE_ENDINGS_KEY: &str = "diff-ignore-line-endings";
 const IGNORE_CASE_KEY: &str = "ignore-case";
+const IGNORE_PATTERN_KEY: &str = "ignore-pattern";
 /// An editor's whole syntax tree costs about 90 bytes per byte of text
 /// (`docs/DESIGN.md` §F6.3): some 60 MB for 20 000 lines of Rust. A longer file parses a
 /// chunk at a time (§4.1).
@@ -317,7 +319,7 @@ impl Settings {
     /// The two-way diff's options: the merge's, with the diff window's line-ending rule.
     #[must_use]
     pub fn two_way(&self) -> DiffOptions {
-        DiffOptions { line_endings: self.diff_line_endings, ..self.diff }
+        DiffOptions { line_endings: self.diff_line_endings, ..self.diff.clone() }
     }
 }
 
@@ -513,6 +515,8 @@ pub enum Problem {
     },
     #[error(transparent)]
     Keybind(#[from] KeybindError),
+    #[error("{IGNORE_PATTERN_KEY}: {0}")]
+    Pattern(#[from] PatternError),
 }
 
 /// The settings a config file gives, and the lines it could not use.
@@ -772,6 +776,21 @@ const KEYS: &[Key] = &[
         |v| Ok(if boolean(IGNORE_CASE_KEY, v)? { CaseRule::Ignore } else { CaseRule::Compare }),
         |s| (s.diff.case == CaseRule::Ignore).to_string()
     ),
+    Key {
+        name: IGNORE_PATTERN_KEY,
+        description: "A regular expression whose matches lines drop before comparison, in \
+             merges, the diff window and diff --inspect. Each line adds one; an empty value \
+             drops those before it. The saved bytes stay each line's.",
+        set: |s, v| {
+            s.diff.patterns = if v.is_empty() {
+                Patterns::empty()
+            } else {
+                Patterns::new(s.diff.patterns.sources().chain(v.split(VALUE_SEPARATOR)))?
+            };
+            Ok(())
+        },
+        get: |s| s.diff.patterns.sources().collect::<Vec<_>>().join(&VALUE_SEPARATOR.to_string()),
+    },
     key!(
         "refine-conflicts",
         "How far conflicts are refined: false, true (lines every side shares \
@@ -1252,6 +1271,7 @@ mod tests {
                     whitespace: diff::Whitespace::None,
                     line_endings: LineEndingRule::Compare,
                     case: CaseRule::Compare,
+                    patterns: Patterns::empty(),
                 },
                 diff_line_endings: LineEndingRule::Ignore,
                 refine: Refine::Ends,
@@ -1293,6 +1313,7 @@ mod tests {
             merge-ignore-line-endings = true
             diff-ignore-line-endings = false
             ignore-case = true
+            ignore-pattern = \\d+
             refine-conflicts = false
             syntax-boundaries = true
             tab-width = 8
@@ -1338,6 +1359,7 @@ mod tests {
                     whitespace: diff::Whitespace::Amount,
                     line_endings: LineEndingRule::Ignore,
                     case: CaseRule::Ignore,
+                    patterns: Patterns::new([r"\d+"]).expect("valid"),
                 },
                 diff_line_endings: LineEndingRule::Compare,
                 refine: Refine::Off,
@@ -1619,6 +1641,36 @@ mod tests {
     }
 
     #[test]
+    fn each_ignore_pattern_line_adds_a_pattern_and_an_empty_one_clears_them() {
+        assert!(Settings::default().diff.patterns.is_empty());
+        let two = settings("ignore-pattern = //.*\nignore-pattern = \\d+");
+        assert_eq!(two.diff.patterns, Patterns::new(["//.*", r"\d+"]).expect("valid"));
+        assert_eq!(two.two_way().patterns, two.diff.patterns, "the diff window cuts them too");
+        let cleared = settings("ignore-pattern = a\nignore-pattern =\nignore-pattern = b");
+        assert_eq!(cleared.diff.patterns, Patterns::new(["b"]).expect("valid"));
+        let spaced = settings("ignore-pattern = \"  +$\"");
+        assert_eq!(spaced.diff.patterns.sources().collect::<Vec<_>>(), ["  +$"]);
+    }
+
+    #[test]
+    fn a_bad_ignore_pattern_is_a_bad_line_and_keeps_the_patterns_before_it() {
+        let (line, error) = problem("ignore-pattern = (");
+        assert_eq!(line, 1);
+        assert!(
+            matches!(&error, Problem::Pattern(PatternError::Invalid { pattern, .. }) if pattern == "("),
+            "{error:?}"
+        );
+        assert_eq!(error.to_string(), "ignore-pattern: `(` is not a regular expression");
+        assert_eq!(
+            problem("ignore-pattern = a*").1.to_string(),
+            "ignore-pattern: `a*` matches empty text"
+        );
+        let loaded = read("ignore-pattern = x\nignore-pattern = (\n");
+        assert_eq!(loaded.settings.diff.patterns, Patterns::new(["x"]).expect("valid"));
+        assert_eq!(loaded.errors.len(), 1);
+    }
+
+    #[test]
     fn each_line_ending_key_sets_its_own_rule() {
         let both = settings("merge-ignore-line-endings = true\ndiff-ignore-line-endings = false");
         assert_eq!(both.diff.line_endings, LineEndingRule::Ignore);
@@ -1641,7 +1693,7 @@ mod tests {
     fn the_two_way_options_keep_the_merges_algorithm_and_whitespace() {
         let file = settings(
             "diff-algorithm = myers\nignore-whitespace = all\nmerge-ignore-line-endings = true\n\
-             ignore-case = true",
+             ignore-case = true\nignore-pattern = x",
         );
         assert_eq!(
             file.two_way(),
@@ -1650,6 +1702,7 @@ mod tests {
                 whitespace: diff::Whitespace::All,
                 line_endings: LineEndingRule::Ignore,
                 case: CaseRule::Ignore,
+                patterns: Patterns::new(["x"]).expect("valid"),
             }
         );
         let file = settings("merge-ignore-line-endings = true\ndiff-ignore-line-endings = false");
@@ -2157,6 +2210,7 @@ ignore-whitespace = none
 merge-ignore-line-endings = false
 diff-ignore-line-endings = true
 ignore-case = false
+ignore-pattern =
 refine-conflicts = true
 syntax-boundaries = false
 tab-width = 4
@@ -2250,6 +2304,7 @@ context-lines = 3
                 whitespace: diff::Whitespace::Trailing,
                 line_endings: LineEndingRule::Ignore,
                 case: CaseRule::Ignore,
+                patterns: Patterns::new(["//.*", " +$"]).expect("valid"),
             },
             diff_line_endings: LineEndingRule::Compare,
             refine: Refine::Deep,
@@ -2316,6 +2371,8 @@ ignore-whitespace = trailing
 merge-ignore-line-endings = true
 diff-ignore-line-endings = false
 ignore-case = true
+ignore-pattern = //.*
+ignore-pattern = \" +$\"
 refine-conflicts = deep
 syntax-boundaries = true
 tab-width = 2
