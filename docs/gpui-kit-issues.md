@@ -58,9 +58,9 @@ Facts about GPUI and the editor that are easy to trip over. Each was checked aga
 
 ## Accessibility gaps
 
-- No live regions. GPUI's element API sets no AccessKit `Live` property, so a screen reader does not announce a change to the status bar; it reads the new text when the user moves to it.
-- Range decorations are visual only. The editors expose their text, but not the region bands or gutter marks, so a screen reader cannot tell which result lines belong to a conflict except through the conflict markers in the text. The diff window's change bands are likewise invisible to it.
-- `uniform_list` takes no role and builds only the rows on screen. triad wraps the merge window's rows in a table that gives the total row count, but a screen reader sees only the visible rows and cannot scroll the list itself.
+- No live-region builder. GPUI's element API has no setter for AccessKit's `Live` property, so a screen reader does not announce a change to the status bar; it reads the new text when the user moves to it. `A11ySubtreeBuilder::parent_node` reaches the raw node, so triad can set `Live` itself (`PLAN.md` §J2). The macOS adapter announces a change of value, not of label.
+- Range decorations are visual only. The editors expose their text, but not the region bands or gutter marks, so a screen reader cannot tell which result lines belong to a conflict except through the conflict markers in the text. The diff window's change bands are likewise invisible to it. Synthetic nodes can expose them (`PLAN.md` §J3).
+- `uniform_list` takes no role and builds only the rows on screen. triad wraps the merge window's rows in a table that gives the total row count, but a screen reader sees only the visible rows and cannot scroll the list itself. `on_a11y_action` can take the scroll actions (`PLAN.md` §J4).
 - The test platform has no AccessKit adapter, so `Window::debug_a11y_tree_json` stays empty in headless tests. triad's tests read the role, label and toggled state that gpui-kit records for elements marked with `test_support()`.
 
 ## The load-time constructor

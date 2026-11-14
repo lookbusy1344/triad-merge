@@ -551,7 +551,7 @@ The command line takes five settings: `--merge-semantics`, `--same-change`, `--h
   - the result and the diff panes are multi-line text fields named "Result", "Left: PATH" and "Right: PATH";
   - the status bars and the conflict badge have the status role and their text as label;
   - the jj banner and the open dialog's error are alerts.
-- Status changes are not announced, and region bands and gutter marks are not exposed: GPUI has no live regions, and range decorations are visual only (`docs/gpui-kit-issues.md`).
+- Status changes are not announced, and region bands and gutter marks are not exposed. GPUI has the means for both; `PLAN.md` part J adds them (`docs/gpui-kit-issues.md`).
 - Region kinds use a gutter letter as well as a colour, so colour is never the only signal.
 - English only for release 1. All UI strings go through one module so translation can come later.
 - No telemetry and no network access.

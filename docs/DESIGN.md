@@ -190,7 +190,7 @@ The journal (`merge_session::recovery`) holds the format version, SHA-256 of eac
 
 #### A6.6 Accessibility and settings
 
-Roles and labels follow spec §6.5. GPUI builds an AccessKit tree from each element's role and label. The test platform has no AccessKit adapter, so tests read what gpui-kit records for `test_support()` elements (`tests/a11y.rs`). AccessKit's macOS adapter reports every toggled state but off as 1, so the targets of an unresolved conflict report off and their labels end ", unresolved". Gaps are in `docs/gpui-kit-issues.md`: no live announcements, bands and gutter marks not exposed, only on-screen rows visible.
+Roles and labels follow spec §6.5. GPUI builds an AccessKit tree from each element's role and label. The test platform has no AccessKit adapter, so tests read what gpui-kit records for `test_support()` elements (`tests/a11y.rs`). AccessKit's macOS adapter reports every toggled state but off as 1, so the targets of an unresolved conflict report off and their labels end ", unresolved". Gaps are in `docs/gpui-kit-issues.md`: no live announcements, bands and gutter marks not exposed, only on-screen rows visible. `PLAN.md` part J closes them through `a11y_synthetic_children`, which hands triad the raw AccessKit node, and `on_a11y_action`.
 
 A change to the alignment options re-aligns the open merge while every region keeps its automatic resolution (`MergeWindow::set_options`); otherwise the status bar says it applies from the next session.
 

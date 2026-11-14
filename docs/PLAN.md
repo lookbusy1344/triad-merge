@@ -1,6 +1,6 @@
 # triad — plan
 
-Where the project stands and what comes next. [SPEC.md](SPEC.md) sets the behaviour, [DESIGN.md](DESIGN.md) holds the design of what is built (parts A–F), [PLAN-diff-editor.md](PLAN-diff-editor.md) holds part H while it is open; part I, the jj-native features, is in `DESIGN.md`. Part G is below. A reference such as §B5.8 names part B, section 5.8, in whichever file holds that part. jj holds the history.
+Where the project stands and what comes next. [SPEC.md](SPEC.md) sets the behaviour, [DESIGN.md](DESIGN.md) holds the design of what is built (parts A–F), [PLAN-diff-editor.md](PLAN-diff-editor.md) holds part H while it is open; part I, the jj-native features, is in `DESIGN.md`. Parts G and J are below. A reference such as §B5.8 names part B, section 5.8, in whichever file holds that part. jj holds the history.
 
 ## 1. Status
 
@@ -34,10 +34,11 @@ Build profiles (root `Cargo.toml`): `release` aborts on panic and strips symbols
 In order. Each is one or more commits.
 
 1. **Close M3.** The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
-2. **Review and diff features** (part G): the rest of the comparison filters (§G4), moved code in the two-way diff (§G5); then §G6–§G14.
-3. **More grammars,** one commit each: C, C++, Java and Kotlin; then Markdown; then Bash, Ruby, PHP and SQL.
-4. **M4b** (§3) once the owner has the machines and the certificate.
-5. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
+2. **Screen-reader support** (part J): live status, conflict regions, scrolling the row table, in the order of §J7.
+3. **Review and diff features** (part G): the rest of the comparison filters (§G4), moved code in the two-way diff (§G5); then §G6–§G14.
+4. **More grammars,** one commit each: C, C++, Java and Kotlin; then Markdown; then Bash, Ruby, PHP and SQL.
+5. **M4b** (§3) once the owner has the machines and the certificate.
+6. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
 
 ## 3. Outstanding work
 
@@ -58,7 +59,7 @@ In order. Each is one or more commits.
 | More grammars | — | §2 |
 | Razor | A grammar that covers its code blocks | §F1 |
 | Fuzzing | After release 1; `cargo-fuzz` needs nightly | spec §8.9 |
-| Accessibility gaps: no live announcements, region bands and gutter marks not exposed | gpui-kit | `docs/gpui-kit-issues.md` |
+| Screen-reader support: status announcements, conflict regions, scrolling the row table, the accessibility tree in headless tests, a keyboard and contrast audit | §J1 needs the owner at the machine | J |
 | gpui-kit 0.9: build, rebase the patch, measure | — | `docs/gpui-kit-issues.md` |
 | Collapse unchanged regions in the merge window | — | §G2 |
 | Ruler marks with folds: the marks keep their place in the whole file while the thumb follows display rows | A choice between the two | §G2 |
@@ -176,3 +177,35 @@ The merge window watches its inputs as the diff window does (spec §6.1). A chan
 - **G2 order:** the diff window first, then the merge window. A diff with few changes is where folding helps most, and part H's diff editor needs it. Two editors and no aligned top panes make it the smaller step, and it settles the editor patch the merge window reuses.
 
 Open: G4's case folding and blank lines in a merge, G6's renames, G8's resolution model.
+
+## J. Screen-reader support
+
+triad gives every control a role and a label (spec §6.5, `DESIGN.md` §A6.6). The gaps are in `docs/gpui-kit-issues.md`. None needs a change to GPUI except §J5: `A11ySubtreeBuilder::parent_node` hands an element's raw `accesskit::Node` to `a11y_synthetic_children`, so triad can set any AccessKit property, and `Window::on_a11y_action` takes any AccessKit action. Zed's GPUI has the same API and no more; Zed's editor exposes nothing to a screen reader, so it gives triad no pattern for its panes.
+
+### J1 Baseline
+
+Run the spoken VoiceOver steps of `docs/release-checklist.md` before any change (§2 step 1). Record what VoiceOver reads for the status bar, a conflict in the result, and the row table past the visible rows.
+
+### J2 Status announcements
+
+The status bars and the conflict badge take `Live::Polite`; the jj banner and the open dialog's error take `Live::Assertive`. AccessKit's macOS adapter (`accesskit_macos` 0.26.3, `src/event.rs`) announces a live node when it is added with a value or when its value changes; a change of label alone is silent. These nodes therefore carry their text as value as well as label. Tests: the node's `live` and `value` after a pick, a save and an error. Check by ear on macOS; check AT-SPI and UIA when M4b has the machines.
+
+### J3 Conflict regions in the result
+
+The result pane adds one synthetic node per region: its kind, its number ("region 2 of 3") and its state (resolved, unresolved, edited), with the line range. Its gutter letters follow from the same node. The diff window's change bands get the same treatment. Next and previous conflict move the screen reader's focus to the region's node. Tests: node count, names and order for `fixtures/demo`; names after a pick and after an undo.
+
+### J4 Scrolling the row table
+
+`uniform_list` builds only the rows on screen. The row table answers `ScrollDown`, `ScrollUp` and `ScrollIntoView` through `on_a11y_action`, and moves the merge window's scroll as a key would. Row and column indices stay in whole-file terms. Tests: dispatch each action and check the first visible row and the indices.
+
+### J5 The tree in headless tests
+
+GPUI's test window never turns accessibility on, so `Window::debug_a11y_tree_json` stays empty and tests read `test_support()` records. A patch to the test platform that turns it on lets `tests/a11y.rs` check the real tree, `live`, values and synthetic nodes included. Optional: §J2–§J4 can test through `test_support()` and a captured node, as `vendor/gpui-base/src/button.rs` does.
+
+### J6 Keyboard and contrast audit
+
+Every action reachable without the mouse in each window: merge, diff, open dialog, stack, history, absorb, settings banner. Region colours and gutter letters against WCAG 2.2 AA contrast (4.5:1 text, 3:1 non-text) in both themes. Findings become rows in §3.
+
+### J7 Order
+
+J1, J2, J3, J4, J6; J5 when a test of J2–J4 needs the real tree.
