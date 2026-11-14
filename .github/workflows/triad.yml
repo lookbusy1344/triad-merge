@@ -89,6 +89,13 @@ jobs:
           tool: cargo-nextest
       # Clippy on every platform: the code has per-platform cfg branches.
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      # The image's %TEMP% sits on C:, the checkout and RUNNER_TEMP on D:. Every jj and git
+      # fixture is a temporary directory, so the tests write their repositories on D:.
+      - name: Put test repositories on the checkout's drive
+        if: runner.os == 'Windows'
+        run: |
+          echo "TMP=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          echo "TEMP=$RUNNER_TEMP" >> "$GITHUB_ENV"
       - run: cargo nextest run --workspace --profile ci --locked
       - name: Doc tests
         if: runner.os == 'Linux'
