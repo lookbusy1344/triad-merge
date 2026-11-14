@@ -3,7 +3,8 @@
 //!
 //! Each case is a triple of the git corpus or a hand seed, merged by
 //! `jj_lib::files::merge_hunks` under each combination of `same_change` and `hunk_level`. A
-//! case records jj's hunks: resolved text, and the terms of each conflict.
+//! case records jj's hunks: resolved text, and the terms of each conflict. The first line
+//! names the jj-core release, from `Cargo.lock`.
 #![expect(
     clippy::expect_used,
     reason = "dev-time generator: a failure stops it, named by its message"
@@ -16,6 +17,7 @@ use std::path::PathBuf;
 use jj_lib::files::{FileMergeHunkLevel, MergeOptions, MergeResult, merge_hunks};
 use jj_lib::merge::{Merge, SameChange};
 use serde::{Deserialize, Serialize};
+use vcs_jj::testing::locked_version;
 
 const MODES: [(&str, SameChange, FileMergeHunkLevel); 4] = [
     ("accept-line", SameChange::Accept, FileMergeHunkLevel::Line),
@@ -173,9 +175,15 @@ fn main() {
         let c: GitCase = serde_json::from_str(line).expect("git corpus line parses");
         case(format!("git-{}", c.id), vec![c.left, c.right], vec![c.base])
     });
-    let lines: String = from_git
-        .chain(seeds())
-        .map(|c| serde_json::to_string(&c).expect("a case serialises") + "\n")
+    // The first line names the jj-core release that merged the cases, so a jj upgrade fails
+    // the corpus's tests until it is written again.
+    let header = serde_json::json!({ "jj_core": locked_version("jj-core") });
+    let lines: String = std::iter::once(header.to_string() + "\n")
+        .chain(
+            from_git
+                .chain(seeds())
+                .map(|c| serde_json::to_string(&c).expect("a case serialises") + "\n"),
+        )
         .collect();
     fs::write(dir.join("jj-corpus.jsonl"), lines).expect("the fixtures directory takes the corpus");
 }

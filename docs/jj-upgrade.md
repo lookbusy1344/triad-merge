@@ -45,7 +45,7 @@ Both generators write under `fixtures/oracle/`. A changed corpus is a change in 
 
 | Corpus | Command | Needs | Caught when stale |
 |---|---|---|---|
-| `jj-corpus.jsonl`: jj-core's file merges under each `same_change` × `hunk_level` (`DESIGN.md` §B5.2) | `script/gen-jj-oracle` | nothing | **No.** It records no version, and tests pass against old answers. Always regenerate it. |
+| `jj-corpus.jsonl`: jj-core's file merges under each `same_change` × `hunk_level` (`DESIGN.md` §B5.2) | `script/gen-jj-oracle` | nothing | Yes. Its first line names the jj-core release; `merge-core`'s `jj_oracle` tests compare it with `Cargo.lock`. |
 | `jj-cli-aliases.json`, `jj-cli-absorb.json`, `jj-cli-resolve.json`: jj's default revset aliases, `jj absorb` and `jj resolve -r` (`DESIGN.md` §I6) | `script/gen-jj-cli-oracle` | the release's `jj` and git on `PATH` | Yes. `vcs-jj`'s `oracle` tests compare each file's version with `Cargo.lock`. |
 
 Then run the oracle tests:

@@ -16,6 +16,10 @@ use merge_core::text::Text;
 use serde::Deserialize;
 
 const CORPUS: &str = include_str!("../../../fixtures/oracle/jj-corpus.jsonl");
+/// The workspace's lock file: the corpus must come from the jj-core release it pins.
+const CARGO_LOCK: &str = include_str!("../../../Cargo.lock");
+/// The corpus's first line names the jj-core release that wrote it; the cases follow.
+const HEADER_LINES: usize = 1;
 
 /// Every case of the git corpus: its 45 seeds, 1900 mutations and 10 history cases.
 const GIT_CASES: usize = 1955;
@@ -58,8 +62,40 @@ impl Outcome {
     }
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Header {
+    jj_core: String,
+}
+
 fn corpus() -> Vec<Case> {
-    CORPUS.lines().map(|line| serde_json::from_str(line).expect("corpus line parses")).collect()
+    CORPUS
+        .lines()
+        .skip(HEADER_LINES)
+        .map(|line| serde_json::from_str(line).expect("corpus line parses"))
+        .collect()
+}
+
+/// The version of `package` that `Cargo.lock` pins.
+fn locked(package: &str) -> &'static str {
+    let name = format!("name = \"{package}\"");
+    let mut lines = CARGO_LOCK.lines();
+    lines
+        .by_ref()
+        .find(|line| *line == name)
+        .unwrap_or_else(|| panic!("Cargo.lock holds {package}"));
+    lines
+        .next()
+        .and_then(|line| line.strip_prefix("version = \""))
+        .and_then(|rest| rest.strip_suffix('"'))
+        .unwrap_or_else(|| panic!("{package}'s version follows its name"))
+}
+
+#[test]
+fn the_corpus_comes_from_the_jj_core_release_cargo_lock_pins() {
+    let first = CORPUS.lines().next().expect("the corpus has a header");
+    let header: Header = serde_json::from_str(first).expect("the header names the jj-core release");
+    assert_eq!(header.jj_core, locked("jj-core"), "regenerate with script/gen-jj-oracle");
 }
 
 fn seed(id: &str) -> Case {

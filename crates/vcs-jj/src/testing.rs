@@ -900,14 +900,21 @@ const CARGO_LOCK: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../Cargo.lock"
 /// `fixtures/oracle/jj-cli-*.json` must come from.
 #[must_use]
 pub fn locked_jj_lib_version() -> String {
+    locked_version("jj-lib")
+}
+
+/// The version of `package` that `Cargo.lock` pins.
+#[must_use]
+pub fn locked_version(package: &str) -> String {
     let lock = std::fs::read_to_string(CARGO_LOCK).expect("Cargo.lock reads");
+    let name = format!(r#"name = "{package}""#);
     let mut lines = lock.lines();
-    lines.by_ref().find(|line| *line == r#"name = "jj-lib""#).expect("Cargo.lock holds jj-lib");
+    lines.by_ref().find(|line| *line == name).expect("Cargo.lock holds the package");
     lines
         .next()
         .and_then(|line| line.strip_prefix(r#"version = ""#))
         .and_then(|rest| rest.strip_suffix('"'))
-        .expect("jj-lib's version follows its name")
+        .expect("a package's version follows its name")
         .to_owned()
 }
 
