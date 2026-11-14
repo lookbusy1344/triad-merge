@@ -308,6 +308,21 @@ fn a_dry_run_reports_the_effect_and_writes_nothing() {
     assert_eq!(fixture.held_in(&merge, "a.txt"), Held::Conflict);
 }
 
+#[test]
+fn a_dry_run_records_an_edit_on_disk_as_a_snapshot_and_writes_nothing_else() {
+    let Stack { fixture, merge, .. } = stack(Fixture::new());
+    fixture.write("b.txt", b"edited\n");
+    let operations = fixture.operation_count();
+    let rewrite = open(&fixture)
+        .write_conflict(&id(&merge), a_txt(), MERGED, MARKER_LENGTH, true)
+        .expect("the dry run runs");
+    assert!(!rewrite.written && rewrite.resolved, "{rewrite:?}");
+    assert_eq!(fixture.operation_count(), operations + 1);
+    assert!(fixture.operations()[0].is_snapshot, "the one operation is the snapshot");
+    assert_eq!(fixture.held_in(&merge, "a.txt"), Held::Conflict);
+    assert_eq!(fixture.latest(&merge).commit, merge.commit);
+}
+
 fn changed_refusal(result: Result<vcs_jj::Rewrite, VcsError>) -> String {
     match result {
         Err(VcsError::Backend { source, .. }) => match source.downcast_ref::<vcs_jj::JjError>() {
