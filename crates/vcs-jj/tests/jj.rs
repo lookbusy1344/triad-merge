@@ -23,7 +23,7 @@ mod stack;
 use camino::{Utf8Path, Utf8PathBuf};
 use vcs::testing::Entry;
 use vcs::{Parent, RepoKind, Repository, RevSpec, TermContent, VcsError};
-use vcs_jj::testing::{DEFAULT_STORE, Fixture, Store};
+use vcs_jj::testing::{Committed, DEFAULT_STORE, Fixture, Store};
 use vcs_jj::{JjError, JjRepository};
 
 /// jj's root commit: all-zero commit ID, all-`z` change ID.
@@ -239,22 +239,27 @@ fn an_unknown_or_empty_revision_is_named() {
 
 #[test]
 fn an_ambiguous_commit_prefix_is_named() {
-    // 17 commits, plus the root and the working copy, share 16 hex digits: two commits
-    // start with the same digit.
+    // 17 commits share 16 hex digits: two of them start with the same digit. Commits chain
+    // without moving the working copy, one operation each, and stop at the first shared digit.
     const COMMITS: usize = 17;
     let fixture = Fixture::new();
-    let ids: Vec<String> = (0..COMMITS)
-        .map(|n| fixture.commit(&format!("c{n}"), &[("a.txt", n.to_string().as_bytes())]))
-        .map(|committed| committed.commit)
-        .collect();
-    let shared = ids
-        .iter()
-        .enumerate()
-        .find_map(|(i, id)| {
-            ids[i + 1..].iter().any(|other| other[..1] == id[..1]).then(|| &id[..1])
-        })
-        .expect("two commits share a first digit");
-    match read_err(&fixture.open(), "a.txt", &rev(shared)) {
+    let mut firsts: Vec<char> = Vec::with_capacity(COMMITS);
+    let mut parent: Option<Committed> = None;
+    let mut shared = None;
+    for n in 0..COMMITS {
+        let parents: Vec<_> = parent.iter().collect();
+        let committed =
+            fixture.commit_on(&parents, &format!("c{n}"), &[("a.txt", n.to_string().as_bytes())]);
+        let first = committed.commit.chars().next().expect("a commit ID in hex");
+        if firsts.contains(&first) {
+            shared = Some(first.to_string());
+            break;
+        }
+        firsts.push(first);
+        parent = Some(committed);
+    }
+    let shared = shared.expect("two commits share a first digit");
+    match read_err(&fixture.open(), "a.txt", &rev(&shared)) {
         VcsError::AmbiguousRevision(named) => assert_eq!(named, shared),
         other => panic!("expected AmbiguousRevision, got {other}"),
     }
