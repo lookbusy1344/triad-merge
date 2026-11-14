@@ -2167,6 +2167,17 @@ impl MergeWindow {
             Next::ConfirmUnresolved { unresolved } => {
                 self.confirm_unresolved(unresolved, window, cx);
             }
+            Next::PairUnresolved { pair } => {
+                let unresolved = self.session.document().unresolved();
+                // The one answer keeps editing: the prompt only explains the refusal.
+                drop(window.prompt(
+                    PromptLevel::Warning,
+                    &prompt::pair_unresolved(pair),
+                    Some(&prompt::pair_unresolved_detail(unresolved)),
+                    &[prompt::KEEP_EDITING],
+                    cx,
+                ));
+            }
             Next::ConfirmClose => Self::confirm_close(window, cx),
             Next::SaveAndExit => self.save_and_exit(&SaveAndExit, window, cx),
             Next::Write => self.check_descendants(window, cx),

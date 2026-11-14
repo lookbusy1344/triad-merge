@@ -127,6 +127,19 @@ pub(crate) mod prompt {
 
     /// The question before a save into a jj commit that changes the conflicts of
     /// `descendants` of its descendants (spec §7.5.1).
+    /// The refusal of a save of pair `pair` with conflicts left (spec §7.5.2).
+    pub(crate) fn pair_unresolved(pair: usize) -> String {
+        format!("Pair {pair} has conflicts.")
+    }
+
+    pub(crate) fn pair_unresolved_detail(unresolved: usize) -> String {
+        let conflicts = if unresolved == 1 { "conflict" } else { "conflicts" };
+        format!(
+            "Saving writes nothing until the pair resolves. Resolve its {unresolved} \
+             {conflicts}, or close without saving."
+        )
+    }
+
     pub(crate) fn descendants_changed(descendants: usize) -> String {
         match descendants {
             1 => "Saving changes the conflicts of 1 descendant.".to_owned(),

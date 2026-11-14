@@ -692,7 +692,7 @@ Commands built on what only jj records (§1.2). In a git repository each exits w
 #### 7.5.2 Two sides of a conflict
 
 - jj orders a conflict's terms side 1, base 1, side 2, base 2, …, side n, counted after simplification as §7.5.1 reads them. `resolve PATH --pair N` merges sides N and N + 1 over base N as a three-way merge, in the merge window or `--headless`, in the working copy's commit or with `-r REV` in another, as §7.5.1 does.
-- A resolved save replaces the three terms with the result: the conflict keeps n − 1 sides, simplified as jj simplifies, and resolves when one side is left. The operation is `reduce PATH in CHANGE in triad`. A save with markers writes nothing; `--headless` then prints `PATH is unchanged: pair N has conflicts` and exits 1.
+- A resolved save replaces the three terms with the result: the conflict keeps n − 1 sides, simplified as jj simplifies, and resolves when one side is left. The operation is `reduce PATH in CHANGE in triad`. A save with markers writes nothing. The merge window refuses it, whatever `confirm-unresolved-save` says: `Pair N has conflicts.`, with Keep Editing as the one answer. `--headless` prints `PATH is unchanged: pair N has conflicts` and exits 1.
 - The report is §7.5.1's: `resolved PATH in CHANGE` when the path resolved, else `saved with conflicts PATH in CHANGE`, then the descendants.
 - In the merge window of the whole conflict, the conflict badge names the sides each conflict region keeps (§5).
 - Refused before anything opens: a conflict of two sides (`PATH has two sides; resolve it without --pair`), and a pair out of range (`pair N needs sides N and N + 1; the conflict has n`).

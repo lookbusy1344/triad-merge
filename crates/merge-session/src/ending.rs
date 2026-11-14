@@ -96,6 +96,9 @@ pub enum Next {
     Stay,
     /// Ask before writing markers for `unresolved` conflicts.
     ConfirmUnresolved { unresolved: usize },
+    /// Refuse a save of pair `pair` of a jj conflict with conflicts left: it would write
+    /// nothing (spec §7.5.2).
+    PairUnresolved { pair: usize },
     /// Ask whether to save, discard or keep editing ([`Closing`]).
     ConfirmClose,
     /// Run Save & Exit, with its own checks.
@@ -113,13 +116,20 @@ pub enum Next {
     Finish { code: ExitCode, journal: Journal },
 }
 
-/// Save & Exit, with `unresolved` conflicts left. Nothing while a save runs.
+/// Save & Exit, with `unresolved` conflicts left, of `pair` of a jj conflict when given.
+/// Nothing while a save runs.
 #[must_use]
-pub fn save_requested(saving: bool, unresolved: usize, policy: UnresolvedSave) -> Next {
-    match (saving, unresolved, policy) {
+pub fn save_requested(
+    saving: bool,
+    unresolved: usize,
+    policy: UnresolvedSave,
+    pair: Option<usize>,
+) -> Next {
+    match (saving, unresolved, policy, pair) {
         (true, ..) => Next::Stay,
-        (false, 0, _) | (false, _, UnresolvedSave::Write) => Next::Write,
-        (false, unresolved, UnresolvedSave::Confirm) => Next::ConfirmUnresolved { unresolved },
+        (false, 1.., _, Some(pair)) => Next::PairUnresolved { pair },
+        (false, 0, ..) | (false, _, UnresolvedSave::Write, _) => Next::Write,
+        (false, unresolved, UnresolvedSave::Confirm, _) => Next::ConfirmUnresolved { unresolved },
     }
 }
 
@@ -204,25 +214,37 @@ mod tests {
 
     #[test]
     fn save_and_exit_writes_at_once_without_conflicts_or_when_set_to() {
-        assert_eq!(save_requested(false, 0, UnresolvedSave::Confirm), Next::Write);
-        assert_eq!(save_requested(false, 0, UnresolvedSave::Write), Next::Write);
-        assert_eq!(save_requested(false, 3, UnresolvedSave::Write), Next::Write);
+        assert_eq!(save_requested(false, 0, UnresolvedSave::Confirm, NO_PAIR), Next::Write);
+        assert_eq!(save_requested(false, 0, UnresolvedSave::Write, NO_PAIR), Next::Write);
+        assert_eq!(save_requested(false, 3, UnresolvedSave::Write, NO_PAIR), Next::Write);
     }
 
     #[test]
     fn save_and_exit_with_conflicts_asks_first_and_names_their_count() {
         assert_eq!(
-            save_requested(false, 1, UnresolvedSave::Confirm),
+            save_requested(false, 1, UnresolvedSave::Confirm, NO_PAIR),
             Next::ConfirmUnresolved { unresolved: 1 }
         );
         assert_eq!(unresolved_answered(true), Next::Write);
         assert_eq!(unresolved_answered(false), Next::Stay);
     }
 
+    /// A merge of the whole conflict, not of one pair.
+    const NO_PAIR: Option<usize> = None;
+
+    #[test]
+    fn a_pair_with_conflicts_left_refuses_the_save_whatever_the_setting() {
+        for policy in [UnresolvedSave::Confirm, UnresolvedSave::Write] {
+            assert_eq!(save_requested(false, 2, policy, Some(3)), Next::PairUnresolved { pair: 3 });
+            assert_eq!(save_requested(false, 0, policy, Some(3)), Next::Write);
+            assert_eq!(save_requested(true, 2, policy, Some(3)), Next::Stay);
+        }
+    }
+
     #[test]
     fn nothing_starts_while_a_save_runs() {
-        assert_eq!(save_requested(true, 0, UnresolvedSave::Write), Next::Stay);
-        assert_eq!(save_requested(true, 2, UnresolvedSave::Confirm), Next::Stay);
+        assert_eq!(save_requested(true, 0, UnresolvedSave::Write, NO_PAIR), Next::Stay);
+        assert_eq!(save_requested(true, 2, UnresolvedSave::Confirm, NO_PAIR), Next::Stay);
         assert_eq!(close_requested(true, false), Next::Stay);
         assert_eq!(close_requested(true, true), Next::Stay);
     }

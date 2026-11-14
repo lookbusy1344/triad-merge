@@ -37,11 +37,22 @@ mod jj {
         fixture: &Fixture,
         commit: &Committed,
     ) -> (AnyWindowHandle, common::Finished) {
+        open_pair(cx, fixture, commit, None)
+    }
+
+    /// The merge window on `a.txt` in `commit`, of the whole conflict or of `pair`, as
+    /// `resolve -r` and `resolve --pair` open it.
+    fn open_pair(
+        cx: &mut TestAppContext,
+        fixture: &Fixture,
+        commit: &Committed,
+        pair: Option<usize>,
+    ) -> (AnyWindowHandle, common::Finished) {
         let opened = merge_session::resolve::load_at_commit(
             fixture.root().as_std_path(),
             &commit.commit,
             Path::new("a.txt"),
-            None,
+            pair,
             Some(ConfigEnv::default()),
         )
         .expect("it loads")
@@ -154,5 +165,36 @@ mod jj {
         cx.run_until_parked();
         assert!(!cx.has_pending_prompt());
         assert_eq!(finished.codes(), [ExitCode::Conflicts]);
+    }
+
+    #[gpui_kit::test]
+    fn a_pair_with_conflicts_left_refuses_the_save_and_keeps_the_window(cx: &mut TestAppContext) {
+        let fixture = Fixture::new();
+        let base = fixture.commit_on(&[], "base", &[("a.txt", b"a\n")]);
+        let sides: Vec<Committed> = ["one\n", "two\n", "three\n"]
+            .into_iter()
+            .map(|text| fixture.commit_on(&[&base], text.trim(), &[("a.txt", text.as_bytes())]))
+            .collect();
+        let merge = fixture.commit_merged(&sides.iter().collect::<Vec<_>>(), "merge", &[]);
+        let operations = fixture.operation_count();
+        let (window, finished) = open_pair(cx, &fixture, &merge, Some(1));
+        press(cx, window, "secondary-s");
+        let (message, detail) = cx.pending_prompt().expect("the refusal");
+        assert_eq!(message, "Pair 1 has conflicts.");
+        assert_eq!(
+            detail,
+            "Saving writes nothing until the pair resolves. Resolve its 1 conflict, or close \
+             without saving."
+        );
+        cx.simulate_prompt_answer(KEEP_EDITING);
+        cx.run_until_parked();
+        assert!(!cx.has_pending_prompt());
+        assert_eq!(finished.codes(), []);
+        assert_eq!(fixture.operation_count(), operations);
+        // Resolved, the pair saves.
+        pick_left(cx, window);
+        press(cx, window, "secondary-s");
+        assert!(!cx.has_pending_prompt());
+        assert_eq!(finished.codes(), [ExitCode::Resolved]);
     }
 }

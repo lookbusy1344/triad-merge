@@ -242,7 +242,13 @@ impl Session {
     /// What Save & Exit does now (spec §6.2).
     #[must_use]
     pub fn save_requested(&self) -> Next {
-        ending::save_requested(self.saving, self.doc.unresolved(), self.target.unresolved_save)
+        let pair = self.target.record.as_ref().and_then(Record::pair);
+        ending::save_requested(
+            self.saving,
+            self.doc.unresolved(),
+            self.target.unresolved_save,
+            pair,
+        )
     }
 
     /// What Close does now (spec §6.2).
