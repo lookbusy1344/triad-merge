@@ -60,6 +60,8 @@ Line origins (⌘I) show the commit, author and jj change that wrote each line, 
 
 ## 3. jj
 
+Sections without a mark work the same in git (§4). Those marked *jj-enabled* rest on what jj records: conflicts in commits, the operation log and the commits that wrote each line. git has no form of them.
+
 ### From jj's own commands
 
 `triad-merge install --jj` makes triad jj's merge editor (`ui.merge-editor`) and adds it as the diff tool `triad`. jj then calls triad itself:
@@ -105,7 +107,53 @@ triad-merge resolve a.rs      # finish
 
 Without a window: `triad-merge resolve --headless src/lib.rs` writes the automatic merge, with markers for the conflicts.
 
-### Resolve conflicts in any commit
+### Diff the working copy
+
+```sh
+triad-merge diff src/lib.rs        # against @-; edits save to the working copy
+jj diff --tool triad               # each changed file in turn
+```
+
+When `@` is a merge, the left side is the file in the merge of the parents' trees, as `jj diff` shows it.
+
+### Diff against older revisions
+
+`--rev` takes any revset. A revset of several commits reads from the merge of their trees.
+
+```sh
+triad-merge diff src/lib.rs --rev 'trunk()'
+triad-merge diff src/lib.rs --rev xyz
+triad-merge diff src/lib.rs --rev '@--'
+```
+
+The left side is read-only; the right is the working-copy file, and edits save there. A file absent at the revision shows empty, its title ending in "(no file)".
+
+To compare two revisions, neither the working copy, use `jj diff --tool triad --from abc --to xyz` (§3, "From jj's own commands").
+
+### Diff against an earlier state of the working copy (jj-enabled)
+
+jj snapshots the working copy at every jj command, and its operation log keeps each snapshot. Code you overwrote between two commits is still there.
+
+```sh
+triad-merge history src/lib.rs                  # a window on each version of the file, newest first
+triad-merge history src/lib.rs --limit 20       # the newest 20; stops reading the log there
+triad-merge history src/lib.rs --list           # print the list instead
+triad-merge diff src/lib.rs --op f5a69619a1f9   # one version against the working copy
+```
+
+`history` opens a window listing each version, under the operation where it first appeared. Click one, or select it with ↑ and ↓ and press Enter, to open it in the diff window against the working-copy file: the version on the left, read-only, the file on the right. Copy lines back and save to restore them. One diff window is open at a time. When it closes, the list loads again and a save shows as a new version at the top. Closing the history window exits 0.
+
+`--list` prints the same list:
+
+```
+15eaadcad368 2026-11-13T15:35:02+00:00 snapshot working copy
+f5a69619a1f9 2026-11-13T15:35:02+00:00 snapshot working copy
+f09f484b2665 2026-11-13T15:35:02+00:00 add workspace 'default' (absent)
+```
+
+`(absent)`, `(conflict)` and `(other)` mark an operation where the path held no file, a conflict, or a symlink or directory. `diff --op` opens one version without the window; `--op` takes what `jj --at-op` takes: an ID prefix, `@`, `@-`. The history is as fine as jj's snapshots: one per jj command, or more with jj's file watcher.
+
+### Resolve conflicts in any commit (jj-enabled)
 
 jj records conflicts in commits, so a rebase never stops halfway. triad resolves them where they sit, without `jj edit`.
 
@@ -136,7 +184,7 @@ In the window, Save & Exit first works out what the save would do, writing nothi
 
 jj refuses a write to an immutable commit, and so does triad, with your `revset-aliases`. A save is also refused when the conflict in the commit changed after triad read it, for example by a `jj rebase` while the window was open; nothing is written, and you open it again.
 
-### Resolve a conflict of more than two sides, two sides at a time
+### Resolve a conflict of more than two sides, two sides at a time (jj-enabled)
 
 A merge of three branches, or a rebase of a conflicted commit, can leave three or more sides. jj orders them side 1, base 1, side 2, base 2, …, side n. Sides count as jj shows them: jj drops pairs of terms that cancel, so a file the third branch left alone has two sides. `--pair N` opens an ordinary three-way merge of sides N and N + 1 over base N:
 
@@ -149,53 +197,7 @@ Opened without `--pair`, the merge window shows one top pane per side. The confl
 
 A resolved save replaces those three terms with the result, so the conflict keeps one side fewer. The merged side keeps side N's label. Repeat until one side is left and the file resolves. The merge window refuses a save while the pair has conflicts; `--headless` then writes nothing and exits 1.
 
-### Diff the working copy
-
-```sh
-triad-merge diff src/lib.rs        # against @-; edits save to the working copy
-jj diff --tool triad               # each changed file in turn
-```
-
-When `@` is a merge, the left side is the file in the merge of the parents' trees, as `jj diff` shows it.
-
-### Diff against older revisions
-
-`--rev` takes any revset. A revset of several commits reads from the merge of their trees.
-
-```sh
-triad-merge diff src/lib.rs --rev 'trunk()'
-triad-merge diff src/lib.rs --rev xyz
-triad-merge diff src/lib.rs --rev '@--'
-```
-
-The left side is read-only; the right is the working-copy file, and edits save there. A file absent at the revision shows empty, its title ending in "(no file)".
-
-To compare two revisions, neither the working copy, use `jj diff --tool triad --from abc --to xyz` (§3, "From jj's own commands").
-
-### Diff against an earlier state of the working copy
-
-jj snapshots the working copy at every jj command, and its operation log keeps each snapshot. Code you overwrote between two commits is still there.
-
-```sh
-triad-merge history src/lib.rs                  # a window on each version of the file, newest first
-triad-merge history src/lib.rs --limit 20       # the newest 20; stops reading the log there
-triad-merge history src/lib.rs --list           # print the list instead
-triad-merge diff src/lib.rs --op f5a69619a1f9   # one version against the working copy
-```
-
-`history` opens a window listing each version, under the operation where it first appeared. Click one, or select it with ↑ and ↓ and press Enter, to open it in the diff window against the working-copy file: the version on the left, read-only, the file on the right. Copy lines back and save to restore them. One diff window is open at a time. When it closes, the list loads again and a save shows as a new version at the top. Closing the history window exits 0.
-
-`--list` prints the same list:
-
-```
-15eaadcad368 2026-11-13T15:35:02+00:00 snapshot working copy
-f5a69619a1f9 2026-11-13T15:35:02+00:00 snapshot working copy
-f09f484b2665 2026-11-13T15:35:02+00:00 add workspace 'default' (absent)
-```
-
-`(absent)`, `(conflict)` and `(other)` mark an operation where the path held no file, a conflict, or a symlink or directory. `diff --op` opens one version without the window; `--op` takes what `jj --at-op` takes: an ID prefix, `@`, `@-`. The history is as fine as jj's snapshots: one per jj command, or more with jj's file watcher.
-
-### Absorb working-copy edits into the commits that wrote the lines
+### Absorb working-copy edits into the commits that wrote the lines (jj-enabled)
 
 Fix lines across a stack of commits in the working copy, then send each hunk to the commit that last changed the lines it replaces.
 
@@ -357,4 +359,4 @@ Bind a key with `keybind = CHORD=ACTION`, for example `keybind = cmd+j=next-conf
 | 0 | All resolved | Equal | No conflicted commit | Done |
 | 1 | Conflicts left | Different | Conflicted commits listed or left | — |
 | 2 | Cancelled | — | — | — |
-| 3 | Error, or a jj-only command in git | Error | Error | Error |
+| 3 | Error, or a jj-enabled command in git | Error | Error | Error |
