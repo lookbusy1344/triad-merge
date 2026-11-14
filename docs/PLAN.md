@@ -25,7 +25,7 @@ As of 2026-11-14.
 
 Every spec §9 target is met (§A6.7). Toolchain: stable Rust 1.100, with `rust-version` 1.99. Dependencies: jj-lib and jj-core 0.47.1 on gix 0.90; gpui-kit 0.8.1 with the vendored `gpui-base` patch; gpui-kit 0.9 is not adopted (`docs/gpui-kit-issues.md`).
 
-CI: `triad.yml` tests on Linux, macOS and Windows; `bench.yml` and `audit.yml` run weekly. All three pass on GitHub's runners; Linux and macOS also under `act`. `release.yml` runs on a `v*` tag that matches the workspace version: it builds `triad.app` for macOS ARM64, a zip of both binaries for Windows x64 and the smoke-tested Linux x64 packages, and publishes them as a release. v0.1.0 is the first.
+CI: `triad.yml` tests on Linux, macOS and Windows; `bench.yml` and `audit.yml` run weekly. All three pass on GitHub's runners; Linux and macOS also under `act`. On the Windows runner, tests that build jj repositories run about 40 times slower than on Linux: `vcs-jj`'s jj tests take 292 s of test time there and 7 s on Linux, while `vcs-git`'s take 8 s. Defender is off in the runner image. The cause is open (§3). `release.yml` runs on a `v*` tag that matches the workspace version: it builds `triad.app` for macOS ARM64, a zip of both binaries for Windows x64 and the smoke-tested Linux x64 packages, and publishes them as a release. v0.1.0 is the first.
 
 Build profiles (root `Cargo.toml`): `release` aborts on panic and strips symbols, 37.5 MB on macOS ARM64, 1 min clean; `script/macos-app`, `script/measure-app` and the benchmarks use it. `dist` adds fat LTO and one codegen unit, 35.4 MB, 3 min; `script/package`, `script/macos-app dist` and `release.yml` use it.
 
@@ -49,6 +49,7 @@ In order. Each is one or more commits.
 | Linux packages: triad's MIT licence file and dependency notices | The release | §E7.1 |
 | Windows: tool runs from `git mergetool`, `git difftool`, `jj resolve` and `jj diff --tool` in a real console; MSI through `cargo-wix`, Authenticode signing, winget manifest; icon resource; rendering, IME and file watching on x64 and ARM64; release checklist and spec §9 | x64 and ARM64 machines, a certificate, permission to install `cargo-wix` | §E7.2 |
 | Windows ARM64 in CI (`windows-11-arm`), before version 1.0 | — | `.github/workflows/triad.yml` |
+| Windows CI: find why jj repository tests run about 40 times slower than on Linux. First check: fixtures on D: through `TMP` and `TEMP`; next, jj-lib's file lock under parallel tests | A CI run per check | §1, `.github/workflows/triad.yml` |
 | Per-command scans in `MergeWindow::refresh`: bands, placeholders, status counts; a pick at 1M costs 4.4 / 6.3 ms mean / max | A measurement that calls for them | §A6.7 |
 | Whole-text copies: `Recompute::run`, `MergeDocument::output`, 8-byte line starts | A measurement that calls for them | §A6.7 |
 | `DiffScroll`: the diff window's eight scroll fields in one component, as `PaneScroll` | A diff scroll bug | §A13.3 |

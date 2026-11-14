@@ -185,9 +185,9 @@ fn departure(fixture: &Fixture, case: &Case) -> Option<String> {
 }
 
 /// The corpus runs in this many tests, each case in the one its index picks, so each test
-/// stays well inside nextest's limit under the full suite's load. A case costs about 180 ms
-/// of a debug build's CPU, and threads gain nothing on a loaded machine.
-const SHARDS: usize = 16;
+/// stays well inside nextest's limit under the full suite's load. A case costs about 70 ms on
+/// Linux and up to 8 s on a loaded Windows runner, and threads gain nothing on a loaded machine.
+const SHARDS: usize = 32;
 
 /// The cases of shard `shard` that depart from `jj absorb`.
 fn absorb_shard(shard: usize) {
@@ -242,6 +242,22 @@ absorb_shards!(
     absorb_matches_jj_13 = 13,
     absorb_matches_jj_14 = 14,
     absorb_matches_jj_15 = 15,
+    absorb_matches_jj_16 = 16,
+    absorb_matches_jj_17 = 17,
+    absorb_matches_jj_18 = 18,
+    absorb_matches_jj_19 = 19,
+    absorb_matches_jj_20 = 20,
+    absorb_matches_jj_21 = 21,
+    absorb_matches_jj_22 = 22,
+    absorb_matches_jj_23 = 23,
+    absorb_matches_jj_24 = 24,
+    absorb_matches_jj_25 = 25,
+    absorb_matches_jj_26 = 26,
+    absorb_matches_jj_27 = 27,
+    absorb_matches_jj_28 = 28,
+    absorb_matches_jj_29 = 29,
+    absorb_matches_jj_30 = 30,
+    absorb_matches_jj_31 = 31,
 );
 
 const RESOLVE: &str =
@@ -460,9 +476,9 @@ fn resolved_by_triad(case: &ResolveCase) -> After {
     after(&fixture, written.is_err(), fixture.operation_count() - before)
 }
 
-/// The resolve corpus runs in this many tests, as the absorb corpus does ([`SHARDS`]): one
-/// test of all nine cases takes 18 s under the full suite's load.
-const RESOLVE_SHARDS: usize = 3;
+/// The resolve corpus runs one case per test, as the absorb corpus shards ([`SHARDS`]): a case
+/// takes up to 10 s on a loaded Windows runner.
+const RESOLVE_SHARDS: usize = 9;
 
 /// The cases of resolve shard `shard` that depart from `jj resolve -r`.
 fn resolve_shard(shard: usize) {
@@ -494,4 +510,14 @@ macro_rules! resolve_shards {
     )*};
 }
 
-resolve_shards!(resolve_matches_jj_0 = 0, resolve_matches_jj_1 = 1, resolve_matches_jj_2 = 2,);
+resolve_shards!(
+    resolve_matches_jj_0 = 0,
+    resolve_matches_jj_1 = 1,
+    resolve_matches_jj_2 = 2,
+    resolve_matches_jj_3 = 3,
+    resolve_matches_jj_4 = 4,
+    resolve_matches_jj_5 = 5,
+    resolve_matches_jj_6 = 6,
+    resolve_matches_jj_7 = 7,
+    resolve_matches_jj_8 = 8,
+);
