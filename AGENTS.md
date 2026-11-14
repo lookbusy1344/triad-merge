@@ -125,6 +125,7 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | Try a merge by hand | `cargo build --workspace`, then `target/debug/triad-merge inspect fixtures/demo/{base,left,right}.txt` (`fixtures/demo/README.md`) |
 | A disposable jj repository with conflicts in two Rust files | `script/gen-conflict-repo [dest]` (`fixtures/conflict-repo/README.md`) |
 | Build `target/release/triad.app`; `dist` builds `target/dist/triad.app` with fat LTO, as a release does | `script/macos-app [dist]` |
+| Write the oracles from jj's CLI after a jj-lib upgrade; the `jj` on `PATH` must be the pinned release (`DESIGN.md` §I6) | `script/gen-jj-cli-oracle` |
 | Benchmarks against spec §9 | `cargo bench -p merge-core --bench merge`, `cargo bench -p merge-syntax --bench boundaries`, `cargo bench -p merge-cli --bench memory`, then `script/check-bench` |
 | Cost of `resolve`'s repository steps on 10k and 100k files (`DESIGN.md` §D5.5) | `cargo bench -p merge-cli --bench resolve` |
 | Measure the running app against spec §9 (`DESIGN.md` §A6.7) | `script/measure-app [refresh-hz] [output-extension]` (`rs` adds Rust highlighting); one mode: `TRIAD_MEASURE=<open\|scroll-rows\|scroll-result\|type\|pick\|syntax> target/release/triad-merge target/measure/<lines>/{base,left,right}.txt target/measure/<lines>/out.txt` |
@@ -152,7 +153,7 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | `crates/vcs`, `vcs-jj`, `vcs-git` | Repository trait and its jj-lib and gix backends. |
 | `fixtures/core` | Hand-written triples with expected outputs, named for the case they cover. |
 | `fixtures/syntax` | One sample file per highlighted language, for the highlighting tests. |
-| `fixtures/oracle` | `jj-corpus.jsonl`: jj-lib merges with jj seeds, from `script/gen-jj-oracle`. `corpus.jsonl`: `git merge-file` triples, from `script/gen-oracle`. |
+| `fixtures/oracle` | `jj-corpus.jsonl`: jj-lib merges with jj seeds, from `script/gen-jj-oracle`. `corpus.jsonl`: `git merge-file` triples, from `script/gen-oracle`. `jj-cli-aliases.json` and `jj-cli-absorb.json`: jj's default revset aliases and `jj absorb` results, from `script/gen-jj-cli-oracle`. |
 | `fixtures/conflict-repo` | Sources of a disposable jj repository with two conflicted Rust files, for `script/gen-conflict-repo`. |
 | `fixtures/demo` | A 980-line Rust merge with 20 conflicts, from `script/gen-demo`. |
 | `images` | Mark, logo and app icon as SVG, PNG, ICNS and ICO, from `script/gen-images.swift`. |

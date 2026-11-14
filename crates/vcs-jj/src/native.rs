@@ -19,9 +19,10 @@ use vcs::{ChangeInfo, VcsError};
 
 use crate::{JjError, JjRepository, Revsets, backend, colocated_git, config, export_refs};
 
-/// jj's default revset aliases for what may be rewritten, as jj's own config sets them. The
-/// user's `revset-aliases` replace any of them.
-const DEFAULT_ALIASES: [(&str, &str); 5] = [
+/// jj's default revset aliases, as jj's own config sets them, less `builtin_log()`, which
+/// only `jj log` reads. The user's `revset-aliases` replace any of them.
+/// `fixtures/oracle/jj-cli-aliases.json` holds jj's set.
+pub const DEFAULT_ALIASES: &[(&str, &str)] = &[
     (
         "trunk()",
         r#"latest(
@@ -34,10 +35,15 @@ const DEFAULT_ALIASES: [(&str, &str); 5] = [
             root()
         )"#,
     ),
-    ("builtin_immutable_heads()", "present(trunk()) | tags() | untracked_remote_bookmarks()"),
+    (
+        "builtin_immutable_heads()",
+        "trunk() | tags() | untracked_remote_bookmarks() | untracked_remote_tags()",
+    ),
     ("immutable_heads()", "builtin_immutable_heads()"),
     ("immutable()", "::(immutable_heads() | root())"),
     ("mutable()", "~immutable()"),
+    ("visible()", "::visible_heads()"),
+    ("hidden()", "~visible()"),
 ];
 /// The config table that holds the user's revset aliases.
 const ALIASES_TABLE: &str = "revset-aliases";
@@ -109,7 +115,7 @@ impl JjRepository {
             config::load(&env, self.root.as_std_path()).map_err(backend("reading jj's config"))?;
         let config = loaded.settings.config();
         let mut aliases = RevsetAliasesMap::new();
-        for (decl, defn) in DEFAULT_ALIASES {
+        for &(decl, defn) in DEFAULT_ALIASES {
             aliases.insert(decl, defn, None).map_err(backend("declaring a revset alias"))?;
         }
         for decl in config.table_keys(ALIASES_TABLE) {
@@ -547,7 +553,7 @@ mod tests {
     #[test]
     fn the_default_aliases_declare_and_name_mutable() {
         let mut aliases = RevsetAliasesMap::new();
-        for (decl, defn) in DEFAULT_ALIASES {
+        for &(decl, defn) in DEFAULT_ALIASES {
             assert!(aliases.insert(decl, defn, None).is_ok(), "{decl} declares");
         }
         assert!(aliases.function_names().any(|name| name == "mutable"));

@@ -9,6 +9,8 @@
 mod absorb;
 #[path = "jj/history.rs"]
 mod history;
+#[path = "jj/oracle.rs"]
+mod oracle;
 #[path = "jj/reduce.rs"]
 mod reduce;
 #[path = "jj/snapshot.rs"]

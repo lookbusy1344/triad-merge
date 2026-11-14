@@ -709,6 +709,24 @@ pub enum ToolOutcome {
     InvalidConflictMarkers,
 }
 
+/// The workspace's `Cargo.lock`.
+const CARGO_LOCK: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../Cargo.lock");
+
+/// The jj-lib version `Cargo.lock` pins: the jj release whose CLI the oracles under
+/// `fixtures/oracle/jj-cli-*.json` must come from.
+#[must_use]
+pub fn locked_jj_lib_version() -> String {
+    let lock = std::fs::read_to_string(CARGO_LOCK).expect("Cargo.lock reads");
+    let mut lines = lock.lines();
+    lines.by_ref().find(|line| *line == r#"name = "jj-lib""#).expect("Cargo.lock holds jj-lib");
+    lines
+        .next()
+        .and_then(|line| line.strip_prefix(r#"version = ""#))
+        .and_then(|rest| rest.strip_suffix('"'))
+        .expect("jj-lib's version follows its name")
+        .to_owned()
+}
+
 /// The arguments with each `$name` replaced by its variable, as jj does (`$` then
 /// `[a-z0-9_]+`, up to a word boundary); unknown names stay as written.
 #[must_use]

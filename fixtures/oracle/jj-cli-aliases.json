@@ -1,0 +1,13 @@
+{
+  "aliases": {
+    "builtin_immutable_heads()": "trunk() | tags() | untracked_remote_bookmarks() | untracked_remote_tags()\n",
+    "builtin_log()": "present(@) | ancestors(immutable_heads().., 2) | trunk()",
+    "hidden()": "~visible()",
+    "immutable()": "::(immutable_heads() | root())",
+    "immutable_heads()": "builtin_immutable_heads()",
+    "mutable()": "~immutable()",
+    "trunk()": "latest(\n  remote_bookmarks(exact:\"main\", exact:\"origin\") |\n  remote_bookmarks(exact:\"master\", exact:\"origin\") |\n  remote_bookmarks(exact:\"trunk\", exact:\"origin\") |\n  remote_bookmarks(exact:\"main\", exact:\"upstream\") |\n  remote_bookmarks(exact:\"master\", exact:\"upstream\") |\n  remote_bookmarks(exact:\"trunk\", exact:\"upstream\") |\n  root()\n)\n",
+    "visible()": "::visible_heads()"
+  },
+  "jj": "0.47.1"
+}
