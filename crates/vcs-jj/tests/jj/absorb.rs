@@ -243,6 +243,35 @@ fn into_limits_the_commits() {
     );
 }
 
+#[test]
+fn an_immutable_commit_in_into_takes_no_hunk() {
+    // The tag makes `one` immutable; `--into` names every commit.
+    let (fixture, one, two) = stack(b"1\n2\nTHREE\n4\n5\n", b"x\nY\nz\n");
+    fixture.set_tag("v1", &one);
+    let absorbed =
+        open(&fixture).absorb(&[], Some("all()"), &[], false, None).expect("the hunks are listed");
+    assert_eq!(
+        summary(&absorbed),
+        [(1, "a.txt", [2, 3, 2, 3], NO_COMMIT.to_owned()), (2, "b.txt", [1, 2, 1, 2], into(&two))]
+    );
+    let destinations: Vec<&str> = absorbed.destinations.iter().map(|d| d.id.as_str()).collect();
+    assert_eq!(destinations, [two.commit.as_str()]);
+    let moved = HunkChoice::Move { hunk: 1, rev: one.commit.clone() };
+    assert_eq!(
+        refusal(open(&fixture).absorb(&[], Some("all()"), &[moved], true, None)),
+        format!("{} is not a mutable ancestor of the working copy in --into", one.commit)
+    );
+    let applied = open(&fixture)
+        .absorb(&[], Some("all()"), &[], true, None)
+        .expect("the hunk into the mutable commit moves");
+    assert!(applied.rewrite.written);
+    assert_eq!(fixture.held_in(&fixture.latest(&two), "b.txt"), Held::File(b"x\nY\nz\n".to_vec()));
+    assert_eq!(
+        fixture.held_in(&fixture.latest(&one), "a.txt"),
+        Held::File(b"1\n2\n3\n4\n5\n".to_vec())
+    );
+}
+
 fn refusal(result: Result<Absorbed, VcsError>) -> String {
     match result {
         Err(VcsError::Backend { source, .. }) => source

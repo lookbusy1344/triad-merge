@@ -194,7 +194,9 @@ impl JjRepository {
             let operation = this.repo.op_id().hex();
             let source = this.working_copy_in(repo)?;
             let parents: Vec<String> = source.parent_ids().iter().map(CommitId::hex).collect();
-            let expr = format!("({into}) & ::({})", parents.join(" | "));
+            // An immutable commit is no destination; the lines it wrote are outside the
+            // domain, as a commit outside `--into` is.
+            let expr = format!("({into}) & mutable() & ::({})", parents.join(" | "));
             let destinations = this.evaluate(repo, &expr, &revsets)?;
             let domain = this.resolve_expression(repo, &expr, &revsets)?.into_inner().0;
             let parent_tree = source
