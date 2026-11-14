@@ -153,7 +153,7 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | `crates/vcs`, `vcs-jj`, `vcs-git` | Repository trait and its jj-lib and gix backends. |
 | `fixtures/core` | Hand-written triples with expected outputs, named for the case they cover. |
 | `fixtures/syntax` | One sample file per highlighted language, for the highlighting tests. |
-| `fixtures/oracle` | `jj-corpus.jsonl`: jj-lib merges with jj seeds, from `script/gen-jj-oracle`. `corpus.jsonl`: `git merge-file` triples, from `script/gen-oracle`. `jj-cli-aliases.json` and `jj-cli-absorb.json`: jj's default revset aliases and `jj absorb` results, from `script/gen-jj-cli-oracle`. |
+| `fixtures/oracle` | `jj-corpus.jsonl`: jj-lib merges with jj seeds, from `script/gen-jj-oracle`. `corpus.jsonl`: `git merge-file` triples, from `script/gen-oracle`. `jj-cli-aliases.json`, `jj-cli-absorb.json` and `jj-cli-resolve.json`: jj's default revset aliases, `jj absorb` results and repositories after `jj resolve -r`, from `script/gen-jj-cli-oracle`. |
 | `fixtures/conflict-repo` | Sources of a disposable jj repository with two conflicted Rust files, for `script/gen-conflict-repo`. |
 | `fixtures/demo` | A 980-line Rust merge with 20 conflicts, from `script/gen-demo`. |
 | `images` | Mark, logo and app icon as SVG, PNG, ICNS and ICO, from `script/gen-images.swift`. |

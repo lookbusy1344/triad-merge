@@ -21,7 +21,7 @@ As of 2026-11-14.
 | p4merge parity | Done | E |
 | Review and diff features | Bulk takes (§G3), line endings in comparison (§G4) and collapsed unchanged regions in both windows (§G2) done; the rest open | G |
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
-| jj-native features | Done: conflicts across a stack (`stack`, `resolve -r`), pair reduction (`resolve --pair`), operation-log history (`history`, `diff --op`) and absorb by hunk (`absorb`); the stack window, with a preview of a save's effect on the descendants and a confirmation before a save changes them; the history window; the absorb window, by hunk; the three windows' lists follow `docs/STYLE.md` and work from the keys; the conflict badge names the sides a conflict keeps; absorb and the default revset aliases checked against jj's CLI (§I6) | I |
+| jj-native features | Done: conflicts across a stack (`stack`, `resolve -r`), pair reduction (`resolve --pair`), operation-log history (`history`, `diff --op`) and absorb by hunk (`absorb`); the stack window, with a preview of a save's effect on the descendants and a confirmation before a save changes them; the history window; the absorb window, by hunk; the three windows' lists follow `docs/STYLE.md` and work from the keys; the conflict badge names the sides a conflict keeps; absorb, `resolve -r` and the default revset aliases checked against jj's CLI (§I6) | I |
 
 Every spec §9 target is met (§A6.7). Toolchain: stable Rust 1.100, with `rust-version` 1.99. Dependencies: jj-lib and jj-core 0.47.1 on gix 0.90; gpui-kit 0.8.1 with the vendored `gpui-base` patch; gpui-kit 0.9 is not adopted (`docs/gpui-kit-issues.md`).
 
@@ -65,7 +65,8 @@ In order. Each is one or more commits.
 | A key that opens the fold next to the caret | — | §G2 |
 | Review and diff features, §G4–§G14 | Owner's choices on §G15's open points | G |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
-| An oracle for the end of a transaction (§I1): `resolve -r` against `jj resolve -r` with a tool that writes a fixed result, comparing the commits, `@`, git's `HEAD` and the refs after | — | §I6 |
+| The absorb oracle's generator builds linear stacks of text files with the default `--into` only: no merge commits, no merge working copy, no renames, executable bits, symlinks, conflicted inputs, immutable commits or narrower `--into` | — | §I6 |
+| jj-cli's config defaults other than the revset aliases: none checked for whether triad depends on one | — | §I6 |
 | Absorb: split one hunk between commits | Part H's line selection (§H6) | §I5 |
 | The stack, history and absorb windows checked on screen: layout, keys, focus and the accessibility tree; their tests run headless only | — | §I2, §I4, §I5 |
 | `resolve --pair` labels: conflict labels are positional per tree, and `reduce_pair` splices terms without rewriting them, so the merged side keeps one input's label (pair 1 of `one`, `two`, `three` shows the merged side as `one`) and jj's markers mislead afterwards. Give the merged term its own label or none | — | §I3 |
@@ -82,7 +83,7 @@ In order. Each is one or more commits.
 | Editor slow paths: very long lines, many cursors | Missed spec §9 targets | Benchmarks and `script/measure-app`; intra-line diffs capped |
 | Editor and core text drift apart | Wrong output bytes | The core is the source of truth; tests compare the editor's rope with the core's after each command |
 | jj-lib API changes between releases | `vcs-jj` breaks on bump | Exact pin; the conformance suite gates each bump |
-| `vcs-jj` re-implements jj-cli behaviour: the end of a transaction in `JjRepository::rewrite`, the default revset aliases, absorb's hunk split | A jj upgrade changes jj's behaviour and triad's silently departs from it | Oracles from jj's CLI, pinned to the jj-lib version in `Cargo.lock`, cover the aliases and absorb (§I6); the end of a transaction has none |
+| `vcs-jj` re-implements jj-cli behaviour: the end of a transaction in `JjRepository::rewrite`, the default revset aliases, absorb's hunk split | A jj upgrade changes jj's behaviour and triad's silently departs from it | Oracles from jj's CLI, pinned to the jj-lib version in `Cargo.lock`, cover the aliases, absorb and `resolve -r` (§I6); regenerating them needs the pinned jj on `PATH` |
 | gix and jj-lib disagree on gix version | Two gix copies | `vcs-git` pinned to jj-lib's gix; `script/check-workspace` fails on two |
 | Windows GUI and console split surprises git or jj | Lost exit codes or stderr | §A4.13 tests in CI; manual check in M4b |
 | Linux desktop rendering | Poor Linux experience | Real-desktop check in M4b; record in `gpui-kit-issues.md` |

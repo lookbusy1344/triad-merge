@@ -3,6 +3,7 @@
 #![expect(
     clippy::missing_panics_doc,
     clippy::expect_used,
+    clippy::panic,
     reason = "test support: each panic is a failed test setup, named by its message"
 )]
 
@@ -15,6 +16,7 @@ use std::sync::Arc;
 use std::path::Path;
 
 use camino::{Utf8Path, Utf8PathBuf};
+use futures::{AsyncReadExt as _, StreamExt as _};
 use jj_lib::backend::{CommitId, CopyId, TreeValue};
 use jj_lib::commit::Commit;
 use jj_lib::config::{ConfigLayer, ConfigSource, StackedConfig};
@@ -72,6 +74,18 @@ impl Committed {
             id: commit.id().clone(),
         }
     }
+}
+
+/// A visible commit, as [`Fixture::visible_commits`] lists it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Visible {
+    pub commit: Committed,
+    /// The first line of its description.
+    pub description: String,
+    /// Its parents' full IDs.
+    pub parents: Vec<String>,
+    /// It is the working-copy commit.
+    pub working_copy: bool,
 }
 
 /// What the working-copy commit holds at a path.
@@ -468,6 +482,125 @@ impl Fixture {
         self.finish(tx, "set bookmark");
     }
 
+    /// Point bookmark `name` at `commit`, as `jj bookmark set NAME -r COMMIT` does. A colocated
+    /// workspace exports it to git.
+    pub fn set_bookmark(&self, name: &str, commit: &Committed) {
+        let repo = self.repo();
+        let mut tx = repo.start_transaction();
+        tx.repo_mut()
+            .set_local_bookmark_target(RefName::new(name), RefTarget::normal(commit.id.clone()));
+        self.finish(tx, "set bookmark");
+    }
+
+    /// Every visible commit but the root, as `jj log -r 'all() ~ root()'` lists them, in
+    /// commit ID order.
+    #[must_use]
+    pub fn visible_commits(&self) -> Vec<Visible> {
+        let repo = self.repo();
+        let store = repo.store();
+        let root = store.root_commit_id().clone();
+        let wc = self.working_copy(repo.as_ref()).id().clone();
+        let mut pending: Vec<CommitId> = repo.view().heads().iter().cloned().collect();
+        let mut seen = std::collections::BTreeMap::new();
+        while let Some(id) = pending.pop() {
+            if id == root || seen.contains_key(&id) {
+                continue;
+            }
+            let commit = store.get_commit(&id).expect("a visible commit");
+            pending.extend(commit.parent_ids().iter().cloned());
+            let visible = Visible {
+                commit: Committed::of(&commit),
+                description: commit.description().lines().next().unwrap_or_default().to_owned(),
+                parents: commit.parent_ids().iter().map(CommitId::hex).collect(),
+                working_copy: id == wc,
+            };
+            seen.insert(id, visible);
+        }
+        seen.into_values().collect()
+    }
+
+    /// Each path of `commit`'s tree and its text, as `jj file show` prints it: a conflict
+    /// materialised in jj's `snapshot` marker style.
+    #[must_use]
+    pub fn tree_text(&self, commit: &Committed) -> std::collections::BTreeMap<String, String> {
+        let repo = self.repo();
+        let store = repo.store();
+        let tree = store.get_commit(&commit.id).expect("the commit").tree();
+        let options = ConflictMaterializeOptions {
+            marker_style: ConflictMarkerStyle::Snapshot,
+            marker_len: None,
+            merge: store.merge_options().clone(),
+        };
+        let entries: Vec<_> = tree.entries().collect().block_on();
+        entries
+            .into_iter()
+            .map(|(path, value)| {
+                let value = value.expect("the tree reads");
+                let bytes = match value.as_resolved() {
+                    Some(Some(TreeValue::File { id, .. })) => {
+                        let mut reader = store.read_file(&path, id).block_on().expect("a file");
+                        let mut bytes = Vec::new();
+                        reader.read_to_end(&mut bytes).block_on().expect("the file reads");
+                        bytes
+                    }
+                    Some(other) => panic!("a file at {path:?}, got {other:?}"),
+                    None => {
+                        let file = conflicts::try_materialize_file_conflict_value(
+                            store,
+                            &path,
+                            &value,
+                            tree.labels(),
+                        )
+                        .block_on()
+                        .expect("the conflict reads")
+                        .expect("a file conflict");
+                        conflicts::materialize_merge_result_to_bytes(
+                            &file.contents,
+                            &file.labels,
+                            &options,
+                        )
+                        .to_vec()
+                    }
+                };
+                (
+                    path.as_internal_file_string().to_owned(),
+                    String::from_utf8(bytes).expect("UTF-8 text"),
+                )
+            })
+            .collect()
+    }
+
+    /// The commit git's `HEAD` names, in a colocated workspace; none in an internal one.
+    #[must_use]
+    pub fn git_head(&self) -> Option<String> {
+        (self.store == Store::Colocated).then(|| {
+            let repo = gix::open(self.root()).expect("git's repository opens");
+            repo.head_id().expect("git has a HEAD").to_string()
+        })
+    }
+
+    /// git's branches and tags, each full ref name with the commit it names; none in an
+    /// internal workspace.
+    #[must_use]
+    pub fn git_refs(&self) -> std::collections::BTreeMap<String, String> {
+        if self.store != Store::Colocated {
+            return std::collections::BTreeMap::new();
+        }
+        let repo = gix::open(self.root()).expect("git's repository opens");
+        let platform = repo.references().expect("git's refs read");
+        platform
+            .all()
+            .expect("git's refs read")
+            .map(|reference| reference.expect("a ref"))
+            .filter_map(|reference| {
+                let name = reference.name().as_bstr().to_string();
+                let shown = name.starts_with("refs/heads/") || name.starts_with("refs/tags/");
+                let id = reference.target().try_id().map(|id| id.to_hex().to_string());
+                shown.then_some(id.map(|id| (name, id))).flatten()
+            })
+            .collect()
+    }
+
     /// The full ID of the working-copy commit at the head operation.
     #[must_use]
     pub fn working_copy_id(&self) -> String {
@@ -707,6 +840,27 @@ pub enum ToolOutcome {
     EmptyOrUnchanged,
     /// The exit code promised conflict markers, but jj found none it could parse.
     InvalidConflictMarkers,
+}
+
+/// The characters jj repeats to make a conflict marker line.
+const MARKER_CHARS: &[char] = &['<', '>', '+', '-', '%', '\\', '|', '='];
+
+/// `text` with each conflict marker line cut to its run of marker characters, so that
+/// conflicts compare without their labels, which name commit and change IDs.
+#[must_use]
+pub fn without_conflict_labels(text: &str) -> String {
+    text.split_inclusive('\n')
+        .map(|line| {
+            let first = line.chars().next().filter(|c| MARKER_CHARS.contains(c));
+            let run = first.map_or(0, |first| line.chars().take_while(|&c| c == first).count());
+            if run >= MIN_CONFLICT_MARKER_LEN {
+                let end = if line.ends_with('\n') { "\n" } else { "" };
+                format!("{}{end}", &line[..run])
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect()
 }
 
 /// The workspace's `Cargo.lock`.

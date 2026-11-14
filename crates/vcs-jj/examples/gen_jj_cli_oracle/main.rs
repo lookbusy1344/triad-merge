@@ -1,10 +1,11 @@
-//! Writes `fixtures/oracle/jj-cli-aliases.json` and `fixtures/oracle/jj-cli-absorb.json`
-//! from jj's own CLI (`DESIGN.md` §I1, §I5). Dev-time only; `script/gen-jj-cli-oracle` runs
+//! Writes `fixtures/oracle/jj-cli-aliases.json`, `jj-cli-absorb.json` and
+//! `jj-cli-resolve.json` from jj's own CLI (`DESIGN.md` §I6). Dev-time only; `script/gen-jj-cli-oracle` runs
 //! it. The `jj` on `PATH` must be the release whose jj-lib `Cargo.lock` pins.
 //!
 //! The aliases are jj's defaults for `revset-aliases`. Each absorb case is a seeded random
 //! stack of commits on the root, `base` first, and a working copy on it; the case records
-//! each commit's tree after `jj absorb`, and the commits it left conflicted.
+//! each commit's tree after `jj absorb`, and the commits it left conflicted. The resolve
+//! cases are in `resolve.rs`.
 #![expect(
     clippy::expect_used,
     clippy::panic,
@@ -20,6 +21,8 @@ use rand::{RngExt as _, SeedableRng as _};
 use rand_chacha::ChaCha20Rng;
 use serde::Serialize;
 use vcs_jj::testing::locked_jj_lib_version;
+
+mod resolve;
 
 const SEED: u64 = 500_135_715_172;
 /// The inputs generated; the corpus keeps the first cases of each kind.
@@ -165,13 +168,18 @@ struct Jj<'a> {
 }
 
 impl Jj<'_> {
-    fn run(&self, args: &[&str]) -> String {
-        let output = Command::new("jj")
+    /// Run jj; its output whether it succeeds or not.
+    fn output(&self, args: &[&str]) -> std::process::Output {
+        Command::new("jj")
             .args(args)
             .current_dir(self.dir)
             .env("JJ_CONFIG", self.config)
             .output()
-            .expect("jj runs");
+            .expect("jj runs")
+    }
+
+    fn run(&self, args: &[&str]) -> String {
+        let output = self.output(args);
         assert!(
             output.status.success(),
             "jj {args:?} failed: {}",
@@ -344,6 +352,8 @@ fn main() {
         lines.join(",\n")
     );
     fs::write(oracle.join("jj-cli-absorb.json"), body).expect("the absorb corpus is written");
+    let resolved = resolve::corpus(scratch.path(), &config, &version);
+    fs::write(oracle.join("jj-cli-resolve.json"), resolved).expect("the resolve corpus is written");
     println!(
         "{CLEAN_CASES} absorb cases jj leaves resolved, {CONFLICT_CASES} where it writes a conflict"
     );

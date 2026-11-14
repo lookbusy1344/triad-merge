@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 use vcs_jj::config::ConfigEnv;
-use vcs_jj::testing::{Committed, Fixture, Held, locked_jj_lib_version};
+use vcs_jj::testing::{Committed, Fixture, Held, locked_jj_lib_version, without_conflict_labels};
 
 const ALIASES: &str =
     concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/oracle/jj-cli-aliases.json");
@@ -66,6 +66,11 @@ fn the_corpora_come_from_the_jj_release_cargo_lock_pins() {
     let version = locked_jj_lib_version();
     assert_eq!(read::<Aliases>(ALIASES).jj, version, "regenerate with script/gen-jj-cli-oracle");
     assert_eq!(read::<Corpus>(ABSORB).jj, version, "regenerate with script/gen-jj-cli-oracle");
+    assert_eq!(
+        read::<ResolveCorpus>(RESOLVE).jj,
+        version,
+        "regenerate with script/gen-jj-cli-oracle"
+    );
 }
 
 #[test]
@@ -238,3 +243,255 @@ absorb_shards!(
     absorb_matches_jj_14 = 14,
     absorb_matches_jj_15 = 15,
 );
+
+const RESOLVE: &str =
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/oracle/jj-cli-resolve.json");
+/// The name the corpus gives the root commit as a parent.
+const ROOT: &str = "root";
+
+#[derive(Deserialize)]
+struct ResolveCorpus {
+    jj: String,
+    cases: Vec<ResolveCase>,
+}
+
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+enum Layout {
+    Colocated,
+    Internal,
+}
+
+/// A repository built step by step, then one conflict written into a commit: by
+/// `jj resolve -r` with a tool that writes a fixed result, and by triad's `resolve -r`.
+#[derive(Deserialize)]
+struct ResolveCase {
+    id: String,
+    layout: Layout,
+    /// Each commit in order: its parents' trees merged, `files` written over them.
+    commits: Vec<Step>,
+    /// Bookmarks and tags, each with the commit it names.
+    bookmarks: BTreeMap<String, String>,
+    tags: BTreeMap<String, String>,
+    /// A new working-copy commit on `parents`, with `files` written to disk and not yet
+    /// snapshotted.
+    working_copy: Step,
+    resolve: Resolve,
+    /// Where triad leaves the repository otherwise than jj, on purpose.
+    #[serde(default)]
+    departure: Option<Departure>,
+    after: After,
+}
+
+/// triad's departures from `jj resolve -r`.
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "kebab-case")]
+enum Departure {
+    /// triad refuses an immutable commit before it snapshots the working copy, so the refusal
+    /// writes no operation (`DESIGN.md` §I1); jj snapshots first.
+    RefusedBeforeSnapshot,
+    /// triad writes nothing for a result that reads back as the conflict the commit holds
+    /// (spec §7.5.1); jj writes an operation.
+    WritesNothing,
+}
+
+impl ResolveCase {
+    /// jj's result as triad must leave the repository.
+    fn expected(&self) -> After {
+        let mut after = self.after.clone();
+        match self.departure {
+            None => {}
+            Some(Departure::WritesNothing) => after.operations = 0,
+            Some(Departure::RefusedBeforeSnapshot) => {
+                after.operations = 0;
+                // The working-copy commit keeps its parent's tree: nothing snapshotted.
+                let [parent] = self.working_copy.parents.as_slice() else {
+                    panic!("{}: one parent", self.id);
+                };
+                let tree = after.commits[parent].tree.clone();
+                after.commits.get_mut(WORKING_COPY).expect("a working copy").tree = tree;
+            }
+        }
+        after
+    }
+}
+
+#[derive(Deserialize)]
+struct Step {
+    #[serde(default)]
+    name: String,
+    parents: Vec<String>,
+    files: Tree,
+}
+
+#[derive(Deserialize)]
+struct Resolve {
+    /// A commit's name, or `@`.
+    commit: String,
+    path: String,
+    result: String,
+    marker_length: usize,
+}
+
+/// The repository after the write.
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+struct After {
+    refused: bool,
+    /// The operations the write added, its snapshot included.
+    operations: usize,
+    /// Each visible commit by name, `@` for the working copy's.
+    commits: BTreeMap<String, CommitAfter>,
+    /// The working copy's files on disk, conflict markers without their labels.
+    disk: Tree,
+    /// The commit git's `HEAD` names; none in an internal repository.
+    git_head: Option<String>,
+    /// git's branches and tags, each with the commit it names.
+    git_refs: Tree,
+}
+
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+struct CommitAfter {
+    parents: Vec<String>,
+    /// Each path's text, a conflict materialised in jj's `snapshot` style without labels.
+    tree: Tree,
+}
+
+/// The files under `dir`, `.jj` and `.git` aside, by path relative to `root`, conflict
+/// markers without their labels.
+fn disk(root: &camino::Utf8Path, dir: &camino::Utf8Path, files: &mut Tree) {
+    for entry in dir.read_dir_utf8().expect("the directory reads") {
+        let entry = entry.expect("an entry");
+        let path = entry.path();
+        if [".jj", ".git"].contains(&entry.file_name()) {
+            continue;
+        }
+        if path.is_dir() {
+            disk(root, path, files);
+        } else {
+            let relative = path.strip_prefix(root).expect("under the root");
+            let text = std::fs::read_to_string(path).expect("a text file");
+            files.insert(relative.as_str().replace('\\', "/"), without_conflict_labels(&text));
+        }
+    }
+}
+
+/// `fixture` as the corpus records a repository, `operations` the count the write added.
+fn after(fixture: &Fixture, refused: bool, operations: usize) -> After {
+    let visible = fixture.visible_commits();
+    let mut names: BTreeMap<String, String> = visible
+        .iter()
+        .map(|v| {
+            let name = if v.working_copy { WORKING_COPY.to_owned() } else { v.description.clone() };
+            (v.commit.commit.clone(), name)
+        })
+        .collect();
+    names.insert("0".repeat(40), ROOT.to_owned());
+    let name = |id: &String| names.get(id).cloned().unwrap_or_else(|| format!("unknown {id}"));
+    let commits = visible
+        .iter()
+        .map(|v| {
+            let tree = fixture
+                .tree_text(&v.commit)
+                .into_iter()
+                .map(|(path, text)| (path, without_conflict_labels(&text)))
+                .collect();
+            (
+                name(&v.commit.commit),
+                CommitAfter { parents: v.parents.iter().map(name).collect(), tree },
+            )
+        })
+        .collect();
+    let mut files = Tree::new();
+    disk(fixture.root(), fixture.root(), &mut files);
+    After {
+        refused,
+        operations,
+        commits,
+        disk: files,
+        git_head: fixture.git_head().as_ref().map(name),
+        git_refs: fixture.git_refs().into_iter().map(|(r, id)| (r, name(&id))).collect(),
+    }
+}
+
+/// Build `case` through jj-lib, write its result with triad, and give the repository after.
+fn resolved_by_triad(case: &ResolveCase) -> After {
+    let fixture = match case.layout {
+        Layout::Colocated => Fixture::colocated(),
+        Layout::Internal => Fixture::internal(),
+    };
+    let mut made: BTreeMap<&str, Committed> = BTreeMap::new();
+    for step in &case.commits {
+        let files: Vec<(&str, &[u8])> =
+            step.files.iter().map(|(path, text)| (path.as_str(), text.as_bytes())).collect();
+        let parents: Vec<&Committed> = step.parents.iter().map(|p| &made[p.as_str()]).collect();
+        let committed = if parents.is_empty() {
+            fixture.commit_on(&[], &step.name, &files)
+        } else {
+            fixture.commit_merged(&parents, &step.name, &files)
+        };
+        made.insert(&step.name, committed);
+    }
+    for (bookmark, commit) in &case.bookmarks {
+        fixture.set_bookmark(bookmark, &made[commit.as_str()]);
+    }
+    for (tag, commit) in &case.tags {
+        fixture.set_tag(tag, &made[commit.as_str()]);
+    }
+    let parents: Vec<&Committed> =
+        case.working_copy.parents.iter().map(|p| &made[p.as_str()]).collect();
+    fixture.check_out(&parents);
+    fixture.check_out_to_disk();
+    for (path, text) in &case.working_copy.files {
+        std::fs::write(fixture.root().join(path), text).expect("a file is written");
+    }
+    let target = if case.resolve.commit == WORKING_COPY {
+        fixture.working_copy_commit()
+    } else {
+        made[case.resolve.commit.as_str()].clone()
+    };
+    let before = fixture.operation_count();
+    let written = fixture.open().with_config(ConfigEnv::default()).write_conflict(
+        &vcs::CommitId::new(target.commit),
+        camino::Utf8Path::new(&case.resolve.path),
+        case.resolve.result.as_bytes(),
+        case.resolve.marker_length,
+        false,
+    );
+    after(&fixture, written.is_err(), fixture.operation_count() - before)
+}
+
+/// The resolve corpus runs in this many tests, as the absorb corpus does ([`SHARDS`]): one
+/// test of all nine cases takes 18 s under the full suite's load.
+const RESOLVE_SHARDS: usize = 3;
+
+/// The cases of resolve shard `shard` that depart from `jj resolve -r`.
+fn resolve_shard(shard: usize) {
+    let corpus = read::<ResolveCorpus>(RESOLVE);
+    assert!(corpus.cases.len() >= RESOLVE_SHARDS, "the corpus holds a case for each shard");
+    let departures: Vec<String> = corpus
+        .cases
+        .iter()
+        .skip(shard)
+        .step_by(RESOLVE_SHARDS)
+        .filter_map(|case| {
+            let triad = resolved_by_triad(case);
+            let expected = case.expected();
+            (triad != expected)
+                .then(|| format!("{}:\n  jj    {expected:?}\n  triad {triad:?}", case.id))
+        })
+        .collect();
+    assert!(departures.is_empty(), "{}", departures.join("\n"));
+}
+
+macro_rules! resolve_shards {
+    ($($name:ident = $shard:literal),* $(,)?) => {$(
+        /// `resolve -r` leaves the repository as `jj resolve -r` does on this shard of the
+        /// corpus, outside triad's marked departures.
+        #[test]
+        fn $name() {
+            resolve_shard($shard);
+        }
+    )*};
+}
+
+resolve_shards!(resolve_matches_jj_0 = 0, resolve_matches_jj_1 = 1, resolve_matches_jj_2 = 2,);
