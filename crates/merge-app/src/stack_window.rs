@@ -94,6 +94,8 @@ pub struct StackWindow {
     open: Option<OpenMerge>,
     /// A path is loading for its merge window.
     loading: bool,
+    /// A close came while a job ran: the run ends when the job lands (spec §7.5).
+    closing: bool,
     preview: Option<Preview>,
     /// What happened last: a save, or an error.
     note: Option<SharedString>,
@@ -136,6 +138,7 @@ pub fn start(
             listing: false,
             open: None,
             loading: false,
+            closing: false,
             preview: None,
             note: None,
             focus,
@@ -216,6 +219,12 @@ impl StackWindow {
             }
             Err(error) => self.note = Some(error.to_string().into()),
         }
+        if self.end_if_closing(cx) {
+            if let Some(note) = &self.note {
+                tracing::warn!(%note, "the window closed with this note unseen");
+            }
+            return;
+        }
         cx.notify();
     }
 
@@ -278,6 +287,12 @@ impl StackWindow {
         cx: &mut Context<Self>,
     ) {
         self.loading = false;
+        if self.end_if_closing(cx) {
+            if let Err(error) = &loaded {
+                tracing::warn!(%error, "a path failed to load as the window closed");
+            }
+            return;
+        }
         let (opened, repo, root) = match loaded {
             Ok(loaded) => loaded,
             Err(error) => {
@@ -342,6 +357,21 @@ impl StackWindow {
             cx.defer(move |cx| {
                 ignore_closed_view(window.update(cx, |_, window, _| window.activate_window()));
             });
+            return false;
+        }
+        if self.listing || self.loading {
+            self.closing = true;
+            return false;
+        }
+        let (exit, code) = (Rc::clone(&self.exit), self.code());
+        cx.defer(move |cx| exit(code, cx));
+        true
+    }
+
+    /// End the run when a close waits and no job runs, with the code of the last list: a
+    /// loaded path opens no window.
+    fn end_if_closing(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.closing || self.listing || self.loading {
             return false;
         }
         let (exit, code) = (Rc::clone(&self.exit), self.code());

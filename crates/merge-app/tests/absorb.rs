@@ -226,6 +226,20 @@ mod jj {
     }
 
     #[gpui_kit::test]
+    fn closing_while_apply_writes_waits_for_the_write_then_ends_the_run(cx: &mut TestAppContext) {
+        let (fixture, one, _) = stack();
+        let started = start(cx, &fixture);
+        act(cx, started.window, TestWindowExt::render_frame);
+        act(cx, started.window, |window, cx| window.click(APPLY_ID, cx));
+        // The write runs off the UI thread: the window stays until it lands.
+        assert!(!VisualTestContext::from_window(started.window, cx).simulate_close());
+        assert_eq!(started.exits.borrow().as_slice(), []);
+        cx.run_until_parked();
+        assert_eq!(started.exits.borrow().as_slice(), [ExitCode::Resolved]);
+        assert_eq!(fixture.held_in(&fixture.latest(&one), "a.txt"), Held::File(A_AFTER.to_vec()));
+    }
+
+    #[gpui_kit::test]
     fn the_window_keeps_the_tool_window_edge_and_gaps(cx: &mut TestAppContext) {
         let (fixture, ..) = stack();
         let started = start(cx, &fixture);

@@ -311,3 +311,104 @@ fn apply_at_an_unknown_operation_is_refused() {
     let refused = refusal(open(&fixture).absorb(&[], None, &[], true, Some("not-an-op")));
     assert!(refused.starts_with("no operation not-an-op: "), "{refused}");
 }
+
+/// `one` writes `a.txt` as `first`, `two` on it as `second`; the working copy sits on `two`,
+/// checked out to disk, with `now` written over the file.
+fn two_commits(first: &[u8], second: &[u8], now: &[u8]) -> (Fixture, Committed, Committed) {
+    let fixture = Fixture::new();
+    let one = fixture.commit_on(&[], "one", &[("a.txt", first)]);
+    let two = fixture.commit_merged(&[&one], "two", &[("a.txt", second)]);
+    fixture.check_out(&[&two]);
+    fixture.check_out_to_disk();
+    std::fs::write(fixture.root().join("a.txt"), now).expect("a.txt is written");
+    (fixture, one, two)
+}
+
+#[test]
+fn an_insertion_where_a_commit_outside_into_starts_stays() {
+    // `two` wrote x1 and x2 after `one`'s lines and lies outside --into. In `one`, W
+    // would sit where `one`'s file ends: jj's merge into `one` conflicts with `two`'s lines.
+    let (fixture, one, _) =
+        two_commits(b"a1\na2\na3\n", b"a1\na2\na3\nx1\nx2\n", b"a1\na2\na3\nW\nx1\nx2\n");
+    let absorbed = open(&fixture)
+        .absorb(&[], Some(&one.commit), &[], true, None)
+        .expect("the hunks are listed");
+    assert_eq!(summary(&absorbed), [(1, "a.txt", [3, 3, 3, 4], None)]);
+    assert_eq!(
+        fixture.held_in(&fixture.latest(&one), "a.txt"),
+        Held::File(b"a1\na2\na3\n".to_vec())
+    );
+}
+
+#[test]
+fn a_change_next_to_lines_a_later_commit_wrote_stays() {
+    // `one` wrote a3, `two` the lines after it. Sent into `one`, the change to a3 touches
+    // `two`'s insertion, and jj's merge into `one` conflicts.
+    let (fixture, one, _) =
+        two_commits(b"a1\na2\na3\n", b"a1\na2\na3\nx1\nx2\n", b"a1\na2\nA3\nx1\nx2\n");
+    let absorbed = listed(&fixture, &[], true);
+    assert_eq!(summary(&absorbed), [(1, "a.txt", [2, 3, 2, 3], None)]);
+    assert_eq!(
+        fixture.held_in(&fixture.latest(&one), "a.txt"),
+        Held::File(b"a1\na2\na3\n".to_vec())
+    );
+}
+
+#[test]
+fn a_change_next_to_a_line_a_later_commit_removed_stays() {
+    // `two` removed a4, which the annotation cannot see: a3 is `one`'s line, but in `one`'s
+    // file a4 follows it, and the change touches `two`'s deletion.
+    let (fixture, one, _) = two_commits(b"a1\na2\na3\na4\n", b"a1\na2\na3\n", b"a1\na2\nA3\n");
+    assert_eq!(summary(&listed(&fixture, &[], false)), [(1, "a.txt", [2, 3, 2, 3], None)]);
+    // A change away from `two`'s deletion still goes to `one`.
+    std::fs::write(fixture.root().join("a.txt"), b"A1\na2\na3\n").expect("written");
+    assert_eq!(
+        summary(&listed(&fixture, &[], false)),
+        [(1, "a.txt", [0, 1, 0, 1], Some(short(&one)))]
+    );
+}
+
+#[test]
+fn apply_reports_each_commit_it_moved_hunks_into_with_its_conflicts() {
+    let (fixture, one, two) = stack(b"1\n2\nTHREE\n4\n5\n", b"x\nY\nz\n");
+    let absorbed = listed(&fixture, &[], true);
+    let effects: Vec<_> = absorbed
+        .rewrite
+        .rewritten
+        .iter()
+        .map(|e| (e.change.id(IdKind::Commit), e.before.len(), e.after.len()))
+        .collect();
+    assert_eq!(effects, [(short(&one), 0, 0), (short(&two), 0, 0)]);
+    // A hunk sent by choice where it conflicts: the report names the commit's conflict.
+    let (fixture, one, _) =
+        two_commits(b"a1\na2\na3\n", b"a1\na2\na3\nx1\nx2\n", b"a1\na2\nA3\nx1\nx2\n");
+    let listing = listed(&fixture, &[], false);
+    let moved = open(&fixture)
+        .absorb(
+            &[],
+            None,
+            &[HunkChoice::Move { hunk: 1, rev: one.commit.clone() }],
+            true,
+            Some(&listing.operation),
+        )
+        .expect("the hunk moves");
+    let first = &moved.rewrite.rewritten[0];
+    assert_eq!(first.change.id(IdKind::Commit), short(&one));
+    assert_eq!((first.before.as_slice(), first.after.as_slice()), (&[][..], &["a.txt".into()][..]));
+}
+
+#[test]
+fn a_move_to_a_revset_naming_no_commit_is_an_unknown_revision() {
+    let (fixture, ..) = stack(b"1\n2\nTHREE\n4\n5\n", b"x\nY\nz\n");
+    let result = open(&fixture).absorb(
+        &[],
+        None,
+        &[HunkChoice::Move { hunk: 1, rev: "none()".to_owned() }],
+        false,
+        None,
+    );
+    assert!(
+        matches!(&result, Err(VcsError::UnknownRevision(rev)) if rev == "none()"),
+        "{result:?}"
+    );
+}

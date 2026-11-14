@@ -5,7 +5,7 @@ use camino::Utf8Path;
 use vcs::{IdKind, VcsError};
 use vcs_jj::config::ConfigEnv;
 use vcs_jj::testing::{Committed, Fixture, Held};
-use vcs_jj::{DescendantEffect, JjRepository, StackPath};
+use vcs_jj::{CommitEffect, JjRepository, StackPath};
 
 const BASE: &[u8] = b"a\n";
 const LEFT: &[u8] = b"left\n";
@@ -59,7 +59,7 @@ fn a_txt() -> &'static Utf8Path {
 }
 
 /// Each descendant's change ID with its conflicted paths before and after.
-fn effects(descendants: &[DescendantEffect]) -> Vec<(String, Vec<String>, Vec<String>)> {
+fn effects(descendants: &[CommitEffect]) -> Vec<(String, Vec<String>, Vec<String>)> {
     let names = |paths: &[camino::Utf8PathBuf]| paths.iter().map(ToString::to_string).collect();
     descendants
         .iter()
@@ -103,7 +103,7 @@ fn a_resolution_in_an_ancestor_clears_the_inherited_conflicts_and_moves_the_work
             .expect("the resolution is written");
         assert!(rewrite.written && rewrite.resolved, "{store}: {rewrite:?}");
         assert!(short(&merge.change_id, rewrite.target.id(IdKind::Change)), "{store}");
-        let effects = effects(&rewrite.descendants);
+        let effects = effects(&rewrite.rewritten);
         assert_eq!(effects.len(), 2, "{store}: {effects:?}");
         for ((change, before, after), expected) in effects.iter().zip([&child, &wc]) {
             assert!(short(&expected.change_id, change), "{store}: {change}");
@@ -282,7 +282,7 @@ fn a_dry_run_reports_the_effect_and_writes_nothing() {
         .write_conflict(&id(&merge), a_txt(), MERGED, MARKER_LENGTH, true)
         .expect("the dry run runs");
     assert!(!rewrite.written && rewrite.resolved, "{rewrite:?}");
-    let effects = effects(&rewrite.descendants);
+    let effects = effects(&rewrite.rewritten);
     assert!(short(&child.change_id, &effects[0].0), "{effects:?}");
     assert_eq!(
         (effects[0].1.as_slice(), effects[0].2.as_slice()),
@@ -357,4 +357,31 @@ fn a_commit_rewritten_elsewhere_with_the_conflict_unchanged_takes_the_save() {
     let latest = fixture.latest(&merge);
     assert_eq!(fixture.held_in(&latest, "a.txt"), Held::File(MERGED.to_vec()));
     assert_eq!(fixture.held_in(&latest, "c.txt"), Held::File(b"c\n".to_vec()));
+}
+
+#[test]
+fn the_stack_snapshots_the_working_copy_first() {
+    let Stack { fixture, merge, child, .. } = stack(Fixture::new());
+    // Resolved on disk, with no jj command since: jj would list the working copy as clear.
+    std::fs::write(fixture.root().join("a.txt"), MERGED).expect("a.txt is written");
+    let listed = open(&fixture).stack(None).expect("the stack is listed");
+    let ids: Vec<&str> = listed.iter().map(|c| c.id.as_str()).collect();
+    assert_eq!(ids, [&merge.commit, &child.commit]);
+}
+
+#[test]
+fn a_conflict_of_a_file_and_a_symlink_is_refused_as_not_a_conflict_of_files() {
+    use vcs::testing::Entry;
+    let fixture = Fixture::new();
+    let base = fixture.commit_on(&[], "base", &[("a.txt", BASE)]);
+    let left = fixture.commit_on(&[&base], "left", &[("a.txt", LEFT)]);
+    let right =
+        fixture.commit_entries_on(&[&base], "right", &[("a.txt", Entry::Symlink("elsewhere"))]);
+    let merge = fixture.commit_merged(&[&left, &right], "merge", &[]);
+    let result = open(&fixture).write_conflict(&id(&merge), a_txt(), MERGED, MARKER_LENGTH, false);
+    let message = match result {
+        Err(VcsError::Backend { source, .. }) => source.to_string(),
+        other => panic!("expected a refusal, got {other:?}"),
+    };
+    assert_eq!(message, "a.txt is not a conflict of files");
 }

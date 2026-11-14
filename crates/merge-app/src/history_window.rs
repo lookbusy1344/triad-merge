@@ -81,6 +81,8 @@ pub struct HistoryWindow {
     open: Option<AnyWindowHandle>,
     /// A version is loading for its diff window.
     loading: bool,
+    /// A close came while a job ran: the run ends when the job lands (spec §7.5).
+    closing: bool,
     /// The last error.
     note: Option<SharedString>,
     /// The list's focus, which takes the list keys.
@@ -121,6 +123,7 @@ pub fn start(
             listing: false,
             open: None,
             loading: false,
+            closing: false,
             note: None,
             focus,
             scroll: ScrollHandle::new(),
@@ -182,6 +185,12 @@ impl HistoryWindow {
 
     fn listed(&mut self, listed: Result<FileHistory, ResolveError>, cx: &mut Context<Self>) {
         self.listing = false;
+        if self.end_if_closing(cx) {
+            if let Err(error) = &listed {
+                tracing::warn!(%error, "listing failed as the window closed; the run ends anyway");
+            }
+            return;
+        }
         match listed {
             Ok(FileHistory { root, path, versions }) => {
                 self.file = Some(root.join(path).into_std_path_buf());
@@ -234,6 +243,12 @@ impl HistoryWindow {
 
     fn arrived(&mut self, loaded: Result<Loaded, String>, cx: &mut Context<Self>) {
         self.loading = false;
+        if self.end_if_closing(cx) {
+            if let Err(error) = &loaded {
+                tracing::warn!(%error, "a version failed to load as the window closed");
+            }
+            return;
+        }
         let Loaded { left, right, file, commit, repo } = match loaded {
             Ok(loaded) => loaded,
             Err(error) => {
@@ -276,6 +291,20 @@ impl HistoryWindow {
             cx.defer(move |cx| {
                 ignore_closed_view(window.update(cx, |_, window, _| window.activate_window()));
             });
+            return false;
+        }
+        if self.listing || self.loading {
+            self.closing = true;
+            return false;
+        }
+        let exit = Rc::clone(&self.exit);
+        cx.defer(move |cx| exit(ExitCode::Resolved, cx));
+        true
+    }
+
+    /// End the run when a close waits and no job runs: a loaded version opens no window.
+    fn end_if_closing(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.closing || self.listing || self.loading {
             return false;
         }
         let exit = Rc::clone(&self.exit);

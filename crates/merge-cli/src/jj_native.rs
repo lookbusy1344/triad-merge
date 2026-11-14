@@ -6,7 +6,7 @@ use camino::Utf8Path;
 use serde_json::json;
 use vcs::IdKind;
 use vcs_jj::{
-    Absorbed, DescendantEffect, FileVersion, Rewrite, SHORT_OPERATION, StackCommit, VersionState,
+    Absorbed, CommitEffect, FileVersion, Rewrite, SHORT_OPERATION, StackCommit, VersionState,
 };
 
 use crate::ExitCode;
@@ -82,12 +82,12 @@ pub fn rewrite_report(path: &Utf8Path, rewrite: &Rewrite, dry_run: bool) -> Stri
         format!("{path} in {change} is unchanged\n")
     };
     let mut text = heading;
-    descendant_lines(&mut text, &rewrite.descendants);
+    descendant_lines(&mut text, &rewrite.rewritten);
     text
 }
 
 /// One line per descendant: its change and its conflicted paths before and after.
-fn descendant_lines(text: &mut String, descendants: &[DescendantEffect]) {
+fn descendant_lines(text: &mut String, descendants: &[CommitEffect]) {
     for d in descendants {
         let change = d.change.id(IdKind::Change);
         line(text, format_args!("  {change}: {} -> {}", list(&d.before), list(&d.after)));
@@ -233,7 +233,7 @@ pub fn absorb_report(
             &mut text,
             format_args!("absorbed {} hunks into {} commits", moved.len(), commits.len()),
         );
-        descendant_lines(&mut text, &absorbed.rewrite.descendants);
+        descendant_lines(&mut text, &absorbed.rewrite.rewritten);
     }
     Ok(text)
 }
@@ -247,7 +247,7 @@ fn line(text: &mut String, args: std::fmt::Arguments<'_>) {
 #[cfg(test)]
 mod tests {
     use vcs::ChangeInfo;
-    use vcs_jj::{DescendantEffect, StackPath};
+    use vcs_jj::{CommitEffect, StackPath};
 
     use super::*;
 
@@ -311,7 +311,7 @@ mod tests {
             target: change("kkkk", Some("merge")),
             resolved,
             sides: Some(if resolved { 1 } else { 2 }),
-            descendants: vec![DescendantEffect {
+            rewritten: vec![CommitEffect {
                 change: change("llll", None),
                 before: vec!["a.txt".into(), "b.txt".into()],
                 after: vec![],

@@ -57,6 +57,7 @@ In order. Each is one or more commits.
 | More grammars | — | §2 |
 | Razor | A grammar that covers its code blocks | §F1 |
 | Fuzzing | After release 1; `cargo-fuzz` needs nightly | spec §8.9 |
+| An oracle for absorb: a corpus from `jj absorb` that the plan must match, outside the cases where triad keeps a hunk that jj sends into a conflict (§I5); a check of `DEFAULT_ALIASES` against jj-cli's `revsets.toml` at each jj upgrade (§I1) | — | §I1, §I5 |
 | Accessibility gaps: no live announcements, region bands and gutter marks not exposed | gpui-kit | `docs/gpui-kit-issues.md` |
 | gpui-kit 0.9: build, rebase the patch, measure | — | `docs/gpui-kit-issues.md` |
 | Collapse unchanged regions in the merge window | — | §G2 |

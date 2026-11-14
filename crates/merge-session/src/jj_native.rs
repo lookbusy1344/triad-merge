@@ -9,7 +9,7 @@ use vcs_jj::JjRepository;
 use vcs_jj::config::ConfigEnv;
 /// The reports the front ends show.
 pub use vcs_jj::{
-    AbsorbHunk, Absorbed, DescendantEffect, Destination, FileVersion, HunkChoice, Rewrite,
+    AbsorbHunk, Absorbed, CommitEffect, Destination, FileVersion, HunkChoice, Rewrite,
     SHORT_OPERATION, StackCommit, StackPath, VersionState,
 };
 
@@ -69,7 +69,7 @@ pub fn stacked(
     revset: Option<&str>,
     jj_config: Option<ConfigEnv>,
 ) -> Result<Stacked, ResolveError> {
-    let repo = open(cwd, jj_config, "stack")?;
+    let mut repo = open(cwd, jj_config, "stack")?;
     let commits = repo.stack(revset)?;
     Ok(Stacked { root: repo.root().to_owned(), commits })
 }

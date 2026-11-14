@@ -201,7 +201,7 @@ mod jj {
         assert!(rewrite.resolved);
         assert!(!rewrite.written);
         let effects: Vec<_> = rewrite
-            .descendants
+            .rewritten
             .iter()
             .map(|d| (d.change.change_id.clone(), d.before.len(), d.after.len()))
             .collect();
@@ -231,6 +231,33 @@ mod jj {
         assert!(VisualTestContext::from_window(started.window, cx).simulate_close());
         cx.run_until_parked();
         assert_eq!(started.exits.borrow().as_slice(), [ExitCode::Conflicts]);
+    }
+
+    /// jj's shortest conflict markers.
+    const JJ_MARKER_LENGTH: usize = 7;
+
+    #[gpui_kit::test]
+    fn closing_while_a_refresh_runs_waits_for_its_list_and_exits_by_it(cx: &mut TestAppContext) {
+        let (fixture, merge, _) = stacked();
+        let started = start(cx, &fixture);
+        // Resolved outside the window: the refresh lists no commit.
+        vcs_jj::JjRepository::discover(fixture.root())
+            .expect("the repository")
+            .with_config(ConfigEnv::default())
+            .write_conflict(
+                &vcs::CommitId::new(merge.commit.clone()),
+                "a.txt".as_ref(),
+                b"m\n",
+                JJ_MARKER_LENGTH,
+                false,
+            )
+            .expect("the resolution is written");
+        act(cx, started.window, TestWindowExt::render_frame);
+        act(cx, started.window, |window, cx| window.click(REFRESH_ID, cx));
+        assert!(!VisualTestContext::from_window(started.window, cx).simulate_close());
+        assert_eq!(started.exits.borrow().as_slice(), []);
+        cx.run_until_parked();
+        assert_eq!(started.exits.borrow().as_slice(), [ExitCode::Resolved]);
     }
 
     #[gpui_kit::test]

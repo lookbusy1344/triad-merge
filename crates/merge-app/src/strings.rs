@@ -8,7 +8,7 @@ use merge_core::merge3::{HunkLevel, Semantics};
 use merge_core::text::{Encoding, LineEnding};
 use merge_session::ExitCode;
 use merge_session::jj_native::{
-    AbsorbHunk, Absorbed, DescendantEffect, FileVersion, Rewrite, SHORT_OPERATION, StackCommit,
+    AbsorbHunk, Absorbed, CommitEffect, FileVersion, Rewrite, SHORT_OPERATION, StackCommit,
     StackPath, VersionState,
 };
 use merge_view::nav::Sides;
@@ -174,7 +174,7 @@ pub(crate) mod prompt {
 /// Each descendant's change ID and its conflicted paths before and after a rewrite, one line
 /// each, as `resolve -r --headless` reports them: `abc12345: a.txt, b.txt -> none`.
 pub(crate) fn descendant_effects<'a>(
-    effects: impl IntoIterator<Item = &'a DescendantEffect>,
+    effects: impl IntoIterator<Item = &'a CommitEffect>,
 ) -> String {
     effects
         .into_iter()
@@ -253,10 +253,10 @@ pub(crate) fn stack_preview(rewrite: Option<&Rewrite>) -> String {
     } else {
         format!("Saving keeps conflicts in {change}.")
     };
-    if rewrite.descendants.is_empty() {
+    if rewrite.rewritten.is_empty() {
         format!("{outcome}\nNo descendant is rebased.")
     } else {
-        format!("{outcome}\n{}", descendant_effects(&rewrite.descendants))
+        format!("{outcome}\n{}", descendant_effects(&rewrite.rewritten))
     }
 }
 
@@ -339,7 +339,8 @@ fn with_hunks(hunks: usize) -> Option<SharedString> {
     (hunks > 0).then(|| format!("· {}", count(hunks, "hunk", "hunks")).into())
 }
 
-/// What Apply did: the hunks moved and the commits they went into.
+/// What Apply did: the hunks moved and the commits they went into, then each commit whose
+/// conflicts changed.
 pub(crate) fn absorb_note(absorbed: &Absorbed) -> String {
     let moved: Vec<&str> = absorbed
         .hunks
@@ -350,11 +351,17 @@ pub(crate) fn absorb_note(absorbed: &Absorbed) -> String {
     let mut commits = moved.clone();
     commits.sort_unstable();
     commits.dedup();
-    format!(
+    let summary = format!(
         "Absorbed {} into {}.",
         count(moved.len(), "hunk", "hunks"),
         count(commits.len(), "commit", "commits")
-    )
+    );
+    let mut changed =
+        absorbed.rewrite.rewritten.iter().filter(|effect| effect.before != effect.after).peekable();
+    if changed.peek().is_none() {
+        return summary;
+    }
+    format!("{summary}\n{}", descendant_effects(changed))
 }
 
 /// A path absorb cannot split, and why.
@@ -846,7 +853,7 @@ mod tests {
                 written: true,
                 resolved: true,
                 sides: None,
-                descendants: Vec::new(),
+                rewritten: Vec::new(),
             },
         };
         let note = |hunks| absorb_note(&absorbed(hunks));
@@ -867,6 +874,32 @@ mod tests {
             "Absorbed 2 hunks into 2 commits."
         );
         assert_eq!(note(vec![hunk(1, None)]), "Absorbed 0 hunks into 0 commits.");
+    }
+
+    #[test]
+    fn the_apply_note_lists_each_commit_whose_conflicts_changed() {
+        let effect = |id: &str, before: &[&str], after: &[&str]| CommitEffect {
+            change: change(id, None),
+            before: before.iter().map(Into::into).collect(),
+            after: after.iter().map(Into::into).collect(),
+        };
+        let absorbed = Absorbed {
+            operation: String::new(),
+            hunks: vec![hunk(1, Some(change("kkkk", None)))],
+            destinations: Vec::new(),
+            skipped: Vec::new(),
+            rewrite: Rewrite {
+                target: change("wwww", None),
+                written: true,
+                resolved: true,
+                sides: None,
+                rewritten: vec![
+                    effect("kkkk", &[], &["a.txt"]),
+                    effect("mmmm", &["b.txt"], &["b.txt"]),
+                ],
+            },
+        };
+        assert_eq!(absorb_note(&absorbed), "Absorbed 1 hunk into 1 commit.\nkkkk: none -> a.txt");
     }
 
     fn version(state: VersionState) -> FileVersion {
@@ -1085,9 +1118,9 @@ mod tests {
         conflict_badge(status, number, None)
     }
 
-    fn effect(change: &str, before: &[&str], after: &[&str]) -> DescendantEffect {
+    fn effect(change: &str, before: &[&str], after: &[&str]) -> CommitEffect {
         let paths = |paths: &[&str]| paths.iter().map(|&p| p.into()).collect();
-        DescendantEffect {
+        CommitEffect {
             change: vcs::ChangeInfo {
                 commit: "c0ffee12".to_owned(),
                 change_id: Some(change.to_owned()),
@@ -1117,7 +1150,7 @@ mod tests {
         assert_eq!(descendant_effects([&effect]), "c0ffee12: none -> a.txt");
     }
 
-    fn rewrite(resolved: bool, descendants: Vec<DescendantEffect>) -> Rewrite {
+    fn rewrite(resolved: bool, rewritten: Vec<CommitEffect>) -> Rewrite {
         Rewrite {
             target: vcs::ChangeInfo {
                 commit: "1a2b3c4d".to_owned(),
@@ -1126,7 +1159,7 @@ mod tests {
             },
             resolved,
             sides: None,
-            descendants,
+            rewritten,
             written: false,
         }
     }

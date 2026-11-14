@@ -221,6 +221,19 @@ mod jj {
     }
 
     #[gpui_kit::test]
+    fn closing_while_a_refresh_runs_waits_for_it_then_ends_the_run(cx: &mut TestAppContext) {
+        let (fixture, _) = edited();
+        let started = start(cx, &fixture, None);
+        act(cx, started.window, TestWindowExt::render_frame);
+        act(cx, started.window, |window, cx| window.click(REFRESH_ID, cx));
+        // The refresh snapshots the working copy off the UI thread.
+        assert!(!VisualTestContext::from_window(started.window, cx).simulate_close());
+        assert_eq!(started.exits.borrow().as_slice(), []);
+        cx.run_until_parked();
+        assert_eq!(started.exits.borrow().as_slice(), [ExitCode::Resolved]);
+    }
+
+    #[gpui_kit::test]
     fn the_window_stays_open_while_its_diff_window_is(cx: &mut TestAppContext) {
         let (fixture, _) = edited();
         let started = start(cx, &fixture, None);

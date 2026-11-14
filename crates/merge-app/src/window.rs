@@ -44,7 +44,7 @@ use merge_core::suggest::{self, EditSuggestion};
 use merge_core::text::Text;
 use merge_session::ending::{self, Closing, Next, SaveFailed, Undone, UnresolvedSave};
 use merge_session::io::WriteError;
-use merge_session::jj_native::DescendantEffect;
+use merge_session::jj_native::CommitEffect;
 use merge_session::origin::{self, find_merge};
 use merge_session::repository::Handoff;
 use merge_session::resolve::Record;
@@ -2315,10 +2315,10 @@ impl MergeWindow {
             ignore_closed_view(this.update_in(cx, |this, window, cx| {
                 this.save_task = None;
                 this.set_saving(false, cx);
-                let changed: Vec<DescendantEffect> = match previewed {
+                let changed: Vec<CommitEffect> = match previewed {
                     Ok(rewrite) => rewrite
                         .into_iter()
-                        .flat_map(|rewrite| rewrite.descendants)
+                        .flat_map(|rewrite| rewrite.rewritten)
                         .filter(|effect| effect.before != effect.after)
                         .collect(),
                     Err(error) => {
@@ -2337,11 +2337,7 @@ impl MergeWindow {
     }
 
     /// Ask before a save that changes the conflicts of the descendants in `changed`.
-    fn confirm_descendants(
-        changed: &[DescendantEffect],
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn confirm_descendants(changed: &[CommitEffect], window: &mut Window, cx: &mut Context<Self>) {
         let answer = window.prompt(
             PromptLevel::Info,
             &prompt::descendants_changed(changed.len()),

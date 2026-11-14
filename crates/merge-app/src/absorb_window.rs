@@ -85,6 +85,8 @@ pub struct AbsorbWindow {
     selected: Option<usize>,
     /// The list is loading, or Apply is writing.
     busy: bool,
+    /// A close came while a job ran: the run ends when the job lands (spec §7.5).
+    closing: bool,
     /// What happened last: an apply, or an error.
     note: Option<SharedString>,
     /// The hunks' lines: their font, and their tones by side.
@@ -132,6 +134,7 @@ pub fn start(
             chosen: Vec::new(),
             selected: None,
             busy: false,
+            closing: false,
             note: None,
             typography,
             palette,
@@ -251,6 +254,14 @@ impl AbsorbWindow {
 
     fn ran(&mut self, ran: Result<Absorbed, ResolveError>, applied: bool, cx: &mut Context<Self>) {
         self.busy = false;
+        if self.closing {
+            if let Err(error) = &ran {
+                tracing::warn!(%error, "absorb failed as the window closed; the run ends anyway");
+            }
+            let exit = Rc::clone(&self.exit);
+            cx.defer(move |cx| exit(ExitCode::Resolved, cx));
+            return;
+        }
         match ran {
             Ok(absorbed) if applied => {
                 self.note = Some(strings::absorb_note(&absorbed).into());
@@ -299,6 +310,10 @@ impl AbsorbWindow {
 
     /// Closing ends the run with 0.
     fn close_requested(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.busy {
+            self.closing = true;
+            return false;
+        }
         let exit = Rc::clone(&self.exit);
         cx.defer(move |cx| exit(ExitCode::Resolved, cx));
         true

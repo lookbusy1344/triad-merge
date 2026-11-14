@@ -1,7 +1,8 @@
 //! `absorb`: each hunk of the working-copy commit against its parents, with the ancestor it
 //! goes into, moved there on request (`DESIGN.md` §I5).
 
-use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
 use camino::Utf8PathBuf;
@@ -11,7 +12,9 @@ use jj_lib::annotate::FileAnnotator;
 use jj_lib::backend::{CommitId, CopyId, TreeValue};
 use jj_lib::commit::Commit;
 use jj_lib::diff::{ContentDiff, DiffHunkKind};
+use jj_lib::files::try_merge;
 use jj_lib::matchers::{EverythingMatcher, Matcher, PrefixMatcher};
+use jj_lib::merge::Merge;
 use jj_lib::merged_tree_builder::MergedTreeBuilder;
 use jj_lib::object_id::ObjectId as _;
 use jj_lib::repo::{MutableRepo, Repo};
@@ -159,7 +162,7 @@ impl JjRepository {
             };
             let (files, skipped) =
                 this.changed_files(&parent_tree, &source.tree(), matcher.as_ref())?;
-            let mut planned = plan(repo, &source, &files, &domain)?;
+            let mut planned = this.plan(repo, &source, &files, &domain)?;
             for choice in choices {
                 let (number, target) = this.chosen(repo, choice, &destinations, &revsets)?;
                 let count = planned.len();
@@ -169,19 +172,15 @@ impl JjRepository {
                     )?;
                 hunk.target = target;
             }
-            let trees = target_trees(repo, &files, &planned, &parent_tree)?;
+            let targets: BTreeSet<&CommitId> =
+                planned.iter().filter_map(|hunk| hunk.target.as_ref()).collect();
             let mut roots = vec![source.clone()];
-            for id in trees.keys() {
+            for id in targets {
                 roots.push(repo.store().get_commit(id).map_err(backend("reading a commit"))?);
             }
-            if !trees.is_empty() {
-                let absorb_source =
-                    AbsorbSource::from_tree(source.clone(), source.tree(), parent_tree.clone())
-                        .block_on()
-                        .map_err(backend("reading the working copy's parents"))?;
-                absorb_hunks(repo, &absorb_source, trees.into_iter().collect())
-                    .block_on()
-                    .map_err(backend("absorbing the hunks"))?;
+            // A listing writes nothing to the store: the trees are built only to apply.
+            if apply {
+                write_hunks(repo, &source, &parent_tree, &files, &planned)?;
             }
             let hunks = planned
                 .iter()
@@ -240,8 +239,13 @@ impl JjRepository {
         match choice {
             HunkChoice::Keep(number) => Ok((*number, None)),
             HunkChoice::Move { hunk, rev } => {
-                let [commit] = <[Commit; 1]>::try_from(self.evaluate(repo, rev, revsets)?)
-                    .map_err(|_| VcsError::AmbiguousRevision(rev.clone()))?;
+                let commit = match <[Commit; 1]>::try_from(self.evaluate(repo, rev, revsets)?) {
+                    Ok([commit]) => commit,
+                    Err(found) if found.is_empty() => {
+                        return Err(VcsError::UnknownRevision(rev.clone()));
+                    }
+                    Err(_) => return Err(VcsError::AmbiguousRevision(rev.clone())),
+                };
                 if !destinations.iter().any(|d| d.id() == commit.id()) {
                     return Err(backend("choosing a hunk's commit")(JjError::NotADestination(
                         rev.clone(),
@@ -249,6 +253,72 @@ impl JjRepository {
                 }
                 Ok((*hunk, Some(commit.id().clone())))
             }
+        }
+    }
+
+    /// Each file's hunks, each with the commit its annotation over `domain` gives, kept
+    /// only where jj's merge takes the hunk into that commit's file without a conflict.
+    fn plan(
+        &self,
+        repo: &MutableRepo,
+        source: &Commit,
+        files: &[ChangedFile],
+        domain: &std::sync::Arc<jj_lib::revset::ResolvedRevsetExpression>,
+    ) -> Result<Vec<Planned>, VcsError> {
+        let mut planned = Vec::new();
+        for (index, file) in files.iter().enumerate() {
+            let mut annotator =
+                FileAnnotator::with_file_content(source, &file.path, file.left.clone());
+            annotator.compute(repo, domain).block_on().map_err(backend("annotating a file"))?;
+            let annotation = annotator.to_annotation();
+            // A line no commit in the domain wrote is the source's own when a commit outside
+            // the domain sits between them: it has no commit to go into either.
+            let ranges: Vec<(CommitId, Range<usize>)> = annotation
+                .compact_line_ranges()
+                .filter_map(|(commit, range)| Some((commit.ok()?.id().clone(), range)))
+                .filter(|(commit, _)| commit != source.id())
+                .collect();
+            // Each target's text of the file, read once; none when it holds no plain file.
+            let mut texts: BTreeMap<CommitId, Option<Vec<u8>>> = BTreeMap::new();
+            let diff = ContentDiff::by_line([&file.left, &file.right]);
+            for hunk in diff.hunk_ranges().filter(|hunk| hunk.kind == DiffHunkKind::Different) {
+                let (left, right) = (hunk.ranges[0].clone(), hunk.ranges[1].clone());
+                let target = match target(&ranges, &left) {
+                    Some(commit) => {
+                        let text = match texts.entry(commit.clone()) {
+                            Entry::Occupied(found) => found.into_mut(),
+                            Entry::Vacant(slot) => {
+                                slot.insert(self.text_in(repo, &commit, &file.path)?)
+                            }
+                        };
+                        text.as_deref()
+                            .is_some_and(|text| merges_cleanly(repo, text, file, &left, &right))
+                            .then_some(commit)
+                    }
+                    None => None,
+                };
+                planned.push(Planned { path: file.path.clone(), file: index, target, left, right });
+            }
+        }
+        Ok(planned)
+    }
+
+    /// The file at `path` in commit `id`; none when the commit holds no plain file there.
+    fn text_in(
+        &self,
+        repo: &MutableRepo,
+        id: &CommitId,
+        path: &RepoPathBuf,
+    ) -> Result<Option<Vec<u8>>, VcsError> {
+        let commit = repo.store().get_commit(id).map_err(backend("reading a commit"))?;
+        let value = commit
+            .tree()
+            .path_value(path)
+            .block_on()
+            .map_err(backend("finding a path in a tree"))?;
+        match value.as_resolved() {
+            Some(Some(TreeValue::File { id, .. })) => self.read_file(path, id).map(Some),
+            _ => Ok(None),
         }
     }
 
@@ -309,38 +379,41 @@ impl JjRepository {
     }
 }
 
-/// Each file's hunks, each with the commit its annotation over `domain` gives.
-fn plan(
+/// jj's merge takes the hunk replacing `left` of `file`'s parents' text with `right` of its
+/// working-copy text into `target`, the file in the hunk's commit, without a conflict, as
+/// `absorb_hunks` merges it: the commit's text, less the parents', plus the hunk.
+fn merges_cleanly(
     repo: &MutableRepo,
+    target: &[u8],
+    file: &ChangedFile,
+    left: &Range<usize>,
+    right: &Range<usize>,
+) -> bool {
+    let applied = combine(&file.left, &file.right, &[(left.clone(), right.clone())]);
+    let inputs = Merge::from_vec(vec![target, file.left.as_slice(), applied.as_slice()]);
+    try_merge(&inputs, repo.store().merge_options()).is_some()
+}
+
+/// Move each planned hunk into its target, rebase the descendants, and leave the rest in
+/// `source`, as jj's `absorb` writes.
+fn write_hunks(
+    repo: &mut MutableRepo,
     source: &Commit,
+    parent_tree: &jj_lib::merged_tree::MergedTree,
     files: &[ChangedFile],
-    domain: &std::sync::Arc<jj_lib::revset::ResolvedRevsetExpression>,
-) -> Result<Vec<Planned>, VcsError> {
-    let mut planned = Vec::new();
-    for (index, file) in files.iter().enumerate() {
-        let mut annotator = FileAnnotator::with_file_content(source, &file.path, file.left.clone());
-        annotator.compute(repo, domain).block_on().map_err(backend("annotating a file"))?;
-        let annotation = annotator.to_annotation();
-        // A line no commit in the domain wrote is the source's own when a commit outside
-        // the domain sits between them: it has no commit to go into either.
-        let ranges: Vec<(CommitId, Range<usize>)> = annotation
-            .compact_line_ranges()
-            .filter_map(|(commit, range)| Some((commit.ok()?.id().clone(), range)))
-            .filter(|(commit, _)| commit != source.id())
-            .collect();
-        let diff = ContentDiff::by_line([&file.left, &file.right]);
-        for hunk in diff.hunk_ranges().filter(|hunk| hunk.kind == DiffHunkKind::Different) {
-            let (left, right) = (hunk.ranges[0].clone(), hunk.ranges[1].clone());
-            planned.push(Planned {
-                path: file.path.clone(),
-                file: index,
-                target: target(&ranges, &left),
-                left,
-                right,
-            });
-        }
+    planned: &[Planned],
+) -> Result<(), VcsError> {
+    let trees = target_trees(repo, files, planned, parent_tree)?;
+    if trees.is_empty() {
+        return Ok(());
     }
-    Ok(planned)
+    let absorb_source = AbsorbSource::from_tree(source.clone(), source.tree(), parent_tree.clone())
+        .block_on()
+        .map_err(backend("reading the working copy's parents"))?;
+    absorb_hunks(repo, &absorb_source, trees.into_iter().collect())
+        .block_on()
+        .map_err(backend("absorbing the hunks"))?;
+    Ok(())
 }
 
 /// For each commit a hunk goes into, the parents' tree with that commit's hunks applied.

@@ -990,7 +990,7 @@ mod jj {
 
     /// Each descendant's conflicted paths before and after, parents first.
     fn effects(rewrite: &vcs_jj::Rewrite) -> Vec<(Vec<&str>, Vec<&str>)> {
-        rewrite.descendants.iter().map(|d| (strs(&d.before), strs(&d.after))).collect()
+        rewrite.rewritten.iter().map(|d| (strs(&d.before), strs(&d.after))).collect()
     }
 
     fn strs(paths: &[Utf8PathBuf]) -> Vec<&str> {

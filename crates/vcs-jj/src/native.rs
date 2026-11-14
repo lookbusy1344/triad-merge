@@ -72,16 +72,17 @@ pub struct Rewrite {
     /// The number of sides the path's conflict has after the rewrite, simplified: 1 when it
     /// is resolved. None for a rewrite of no one path.
     pub sides: Option<usize>,
-    /// Each descendant the rewrite rebased, parents first.
-    pub descendants: Vec<DescendantEffect>,
+    /// Each other commit the rewrite rewrote or rebased, parents first: the commits
+    /// `absorb` moves hunks into, and the descendants.
+    pub rewritten: Vec<CommitEffect>,
     /// The rewrite is written: false on a dry run.
     pub written: bool,
 }
 
-/// One descendant's conflicted paths before and after a rewrite.
+/// One rewritten commit's conflicted paths before and after a rewrite.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DescendantEffect {
-    /// The descendant, as it was.
+pub struct CommitEffect {
+    /// The commit, as it was.
     pub change: ChangeInfo,
     pub before: Vec<Utf8PathBuf>,
     pub after: Vec<Utf8PathBuf>,
@@ -120,15 +121,17 @@ impl JjRepository {
     }
 
     /// The commits `revset` names that hold conflicts, parents first, with the user's
-    /// aliases. Default: [`DEFAULT_STACK`].
+    /// aliases, after a snapshot of the working copy, as a jj command takes. Default:
+    /// [`DEFAULT_STACK`].
     ///
     /// # Errors
     ///
     /// [`VcsError::UnknownRevision`] and [`VcsError::AmbiguousRevision`] as for
-    /// [`vcs::Repository::commits`], and [`VcsError::Backend`] when the config or the history
-    /// cannot be read.
-    pub fn stack(&self, revset: Option<&str>) -> Result<Vec<StackCommit>, VcsError> {
+    /// [`vcs::Repository::commits`]; the errors of a snapshot; and [`VcsError::Backend`] when
+    /// the config or the history cannot be read.
+    pub fn stack(&mut self, revset: Option<&str>) -> Result<Vec<StackCommit>, VcsError> {
         let revsets = self.revsets()?;
+        vcs::Repository::snapshot(self)?;
         let mut commits =
             self.evaluate(self.repo.as_ref(), revset.unwrap_or(DEFAULT_STACK), &revsets)?;
         commits.reverse();
@@ -308,19 +311,21 @@ impl JjRepository {
         }
     }
 
-    /// Each strict descendant of `roots` in `repo`, parents first, with its conflicted paths.
-    fn descendants(
+    /// `roots` and their descendants in `repo`, except `target`, parents first, each with
+    /// its conflicted paths.
+    fn affected(
         &self,
         repo: &dyn jj_lib::repo::Repo,
         roots: &[Commit],
+        target: &Commit,
     ) -> Result<Vec<(Commit, Vec<Utf8PathBuf>)>, VcsError> {
         if roots.is_empty() {
             return Ok(Vec::new());
         }
         let ids: Vec<String> = roots.iter().map(|commit| commit.id().hex()).collect();
         let set = ids.join(" | ");
-        let mut found =
-            self.evaluate(repo, &format!("descendants({set}) ~ ({set})"), &Revsets::default())?;
+        let expr = format!("descendants({set}) ~ {}", target.id().hex());
+        let mut found = self.evaluate(repo, &expr, &Revsets::default())?;
         found.reverse();
         found
             .into_iter()
@@ -350,7 +355,7 @@ impl JjRepository {
         tx.set_workspace_name(&self.workspace);
         let Mutated { target, path, roots, description } = mutate(self, tx.repo_mut())?;
         self.check_mutable(&roots, revsets)?;
-        let before = self.descendants(repo.as_ref(), &roots)?;
+        let before = self.affected(repo.as_ref(), &roots, &target)?;
         tx.repo_mut()
             .rebase_descendants()
             .block_on()
@@ -374,7 +379,7 @@ impl JjRepository {
             Err(error) => return Err(error),
         };
         let target = self.change_info(&target)?;
-        let descendants = before
+        let rewritten = before
             .into_iter()
             .map(|(commit, before)| {
                 let after = match visible(tx.repo(), commit.change_id()) {
@@ -384,11 +389,11 @@ impl JjRepository {
                     }
                     Err(error) => return Err(error),
                 };
-                Ok(DescendantEffect { change: self.change_info(&commit)?, before, after })
+                Ok(CommitEffect { change: self.change_info(&commit)?, before, after })
             })
             .collect::<Result<Vec<_>, VcsError>>()?;
         if dry_run || !tx.repo().has_changes() {
-            return Ok(Rewrite { target, resolved, sides, descendants, written: false });
+            return Ok(Rewrite { target, resolved, sides, rewritten, written: false });
         }
         let new_wc_id = tx
             .repo()
@@ -421,7 +426,7 @@ impl JjRepository {
                 .map_err(backend("checking out the working copy"))?;
         }
         self.repo = repo;
-        Ok(Rewrite { target, resolved, sides, descendants, written: true })
+        Ok(Rewrite { target, resolved, sides, rewritten, written: true })
     }
 }
 
@@ -456,9 +461,10 @@ fn parse_back(
     content: &[u8],
     marker_length: usize,
 ) -> Result<MergedTreeValue, VcsError> {
-    let not_a_file = || VcsError::NotConflicted {
-        path: path.as_internal_file_string().into(),
-        rev: String::new(),
+    let not_a_file = || {
+        backend("parsing the conflict back")(JjError::NotAFileConflict(
+            path.as_internal_file_string().into(),
+        ))
     };
     let file_ids = value.to_file_merge().ok_or_else(not_a_file)?;
     let executable = value.to_executable_merge().ok_or_else(not_a_file)?;
