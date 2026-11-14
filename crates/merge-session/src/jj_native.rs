@@ -7,9 +7,11 @@ use camino::{Utf8Path, Utf8PathBuf};
 use merge_core::text::Text;
 use vcs::{IdKind, RepoKind, Repository as _, VcsError};
 use vcs_jj::config::ConfigEnv;
-use vcs_jj::{Absorbed, Divergence, FileVersion, HunkChoice, JjRepository};
+use vcs_jj::{Absorbed, Divergence, HunkChoice, JjRepository};
 /// The reports the front ends show.
-pub use vcs_jj::{DescendantEffect, Rewrite, StackCommit, StackPath};
+pub use vcs_jj::{
+    DescendantEffect, FileVersion, Rewrite, SHORT_OPERATION, StackCommit, StackPath, VersionState,
+};
 
 use crate::resolve::ResolveError;
 
@@ -101,6 +103,29 @@ pub fn history(
     limit: Option<usize>,
     jj_config: Option<ConfigEnv>,
 ) -> Result<(Utf8PathBuf, Vec<FileVersion>), ResolveError> {
+    let FileHistory { path, versions, .. } = file_history(cwd, path, limit, jj_config)?;
+    Ok((path, versions))
+}
+
+/// [`history`]'s versions, with the repository's root and the path relative to it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileHistory {
+    pub root: Utf8PathBuf,
+    pub path: Utf8PathBuf,
+    pub versions: Vec<FileVersion>,
+}
+
+/// As [`history`], with the repository's root (the history window).
+///
+/// # Errors
+///
+/// As [`history`].
+pub fn file_history(
+    cwd: &Path,
+    path: &Path,
+    limit: Option<usize>,
+    jj_config: Option<ConfigEnv>,
+) -> Result<FileHistory, ResolveError> {
     let mut repo = open(cwd, jj_config, "history")?;
     let file = crate::resolve::absolute(&cwd.join(path))?;
     let relative = file
@@ -108,7 +133,7 @@ pub fn history(
         .map_err(|_| VcsError::OutsideRepository(file.clone()))?
         .to_owned();
     let versions = repo.history(&relative, limit)?;
-    Ok((relative, versions))
+    Ok(FileHistory { root: repo.root().to_owned(), path: relative, versions })
 }
 
 /// The two sides of `diff PATH --evolog`, as text, with their pane titles.

@@ -193,10 +193,15 @@ To compare two revisions, neither the working copy, use `jj diff --tool triad --
 jj snapshots the working copy at every jj command, and its operation log keeps each snapshot. Code you overwrote between two commits is still there.
 
 ```sh
-triad-merge history src/lib.rs           # each version of the file, newest first
-triad-merge history src/lib.rs --limit 20   # the newest 20; stops reading the log there
-triad-merge diff src/lib.rs --op f5a69619a1f9
+triad-merge history src/lib.rs                  # a window on each version of the file, newest first
+triad-merge history src/lib.rs --limit 20       # the newest 20; stops reading the log there
+triad-merge history src/lib.rs --list           # print the list instead
+triad-merge diff src/lib.rs --op f5a69619a1f9   # one version against the working copy
 ```
+
+`history` opens a window listing each version, under the operation where it first appeared. Click one to open it in the diff window against the working-copy file: the version on the left, read-only, the file on the right. Copy lines back and save to restore them. One diff window is open at a time. When it closes, the list loads again and a save shows as a new version at the top. Closing the history window exits 0.
+
+`--list` prints the same list:
 
 ```
 15eaadcad368 2026-11-13T15:35:02+00:00 snapshot working copy
@@ -204,7 +209,7 @@ f5a69619a1f9 2026-11-13T15:35:02+00:00 snapshot working copy
 f09f484b2665 2026-11-13T15:35:02+00:00 add workspace 'default' (absent)
 ```
 
-Each line is one version, under the operation where it first appeared. `(absent)`, `(conflict)` and `(other)` mark an operation where the path held no file, a conflict, or a symlink or directory. `--op` takes what `jj --at-op` takes: an ID prefix, `@`, `@-`. The left pane is the file at that operation; copy lines back from it and save. The history is as fine as jj's snapshots: one per jj command, or more with jj's file watcher.
+`(absent)`, `(conflict)` and `(other)` mark an operation where the path held no file, a conflict, or a symlink or directory. `diff --op` opens one version without the window; `--op` takes what `jj --at-op` takes: an ID prefix, `@`, `@-`. The history is as fine as jj's snapshots: one per jj command, or more with jj's file watcher.
 
 ### See what a rewrite changed in a patch
 
@@ -346,6 +351,7 @@ triad-merge resolve PATH --pair N --headless                       # jj: the aut
 triad-merge diff PATH --evolog --inspect --json
 triad-merge stack --list
 triad-merge stack --json
+triad-merge history PATH --list
 triad-merge history PATH --json
 triad-merge absorb --json
 triad-merge diverge CHANGE --dry-run --json

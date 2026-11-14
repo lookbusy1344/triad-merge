@@ -36,6 +36,17 @@ pub enum Window {
     DiffEvolog(Evolog),
     /// `stack [REVSET]`: the conflicted jj commits, each conflict opening in the merge window.
     Stack(Stack),
+    /// `history PATH`: a file's versions across jj's operation log, each opening in the diff
+    /// window against the working-copy file.
+    History(History),
+}
+
+/// `history PATH` in a window (spec §7.5.4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct History {
+    pub path: PathBuf,
+    /// List at most this many versions, the newest.
+    pub limit: Option<usize>,
 }
 
 /// `stack [REVSET]` in a window (spec §7.5.1).

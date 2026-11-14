@@ -318,7 +318,7 @@ triad-merge resolve PATH -r REV [--headless [--commands FILE] [--dry-run]]   # r
 triad-merge resolve PATH --pair N [-r REV] [--headless [--commands FILE] [--dry-run]]   # merge two sides of a jj conflict (§7.5.3)
 triad-merge stack [REVSET] [--list | --json]              # jj's conflicted commits, parents first, in a window or printed (§7.5.1)
 triad-merge diverge CHANGE [--dry-run] [--json]           # merge a divergent jj change into one commit (§7.5.2)
-triad-merge history PATH [--limit N] [--json]             # a file's versions across jj's operation log (§7.5.4)
+triad-merge history PATH [--limit N] [--list | --json]   # a file's versions across jj's operation log, in a window or printed (§7.5.4)
 triad-merge absorb [PATH...] [--into REVSET] [--move N=REV]... [--keep N]... [--apply [--listed-at OP]] [--json]   # the working copy's hunks into the jj commits that wrote their lines (§7.5.6)
 triad-merge install --git | --jj [--config FILE]          # register as merge and diff tool (§7.1)
 triad-merge show-config [--default] [--docs]            # print the settings in effect (§6.4)
@@ -709,9 +709,10 @@ Commands built on what only jj records (§1.2). In a git repository each exits w
 
 #### 7.5.4 A file's history in the operation log
 
-- `history PATH` snapshots the working copy, then lists the versions of `PATH` in the working-copy commit across the operation log, newest first, one line each: the operation's short ID (12 characters), the time it ended in its own offset (RFC 3339), its description, and ` (absent)`, ` (conflict)` or ` (other)` when the path holds no file there, a conflict, or a symlink, submodule or directory. A run of operations holding the same version shows once, under its oldest operation: where the version appeared. Exit 0.
+- `history PATH` snapshots the working copy, then lists the versions of `PATH` in the working-copy commit across the operation log, newest first. `--list` prints them, one line each: the operation's short ID (12 characters), the time it ended in its own offset (RFC 3339), its description, and ` (absent)`, ` (conflict)` or ` (other)` when the path holds no file there, a conflict, or a symlink, submodule or directory. A run of operations holding the same version shows once, under its oldest operation: where the version appeared. Exit 0.
 - `--json` prints `{path, versions: [{operation, time, description, commit, state}]}`: the full operation ID, the working-copy commit's full ID and `state` one of `file`, `conflict`, `absent`, `other`.
 - `--limit N` lists the newest N versions, each still under the operation where it appeared; the walk stops at the operation before the oldest.
+- Without `--list` or `--json`, `history` opens the history window, titled `History of PATH`, on the same list. A git repository or a path outside the repository exits 3 before any window opens. A version opens in the diff window as `diff PATH --op OP` opens it: the version on the left, read-only, the working-copy file on the right; lines copied back to the right save there. One diff window is open at a time: a second version brings it forward. When the diff window closes, the history window lists the versions again, so a save shows as a new version; Refresh lists them on demand. A version that cannot open, such as one of a working-copy file gone from disk, leaves the reason in the window and opens nothing. Closing the history window while a diff window is open brings that window forward; otherwise it ends the run with 0.
 - jj records the working copy when a jj command runs, or when its file watcher snapshots. The history is that fine.
 - `diff PATH --op OP` compares the working-copy file with its version in the working-copy commit at operation `OP`, as jj resolves an operation (`@`, `@-`, an ID prefix). The left pane is titled `@ at operation SHORT`; its revision chip and line origins read that commit, as for `--rev`. Edits save to the working copy. `--op` takes the place of `--rev`, and applies only to `diff PATH`. An operation jj cannot resolve is refused: `no operation OP: REASON`.
 

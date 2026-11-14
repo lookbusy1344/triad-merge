@@ -280,7 +280,7 @@ mod jj {
             vcs::Repository::snapshot(&mut repo).expect("the snapshot");
             ops.push(fixture.operation_ids()[0].clone());
         }
-        let (code, out, err) = outcome(&triad(fixture.root(), &["history", "a.txt"]));
+        let (code, out, err) = outcome(&triad(fixture.root(), &["history", "a.txt", "--list"]));
         assert_eq!((code, err.as_str()), (Some(RESOLVED), ""), "{out}");
         let starts: Vec<String> =
             out.lines().map(|l| l.split(' ').next().unwrap_or_default().to_owned()).collect();
@@ -292,11 +292,29 @@ mod jj {
         let value: serde_json::Value = serde_json::from_str(&json).expect("JSON");
         assert_eq!(value["versions"][0]["operation"], ops[1].as_str());
         assert_eq!(value["versions"][0]["state"], "file");
-        let args = ["history", "a.txt", "--limit", "1"];
+        let args = ["history", "a.txt", "--list", "--limit", "1"];
         let (code, out, _) = outcome(&triad(fixture.root(), &args));
         assert_eq!(code, Some(RESOLVED));
         assert_eq!(out.lines().count(), 1, "{out}");
         assert!(out.starts_with(&short(&ops[1])), "{out}");
+    }
+
+    #[test]
+    fn history_of_a_path_outside_the_repository_fails_before_any_window() {
+        let fixture = Fixture::new();
+        fixture.check_out_to_disk();
+        let outside = tempfile::tempdir().expect("a directory outside");
+        let file = dunce::canonicalize(outside.path()).expect("its path").join("b.txt");
+        std::fs::write(&file, b"b\n").expect("b.txt is written");
+        let path = file.to_str().expect("a UTF-8 path");
+        assert_eq!(
+            outcome(&triad(fixture.root(), &["history", path])),
+            (
+                Some(ERROR),
+                String::new(),
+                format!("triad-merge: {path} is outside the repository\n")
+            )
+        );
     }
 
     /// A change that edits line 4, rebased by an amend of its base at line 1, then

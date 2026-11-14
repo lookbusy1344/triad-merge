@@ -13,7 +13,7 @@ use merge_config::named::Named;
 use merge_config::settings::{Algorithm, Settings, Whitespace};
 use merge_config::settings::{Choice, HunkLevelArg, SameChangeArg};
 use merge_session::invocation::{
-    Diff, DiffFlags, Evolog, Merge, MergeFiles, Resolve, SemanticsFlags, Stack, Window,
+    Diff, DiffFlags, Evolog, History, Merge, MergeFiles, Resolve, SemanticsFlags, Stack, Window,
 };
 use vcs_jj::HunkChoice;
 
@@ -236,14 +236,18 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// List the versions of PATH in the working-copy commit across jj's operation log,
-    /// newest first (jj only).
+    /// The versions of PATH in the working-copy commit across jj's operation log, newest
+    /// first, in a window to compare and restore them from (jj only).
     History {
         #[arg(value_name = "PATH")]
         path: PathBuf,
         /// List at most N versions, the newest.
         #[arg(long, value_name = "N")]
         limit: Option<usize>,
+        /// Print the list instead of opening the window.
+        #[arg(long)]
+        list: bool,
+        /// Print the list as JSON instead of opening the window.
         #[arg(long)]
         json: bool,
     },
@@ -517,9 +521,11 @@ impl Cli {
                     json,
                 })))
             }
-            Some(Command::History { path, limit, json }) => {
-                Ok(Invocation::Batch(Batch::Jj(JjBatch::History { path, limit, json })))
-            }
+            Some(Command::History { path, limit, list, json }) => Ok(if list || json {
+                Invocation::Batch(Batch::Jj(JjBatch::History { path, limit, json }))
+            } else {
+                Invocation::Window(Window::History(History { path, limit }))
+            }),
             Some(Command::Diverge { change, dry_run, json }) => {
                 Ok(Invocation::Batch(Batch::Jj(JjBatch::Diverge { change, dry_run, json })))
             }
@@ -1179,11 +1185,19 @@ mod tests {
             }))
         );
         assert_eq!(
-            ok(&["history", "a.txt", "--limit", "5"]),
+            ok(&["history", "a.txt", "--list", "--limit", "5"]),
             Invocation::Batch(Batch::Jj(JjBatch::History {
                 path: "a.txt".into(),
                 limit: Some(5),
                 json: false
+            }))
+        );
+        assert_eq!(
+            ok(&["history", "a.txt", "--list", "--json"]),
+            Invocation::Batch(Batch::Jj(JjBatch::History {
+                path: "a.txt".into(),
+                limit: None,
+                json: true
             }))
         );
         assert_eq!(clap_kind(&["history", "a.txt", "--limit", "x"]), ErrorKind::ValueValidation);
@@ -1329,6 +1343,18 @@ mod tests {
         };
         assert_eq!(stack.revset.as_deref(), Some("::@"));
         assert_eq!(clap_kind(&["stack", "a", "b"]), ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn history_opens_a_window_without_list_or_json() {
+        assert_eq!(
+            ok(&["history", "a.txt"]),
+            Invocation::Window(Window::History(History { path: "a.txt".into(), limit: None }))
+        );
+        assert_eq!(
+            ok(&["history", "a.txt", "--limit", "5"]),
+            Invocation::Window(Window::History(History { path: "a.txt".into(), limit: Some(5) }))
+        );
     }
 
     #[test]

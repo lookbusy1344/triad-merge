@@ -6,7 +6,9 @@ use merge_core::index::RegionIx;
 use merge_core::merge3::{HunkLevel, Semantics};
 use merge_core::text::{Encoding, LineEnding};
 use merge_session::ExitCode;
-use merge_session::jj_native::{DescendantEffect, Rewrite, StackCommit, StackPath};
+use merge_session::jj_native::{
+    DescendantEffect, FileVersion, Rewrite, SHORT_OPERATION, StackCommit, StackPath, VersionState,
+};
 use merge_view::nav::Sides;
 use merge_view::status::{Divergence, Status};
 use vcs::{IdKind, RepoKind};
@@ -183,7 +185,8 @@ const NO_PATHS: &str = "none";
 /// The stack window's title (spec §7.5.1).
 pub(crate) const STACK_TITLE: &str = "Conflicted commits";
 pub(crate) const STACK_EMPTY: &str = "No conflicted commits.";
-pub(crate) const STACK_REFRESH: &str = "Refresh";
+/// The stack and history windows' button that lists again.
+pub(crate) const REFRESH: &str = "Refresh";
 pub(crate) const STACK_PREVIEW: &str = "Preview Save";
 pub(crate) const PREVIEW_RUNNING: &str = "Working out what the save would do…";
 
@@ -229,6 +232,24 @@ pub(crate) fn stack_preview(rewrite: Option<&Rewrite>) -> String {
     } else {
         format!("{outcome}\n{}", descendant_effects(&rewrite.descendants))
     }
+}
+
+/// The history window's title (spec §7.5.4).
+pub(crate) fn history_title(path: &str) -> String {
+    format!("History of {path}")
+}
+
+/// A listed version, as `history --list` prints it: the operation where it appeared, the
+/// time, the description, and a mark when the path holds no file there.
+pub(crate) fn history_version(version: &FileVersion) -> String {
+    let short: String = version.operation.chars().take(SHORT_OPERATION).collect();
+    let mark = match version.state {
+        VersionState::File => "",
+        VersionState::Conflict => " (conflict)",
+        VersionState::Absent => " (absent)",
+        VersionState::Other => " (other)",
+    };
+    format!("{short} {} {}{mark}", version.time, version.description)
 }
 
 /// The open dialog's window title on `mode`'s tab.
@@ -639,6 +660,38 @@ pub(crate) mod edit_menu {
 mod tests {
     use super::*;
     use merge_core::merge3::{Refine, SameChange};
+
+    fn version(state: VersionState) -> FileVersion {
+        FileVersion {
+            operation: "0123456789abcdef0123".to_owned(),
+            time: "2026-11-13T10:00:00+01:00".to_owned(),
+            description: "snapshot working copy".to_owned(),
+            commit: vcs::CommitId::new("cccc".to_owned()),
+            state,
+        }
+    }
+
+    #[test]
+    fn a_version_reads_as_history_lists_it() {
+        let line = |state| history_version(&version(state));
+        assert_eq!(
+            line(VersionState::File),
+            "0123456789ab 2026-11-13T10:00:00+01:00 snapshot working copy"
+        );
+        assert_eq!(
+            line(VersionState::Absent),
+            "0123456789ab 2026-11-13T10:00:00+01:00 snapshot working copy (absent)"
+        );
+        assert_eq!(
+            line(VersionState::Conflict),
+            "0123456789ab 2026-11-13T10:00:00+01:00 snapshot working copy (conflict)"
+        );
+        assert_eq!(
+            line(VersionState::Other),
+            "0123456789ab 2026-11-13T10:00:00+01:00 snapshot working copy (other)"
+        );
+        assert_eq!(history_title("src/a.txt"), "History of src/a.txt");
+    }
 
     #[test]
     fn the_build_line_names_the_commit_and_the_jj_change() {

@@ -406,7 +406,7 @@ impl Render for StackWindow {
                     .child(
                         Button::new(REFRESH_ID)
                             .small()
-                            .label(strings::STACK_REFRESH)
+                            .label(strings::REFRESH)
                             .disabled(self.listing)
                             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.refresh(cx))),
                     )

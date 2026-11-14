@@ -10,7 +10,7 @@ use merge_config::settings::Settings as Stored;
 use merge_core::diff::DiffOptions;
 use merge_core::document::{MergeDocument, MergeOptions};
 use merge_session::WindowForm;
-use merge_session::invocation::{Evolog, Resolve, Window};
+use merge_session::invocation::{Evolog, Resolve, Stack, Window};
 use merge_session::repository::{Handoff, RunRepository};
 use merge_session::resolve::Snapshot;
 use merge_session::semantics::Caller;
@@ -19,13 +19,15 @@ use vcs::RepoKind;
 
 use crate::assets::AppAssets;
 use crate::diff_window::{self, DiffFile, DiffLookup, DiffSettings, Origin};
+use crate::history_window::{self, HistoryStart};
 use crate::measure::{self, Measure};
 use crate::resolve_queue::{self, Queue};
 use crate::stack_window::{self, StackStart};
 use crate::window::{OpenError, OriginLookup, WindowSettings};
 use crate::{ExitCode, Finish, Typography, open_dialog, strings};
 
-/// A diff window opened from the open dialog watches its files on disk (spec §6.1).
+/// A diff window opened from the open dialog or the history window watches its files on
+/// disk (spec §6.1).
 const WATCH_FILES: bool = true;
 
 /// Run a window form of the command line until its window finishes. Inputs load before the
@@ -113,20 +115,42 @@ pub fn run(form: WindowForm) -> ExitCode {
             run_native_diff(window, repo, base, errors, bindings)
         }
         Window::DiffEvolog(evolog) => run_evolog_diff(evolog, base, errors, bindings),
-        Window::Stack(stack) => {
-            let start = StackStart {
+        Window::History(history) => {
+            let start = HistoryStart {
                 cwd: working_dir(dir),
-                revset: stack.revset,
-                options: stack.options,
+                path: history.path,
+                limit: history.limit,
                 jj_config: repo.jj_config().cloned(),
                 settings: base,
+                watch: WATCH_FILES,
             };
             launch(bindings, move |cx| {
-                stack_window::start(start, |code, _| exit(code), cx).map(drop)?;
+                history_window::start(start, |code, _| exit(code), cx).map(drop)?;
                 Ok(())
             })
         }
+        Window::Stack(stack) => run_stack(stack, &repo, base, bindings),
     }
+}
+
+/// The stack window on `stack`'s revset, whose merge windows read with the run's jj config.
+fn run_stack(
+    stack: Stack,
+    repo: &RunRepository,
+    base: WindowSettings,
+    bindings: KeyBindings,
+) -> ExitCode {
+    let start = StackStart {
+        cwd: working_dir(base.cwd.as_deref()),
+        revset: stack.revset,
+        options: stack.options,
+        jj_config: repo.jj_config().cloned(),
+        settings: base,
+    };
+    launch(bindings, move |cx| {
+        stack_window::start(start, |code, _| exit(code), cx).map(drop)?;
+        Ok(())
+    })
 }
 
 /// The working-copy file that `right`, the right side of `jj diff --tool`, copies, so its
@@ -177,13 +201,26 @@ fn run_native_diff(
     };
     let origins =
         DiffLookup::Native { path: working_dir(dir).join(&path), rev, repo: Handoff::new(repo) };
-    let right = match merge_session::read_text(&native.right) {
-        Ok(text) => DiffFile { origin: Origin::File(native.right), text, read_only: false },
+    let (left, right) = match native_sides(native) {
+        Ok(sides) => sides,
         Err(error) => return report(&error.to_string()),
     };
-    let left = DiffFile::revision(native.left, native.left_title);
     let settings = diff_settings(title, diff, base, Some(origins), kind);
     launch_diff(left, right, settings, errors, bindings)
+}
+
+/// A `diff PATH` window's sides: `native`'s revision on the left, read-only, and the
+/// working-tree file on the right, which saves.
+///
+/// # Errors
+///
+/// When the working-tree file cannot be read.
+pub(crate) fn native_sides(
+    native: merge_session::native::NativeDiff,
+) -> Result<(DiffFile, DiffFile), merge_session::SessionError> {
+    let text = merge_session::read_text(&native.right)?;
+    let right = DiffFile { origin: Origin::File(native.right), text, read_only: false };
+    Ok((DiffFile::revision(native.left, native.left_title), right))
 }
 
 /// The diff window of `diff PATH --evolog`: a jj change's file against an earlier version

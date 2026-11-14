@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use merge_config::settings::{self, Settings};
 use merge_core::document::OutputEnding;
 use merge_session::env::Env;
-use merge_session::invocation::{Merge, Resolve, SemanticsFlags, Stack, Window};
+use merge_session::invocation::{History, Merge, Resolve, SemanticsFlags, Stack, Window};
 use merge_session::repository::RunRepository;
 use merge_session::{
     EncodedOutput, SaveError, SessionError, choose_marker_style, choose_semantics, jj_config, load,
@@ -195,6 +195,22 @@ fn window_form(
         }
         Window::DiffEvolog(evolog) => (Window::DiffEvolog(evolog), RunRepository::none()),
         Window::OpenDialog => (Window::OpenDialog, RunRepository::none()),
+        Window::History(history) => {
+            let result = cwd
+                .as_deref()
+                .ok_or(CliError::NoWorkingDirectory)
+                .and_then(|cwd| history_prepare(&history, cwd, env));
+            match result {
+                Ok(repo) => (Window::History(history), repo),
+                Err(error) => {
+                    return Outcome::Exit(report(
+                        stderr,
+                        &format!("{PROGRAM}: {error}\n"),
+                        ExitCode::Error,
+                    ));
+                }
+            }
+        }
         Window::Stack(mut stack) => {
             let result = cwd
                 .as_deref()
@@ -395,6 +411,20 @@ fn stack_prepare(
     stack.options.hunk_level = mode.hunk_level;
     stack.options.marker_style = choose_marker_style(mode.semantics, settings, &mut repo);
     Ok(Some(repo))
+}
+
+/// Check that `history PATH` can list before its window opens: a jj repository holding
+/// `cwd`, and the path inside it. Gives the run's repository, with the user's jj config.
+///
+/// # Errors
+///
+/// [`CliError`] outside a jj repository, for a path outside it, or when the operation log
+/// cannot be read.
+fn history_prepare(history: &History, cwd: &Path, env: &Env) -> Result<RunRepository, CliError> {
+    const ONE: Option<usize> = Some(1);
+    let config = jj_config::snapshot_config(env);
+    merge_session::jj_native::file_history(cwd, &history.path, ONE, Some(config.clone()))?;
+    Ok(RunRepository::of_resolve(cwd, None).with_jj_config(config))
 }
 
 /// `resolve -r REV PATH --headless`: the automatic merge of the conflict in `rev`'s commit,

@@ -779,7 +779,7 @@ Features git cannot have (spec §1.2, §7.5). Each rests on something jj records
 | `diff PATH --evolog` | The evolog |
 | `absorb` | Annotation; descendants rebase on a rewrite |
 
-Each ships a command line with `--json`, `--headless` or `--inspect` for scripts, tests and agents. A command that fits a window triad has opens it; `stack` has a window of its own (§I2). The other new kinds of window are open work (`PLAN.md` §3). In a git repository each refuses with `needs a jj repository` and exits with 3.
+Each ships a command line with `--json`, `--headless` or `--inspect` for scripts, tests and agents. A command that fits a window triad has opens it; `stack` and `history` have windows of their own (§I2, §I5). A window for `absorb` is open work (`PLAN.md` §3). In a git repository each refuses with `needs a jj repository` and exits with 3.
 
 ### I1 Rewrites
 
@@ -821,6 +821,7 @@ Each ships a command line with `--json`, `--headless` or `--inspect` for scripts
 - `JjRepository::history` walks the operation log from the head with `walk_ancestors`, lazily, and reads each operation's view for the workspace's working-copy commit. It reads the path's value from that commit's tree only when the commit differs from the previous operation's, so a run of operations on one commit costs one tree lookup. It loads no repository per operation: the view and the store suffice.
 - Versions compare by `MergedTreeValue`: file IDs, not bytes. A run of equal values keeps the oldest operation, since the walk is newest first and each equal value renames the run. `--limit N` stops at the first value of version N + 1, so version N still carries the operation where it appeared.
 - Cost: on this repository's log of 931 operations, `history docs/PLAN.md` takes 43.1 ms in a release build, 16.0 ms with `--limit 5`; the 16 ms is start-up and the snapshot. The walk costs about 29 µs per operation, so a log of 100 000 operations takes about 3 s without a limit.
+- The history window (`merge-app::history_window`) follows the stack window's design (§I2): it lists through `jj_native::file_history`, which also gives the repository root, takes over the app's `Finish` so a diff window's close comes back to it, and lists again then. A version opens through the same `native::load_at_operation` and `run::native_sides` as `diff --op`. Listing and loading run off the UI thread, each on a fresh repository; a listing snapshots, so a save from the diff window shows as a new version. `merge-cli` lists one version before the window opens, so a git repository or a path outside the repository exits without one.
 - `diff --op` resolves the operation with `resolve_op_with_repo`, takes the working-copy commit from its view, and hands the commit's full ID to the `diff PATH` path as the revision. A commit ID resolves in jj whether or not the commit is still visible, so the line origins and revision chip work unchanged.
 
 ### I6 A change's patch across rewrites

@@ -8,6 +8,7 @@ pub mod diff_window;
 mod editor_sync;
 mod editor_syntax;
 mod go_to_line;
+pub mod history_window;
 mod input_find;
 mod input_select;
 mod keys;
