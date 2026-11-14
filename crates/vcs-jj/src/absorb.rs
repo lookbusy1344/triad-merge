@@ -320,9 +320,12 @@ fn plan(
         let mut annotator = FileAnnotator::with_file_content(source, &file.path, file.left.clone());
         annotator.compute(repo, domain).block_on().map_err(backend("annotating a file"))?;
         let annotation = annotator.to_annotation();
+        // A line no commit in the domain wrote is the source's own when a commit outside
+        // the domain sits between them: it has no commit to go into either.
         let ranges: Vec<(CommitId, Range<usize>)> = annotation
             .compact_line_ranges()
             .filter_map(|(commit, range)| Some((commit.ok()?.id().clone(), range)))
+            .filter(|(commit, _)| commit != source.id())
             .collect();
         let diff = ContentDiff::by_line([&file.left, &file.right]);
         for hunk in diff.hunk_ranges().filter(|hunk| hunk.kind == DiffHunkKind::Different) {

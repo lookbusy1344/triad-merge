@@ -116,6 +116,39 @@ fn a_hunk_across_two_commits_lines_stays() {
 }
 
 #[test]
+fn a_deletion_across_two_commits_lines_stays() {
+    // jj's absorb splits it, and each commit then conflicts: the piece in `one` deletes the
+    // line next to the lines `two` added.
+    let fixture = Fixture::new();
+    let one = fixture.commit_on(&[], "one", &[("a.txt", b"1\n2\n")]);
+    let two = fixture.commit_merged(&[&one], "two", &[("a.txt", b"1\n2\n3\n4\n")]);
+    fixture.check_out(&[&two]);
+    fixture.check_out_to_disk();
+    std::fs::write(fixture.root().join("a.txt"), b"1\n4\n").expect("written");
+    assert_eq!(summary(&listed(&fixture, &[], false)), [(1, "a.txt", [1, 3, 1, 1], None)]);
+}
+
+#[test]
+fn a_line_from_a_commit_outside_into_stays() {
+    // `two` wrote line 3 and lies outside --into, between `one` and the working copy.
+    let fixture = Fixture::new();
+    let one = fixture.commit_on(&[], "one", &[("a.txt", b"1\n2\n")]);
+    let two = fixture.commit_merged(&[&one], "two", &[("a.txt", b"1\n2\n3\n")]);
+    fixture.check_out(&[&two]);
+    fixture.check_out_to_disk();
+    std::fs::write(fixture.root().join("a.txt"), b"1\nTWO\nTHREE\n").expect("written");
+    let absorbed = open(&fixture)
+        .absorb(&[], Some(&one.commit), &[], false, None)
+        .expect("the hunks are listed");
+    assert_eq!(summary(&absorbed), [(1, "a.txt", [1, 3, 1, 3], None)]);
+    std::fs::write(fixture.root().join("a.txt"), b"1\n2\nTHREE\n").expect("written");
+    let absorbed = open(&fixture)
+        .absorb(&[], Some(&one.commit), &[], false, None)
+        .expect("the hunks are listed");
+    assert_eq!(summary(&absorbed), [(1, "a.txt", [2, 3, 2, 3], None)]);
+}
+
+#[test]
 fn move_and_keep_override_a_hunk_s_commit() {
     let (fixture, one, _) = stack(b"1\n2\nTHREE\n4\n5\n", b"x\nY\nz\n");
     let choices = [HunkChoice::Keep(1), HunkChoice::Move { hunk: 2, rev: one.commit.clone() }];

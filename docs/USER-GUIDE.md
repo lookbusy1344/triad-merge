@@ -232,7 +232,7 @@ Hunk numbers hold only for the listing that printed them. `--move` and `--keep` 
 absorbed 1 hunks into 1 commits
 ```
 
-A hunk stays when it spans lines from two commits, or when it is an insertion at the seam between two commits' lines. New files stay. Conflicted paths are listed as `skipped`. With `--apply` each target takes its hunks, the descendants rebase, and the working copy keeps the rest; an empty working copy without a description is replaced by a new one. It is one operation, `absorb in triad`, which `jj undo` reverts.
+A hunk stays when it spans lines from two commits, or when it is an insertion at the seam between two commits' lines. A deletion over two commits' lines stays too, where `jj absorb` splits it and leaves both commits conflicted. A hunk also stays when a commit outside `--into` wrote its lines. New files stay. Conflicted paths are listed as `skipped`. With `--apply` each target takes its hunks, the descendants rebase, and the working copy keeps the rest; an empty working copy without a description is replaced by a new one. It is one operation, `absorb in triad`, which `jj undo` reverts.
 
 ### Merge semantics
 
