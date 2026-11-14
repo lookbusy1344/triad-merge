@@ -359,6 +359,31 @@ fn a_conflict_changed_since_it_was_read_is_refused_and_nothing_is_written() {
 }
 
 #[test]
+fn a_bit_changed_in_a_cancelled_term_since_it_was_read_is_refused() {
+    let fixture = Fixture::new();
+    let base = fixture.commit_on(&[], "base", &[("a.txt", BASE)]);
+    let left = fixture.commit_on(&[&base], "left", &[("a.txt", LEFT)]);
+    let right = fixture.commit_on(&[&base], "right", &[("a.txt", RIGHT)]);
+    let same = fixture.commit_on(&[&base], "same", &[("a.txt", BASE)]);
+    // The third side holds the base: jj drops it with its base, so two sides show.
+    let merge = fixture.commit_merged(&[&left, &right, &same], "merge", &[]);
+    // Another writer makes the dropped side executable. Its content still cancels, but a
+    // resolved file now takes the bit.
+    fixture.amend_entries(&same, &[("a.txt", vcs::testing::Entry::Executable(BASE))]);
+    let operations = fixture.operation_count();
+    let refused = changed_refusal(open(&fixture).write_conflict(
+        &id(&merge),
+        a_txt(),
+        MERGED,
+        MARKER_LENGTH,
+        false,
+    ));
+    assert!(refused.ends_with(" changed since triad read it; nothing is written"), "{refused}");
+    assert_eq!(fixture.held_in(&fixture.latest(&merge), "a.txt"), Held::Conflict);
+    assert_eq!(fixture.operation_count(), operations);
+}
+
+#[test]
 fn a_conflict_resolved_since_it_was_read_is_refused() {
     let Stack { fixture, merge, .. } = stack(Fixture::new());
     fixture.amend(&merge, &[("a.txt", b"other\n")]);

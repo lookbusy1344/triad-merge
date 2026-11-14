@@ -281,9 +281,18 @@ impl Fixture {
         reason = "called for its effect on the repository; tests often ignore the result"
     )]
     pub fn amend(&self, commit: &Committed, files: Files<'_>) -> Committed {
+        self.amend_entries(commit, &Entry::files(files))
+    }
+
+    /// Rewrite `commit` to hold `entries` as its whole tree, as [`Fixture::amend`] does.
+    #[expect(
+        clippy::must_use_candidate,
+        reason = "called for its effect on the repository; tests often ignore the result"
+    )]
+    pub fn amend_entries(&self, commit: &Committed, entries: &[(&str, Entry)]) -> Committed {
         let repo = self.repo();
         let original = repo.store().get_commit(&commit.id).expect("the commit");
-        let tree = tree_of(&repo, &Entry::files(files));
+        let tree = tree_of(&repo, entries);
         let mut tx = repo.start_transaction();
         let amended = tx
             .repo_mut()

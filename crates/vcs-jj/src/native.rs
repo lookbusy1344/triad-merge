@@ -260,7 +260,8 @@ impl JjRepository {
     }
 
     /// The conflict at `path` in `current`, the visible commit of `read`'s change, when it
-    /// is the conflict triad read from `read`, as jj simplifies both.
+    /// is the conflict triad read from `read`, as jj simplifies both, with the executable
+    /// bit a resolved file would take.
     ///
     /// # Errors
     ///
@@ -286,9 +287,13 @@ impl JjRepository {
             return Err(VcsError::NotConflicted { path: path.to_owned(), rev: read.id().hex() });
         }
         let now = value_in(current)?;
-        let same =
-            |value: &MergedTreeValue, commit: &Commit| simplified(value, commit.tree().labels()).0;
-        if same(&was, read) != same(&now, current) {
+        // The simplified terms, and the bit a resolved file takes from every term: a term
+        // that cancels by content still counts toward it.
+        let held = |value: &MergedTreeValue, commit: &Commit| {
+            let bit = value.to_executable_merge().map(|bits| resolve_file_executable(&bits));
+            (simplified(value, commit.tree().labels()).0, bit)
+        };
+        if held(&was, read) != held(&now, current) {
             let change = self.change_info(current)?;
             return Err(backend("writing into the commit")(JjError::ConflictChanged {
                 path: path.to_owned(),
