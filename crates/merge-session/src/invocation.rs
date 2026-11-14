@@ -134,7 +134,7 @@ impl DiffFlags {
         DiffOptions {
             algorithm: self.algorithm.unwrap_or(settings.algorithm),
             whitespace: self.whitespace.unwrap_or(settings.whitespace),
-            line_endings: settings.line_endings,
+            ..settings
         }
     }
 

@@ -3,7 +3,7 @@
 //! Whitespace modes change only the key a line is interned under, so they change which lines
 //! compare equal and never the bytes. Whitespace means space, tab and `\r`, as in git's
 //! `isspace`; `\n` ends the line and is never part of a key except under [`Whitespace::None`]
-//! with [`LineEndingRule::Compare`].
+//! with [`LineEndingRule::Compare`]. [`CaseRule::Ignore`] folds the key's case last.
 
 use std::borrow::Cow;
 use std::ops::Range;
@@ -49,6 +49,15 @@ pub enum LineEndingRule {
     Ignore,
 }
 
+/// Whether letter case takes part in comparison (spec §4.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum CaseRule {
+    #[default]
+    Compare,
+    /// Lines compare after full Unicode case folding: `ß` and `SS` compare equal.
+    Ignore,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct DiffOptions {
     pub algorithm: Algorithm,
@@ -56,21 +65,26 @@ pub struct DiffOptions {
     /// Journals written before the field compared line endings.
     #[serde(default)]
     pub line_endings: LineEndingRule,
+    /// Journals written before the field compared case.
+    #[serde(default)]
+    pub case: CaseRule,
 }
 
 impl DiffOptions {
     /// The rule lines compare by under these options.
     #[must_use]
     pub fn comparison(self) -> Comparison {
-        Comparison { whitespace: self.whitespace, line_endings: self.line_endings }
+        Comparison { whitespace: self.whitespace, line_endings: self.line_endings, case: self.case }
     }
 }
 
-/// How two lines compare: by their [`line_key`] under a whitespace mode and a line-ending rule.
+/// How two lines compare: by their [`line_key`] under a whitespace mode, a line-ending rule
+/// and a case rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Comparison {
     pub whitespace: Whitespace,
     pub line_endings: LineEndingRule,
+    pub case: CaseRule,
 }
 
 impl Comparison {
@@ -83,7 +97,7 @@ impl Comparison {
 
 impl From<Whitespace> for Comparison {
     fn from(whitespace: Whitespace) -> Self {
-        Self { whitespace, line_endings: LineEndingRule::Compare }
+        Self { whitespace, ..Self::default() }
     }
 }
 
@@ -189,6 +203,24 @@ pub fn intraline_hunks(before: &str, after: &str) -> Option<Vec<Hunk>> {
 /// The key a line compares under by `mode`.
 #[must_use]
 pub fn line_key(line: &str, mode: Comparison) -> Cow<'_, str> {
+    let key = spaced_key(line, mode);
+    match mode.case {
+        CaseRule::Compare => key,
+        CaseRule::Ignore => fold_case(key),
+    }
+}
+
+/// `key` after full Unicode case folding; borrowed when ASCII without capitals.
+fn fold_case(key: Cow<'_, str>) -> Cow<'_, str> {
+    if key.bytes().all(|b| b.is_ascii() && !b.is_ascii_uppercase()) {
+        key
+    } else {
+        Cow::Owned(unicase::UniCase::new(&*key).to_folded_case())
+    }
+}
+
+/// The key a line compares under by `mode`'s whitespace mode and line-ending rule.
+fn spaced_key(line: &str, mode: Comparison) -> Cow<'_, str> {
     let body = || line.strip_suffix('\n').unwrap_or(line).trim_end_matches(is_blank);
     match (mode.whitespace, mode.line_endings) {
         (Whitespace::None, LineEndingRule::Compare) => Cow::Borrowed(line),
@@ -468,8 +500,11 @@ mod tests {
         assert_eq!(line_key(" a \t b\r\n", Whitespace::All.into()), "ab");
     }
 
-    const IGNORE_ENDINGS: Comparison =
-        Comparison { whitespace: Whitespace::None, line_endings: LineEndingRule::Ignore };
+    const IGNORE_ENDINGS: Comparison = Comparison {
+        whitespace: Whitespace::None,
+        line_endings: LineEndingRule::Ignore,
+        case: CaseRule::Compare,
+    };
 
     #[test]
     fn keys_ignoring_line_endings_drop_the_terminator_only() {
@@ -489,7 +524,11 @@ mod tests {
     #[test]
     fn ignoring_line_endings_changes_no_whitespace_mode() {
         for whitespace in [Whitespace::Trailing, Whitespace::Amount, Whitespace::All] {
-            let ignoring = Comparison { whitespace, line_endings: LineEndingRule::Ignore };
+            let ignoring = Comparison {
+                whitespace,
+                line_endings: LineEndingRule::Ignore,
+                case: CaseRule::Compare,
+            };
             assert_eq!(
                 line_key(" a  b \r\n", ignoring),
                 line_key(" a  b \r\n", whitespace.into()),
@@ -504,6 +543,64 @@ mod tests {
         let with = |line_endings| DiffOptions { line_endings, ..DiffOptions::default() };
         assert_eq!(diff_lines(&crlf, &lf, with(LineEndingRule::Compare)), [hunk(0..3, 0..3)]);
         assert_eq!(diff_lines(&crlf, &lf, with(LineEndingRule::Ignore)), [hunk(1..2, 1..2)]);
+    }
+
+    const IGNORE_CASE: Comparison = Comparison {
+        whitespace: Whitespace::None,
+        line_endings: LineEndingRule::Compare,
+        case: CaseRule::Ignore,
+    };
+
+    #[test]
+    fn keys_ignoring_case_fold_every_letter_and_keep_the_terminator() {
+        assert_eq!(line_key("Hello WORLD\r\n", IGNORE_CASE), "hello world\r\n");
+    }
+
+    #[test]
+    fn keys_ignoring_case_use_full_unicode_case_folding() {
+        // CaseFolding.txt: ß folds to "ss" (F), final ς and Σ to σ (C), K (KELVIN SIGN) to k.
+        assert_eq!(line_key("STRASSE\n", IGNORE_CASE), "strasse\n");
+        assert_eq!(line_key("Straße\n", IGNORE_CASE), "strasse\n");
+        assert_eq!(line_key("ΟΔΟΣ\n", IGNORE_CASE), "οδοσ\n");
+        assert_eq!(line_key("οδος\n", IGNORE_CASE), "οδοσ\n");
+        assert_eq!(line_key("\u{212A}\n", IGNORE_CASE), "k\n");
+    }
+
+    #[test]
+    fn keys_ignoring_case_borrow_a_line_with_nothing_to_fold() {
+        assert!(matches!(line_key("abc 12\n", IGNORE_CASE), Cow::Borrowed("abc 12\n")));
+        assert!(matches!(line_key("οδοσ\n", IGNORE_CASE), Cow::Owned(_)), "non-ASCII folds");
+    }
+
+    #[test]
+    fn ignoring_case_applies_after_each_whitespace_mode_and_line_ending_rule() {
+        let with = |whitespace, line_endings| Comparison {
+            whitespace,
+            line_endings,
+            case: CaseRule::Ignore,
+        };
+        assert_eq!(line_key(" A \r\n", with(Whitespace::None, LineEndingRule::Ignore)), " a ");
+        assert_eq!(line_key(" A \r\n", with(Whitespace::Trailing, LineEndingRule::Compare)), " a");
+        assert_eq!(line_key(" A  B \n", with(Whitespace::Amount, LineEndingRule::Compare)), " a b");
+        assert_eq!(line_key(" A  B \n", with(Whitespace::All, LineEndingRule::Compare)), "ab");
+    }
+
+    #[test]
+    fn a_comparison_that_ignores_case_is_not_exact() {
+        assert!(!IGNORE_CASE.is_exact());
+        assert!(Comparison::default().is_exact());
+    }
+
+    #[test]
+    fn lines_that_differ_only_in_case_differ_unless_case_is_ignored() {
+        let (before, after) = (text("a\nB\nc\n"), text("A\nb\nd\n"));
+        let with = |case| DiffOptions { case, ..DiffOptions::default() };
+        assert_eq!(diff_lines(&before, &after, with(CaseRule::Compare)), [hunk(0..3, 0..3)]);
+        assert_eq!(diff_lines(&before, &after, with(CaseRule::Ignore)), [hunk(2..3, 2..3)]);
+        assert_eq!(
+            diff_lines_for_merge(&before, &after, with(CaseRule::Ignore)),
+            [hunk(2..3, 2..3)]
+        );
     }
 
     #[test]

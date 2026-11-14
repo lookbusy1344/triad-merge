@@ -334,7 +334,7 @@ pub struct DiffWindow {
     chunked: bool,
     palette: Palette,
     panes: [Pane; 2],
-    whitespace: &'static str,
+    comparison: String,
     repo: Option<RepoKind>,
     status: SharedString,
     recompute: Option<Task<()>>,
@@ -570,7 +570,7 @@ impl DiffWindow {
             this.menu_bar.forget();
             cx.notify();
         }));
-        let whitespace = strings::comparison(settings.options.comparison());
+        let comparison = strings::diff_comparison(settings.options.comparison());
         // Without a working directory, a relative path stays relative.
         let cwd = settings.cwd.as_deref().unwrap_or(Path::new(""));
         let editable = panes.iter().filter(|p| !p.read_only);
@@ -582,11 +582,11 @@ impl DiffWindow {
             menu_bar: crate::menu_bar::WindowMenu::new(cx),
             colouring,
             chunked,
-            status: strings::diff_status(settings.repo, differences(&doc), whitespace).into(),
+            status: strings::diff_status(settings.repo, differences(&doc), &comparison).into(),
             repo: settings.repo,
             doc,
             panes,
-            whitespace,
+            comparison,
             recompute: None,
             saving: None,
             save_failed: false,
@@ -992,7 +992,7 @@ impl DiffWindow {
         self.collapse.opened.renew(&self.doc);
         self.set_spacers(cx);
         self.status =
-            strings::diff_status(self.repo, differences(&self.doc), self.whitespace).into();
+            strings::diff_status(self.repo, differences(&self.doc), &self.comparison).into();
         cx.notify();
     }
 

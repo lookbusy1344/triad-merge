@@ -173,6 +173,49 @@ fn diff_inspect_ignores_line_endings_unless_the_setting_is_off() {
     assert_eq!(diff(Some(&compare)).status.code(), Some(1));
 }
 
+#[test]
+fn diff_inspect_compares_case_unless_ignore_case_is_on() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let left = dir.path().join("left.txt");
+    let right = dir.path().join("right.txt");
+    std::fs::write(&left, "a\nB\nc\n").expect("written");
+    std::fs::write(&right, "A\nb\nd\n").expect("written");
+    let ignore = dir.path().join("config.triad");
+    std::fs::write(&ignore, "ignore-case = true\n").expect("written");
+    let diff = |config: Option<&std::path::Path>| {
+        let mut command = command();
+        if let Some(config) = config {
+            command.env("TRIAD_CONFIG", config);
+        }
+        command
+            .arg("diff")
+            .args(["--inspect".as_ref(), left.as_os_str(), right.as_os_str()])
+            .output()
+            .expect("binary runs")
+    };
+    assert_eq!(
+        String::from_utf8_lossy(&diff(None).stdout),
+        "changed left 0..3 right 0..3\nchanges: 1\n"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&diff(Some(&ignore)).stdout),
+        "unchanged left 0..2 right 0..2\n\
+         changed left 2..3 right 2..3\n\
+         changes: 1\n"
+    );
+    std::fs::write(&right, "A\nb\nC\n").expect("written");
+    assert_eq!(diff(Some(&ignore)).status.code(), Some(0), "equal but for case");
+    assert_eq!(diff(None).status.code(), Some(1));
+}
+
+#[test]
+fn inspect_merges_a_side_that_only_changed_case_when_ignore_case_is_on() {
+    let texts = ["A\nB\nC\n", "a\nb\nc\n", "A\nX\nC\n"];
+    assert_eq!(inspect_texts("", "", texts).status.code(), Some(CONFLICTS_EXIT));
+    let ignoring = inspect_texts("ignore-case = true\n", "", texts);
+    assert_eq!(ignoring.status.code(), Some(0), "{}", String::from_utf8_lossy(&ignoring.stdout));
+}
+
 /// `inspect` on `base`, `left` and `right`, written to files named with `extension`, with a
 /// settings file holding `settings`.
 fn inspect_texts(settings: &str, extension: &str, [base, left, right]: [&str; 3]) -> Output {

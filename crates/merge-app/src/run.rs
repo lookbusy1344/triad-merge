@@ -453,7 +453,7 @@ fn exit(code: ExitCode) -> ! {
 
 #[cfg(test)]
 mod tests {
-    use merge_core::diff::{Algorithm, DiffOptions, LineEndingRule, Whitespace};
+    use merge_core::diff::{Algorithm, CaseRule, DiffOptions, LineEndingRule, Whitespace};
     use merge_core::merge3::Refine;
 
     use super::*;
@@ -543,6 +543,7 @@ mod tests {
                 algorithm: Algorithm::Myers,
                 whitespace: Whitespace::All,
                 line_endings: LineEndingRule::Ignore,
+                case: CaseRule::Ignore,
             },
             diff_line_endings: LineEndingRule::Compare,
             refine: Refine::Off,
@@ -609,6 +610,7 @@ mod tests {
                 algorithm: Algorithm::Myers,
                 whitespace: Whitespace::All,
                 line_endings: LineEndingRule::Compare,
+                case: CaseRule::Ignore,
             }
         );
         assert_eq!(settings.options.refine, Refine::Off);

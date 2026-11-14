@@ -1,7 +1,7 @@
 //! Every string the window shows, in one place for later translation (spec §6.5).
 
 use gpui_kit::SharedString;
-use merge_core::diff::{Comparison, LineEndingRule, Whitespace};
+use merge_core::diff::{CaseRule, Comparison, LineEndingRule, Whitespace};
 use merge_core::diff2::Side;
 use merge_core::index::RegionIx;
 use merge_core::merge3::{HunkLevel, Semantics};
@@ -615,6 +615,14 @@ pub(crate) fn comparison(mode: Comparison) -> &'static str {
     }
 }
 
+/// The diff window's items for how lines compare: [`comparison`]'s, then `case ignored`.
+pub(crate) fn diff_comparison(mode: Comparison) -> String {
+    match mode.case {
+        CaseRule::Compare => comparison(mode).to_owned(),
+        CaseRule::Ignore => format!("{} · case ignored", comparison(mode)),
+    }
+}
+
 fn count(n: usize, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
 }
@@ -653,8 +661,8 @@ pub(crate) fn unchanged_lines(hidden: usize) -> String {
 }
 
 /// The diff window's status bar text.
-pub(crate) fn diff_status(kind: Option<RepoKind>, differences: usize, whitespace: &str) -> String {
-    format!("{} · {} · {whitespace}", repo(kind), count(differences, "difference", "differences"))
+pub(crate) fn diff_status(kind: Option<RepoKind>, differences: usize, comparison: &str) -> String {
+    format!("{} · {} · {comparison}", repo(kind), count(differences, "difference", "differences"))
 }
 
 /// The status bar's item after the repository: whose merge, and whether it merges words.
@@ -672,6 +680,8 @@ fn mode(status: &Status) -> String {
 fn divergence(divergence: Divergence, semantics: Semantics) -> &'static str {
     match (divergence, semantics) {
         (Divergence::Whitespace, _) => "whitespace compared unlike jj",
+        (Divergence::Case, Semantics::Git) => "case ignored, unlike git",
+        (Divergence::Case, Semantics::Jj) => "case ignored, unlike jj",
         (Divergence::SameChangeKept, _) => "same changes kept, unlike git",
         (Divergence::WordLevel, _) => "words merged, unlike git",
         (Divergence::DeepRefine, Semantics::Git) => "conflicts split inside, unlike git",
@@ -715,7 +725,11 @@ pub(crate) fn status(kind: Option<RepoKind>, status: &Status) -> String {
         status.unresolved,
         encoding(status.encoding),
         line_ending(status.line_ending),
-        comparison(Comparison { whitespace: status.whitespace, line_endings: status.line_endings }),
+        comparison(Comparison {
+            whitespace: status.whitespace,
+            line_endings: status.line_endings,
+            case: status.case,
+        }),
     )
 }
 
@@ -1064,10 +1078,39 @@ mod tests {
 
     #[test]
     fn ignored_line_endings_show_unless_a_whitespace_mode_drops_them_anyway() {
-        let by = |whitespace, line_endings| comparison(Comparison { whitespace, line_endings });
+        let by = |whitespace, line_endings| {
+            comparison(Comparison { whitespace, line_endings, case: CaseRule::Compare })
+        };
         assert_eq!(by(Whitespace::None, LineEndingRule::Compare), "whitespace significant");
         assert_eq!(by(Whitespace::None, LineEndingRule::Ignore), "line endings ignored");
         assert_eq!(by(Whitespace::Trailing, LineEndingRule::Ignore), "trailing whitespace ignored");
+    }
+
+    #[test]
+    fn the_diff_status_adds_an_item_when_case_is_ignored() {
+        let ignoring = Comparison { case: CaseRule::Ignore, ..Comparison::default() };
+        assert_eq!(diff_comparison(ignoring), "whitespace significant · case ignored");
+        let spaces = Comparison { whitespace: Whitespace::All, ..ignoring };
+        assert_eq!(diff_comparison(spaces), "all whitespace ignored · case ignored");
+        assert_eq!(diff_comparison(Comparison::default()), "whitespace significant");
+    }
+
+    #[test]
+    fn ignored_case_shows_as_a_divergence_under_either_semantics() {
+        let git = Status { case: CaseRule::Ignore, ..with(1, 0, 0) };
+        assert!(
+            status(None, &git)
+                .starts_with("no repo · git merge · case ignored, unlike git · 1 difference · "),
+            "{}",
+            status(None, &git)
+        );
+        let jj = Status { semantics: Semantics::Jj, ..git };
+        assert!(
+            status(None, &jj)
+                .starts_with("no repo · jj merge · case ignored, unlike jj · 1 difference · "),
+            "{}",
+            status(None, &jj)
+        );
     }
 
     fn with(differences: usize, conflicts: usize, unresolved: usize) -> Status {
@@ -1081,6 +1124,7 @@ mod tests {
             mixed_endings: false,
             whitespace: Whitespace::None,
             line_endings: LineEndingRule::Compare,
+            case: CaseRule::Compare,
             word_merged: 0,
             semantics: Semantics::Git,
             same_change: SameChange::Accept,

@@ -3,7 +3,7 @@
 use std::borrow::Cow;
 use std::path::Path;
 
-use merge_core::diff::{LineEndingRule, Whitespace};
+use merge_core::diff::{CaseRule, LineEndingRule, Whitespace};
 use merge_core::document::{MergeDocument, OutputEnding};
 use merge_core::merge3::{HunkLevel, Kind, Refine, SameChange, Semantics, Source};
 use merge_core::text::{Encoding, LineEnding, LineEndings, Text, output_encoding};
@@ -34,6 +34,8 @@ pub struct Status {
     pub whitespace: Whitespace,
     /// Whether line endings take part in comparison (spec §4.2).
     pub line_endings: LineEndingRule,
+    /// Whether letter case takes part in comparison (spec §4.2).
+    pub case: CaseRule,
     /// Whose merge this is, and its rules (spec §4.3).
     pub semantics: Semantics,
     pub same_change: SameChange,
@@ -48,6 +50,8 @@ pub struct Status {
 pub enum Divergence {
     /// A whitespace mode, or line endings ignored, under jj's semantics: jj compares bytes.
     Whitespace,
+    /// Case ignored under either semantics: neither git nor jj folds case.
+    Case,
     /// `keep` under git's semantics: git resolves a change both sides made.
     SameChangeKept,
     /// The word level under git's semantics: git merges lines only.
@@ -68,6 +72,7 @@ impl Status {
                     || self.line_endings == LineEndingRule::Ignore),
                 Divergence::Whitespace,
             ),
+            (self.case == CaseRule::Ignore, Divergence::Case),
             (!jj && self.same_change == SameChange::Keep, Divergence::SameChangeKept),
             (!jj && self.hunk_level == HunkLevel::Word, Divergence::WordLevel),
             (self.refine == Refine::Deep, Divergence::DeepRefine),
@@ -101,6 +106,7 @@ pub fn status(doc: &MergeDocument, ending: OutputEnding) -> Status {
         mixed_endings: doc.saved_endings(ending) == LineEndings::Mixed,
         whitespace: doc.options().diff.whitespace,
         line_endings: doc.options().diff.line_endings,
+        case: doc.options().diff.case,
         semantics: doc.options().semantics,
         same_change: doc.options().same_change,
         hunk_level: doc.options().hunk_level,
@@ -322,6 +328,18 @@ mod tests {
         assert_eq!(mode_of(jj).2, [Divergence::Whitespace]);
         let git = MergeOptions { diff, ..MergeOptions::default() };
         assert_eq!(mode_of(git).2, [], "git merge takes -Xignore-cr-at-eol");
+    }
+
+    #[test]
+    fn ignoring_case_diverges_from_both() {
+        let diff = DiffOptions { case: CaseRule::Ignore, ..DiffOptions::default() };
+        let git = MergeOptions { diff, ..MergeOptions::default() };
+        assert_eq!(mode_of(git).2, [Divergence::Case], "git merge-file has no case option");
+        let jj = MergeOptions { semantics: Semantics::Jj, diff, ..MergeOptions::default() };
+        assert_eq!(mode_of(jj).2, [Divergence::Case]);
+        let spaces = DiffOptions { whitespace: Whitespace::All, ..diff };
+        let jj = MergeOptions { diff: spaces, ..jj };
+        assert_eq!(mode_of(jj).2, [Divergence::Whitespace, Divergence::Case]);
     }
 
     #[test]

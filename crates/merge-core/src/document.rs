@@ -1266,7 +1266,7 @@ fn auto_text<'a>(
 mod tests {
     use super::*;
     use crate::boundaries::{Marked, node};
-    use crate::diff::{LineEndingRule, Whitespace};
+    use crate::diff::{CaseRule, LineEndingRule, Whitespace};
     use crate::merge3::{LEFT, RIGHT};
     use crate::testing::{text, three};
 
@@ -2222,6 +2222,42 @@ mod tests {
             assert_eq!(
                 doc_with(base, left, right, options).output(),
                 Output::Resolved("a\nB\r\nc\n".to_owned()),
+                "{semantics:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn sides_that_differ_only_in_case_agree_when_case_is_ignored_and_left_s_bytes_win() {
+        let conflicted = doc_with("a\nb\n", "a\nC\n", "a\nc\n", MergeOptions::default());
+        assert!(matches!(conflicted.output(), Output::Conflicted(_)), "C and c differ");
+        for semantics in [Semantics::Git, Semantics::Jj] {
+            let options = MergeOptions {
+                semantics,
+                diff: DiffOptions { case: CaseRule::Ignore, ..DiffOptions::default() },
+                ..MergeOptions::default()
+            };
+            let d = doc_with("a\nb\n", "a\nC\n", "a\nc\n", options);
+            assert_eq!(d.regions()[1].kind, Kind::AllSame, "{semantics:?}");
+            assert_eq!(d.output(), Output::Resolved("a\nC\n".to_owned()), "{semantics:?}");
+        }
+    }
+
+    #[test]
+    fn a_side_that_only_changed_case_merges_cleanly_when_case_is_ignored() {
+        let (base, left, right) = ("A\nB\nC\n", "a\nb\nc\n", "A\nX\nC\n");
+        let compare = doc_with(base, left, right, MergeOptions::default());
+        assert!(matches!(compare.output(), Output::Conflicted(_)), "left changed every line");
+        for semantics in [Semantics::Git, Semantics::Jj] {
+            let options = MergeOptions {
+                semantics,
+                diff: DiffOptions { case: CaseRule::Ignore, ..DiffOptions::default() },
+                ..MergeOptions::default()
+            };
+            // Left's case on the lines only left changed; right's change on the line it changed.
+            assert_eq!(
+                doc_with(base, left, right, options).output(),
+                Output::Resolved("a\nX\nc\n".to_owned()),
                 "{semantics:?}"
             );
         }

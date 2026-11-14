@@ -12,7 +12,7 @@ use serde::Deserialize;
 use strum::{EnumMessage, IntoStaticStr, VariantArray};
 
 use crate::named::Named;
-use merge_core::diff::{self, DiffOptions, LineEndingRule};
+use merge_core::diff::{self, CaseRule, DiffOptions, LineEndingRule};
 use merge_core::document::{MarkerStyle, OutputEnding};
 use merge_core::merge3::{HunkLevel, Refine, SameChange};
 
@@ -76,6 +76,7 @@ const SYNTAX_WHOLE_FILE_MAX_LINES_KEY: &str = "syntax-whole-file-max-lines";
 const SYNTAX_BOUNDARIES_KEY: &str = "syntax-boundaries";
 const MERGE_IGNORE_LINE_ENDINGS_KEY: &str = "merge-ignore-line-endings";
 const DIFF_IGNORE_LINE_ENDINGS_KEY: &str = "diff-ignore-line-endings";
+const IGNORE_CASE_KEY: &str = "ignore-case";
 /// An editor's whole syntax tree costs about 90 bytes per byte of text
 /// (`docs/DESIGN.md` §F6.3): some 60 MB for 20 000 lines of Rust. A longer file parses a
 /// chunk at a time (§4.1).
@@ -764,6 +765,14 @@ const KEYS: &[Key] = &[
         |s| ignores(s.diff_line_endings)
     ),
     key!(
+        IGNORE_CASE_KEY,
+        "Merges, the diff window and diff --inspect compare lines after Unicode \
+         case folding. The saved bytes stay each line's.",
+        diff.case = Settings::default().diff.case,
+        |v| Ok(if boolean(IGNORE_CASE_KEY, v)? { CaseRule::Ignore } else { CaseRule::Compare }),
+        |s| (s.diff.case == CaseRule::Ignore).to_string()
+    ),
+    key!(
         "refine-conflicts",
         "How far conflicts are refined: false, true (lines every side shares \
          split off at a conflict's ends) or deep (inside it too).",
@@ -1242,6 +1251,7 @@ mod tests {
                     algorithm: diff::Algorithm::Histogram,
                     whitespace: diff::Whitespace::None,
                     line_endings: LineEndingRule::Compare,
+                    case: CaseRule::Compare,
                 },
                 diff_line_endings: LineEndingRule::Ignore,
                 refine: Refine::Ends,
@@ -1282,6 +1292,7 @@ mod tests {
             ignore-whitespace = amount
             merge-ignore-line-endings = true
             diff-ignore-line-endings = false
+            ignore-case = true
             refine-conflicts = false
             syntax-boundaries = true
             tab-width = 8
@@ -1326,6 +1337,7 @@ mod tests {
                     algorithm: diff::Algorithm::MyersMinimal,
                     whitespace: diff::Whitespace::Amount,
                     line_endings: LineEndingRule::Ignore,
+                    case: CaseRule::Ignore,
                 },
                 diff_line_endings: LineEndingRule::Compare,
                 refine: Refine::Off,
@@ -1593,6 +1605,20 @@ mod tests {
     }
 
     #[test]
+    fn ignore_case_sets_the_case_rule_of_merges_and_the_two_way_diff() {
+        assert_eq!(Settings::default().diff.case, CaseRule::Compare);
+        let on = settings("ignore-case = true");
+        assert_eq!(on.diff.case, CaseRule::Ignore);
+        assert_eq!(on.two_way().case, CaseRule::Ignore);
+        assert_eq!(settings("ignore-case = true\nignore-case =").diff.case, CaseRule::Compare);
+        assert_eq!(settings("ignore-case = false").diff.case, CaseRule::Compare);
+        assert_eq!(
+            problem("ignore-case = yes"),
+            (1, invalid("ignore-case", "yes", "true or false"))
+        );
+    }
+
+    #[test]
     fn each_line_ending_key_sets_its_own_rule() {
         let both = settings("merge-ignore-line-endings = true\ndiff-ignore-line-endings = false");
         assert_eq!(both.diff.line_endings, LineEndingRule::Ignore);
@@ -1614,7 +1640,8 @@ mod tests {
     #[test]
     fn the_two_way_options_keep_the_merges_algorithm_and_whitespace() {
         let file = settings(
-            "diff-algorithm = myers\nignore-whitespace = all\nmerge-ignore-line-endings = true",
+            "diff-algorithm = myers\nignore-whitespace = all\nmerge-ignore-line-endings = true\n\
+             ignore-case = true",
         );
         assert_eq!(
             file.two_way(),
@@ -1622,6 +1649,7 @@ mod tests {
                 algorithm: diff::Algorithm::Myers,
                 whitespace: diff::Whitespace::All,
                 line_endings: LineEndingRule::Ignore,
+                case: CaseRule::Ignore,
             }
         );
         let file = settings("merge-ignore-line-endings = true\ndiff-ignore-line-endings = false");
@@ -2128,6 +2156,7 @@ diff-algorithm = histogram
 ignore-whitespace = none
 merge-ignore-line-endings = false
 diff-ignore-line-endings = true
+ignore-case = false
 refine-conflicts = true
 syntax-boundaries = false
 tab-width = 4
@@ -2220,6 +2249,7 @@ context-lines = 3
                 algorithm: diff::Algorithm::MyersMinimal,
                 whitespace: diff::Whitespace::Trailing,
                 line_endings: LineEndingRule::Ignore,
+                case: CaseRule::Ignore,
             },
             diff_line_endings: LineEndingRule::Compare,
             refine: Refine::Deep,
@@ -2285,6 +2315,7 @@ diff-algorithm = myers-minimal
 ignore-whitespace = trailing
 merge-ignore-line-endings = true
 diff-ignore-line-endings = false
+ignore-case = true
 refine-conflicts = deep
 syntax-boundaries = true
 tab-width = 2

@@ -18,7 +18,7 @@ use crate::document::{
 use crate::merge3::{Inputs, Kind, Region};
 
 /// The format of the journal. A journal of another version is not restored.
-pub const JOURNAL_VERSION: u32 = 10;
+pub const JOURNAL_VERSION: u32 = 11;
 
 const HEX_DIGITS_PER_BYTE: usize = 2;
 
@@ -483,18 +483,19 @@ mod tests {
     }
 
     #[test]
-    fn the_format_version_is_ten() {
-        assert_eq!(JOURNAL_VERSION, 10);
+    fn the_format_version_is_eleven() {
+        assert_eq!(JOURNAL_VERSION, 11);
         let (d, journal) = session();
         let all = bytes(&journal);
         let header =
             std::str::from_utf8(&all).expect("JSON is UTF-8").lines().next().expect("a header");
-        assert!(header.starts_with(r#"{"version":10,"#), "{header}");
+        assert!(header.starts_with(r#"{"version":11,"#), "{header}");
         let alignment = format!(r#""alignment":"{}""#, d.start().alignment);
         assert!(header.contains(&alignment), "{header}");
         assert!(header.contains(r#""refine":"ends""#), "{header}");
         assert!(header.contains(r#""syntax_boundaries":false"#), "{header}");
         assert!(header.contains(r#""line_endings":"Compare""#), "{header}");
+        assert!(header.contains(r#""case":"Compare""#), "{header}");
     }
 
     /// The session's journal written as `version`, with each `(from, to)` replaced once, is
@@ -589,6 +590,11 @@ mod tests {
             region(Kind::Unchanged, 2..3, [2..3, 2..3]),
         ];
         assert_eq!(start.alignment, alignment_hash(&regions, [2, 4, 2]));
+    }
+
+    #[test]
+    fn a_version_ten_journal_without_a_case_rule_is_refused_by_its_version() {
+        assert_refused_by_version(10, &[(r#","case":"Compare""#, "")]);
     }
 
     #[test]
@@ -691,6 +697,7 @@ mod tests {
             algorithm: crate::diff::Algorithm::Histogram,
             whitespace: Whitespace::None,
             line_endings: crate::diff::LineEndingRule::Compare,
+            case: crate::diff::CaseRule::Compare,
         },
         refine: crate::merge3::Refine::Ends,
         syntax_boundaries: false,
