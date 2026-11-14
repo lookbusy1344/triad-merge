@@ -17,7 +17,7 @@ use jj_lib::revset::RevsetAliasesMap;
 use pollster::FutureExt as _;
 use vcs::{ChangeInfo, VcsError};
 
-use crate::{JjError, JjRepository, backend, colocated_git, config, export_refs};
+use crate::{JjError, JjRepository, Revsets, backend, colocated_git, config, export_refs};
 
 /// jj's default revset aliases for what may be rewritten, as jj's own config sets them. The
 /// user's `revset-aliases` replace any of them.
@@ -101,8 +101,8 @@ pub(crate) struct Mutated {
 
 impl JjRepository {
     /// The user's revset aliases over jj's defaults for `trunk()`, `immutable_heads()`,
-    /// `immutable()` and `mutable()`.
-    pub(crate) fn aliases(&self) -> Result<RevsetAliasesMap, VcsError> {
+    /// `immutable()` and `mutable()`, and the user's email for `mine()`.
+    pub(crate) fn revsets(&self) -> Result<Revsets, VcsError> {
         let env = self.config.clone().unwrap_or_else(config::ConfigEnv::from_process);
         let loaded =
             config::load(&env, self.root.as_std_path()).map_err(backend("reading jj's config"))?;
@@ -116,7 +116,7 @@ impl JjRepository {
                 config.get([ALIASES_TABLE, decl]).map_err(backend("reading a revset alias"))?;
             aliases.insert(decl, defn, None).map_err(backend("declaring a revset alias"))?;
         }
-        Ok(aliases)
+        Ok(Revsets { aliases, user_email: loaded.settings.user_email().to_owned() })
     }
 
     /// The commits `revset` names that hold conflicts, parents first, with the user's
@@ -128,9 +128,9 @@ impl JjRepository {
     /// [`vcs::Repository::commits`], and [`VcsError::Backend`] when the config or the history
     /// cannot be read.
     pub fn stack(&self, revset: Option<&str>) -> Result<Vec<StackCommit>, VcsError> {
-        let aliases = self.aliases()?;
+        let revsets = self.revsets()?;
         let mut commits =
-            self.evaluate(self.repo.as_ref(), revset.unwrap_or(DEFAULT_STACK), &aliases)?;
+            self.evaluate(self.repo.as_ref(), revset.unwrap_or(DEFAULT_STACK), &revsets)?;
         commits.reverse();
         commits
             .iter()
@@ -209,9 +209,10 @@ impl JjRepository {
         let repo_path = RepoPathBuf::from_relative_path(path)
             .map_err(|_| VcsError::OutsideRepository(path.to_owned()))?;
         let named = self.commit_by_id(id)?;
-        self.check_mutable(std::slice::from_ref(&named))?;
+        let revsets = self.revsets()?;
+        self.check_mutable(std::slice::from_ref(&named), &revsets)?;
         let change_id = named.change_id().clone();
-        self.rewrite(dry_run, |this, repo| {
+        self.rewrite(&revsets, dry_run, |this, repo| {
             let commit = visible(repo, &change_id)?;
             let value = this.held_conflict(&named, &commit, &repo_path, path)?;
             let new_value = parse_back(repo, &repo_path, &value, content, marker_length)?;
@@ -287,14 +288,18 @@ impl JjRepository {
     }
 
     /// Refuse a write to any of `commits` that jj's `immutable()` holds, with the user's
-    /// aliases.
-    pub(crate) fn check_mutable(&self, commits: &[Commit]) -> Result<(), VcsError> {
+    /// `revsets`.
+    pub(crate) fn check_mutable(
+        &self,
+        commits: &[Commit],
+        revsets: &Revsets,
+    ) -> Result<(), VcsError> {
         if commits.is_empty() {
             return Ok(());
         }
         let ids: Vec<String> = commits.iter().map(|commit| commit.id().hex()).collect();
         let expr = format!("({}) & immutable()", ids.join(" | "));
-        let immutable = self.evaluate(self.repo.as_ref(), &expr, &self.aliases()?)?;
+        let immutable = self.evaluate(self.repo.as_ref(), &expr, revsets)?;
         match immutable.first() {
             Some(commit) => Err(VcsError::Immutable(
                 self.change_info(commit)?.id(vcs::IdKind::Commit).to_owned(),
@@ -314,11 +319,8 @@ impl JjRepository {
         }
         let ids: Vec<String> = roots.iter().map(|commit| commit.id().hex()).collect();
         let set = ids.join(" | ");
-        let mut found = self.evaluate(
-            repo,
-            &format!("descendants({set}) ~ ({set})"),
-            &RevsetAliasesMap::new(),
-        )?;
+        let mut found =
+            self.evaluate(repo, &format!("descendants({set}) ~ ({set})"), &Revsets::default())?;
         found.reverse();
         found
             .into_iter()
@@ -329,9 +331,10 @@ impl JjRepository {
     /// Snapshot the working copy, rewrite through `mutate` in one transaction, rebase the
     /// descendants, and unless `dry_run` commit the operation and check out a moved working
     /// copy. `mutate` sees the repository after the snapshot and names the commits it
-    /// rewrote, which must be mutable.
+    /// rewrote, which must be mutable under `revsets`.
     pub(crate) fn rewrite(
         &mut self,
+        revsets: &Revsets,
         dry_run: bool,
         mutate: impl FnOnce(&Self, &mut MutableRepo) -> Result<Mutated, VcsError>,
     ) -> Result<Rewrite, VcsError> {
@@ -346,7 +349,7 @@ impl JjRepository {
         let mut tx = repo.start_transaction();
         tx.set_workspace_name(&self.workspace);
         let Mutated { target, path, roots, description } = mutate(self, tx.repo_mut())?;
-        self.check_mutable(&roots)?;
+        self.check_mutable(&roots, revsets)?;
         let before = self.descendants(repo.as_ref(), &roots)?;
         tx.repo_mut()
             .rebase_descendants()

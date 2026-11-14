@@ -135,8 +135,9 @@ impl JjRepository {
             })
             .collect::<Result<Vec<_>, _>>()?;
         let into = into.unwrap_or(DEFAULT_INTO);
+        let revsets = self.revsets()?;
         let mut found = None;
-        let rewrite = self.rewrite(!apply, |this, repo| {
+        let rewrite = self.rewrite(&revsets, !apply, |this, repo| {
             if let Some(op) = listed_at {
                 this.check_at_operation(op)?;
             }
@@ -144,9 +145,8 @@ impl JjRepository {
             let source = this.working_copy_in(repo)?;
             let parents: Vec<String> = source.parent_ids().iter().map(CommitId::hex).collect();
             let expr = format!("({into}) & ::({})", parents.join(" | "));
-            let aliases = this.aliases()?;
-            let destinations = this.evaluate(repo, &expr, &aliases)?;
-            let domain = this.resolve_expression(repo, &expr, &aliases)?.into_inner().0;
+            let destinations = this.evaluate(repo, &expr, &revsets)?;
+            let domain = this.resolve_expression(repo, &expr, &revsets)?.into_inner().0;
             let parent_tree = source
                 .parent_tree(repo.index())
                 .block_on()
@@ -160,7 +160,7 @@ impl JjRepository {
                 this.changed_files(&parent_tree, &source.tree(), matcher.as_ref())?;
             let mut planned = plan(repo, &source, &files, &domain)?;
             for choice in choices {
-                let (number, target) = this.chosen(repo, choice, &destinations, &aliases)?;
+                let (number, target) = this.chosen(repo, choice, &destinations, &revsets)?;
                 let count = planned.len();
                 let hunk =
                     number.checked_sub(1).and_then(|index| planned.get_mut(index)).ok_or_else(
@@ -234,12 +234,12 @@ impl JjRepository {
         repo: &MutableRepo,
         choice: &HunkChoice,
         destinations: &[Commit],
-        aliases: &jj_lib::revset::RevsetAliasesMap,
+        revsets: &crate::Revsets,
     ) -> Result<(usize, Option<CommitId>), VcsError> {
         match choice {
             HunkChoice::Keep(number) => Ok((*number, None)),
             HunkChoice::Move { hunk, rev } => {
-                let [commit] = <[Commit; 1]>::try_from(self.evaluate(repo, rev, aliases)?)
+                let [commit] = <[Commit; 1]>::try_from(self.evaluate(repo, rev, revsets)?)
                     .map_err(|_| VcsError::AmbiguousRevision(rev.clone()))?;
                 if !destinations.iter().any(|d| d.id() == commit.id()) {
                     return Err(backend("choosing a hunk's commit")(JjError::NotADestination(

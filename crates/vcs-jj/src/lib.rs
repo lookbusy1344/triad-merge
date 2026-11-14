@@ -106,6 +106,13 @@ pub enum JjError {
     SidesChanged { path: camino::Utf8PathBuf, before: usize, after: usize },
 }
 
+/// What a revset resolves with: the aliases, and the email `mine()` matches.
+#[derive(Default)]
+pub(crate) struct Revsets {
+    pub aliases: RevsetAliasesMap,
+    pub user_email: String,
+}
+
 /// A jj workspace, read through jj-lib at its head operation.
 pub struct JjRepository {
     repo: Arc<ReadonlyRepo>,
@@ -295,22 +302,22 @@ impl JjRepository {
     /// The commits `expr` names, in jj's revset syntax; at least one. Only jj-lib's built-in
     /// functions: no aliases.
     fn resolve(&self, expr: &str) -> Result<Vec<Commit>, VcsError> {
-        let commits = self.evaluate(self.repo.as_ref(), expr, &RevsetAliasesMap::new())?;
+        let commits = self.evaluate(self.repo.as_ref(), expr, &Revsets::default())?;
         if commits.is_empty() {
             return Err(VcsError::UnknownRevision(expr.to_owned()));
         }
         Ok(commits)
     }
 
-    /// The commits `expr` names in `repo`, children before parents, with `aliases`; possibly
+    /// The commits `expr` names in `repo`, children before parents, with `revsets`; possibly
     /// none.
     fn evaluate(
         &self,
         repo: &dyn jj_lib::repo::Repo,
         expr: &str,
-        aliases: &RevsetAliasesMap,
+        revsets: &Revsets,
     ) -> Result<Vec<Commit>, VcsError> {
-        self.resolve_expression(repo, expr, aliases)?
+        self.resolve_expression(repo, expr, revsets)?
             .evaluate()
             .map_err(backend("evaluating a revision"))?
             .stream()
@@ -320,12 +327,12 @@ impl JjRepository {
             .map_err(backend("reading a revision's commits"))
     }
 
-    /// `expr` parsed with `aliases` and resolved in `repo`, unevaluated.
+    /// `expr` parsed with `revsets` and resolved in `repo`, unevaluated.
     fn resolve_expression<'a>(
         &self,
         repo: &'a dyn jj_lib::repo::Repo,
         expr: &str,
-        aliases: &RevsetAliasesMap,
+        revsets: &Revsets,
     ) -> Result<jj_lib::revset::ResolvedRevset<'a>, VcsError> {
         let path_converter = RepoPathUiConverter::Fs {
             cwd: self.root.clone().into(),
@@ -334,9 +341,9 @@ impl JjRepository {
         let fileset_aliases = FilesetAliasesMap::new();
         let extensions = RevsetExtensions::default();
         let context = RevsetParseContext {
-            aliases_map: aliases,
+            aliases_map: &revsets.aliases,
             local_variables: HashMap::new(),
-            user_email: "",
+            user_email: &revsets.user_email,
             current_time: jiff::Zoned::now(),
             default_ignored_remote: Some(REMOTE_NAME_FOR_LOCAL_GIT_REPO),
             fileset_aliases_map: &fileset_aliases,

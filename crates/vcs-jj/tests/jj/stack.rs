@@ -227,6 +227,44 @@ fn the_user_s_immutable_heads_replace_jj_s_default() {
 }
 
 #[test]
+fn mine_in_the_user_s_immutable_heads_names_the_user_s_commits() {
+    // jj's documented setting: commits by others are immutable. The fixture's commits are
+    // by triad@example.com.
+    const OTHERS_IMMUTABLE: &str = "[revset-aliases]\n\"immutable_heads()\" = \
+                                    \"builtin_immutable_heads() | (trunk().. & ~mine())\"\n";
+    let Stack { fixture, merge, child, .. } = stack(Fixture::new());
+    let wc = fixture.working_copy_commit();
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let config = dir.path().join("config.toml");
+    let as_user = |email: &str| {
+        let toml = format!("{OTHERS_IMMUTABLE}[user]\nemail = \"{email}\"\n");
+        std::fs::write(&config, toml).expect("the config is written");
+        let environment = std::collections::HashMap::from([(
+            "JJ_CONFIG".to_owned(),
+            config.to_str().expect("UTF-8").to_owned(),
+        )]);
+        fixture.open().with_config(ConfigEnv { environment, ..ConfigEnv::default() })
+    };
+    let refused = as_user("other@example.com").write_conflict(
+        &id(&merge),
+        a_txt(),
+        MERGED,
+        MARKER_LENGTH,
+        true,
+    );
+    assert!(matches!(refused, Err(VcsError::Immutable(_))), "{refused:?}");
+    let listed = as_user("triad@example.com").stack(None).expect("the stack lists");
+    assert_eq!(
+        listed.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
+        [merge.commit.as_str(), child.commit.as_str(), wc.commit.as_str()]
+    );
+    let rewrite = as_user("triad@example.com")
+        .write_conflict(&id(&merge), a_txt(), MERGED, MARKER_LENGTH, true)
+        .expect("the user's own commit is mutable");
+    assert!(rewrite.resolved, "{rewrite:?}");
+}
+
+#[test]
 fn a_path_resolved_in_the_commit_is_refused() {
     let Stack { fixture, left, .. } = stack(Fixture::new());
     let refused = open(&fixture).write_conflict(&id(&left), a_txt(), MERGED, MARKER_LENGTH, false);

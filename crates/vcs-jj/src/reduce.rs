@@ -61,9 +61,10 @@ impl JjRepository {
         let repo_path = RepoPathBuf::from_relative_path(path)
             .map_err(|_| VcsError::OutsideRepository(path.to_owned()))?;
         let named = self.commit_by_id(id)?;
-        self.check_mutable(std::slice::from_ref(&named))?;
+        let revsets = self.revsets()?;
+        self.check_mutable(std::slice::from_ref(&named), &revsets)?;
         let change_id = named.change_id().clone();
-        self.rewrite(dry_run, |this, repo| {
+        self.rewrite(&revsets, dry_run, |this, repo| {
             let commit = visible(repo, &change_id)?;
             let value = this.held_conflict(&named, &commit, &repo_path, path)?;
             // Sides count as jj shows them: the pair indexes the simplified conflict.

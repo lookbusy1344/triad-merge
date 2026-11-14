@@ -678,7 +678,7 @@ The core model must support more than two sides from the start. Git conflicts an
 
 ### 7.5 jj-native features
 
-Commands built on what only jj records (§1.2). In a git repository each exits with 3: `COMMAND needs a jj repository`. Each opens the jj repository holding the working directory, with the user's jj config, as `resolve` does. A write snapshots the working copy first, as in §7.4, rewrites in one operation, rebases the descendants, and checks out a working-copy commit the rewrite moved; in a jj repository colocated with git it moves git's `HEAD` with `@-` and exports jj's refs. A write to a commit that jj's `immutable()` holds is refused before anything is written, with the user's `revset-aliases` over jj's defaults for `trunk()`, `immutable_heads()`, `immutable()` and `mutable()`.
+Commands built on what only jj records (§1.2). In a git repository each exits with 3: `COMMAND needs a jj repository`. Each opens the jj repository holding the working directory, with the user's jj config, as `resolve` does. A write snapshots the working copy first, as in §7.4, rewrites in one operation, rebases the descendants, and checks out a working-copy commit the rewrite moved; in a jj repository colocated with git it moves git's `HEAD` with `@-` and exports jj's refs. A write to a commit that jj's `immutable()` holds is refused before anything is written, with the user's `revset-aliases` over jj's defaults for `trunk()`, `immutable_heads()`, `immutable()` and `mutable()`, and `mine()` matching the user's `user.email`.
 
 #### 7.5.1 Conflicts across a stack
 
