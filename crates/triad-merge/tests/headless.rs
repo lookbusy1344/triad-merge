@@ -102,6 +102,9 @@ fn headless_merges_match_the_fixtures() {
         fs::write(&output, STALE_OUTPUT).expect("stale output");
         let extra = fs::read_to_string(dir.join("args")).unwrap_or_default();
         let mut command = command();
+        // Outside any repository, so `auto` gives git's semantics, which the fixtures hold,
+        // in a jj checkout as in a git one.
+        command.current_dir(tmp.path());
         let config = dir.join("config");
         if config.exists() {
             command.env("TRIAD_CONFIG", config);

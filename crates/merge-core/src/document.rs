@@ -785,7 +785,7 @@ impl MergeDocument {
         match resolution {
             // A conflict never holds `Auto`; were it to, it would show its markers.
             Resolution::Auto => auto_text(&self.inputs, r, self.options.same_change)
-                .unwrap_or_else(|| self.markers(r).into()),
+                .unwrap_or_else(|| self.markers(r, false).into()),
             Resolution::Pick(sources) => self.pick_text(r, sources),
             Resolution::Edited => self.region_text(region).into(),
             Resolution::Unresolved => self.pick_text(r, &self.sides()),
@@ -838,53 +838,67 @@ impl MergeDocument {
     }
 
     /// Conflict markers: git's diff3 or merge style for two sides, by the options' marker
-    /// style; jj's snapshot style, holding every input, for more.
-    fn markers(&self, region: &Region) -> String {
+    /// style; jj's snapshot style, holding every input, for more. `at_end`: no text follows
+    /// the markers in the output.
+    ///
+    /// A section whose last line has no newline gets one, so the next marker starts on its
+    /// own line. Under git semantics only that section takes it, as git writes. Under jj
+    /// semantics, at the end of the output, every section takes one and the end marker none,
+    /// as jj writes, so jj reads each term back whole.
+    fn markers(&self, region: &Region, at_end: bool) -> String {
         let eol = marker_ending(&self.inputs, region).as_str();
         let line = |c: char, label: Option<&str>| {
             let run = c.to_string().repeat(self.marker_length);
             match label {
-                Some(label) => format!("{run} {label}{eol}"),
-                None => format!("{run}{eol}"),
+                Some(label) => format!("{run} {label}"),
+                None => run,
             }
         };
-        let section = |source: Source| {
-            let text = self.source_text(region, source);
-            let missing = !text.is_empty() && !text.ends_with('\n');
-            format!("{text}{}", if missing { eol } else { "" })
-        };
         let (sides, bases) = (&self.labels.sides, &self.labels.bases);
-        if self.inputs.is_three_way() {
-            let base = match self.options.marker_style {
-                MarkerStyle::Diff3 => line('|', label(bases, 0)) + &section(Source::Base(0)),
-                MarkerStyle::Merge => String::new(),
+        // Each section's marker line and source, in order; then the opening and end lines.
+        let (start, sections, end): (Option<String>, Vec<(String, Source)>, String) =
+            if self.inputs.is_three_way() {
+                let base = (self.options.marker_style == MarkerStyle::Diff3)
+                    .then(|| (line('|', label(bases, 0)), Source::Base(0)));
+                let sections = std::iter::once((line('<', label(sides, 0)), Source::Side(0)))
+                    .chain(base)
+                    .chain(std::iter::once((line('=', None), Source::Side(1))))
+                    .collect();
+                (None, sections, line('>', label(sides, 1)))
+            } else {
+                let term = |c: char, labels: &[String], i: usize, kind: &str, source: Source| {
+                    let name = label(labels, i)
+                        .map_or_else(|| format!("{kind} #{}", i + 1), str::to_owned);
+                    (line(c, Some(&name)), source)
+                };
+                let sections = (0..self.inputs.sides().len())
+                    .flat_map(|i| {
+                        let side = term('+', sides, i, "side", Source::Side(i));
+                        let base = (i < self.inputs.bases().len())
+                            .then(|| term('-', bases, i, "base", Source::Base(i)));
+                        std::iter::once(side).chain(base)
+                    })
+                    .collect();
+                (Some(line('<', Some("conflict"))), sections, line('>', Some("conflict ends")))
             };
-            [
-                line('<', label(sides, 0)),
-                section(Source::Side(0)),
-                base,
-                line('=', None),
-                section(Source::Side(1)),
-                line('>', label(sides, 1)),
-            ]
-            .concat()
-        } else {
-            let term = |c: char, labels: &[String], i: usize, kind: &str, source: Source| {
-                let name =
-                    label(labels, i).map_or_else(|| format!("{kind} #{}", i + 1), str::to_owned);
-                line(c, Some(&name)) + &section(source)
-            };
-            let terms = (0..self.inputs.sides().len()).flat_map(|i| {
-                let side = term('+', sides, i, "side", Source::Side(i));
-                let base = (i < self.inputs.bases().len())
-                    .then(|| term('-', bases, i, "base", Source::Base(i)));
-                std::iter::once(side).chain(base)
-            });
-            std::iter::once(line('<', Some("conflict")))
-                .chain(terms)
-                .chain(std::iter::once(line('>', Some("conflict ends"))))
-                .collect()
+        let texts: Vec<(String, &str)> = sections
+            .into_iter()
+            .map(|(marker, source)| (marker, self.source_text(region, source)))
+            .collect();
+        let unbroken = |text: &str| !text.is_empty() && !text.ends_with('\n');
+        let spread = at_end
+            && self.options.semantics == Semantics::Jj
+            && texts.iter().any(|(_, text)| unbroken(text));
+        let mut out = String::new();
+        if let Some(start) = start {
+            out.extend([start.as_str(), eol]);
         }
+        for (marker, text) in &texts {
+            let ending = if spread || unbroken(text) { eol } else { "" };
+            out.extend([marker.as_str(), eol, text, ending]);
+        }
+        out.extend([end.as_str(), if spread { "" } else { eol }]);
+        out
     }
 
     /// The result pane's text: every region's text in order.
@@ -929,12 +943,16 @@ impl MergeDocument {
         if !self.resolutions.contains(&Resolution::Unresolved) {
             return Output::Resolved(self.text());
         }
+        // The last region that writes text: markers always do.
+        let last = self.resolutions.iter().enumerate().rposition(|(region, resolution)| {
+            *resolution == Resolution::Unresolved || !self.bytes_of(region).is_empty()
+        });
         let text = self
             .resolutions
             .iter()
             .enumerate()
             .map(|(region, resolution)| match resolution {
-                Resolution::Unresolved => self.markers(&self.regions[region]),
+                Resolution::Unresolved => self.markers(&self.regions[region], Some(region) == last),
                 _ => self.region_text(region),
             })
             .collect();
@@ -2886,6 +2904,100 @@ mod tests {
             assert!(saved(&d, ending).ends_with('b'), "{ending:?}");
         }
         assert_eq!(saved(&d, OutputEnding::CrLf), "a\r\nb");
+    }
+
+    /// The sides and bases jj-lib reads back from `output` with `sides` sides.
+    fn jj_reads(output: &str, sides: usize) -> (Vec<String>, Vec<String>) {
+        let hunks =
+            jj_core::conflicts::parse_conflict(output.as_bytes(), sides, DEFAULT_MARKER_LENGTH)
+                .expect("jj parses the markers");
+        let mut adds = vec![String::new(); sides];
+        let mut removes = vec![String::new(); sides - 1];
+        let text = |bytes: &[u8]| String::from_utf8(bytes.to_vec()).expect("UTF-8");
+        for hunk in &hunks {
+            if let Some(resolved) = hunk.as_resolved() {
+                adds.iter_mut().chain(&mut removes).for_each(|t| t.push_str(&text(resolved)));
+            } else {
+                adds.iter_mut().zip(hunk.adds()).for_each(|(t, add)| t.push_str(&text(add)));
+                removes.iter_mut().zip(hunk.removes()).for_each(|(t, r)| t.push_str(&text(r)));
+            }
+        }
+        (adds, removes)
+    }
+
+    fn jj_options() -> MergeOptions {
+        MergeOptions { semantics: Semantics::Jj, refine: Refine::Off, ..MergeOptions::default() }
+    }
+
+    #[test]
+    fn under_jj_a_last_conflict_with_a_side_lacking_its_newline_spreads_one_to_every_section() {
+        // jj's rule: every section takes a newline, and the end marker none.
+        let d = doc_with("a\nb\n", "a\nL", "a\nR\n", jj_options());
+        let Output::Conflicted(output) = d.output() else { panic!("conflicted") };
+        assert_eq!(output, "a\n<<<<<<< left\nL\n||||||| base\nb\n\n=======\nR\n\n>>>>>>> right");
+        assert_eq!(
+            jj_reads(&output, 2),
+            (vec!["a\nL".to_owned(), "a\nR\n".to_owned()], vec!["a\nb\n".to_owned()])
+        );
+    }
+
+    #[test]
+    fn under_jj_the_spread_newline_takes_the_markers_crlf_and_spares_an_empty_section() {
+        let d = doc_with("a\r\nb", "a\r\n", "a\r\nR\r\n", jj_options());
+        let Output::Conflicted(output) = d.output() else { panic!("conflicted") };
+        assert_eq!(
+            output,
+            "a\r\n<<<<<<< left\r\n\r\n||||||| base\r\nb\r\n=======\r\nR\r\n\r\n>>>>>>> right"
+        );
+        assert_eq!(
+            jj_reads(&output, 2),
+            (vec!["a\r\n".to_owned(), "a\r\nR\r\n".to_owned()], vec!["a\r\nb".to_owned()])
+        );
+    }
+
+    #[test]
+    fn under_jj_a_conflict_of_three_sides_spreads_the_newline_too() {
+        let inputs =
+            Inputs::new(vec![text("X"), text("Y\n"), text("Z\n")], vec![text("B\n"), text("C\n")])
+                .expect("three sides over two bases");
+        let d = MergeDocument::new(inputs, jj_options(), Labels::none()).expect("no labels");
+        let Output::Conflicted(output) = d.output() else { panic!("conflicted") };
+        assert_eq!(
+            output,
+            "<<<<<<< conflict\n+++++++ side #1\nX\n------- base #1\nB\n\n\
+             +++++++ side #2\nY\n\n------- base #2\nC\n\n+++++++ side #3\nZ\n\n\
+             >>>>>>> conflict ends"
+        );
+        let expected = |texts: &[&str]| texts.iter().map(|t| (*t).to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            jj_reads(&output, 3),
+            (expected(&["X", "Y\n", "Z\n"]), expected(&["B\n", "C\n"]))
+        );
+    }
+
+    #[test]
+    fn under_git_a_side_lacking_its_newline_takes_one_and_the_end_marker_keeps_its_own() {
+        let d = doc("a\nb\n", "a\nL", "a\nR\n");
+        assert_eq!(
+            d.output(),
+            Output::Conflicted(
+                "a\n<<<<<<< left\nL\n||||||| base\nb\n=======\nR\n>>>>>>> right\n".to_owned()
+            )
+        );
+    }
+
+    #[test]
+    fn under_jj_a_conflict_with_text_after_it_keeps_its_end_marker_newline() {
+        // Refinement splits the shared `S` off after the conflict, so the base section,
+        // which lacks its newline, is no longer the end of the file.
+        let options = MergeOptions { refine: Refine::Ends, ..jj_options() };
+        let d = doc_with("b", "x\nS", "y\nS", options);
+        assert_eq!(
+            d.output(),
+            Output::Conflicted(
+                "<<<<<<< left\nx\n||||||| base\nb\n=======\ny\n>>>>>>> right\nS".to_owned()
+            )
+        );
     }
 
     #[test]

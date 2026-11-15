@@ -121,8 +121,9 @@ fn concat_lines(t: &Text, ranges: impl Iterator<Item = Range<usize>>) -> String 
 
 /// The merge with `source` picked in every conflict, as conflict markers hold it: the writer
 /// ends a section without a final newline with its conflict's marker line ending, `endings`
-/// in conflict order.
-fn picked_in_conflicts(doc: &MergeDocument, source: Source, endings: &[&str]) -> String {
+/// in conflict order. A conflict whose end marker has no newline, as jj writes the last one,
+/// keeps every section whole: its ending is `None`.
+fn picked_in_conflicts(doc: &MergeDocument, source: Source, endings: &[Option<&str>]) -> String {
     let mut doc = doc.clone();
     let conflicts: Vec<usize> =
         (0..doc.regions().len()).filter(|&r| doc.regions()[r].kind == Kind::Conflict).collect();
@@ -138,7 +139,7 @@ fn picked_in_conflicts(doc: &MergeDocument, source: Source, endings: &[&str]) ->
             let unterminated = !region.is_empty() && !region.ends_with('\n');
             let ending = if conflicts.contains(&r.get()) {
                 let eol = endings.next().expect("one ending per conflict");
-                if unterminated { eol } else { "" }
+                eol.filter(|_| unterminated).unwrap_or_default()
             } else {
                 ""
             };
@@ -147,14 +148,19 @@ fn picked_in_conflicts(doc: &MergeDocument, source: Source, endings: &[&str]) ->
         .collect()
 }
 
-/// Each conflict's line ending, from its close marker: a run of exactly `len` `>`.
-fn close_marker_endings(file: &str, len: usize) -> Vec<&'static str> {
+/// Each conflict's line ending, from its close marker: a run of exactly `len` `>`. None for a
+/// close marker without a newline.
+fn close_marker_endings(file: &str, len: usize) -> Vec<Option<&'static str>> {
     file.split_inclusive('\n')
         .filter(|line| {
             let rest = line.trim_start_matches('>');
             line.len() - rest.len() == len && rest.chars().next().is_none_or(char::is_whitespace)
         })
-        .map(|line| if line.ends_with("\r\n") { "\r\n" } else { "\n" })
+        .map(|line| match line {
+            _ if line.ends_with("\r\n") => Some("\r\n"),
+            _ if line.ends_with('\n') => Some("\n"),
+            _ => None,
+        })
         .collect()
 }
 
