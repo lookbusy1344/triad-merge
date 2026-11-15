@@ -423,7 +423,7 @@ fn window_settings(stored: &Stored) -> WindowSettings {
 }
 
 fn report(message: &str) -> ExitCode {
-    eprintln!("{}: {message}", strings::PROGRAM);
+    eprintln!("{}: {}", strings::PROGRAM, merge_core::unusual::escaped(message));
     ExitCode::Error
 }
 

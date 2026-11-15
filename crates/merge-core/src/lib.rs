@@ -16,6 +16,7 @@ pub mod pattern;
 mod region_lines;
 pub mod suggest;
 pub mod text;
+pub mod unusual;
 
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;

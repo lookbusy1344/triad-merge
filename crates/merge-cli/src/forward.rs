@@ -24,6 +24,6 @@ pub fn forward(mut command: Command, stderr: &mut impl Write) -> ExitCode {
         Err(e) => format!("cannot start {}: {e}", program.display()),
     };
     // Nothing is left to tell the user if stderr is closed.
-    let _ = writeln!(stderr, "{PROGRAM}: {message}");
+    let _ = writeln!(stderr, "{PROGRAM}: {}", merge_core::unusual::escaped(&message));
     ExitCode::Error
 }

@@ -572,9 +572,11 @@ fn read_settings(path: &Path, stderr: &mut impl Write) -> (Settings, Vec<String>
 }
 
 /// Write `message` and give `code`. A stream that cannot be written leaves only the code.
+/// Write `message` to `stream` with its unusual characters escaped, so text from a file or a
+/// repository shows as text and runs no terminal escape sequence (spec §6.1).
 fn report(stream: &mut impl Write, message: &str, code: ExitCode) -> ExitCode {
     // Nothing is left to tell the user if stdout or stderr is closed.
-    let _ = stream.write_all(message.as_bytes());
+    let _ = stream.write_all(merge_core::unusual::escaped(message).as_bytes());
     code
 }
 
@@ -609,6 +611,18 @@ mod tests {
             run(std::iter::once(PROGRAM).chain(args.iter().copied()), None, &mut out, &mut err);
         let text = |b: Vec<u8>| String::from_utf8(b).expect("utf-8");
         (outcome, text(out), text(err))
+    }
+
+    #[test]
+    fn an_error_shows_the_escape_sequences_of_a_path_as_text() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let base = dir.path().join("a\u{1B}[2Jb\u{202E}");
+        let base = base.to_str().expect("utf-8");
+        let (outcome, out, err) = run_args(&["inspect", base, base, base]);
+        assert_eq!(outcome.exit_code(), Some(ExitCode::Error));
+        assert_eq!(out, "");
+        assert!(err.contains(r"a\u001b[2Jb\u202e"), "{err:?}");
+        assert!(!err.contains(['\u{1B}', '\u{202E}']), "{err:?}");
     }
 
     #[test]
