@@ -437,6 +437,7 @@ pub(crate) mod menu {
     pub(crate) const PREVIOUS_DIFFERENCE: &str = "Previous Difference";
     pub(crate) const NEXT_CONFLICT: &str = "Next Conflict";
     pub(crate) const PREVIOUS_CONFLICT: &str = "Previous Conflict";
+    pub(crate) const GO_TO_MOVE_END: &str = "Go to Other End of Move";
     pub(crate) const BASE_PANE: &str = "Base Pane";
     pub(crate) const BLAME: &str = "Blame";
     pub(crate) const SYNTAX: &str = "Syntax Highlighting";

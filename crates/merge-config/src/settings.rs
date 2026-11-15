@@ -2294,6 +2294,7 @@ keybind = cmd+]=next-difference
 keybind = cmd+[=previous-difference
 keybind = cmd+down=next-difference
 keybind = cmd+up=previous-difference
+keybind = cmd+shift+m=go-to-move-end
 keybind = cmd+alt+down=next-conflict
 keybind = cmd+alt+up=previous-conflict
 keybind = cmd+]=next-conflict

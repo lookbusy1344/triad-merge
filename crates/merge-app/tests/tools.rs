@@ -942,6 +942,8 @@ fn the_menus_hold_every_window_action(cx: &mut TestAppContext) {
                     item("Previous Difference", "triad::PreviousDifference"),
                     item("Next Conflict", "triad::NextConflict"),
                     item("Previous Conflict", "triad::PreviousConflict"),
+                    Entry::Other,
+                    item("Go to Other End of Move", "triad::GoToMoveEnd"),
                 ]
             ),
             (

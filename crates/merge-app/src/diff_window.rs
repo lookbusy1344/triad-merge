@@ -71,7 +71,7 @@ use crate::window::{
 };
 use crate::wrap::Wrap;
 use crate::{
-    Cancel, ExitCode, Find, NextDifference, PreviousDifference, Redo, Save,
+    Cancel, ExitCode, Find, GoToMoveEnd, NextDifference, PreviousDifference, Redo, Save,
     ToggleCollapseUnchanged, ToggleOriginColumn, ToggleSoftWrap, ToggleSyntax, Typography, Undo,
     finish, ignore_closed_view,
 };
@@ -1207,6 +1207,16 @@ impl DiffWindow {
         }
     }
 
+    /// Go to the other end of the move the focused pane's caret sits in.
+    fn go_to_move_end(&mut self, _: &GoToMoveEnd, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(side) = self.focused(window, cx) else {
+            return;
+        };
+        let state = self.pane(side).editor.read(cx);
+        let line = state.text().offset_to_point(state.cursor()).row;
+        self.go_to_other_end(side, line, window, cx);
+    }
+
     /// Blink a frame around `region` in each pane where it has lines (the editor drops an
     /// empty range): shown and hidden in turn, starting shown and ending hidden.
     fn start_flash(&mut self, region: RegionIx, cx: &mut Context<Self>) {
@@ -2139,6 +2149,17 @@ impl DiffWindow {
         .on_action(cx.listener(Self::toggle_soft_wrap))
         .on_action(cx.listener(Self::toggle_collapse_unchanged))
     }
+
+    /// Bind the Go menu's commands on `root`.
+    fn on_go_actions(root: Div, cx: &mut Context<Self>) -> Div {
+        root.on_action(cx.listener(|this, _: &NextDifference, window, cx| {
+            this.navigate(next_change, window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &PreviousDifference, window, cx| {
+            this.navigate(previous_change, window, cx);
+        }))
+        .on_action(cx.listener(Self::go_to_move_end))
+    }
 }
 
 impl Render for DiffWindow {
@@ -2153,18 +2174,12 @@ impl Render for DiffWindow {
             theme.warning,
             theme.warning_foreground,
         );
-        self.on_view_actions(v_flex(), cx)
+        Self::on_go_actions(self.on_view_actions(v_flex(), cx), cx)
             .size_full()
             .key_context(DIFF_CONTEXT)
             .on_action(cx.listener(Self::find))
             .on_action(cx.listener(Self::undo))
             .on_action(cx.listener(Self::redo))
-            .on_action(cx.listener(|this, _: &NextDifference, window, cx| {
-                this.navigate(next_change, window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &PreviousDifference, window, cx| {
-                this.navigate(previous_change, window, cx);
-            }))
             .on_action(
                 cx.listener(|this, _: &Save, window, cx| this.save(AfterSave::Stay, window, cx)),
             )

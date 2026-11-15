@@ -160,6 +160,7 @@ commands!(
     Redo,
     NextDifference,
     PreviousDifference,
+    GoToMoveEnd,
     NextConflict,
     PreviousConflict,
     ToggleLeft,
@@ -298,6 +299,8 @@ pub(crate) fn menus(ticks: ViewTicks) -> Vec<Menu> {
             MenuItem::action(menu::PREVIOUS_DIFFERENCE, PreviousDifference),
             MenuItem::action(menu::NEXT_CONFLICT, NextConflict),
             MenuItem::action(menu::PREVIOUS_CONFLICT, PreviousConflict),
+            MenuItem::separator(),
+            MenuItem::action(menu::GO_TO_MOVE_END, GoToMoveEnd),
         ]),
         // Blame shows only in a window with origins: without them there is nothing to blame.
         Menu::new(menu::VIEW).items(

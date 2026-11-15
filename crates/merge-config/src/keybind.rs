@@ -53,6 +53,7 @@ const DEFAULT_BINDINGS: &[(&str, KeyAction)] = &[
     ("cmd+[", KeyAction::PreviousDifference),
     ("cmd+down", KeyAction::NextDifference),
     ("cmd+up", KeyAction::PreviousDifference),
+    ("cmd+shift+m", KeyAction::GoToMoveEnd),
     ("cmd+alt+down", KeyAction::NextConflict),
     ("cmd+alt+up", KeyAction::PreviousConflict),
     ("cmd+]", KeyAction::NextConflict),
@@ -123,6 +124,7 @@ pub enum KeyAction {
     Redo,
     NextDifference,
     PreviousDifference,
+    GoToMoveEnd,
     NextConflict,
     PreviousConflict,
     ToggleLeft,
@@ -160,7 +162,7 @@ impl KeyAction {
     /// Whether the merge window has this command.
     #[must_use]
     pub const fn in_merge_window(self) -> bool {
-        !matches!(self, Self::Save)
+        !matches!(self, Self::Save | Self::GoToMoveEnd)
     }
 
     /// Whether the diff window has this command.
@@ -172,6 +174,7 @@ impl KeyAction {
                 | Self::Redo
                 | Self::NextDifference
                 | Self::PreviousDifference
+                | Self::GoToMoveEnd
                 | Self::Find
                 | Self::ToggleOriginColumn
                 | Self::ToggleSyntax
@@ -614,6 +617,7 @@ mod tests {
             ("toggle-origin-column", KeyAction::ToggleOriginColumn),
             ("toggle-soft-wrap", KeyAction::ToggleSoftWrap),
             ("toggle-collapse-unchanged", KeyAction::ToggleCollapseUnchanged),
+            ("go-to-move-end", KeyAction::GoToMoveEnd),
         ] {
             assert_eq!(KeyAction::from_name(name), Some(action));
         }
@@ -641,7 +645,8 @@ mod tests {
         assert_eq!(actions_of(&bindings, "cmd+w"), [KeyAction::Cancel]);
         assert_eq!(actions_of(&bindings, "cmd+s"), [KeyAction::SaveAndExit, KeyAction::Save]);
         assert_eq!(actions_of(&bindings, "cmd+u"), [KeyAction::ToggleCollapseUnchanged]);
-        assert_eq!(bindings.bound().len(), 30);
+        assert_eq!(windows_of(&bindings, "cmd+shift+m"), [(KeyAction::GoToMoveEnd, DIFF)]);
+        assert_eq!(bindings.bound().len(), 31);
         assert_eq!(bindings.unbound().count(), 0);
     }
 

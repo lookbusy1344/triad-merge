@@ -802,6 +802,30 @@ fn a_click_beside_lines_no_move_holds_does_nothing(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn the_move_key_goes_from_the_caret_to_the_other_end(cx: &mut TestAppContext) {
+    let o = open(cx, &Files::new(MOVED_LEFT, MOVED_RIGHT));
+    // Left byte 4 is inside `m2`.
+    focus_at(cx, &o, Side::Left, 4);
+    press(cx, &o, "secondary-shift-m");
+    assert_eq!(carets(cx, &o.view), (12, 6), "both carets at the start of region 2");
+    // The focus is now right; move its caret into `m1`, right byte 9.
+    o.view.update(cx, |view, cx| {
+        view.editor(Side::Right).update(cx, |state, cx| state.set_selected_range(9..9, cx));
+    });
+    press(cx, &o, "secondary-shift-m");
+    assert_eq!(carets(cx, &o.view), (0, 0), "back at the start of region 0");
+}
+
+#[gpui_kit::test]
+fn the_move_key_does_nothing_off_a_moved_block(cx: &mut TestAppContext) {
+    let o = open(cx, &Files::new(MOVED_LEFT, MOVED_RIGHT));
+    // Right byte 6 starts `n`, new but not moved.
+    focus_at(cx, &o, Side::Right, 6);
+    press(cx, &o, "secondary-shift-m");
+    assert_eq!(carets(cx, &o.view), (0, 6));
+}
+
+#[gpui_kit::test]
 fn a_move_mark_does_nothing_while_the_regions_lag_the_text(cx: &mut TestAppContext) {
     let o = open(cx, &Files::new(MOVED_LEFT, MOVED_RIGHT));
     type_at(cx, &o, Side::Right, 0, "z\n");
