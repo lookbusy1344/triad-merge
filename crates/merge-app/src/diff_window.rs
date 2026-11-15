@@ -28,10 +28,10 @@ use gpui_kit::component::input::{
 use gpui_kit::component::{ActiveTheme as _, h_flex, v_flex};
 use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, Bounds, ClickEvent, Context, Div, ElementId, Entity,
-    Focusable as _, Hsla, InteractiveElement as _, IntoElement, ParentElement as _, Pixels,
-    PromptLevel, Render, Role, SharedString, Size, StatefulInteractiveElement as _, Styled as _,
-    Subscription, Task, TestSupportExt as _, Window, WindowOptions, canvas, div, point,
-    prelude::FluentBuilder as _, px,
+    Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement, ParentElement as _,
+    Pixels, PromptLevel, Render, Role, SharedString, Size, StatefulInteractiveElement as _,
+    Styled as _, Subscription, Task, TestSupportExt as _, Window, WindowOptions, canvas, div, hsla,
+    point, prelude::FluentBuilder as _, px,
 };
 use merge_config::settings::{Colours, DEFAULT_COLOURS, Scrollbars};
 use merge_core::diff::DiffOptions;
@@ -45,8 +45,8 @@ use merge_session::origin::carry;
 use merge_session::repository::Handoff;
 use merge_syntax::language::Language;
 use merge_view::diff::{
-    self, MOVE_MARK, MOVE_TONE, Pin, differences, first_change, held_region, move_ends,
-    move_target, next_change, previous_change, region_bytes, spacers, spacers_by,
+    self, MOVE_MARK, Pin, differences, first_change, held_region, move_ends, move_target,
+    next_change, previous_change, region_bytes, spacers, spacers_by,
 };
 use merge_view::fold::{self, Fold, FoldRow, LineEdit, Opened};
 use merge_view::scroll::{Follow, ScrollSync};
@@ -86,6 +86,12 @@ const COPY_BUTTON_WIDTH: Pixels = px(14.);
 const MOVE_PILL_INSET: Pixels = px(16.);
 /// A move pill's padding either side of its text, on the 4 px grid.
 const MOVE_PILL_PADDING: Pixels = px(4.);
+/// Degrees in a turn, for hues given in degrees.
+const DEGREES: f32 = 360.;
+/// A move pill's fill: pale blue, translucent so the text under it shows through.
+const MOVE_PILL_FILL: Hsla = hsla(210. / DEGREES, 0.9, 0.85, 0.7);
+/// A move pill's text: deep blue, bold against the pale fill.
+const MOVE_PILL_TEXT: Hsla = hsla(220. / DEGREES, 0.9, 0.3, 1.);
 /// The copy buttons' column between the panes: one button each way.
 const GUTTER_WIDTH: Pixels = px(28.);
 /// Changed regions show in one colour on both sides (spec §5).
@@ -1897,8 +1903,6 @@ impl DiffWindow {
                 (top >= bounds.top() && top + line_height <= bounds.bottom()).then_some((end, top))
             })
             .collect();
-        let tones = self.palette.tones(cx.theme().is_dark());
-        let (fill, text) = (tones.mark(MOVE_TONE), cx.theme().background);
         let text_size = self.typography.size * crate::window::CHIP_TEXT_SCALE;
         shown
             .into_iter()
@@ -1914,8 +1918,9 @@ impl DiffWindow {
                     .flex()
                     .items_center()
                     .rounded_full()
-                    .bg(fill)
-                    .text_color(text)
+                    .bg(MOVE_PILL_FILL)
+                    .text_color(MOVE_PILL_TEXT)
+                    .font_weight(FontWeight::BOLD)
                     .text_size(text_size)
                     .cursor_pointer()
                     .child(strings::move_pill(side, other_line))
