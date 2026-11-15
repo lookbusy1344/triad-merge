@@ -125,17 +125,44 @@ pub fn bands(doc: &DiffDocument, side: Side) -> Vec<Band> {
         .collect()
 }
 
+/// One end of a move on a side, and where its other end lies.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MoveEnd {
+    /// The region the move leaves, which names the move.
+    pub from: RegionIx,
+    /// This end's lines on its side.
+    pub lines: Range<usize>,
+    /// The region that holds the other end.
+    pub other_region: RegionIx,
+    /// The other end's lines on the other side.
+    pub other_lines: Range<usize>,
+}
+
+/// The ends of the moves on `side`, in line order. None while the regions lag the text,
+/// since their lines may no longer match it.
+#[must_use]
+pub fn move_ends(doc: &DiffDocument, side: Side) -> Vec<MoveEnd> {
+    if !doc.regions_current() {
+        return Vec::new();
+    }
+    let mut ends: Vec<MoveEnd> = doc
+        .moves()
+        .iter()
+        .map(|m| {
+            let (lines, other_region) = end(m, side);
+            let (other_lines, _) = end(m, side.other());
+            MoveEnd { from: m.from, lines, other_region, other_lines }
+        })
+        .collect();
+    ends.sort_by_key(|e| e.lines.start);
+    ends
+}
+
 /// The region of the other end of the move whose end on `side` holds `line`. None while
-/// the regions lag the text, since their lines may no longer match it.
+/// the regions lag the text.
 #[must_use]
 pub fn move_target(doc: &DiffDocument, side: Side, line: usize) -> Option<RegionIx> {
-    if !doc.regions_current() {
-        return None;
-    }
-    doc.moves()
-        .iter()
-        .map(|m| end(m, side))
-        .find_map(|(lines, other)| lines.contains(&line).then_some(other))
+    move_ends(doc, side).into_iter().find(|e| e.lines.contains(&line)).map(|e| e.other_region)
 }
 
 /// The byte range of `region` in `side`'s current text.
@@ -335,6 +362,32 @@ mod tests {
         assert_eq!(move_target(&d, Side::Right, 4), Some(RegionIx::new(0)));
         assert_eq!(move_target(&d, Side::Right, 5), Some(RegionIx::new(0)));
         assert_eq!(move_target(&d, Side::Right, 6), None, "o is new, not moved");
+    }
+
+    #[test]
+    fn each_side_lists_its_move_ends_with_the_other_ends_lines() {
+        let d = moved();
+        let end = |from, lines, other_region, other_lines| MoveEnd {
+            from: RegionIx::new(from),
+            lines,
+            other_region: RegionIx::new(other_region),
+            other_lines,
+        };
+        assert_eq!(move_ends(&d, Side::Left), [end(0, 0..2, 2, 4..6)]);
+        assert_eq!(move_ends(&d, Side::Right), [end(0, 4..6, 0, 0..2)]);
+        assert_eq!(move_ends(&doc("a\n", "b\n"), Side::Left), []);
+    }
+
+    #[test]
+    fn move_ends_wait_for_regions_of_the_current_text() {
+        let mut d = moved();
+        d.edit(
+            Side::Left,
+            EditBatch(vec![merge_core::diff2::TextPatch { range: 0..0, text: "z\n".to_owned() }]),
+        )
+        .expect("edits");
+        assert_eq!(move_ends(&d, Side::Left), []);
+        assert_eq!(move_ends(&d, Side::Right), []);
     }
 
     #[test]

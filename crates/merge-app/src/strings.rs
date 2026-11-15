@@ -654,6 +654,25 @@ pub(crate) const COPY_TO_LEFT: &str = "←";
 pub(crate) const COPY_TO_RIGHT_LABEL: &str = "Copy this difference to the right";
 pub(crate) const COPY_TO_LEFT_LABEL: &str = "Copy this difference to the left";
 
+/// The pill over one end of a moved block in `side`'s pane: the other pane's initial and the
+/// 1-based line its end starts on, with an arrow toward that pane.
+pub(crate) fn move_pill(side: Side, other_line: usize) -> String {
+    let line = other_line + 1;
+    match side {
+        Side::Left => format!("R{line} →"),
+        Side::Right => format!("← L{line}"),
+    }
+}
+
+/// The accessible label of the pill [`move_pill`] writes.
+pub(crate) fn move_pill_label(side: Side, other_line: usize) -> String {
+    let other = match side.other() {
+        Side::Left => "left",
+        Side::Right => "right",
+    };
+    format!("Moved block: go to its other end, {other} line {}", other_line + 1)
+}
+
 /// A diff pane's accessible label: its side and its file.
 pub(crate) fn diff_pane_label(left: bool, name: &str) -> String {
     let side = if left { "Left" } else { "Right" };
@@ -794,6 +813,21 @@ pub(crate) mod edit_menu {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_move_pill_names_the_other_panes_line_and_points_at_it() {
+        assert_eq!(move_pill(Side::Left, 114), "R115 →");
+        assert_eq!(move_pill(Side::Right, 36), "← L37");
+        assert_eq!(move_pill(Side::Left, 0), "R1 →");
+        assert_eq!(
+            move_pill_label(Side::Left, 114),
+            "Moved block: go to its other end, right line 115"
+        );
+        assert_eq!(
+            move_pill_label(Side::Right, 36),
+            "Moved block: go to its other end, left line 37"
+        );
+    }
     use merge_core::merge3::{Refine, SameChange};
     use merge_core::pattern::Patterns;
 

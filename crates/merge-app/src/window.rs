@@ -128,7 +128,7 @@ const FOLD_ROW_INDENT: Pixels = px(48.);
 /// Pane headings, relative to the text size.
 const HEADING_TEXT_SCALE: f32 = 0.9;
 /// A heading's role chip, relative to the text size.
-const CHIP_TEXT_SCALE: f32 = 0.75;
+pub(crate) const CHIP_TEXT_SCALE: f32 = 0.75;
 const CHIP_ALPHA: f32 = 0.18;
 const CHIP_RADIUS: Pixels = px(3.);
 const HEADING_PADDING: Pixels = px(3.);

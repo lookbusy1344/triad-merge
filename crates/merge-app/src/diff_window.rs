@@ -45,8 +45,8 @@ use merge_session::origin::carry;
 use merge_session::repository::Handoff;
 use merge_syntax::language::Language;
 use merge_view::diff::{
-    self, MOVE_MARK, Pin, differences, first_change, held_region, move_target, next_change,
-    previous_change, region_bytes, spacers, spacers_by,
+    self, MOVE_MARK, MOVE_TONE, Pin, differences, first_change, held_region, move_ends,
+    move_target, next_change, previous_change, region_bytes, spacers, spacers_by,
 };
 use merge_view::fold::{self, Fold, FoldRow, LineEdit, Opened};
 use merge_view::scroll::{Follow, ScrollSync};
@@ -81,6 +81,11 @@ pub const DIFF_DEBOUNCE: Duration = Duration::from_millis(100);
 /// How long the watcher waits after a change on disk for the events that follow it.
 const DISK_SETTLE: Duration = Duration::from_millis(100);
 const COPY_BUTTON_WIDTH: Pixels = px(14.);
+/// How far a move pill stands in from its pane's right edge: past the 12 px ruler and the
+/// scrollbar, on the 4 px grid.
+const MOVE_PILL_INSET: Pixels = px(16.);
+/// A move pill's padding either side of its text, on the 4 px grid.
+const MOVE_PILL_PADDING: Pixels = px(4.);
 /// The copy buttons' column between the panes: one button each way.
 const GUTTER_WIDTH: Pixels = px(28.);
 /// Changed regions show in one colour on both sides (spec §5).
@@ -114,6 +119,12 @@ pub fn pane_id(side: Side) -> ElementId {
 #[must_use]
 pub fn copy_id(region: RegionIx, to: Side) -> ElementId {
     ElementId::Name(format!("copy-{region}-{to:?}").into())
+}
+
+/// The pill over `side`'s end of the move that leaves region `from`.
+#[must_use]
+pub fn move_pill_id(side: Side, from: RegionIx) -> ElementId {
+    ElementId::Name(format!("move-{from}-{side:?}").into())
 }
 
 /// Where a side's text comes from.
@@ -1856,7 +1867,61 @@ impl DiffWindow {
         }
     }
 
-    fn render_pane(&self, side: Side, cx: &App) -> impl IntoElement + use<> {
+    /// The pills over each end of a move whose first line shows in `side`'s pane (spec §5):
+    /// on that line's row, against the pane's right edge. Each names the other end's line and
+    /// goes there on a click. While the regions lag the text there are none.
+    fn render_move_pills(&self, side: Side, cx: &mut Context<Self>) -> Vec<gpui_kit::AnyElement> {
+        let state = self.pane(side).editor.read(cx);
+        let Some(line_height) = state.line_height() else {
+            return Vec::new();
+        };
+        let bounds = state.input_bounds();
+        let scroll = state.scroll_offset().y;
+        let map = state.display_map();
+        let shown: Vec<_> = move_ends(&self.doc, side)
+            .into_iter()
+            .filter_map(|end| {
+                let row = map.buffer_line_to_display_row(end.lines.start);
+                let top = bounds.top() + scroll + line_height * row;
+                (top >= bounds.top() && top + line_height <= bounds.bottom()).then_some((end, top))
+            })
+            .collect();
+        let tones = self.palette.tones(cx.theme().is_dark());
+        let (fill, text) = (tones.mark(MOVE_TONE), cx.theme().background);
+        let text_size = self.typography.size * crate::window::CHIP_TEXT_SCALE;
+        shown
+            .into_iter()
+            .map(|(end, top)| {
+                let (line, other_line) = (end.lines.start, end.other_lines.start);
+                let pill = div()
+                    .id(move_pill_id(side, end.from))
+                    .test_support()
+                    .role(Role::Button)
+                    .aria_label(strings::move_pill_label(side, other_line))
+                    .h(line_height)
+                    .px(MOVE_PILL_PADDING)
+                    .flex()
+                    .items_center()
+                    .rounded_full()
+                    .bg(fill)
+                    .text_color(text)
+                    .text_size(text_size)
+                    .cursor_pointer()
+                    .child(strings::move_pill(side, other_line))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        this.go_to_other_end(side, line, window, cx);
+                    }));
+                gpui_kit::anchored()
+                    .anchor(gpui_kit::Anchor::TopRight)
+                    .position(point(bounds.right() - MOVE_PILL_INSET, top))
+                    .child(pill)
+                    .into_any_element()
+            })
+            .collect()
+    }
+
+    fn render_pane(&self, side: Side, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let pills = self.render_move_pills(side, cx);
         let theme = cx.theme();
         let pane = self.pane(side);
         let HeadingText { title, chip } = self.heading_text(side);
@@ -1907,7 +1972,8 @@ impl DiffWindow {
                             .line_height(gpui_kit::relative(self.typography.spacing))
                             .bordered(false)
                             .h(gpui_kit::relative(1.)),
-                    ),
+                    )
+                    .children(pills),
             )
     }
 }

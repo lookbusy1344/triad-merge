@@ -54,7 +54,7 @@ The toolbar can take one side for every conflict left. The ruler at the right ma
 
 ### The diff window
 
-Two aligned, editable panes, each with copy to the other side. A block deleted in one place and inserted once in another shows teal at both ends, with an `M` beside it; click the `M`, or press ⇧⌘M with the caret in the block, to go to the other end. ⌘S writes each edited side to its own file and keeps the window open. Each side has its own undo. A file changed on disk reloads, or asks first when the pane has unsaved edits. When one side is a past revision, that side is read-only.
+Two aligned, editable panes, each with copy to the other side. A block deleted in one place and inserted once in another shows teal at both ends, with an `M` beside it and a pill naming the other end's line, such as `R5 →`; click the `M` or the pill, or press ⇧⌘M with the caret in the block, to go to the other end. ⌘S writes each edited side to its own file and keeps the window open. Each side has its own undo. A file changed on disk reloads, or asks first when the pane has unsaved edits. When one side is a past revision, that side is read-only.
 
 Line origins (⌘I) show the commit, author and jj change that wrote each line, in both windows.
 

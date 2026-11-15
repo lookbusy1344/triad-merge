@@ -21,7 +21,7 @@ use gpui_kit::{
 use merge_app::ExitCode;
 use merge_app::diff_window::{
     Collapsing, DIFF_DEBOUNCE, DIFF_RULER_ID, DiffFile, DiffSettings, DiffWindow, Origin, copy_id,
-    pane_id,
+    move_pill_id, pane_id,
 };
 use merge_app::toolbar::Tool;
 use merge_app::window::TOOLBAR_ID;
@@ -799,6 +799,75 @@ fn a_click_beside_lines_no_move_holds_does_nothing(cx: &mut TestAppContext) {
     click_gutter_mark(cx, &o, Side::Right, 6);
     click_gutter_mark(cx, &o, Side::Left, 2);
     assert_eq!(carets(cx, &o.view), (0, 6));
+}
+
+/// The pill over `side`'s end of the move from region 0, if it shows.
+fn move_pill(cx: &mut TestAppContext, o: &Opened, side: Side) -> Option<gpui_kit::Bounds<Pixels>> {
+    let mut bounds = None;
+    act(cx, o.window, |window, _| {
+        bounds = window.try_find(move_pill_id(side, RegionIx::new(0))).map(|pill| pill.bounds());
+    });
+    bounds
+}
+
+#[gpui_kit::test]
+fn each_end_of_a_move_shows_a_pill_naming_the_other_ends_line(cx: &mut TestAppContext) {
+    let o = open(cx, &Files::new(MOVED_LEFT, MOVED_RIGHT));
+    assert_eq!(
+        named(cx, &o, move_pill_id(Side::Left, RegionIx::new(0))),
+        (Some(Role::Button), Some("Moved block: go to its other end, right line 5".to_owned()))
+    );
+    assert_eq!(
+        named(cx, &o, move_pill_id(Side::Right, RegionIx::new(0))),
+        (Some(Role::Button), Some("Moved block: go to its other end, left line 1".to_owned()))
+    );
+}
+
+#[gpui_kit::test]
+fn a_move_pill_sits_on_its_blocks_first_row_against_the_panes_right_edge(cx: &mut TestAppContext) {
+    let o = open(cx, &Files::new(MOVED_LEFT, MOVED_RIGHT));
+    let left = move_pill(cx, &o, Side::Left).expect("the left pill shows");
+    let right = move_pill(cx, &o, Side::Right).expect("the right pill shows");
+    // Region 0 starts on row 0. Region 2 starts on row 5, below right's two spacer rows and
+    // `a b c`; `m1` is right line 4, on row 6.
+    assert_eq!(left.top(), copy_top(cx, &o, RegionIx::new(0), Side::Right));
+    assert_eq!(right.top(), copy_top(cx, &o, RegionIx::new(2), Side::Right) + LINE);
+    assert_eq!(left.size.height, LINE);
+    let edge = |cx: &mut TestAppContext, side| {
+        cx.read(|cx| o.view.read(cx).editor(side).read(cx).input_bounds().right())
+    };
+    assert_eq!(left.right(), edge(cx, Side::Left) - gpui_kit::px(16.));
+    assert_eq!(right.right(), edge(cx, Side::Right) - gpui_kit::px(16.));
+}
+
+#[gpui_kit::test]
+fn a_click_on_a_move_pill_goes_to_the_other_end(cx: &mut TestAppContext) {
+    let o = open(cx, &Files::new(MOVED_LEFT, MOVED_RIGHT));
+    act(cx, o.window, |window, cx| window.click(move_pill_id(Side::Left, RegionIx::new(0)), cx));
+    assert_eq!(carets(cx, &o.view), (12, 6), "both carets at the start of region 2");
+    act(cx, o.window, |window, cx| window.click(move_pill_id(Side::Right, RegionIx::new(0)), cx));
+    assert_eq!(carets(cx, &o.view), (0, 0), "back at the start of region 0");
+}
+
+#[gpui_kit::test]
+fn move_pills_hide_while_the_regions_lag_the_text_and_return_after(cx: &mut TestAppContext) {
+    let o = open(cx, &Files::new(MOVED_LEFT, MOVED_RIGHT));
+    type_at(cx, &o, Side::Left, MOVED_LEFT.len(), "x");
+    act(cx, o.window, TestWindowExt::render_frame);
+    assert_eq!(move_pill(cx, &o, Side::Left), None);
+    assert_eq!(move_pill(cx, &o, Side::Right), None);
+    wait(cx, DIFF_DEBOUNCE);
+    act(cx, o.window, TestWindowExt::render_frame);
+    assert!(move_pill(cx, &o, Side::Left).is_some(), "an edit outside the block keeps the move");
+}
+
+#[gpui_kit::test]
+fn a_move_pill_scrolled_out_of_view_hides(cx: &mut TestAppContext) {
+    // 200 lines after the block push its other end below the window.
+    let tail = numbered(0);
+    let o = open(cx, &Files::new(&format!("m1\nm2\n{tail}"), &format!("{tail}m1\nm2\n")));
+    assert!(move_pill(cx, &o, Side::Left).is_some());
+    assert_eq!(move_pill(cx, &o, Side::Right), None);
 }
 
 #[gpui_kit::test]
