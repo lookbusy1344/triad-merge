@@ -5,6 +5,8 @@
     reason = "test support: a failed setup fails the test, named by its message"
 )]
 
+use std::fmt::Write as _;
+
 use crate::document::{Labels, MergeDocument, MergeOptions};
 use crate::merge3::Inputs;
 use crate::text::Text;
@@ -91,6 +93,47 @@ pub fn generate_word_conflicts(lines: usize, spacing: usize) -> Triple {
         triple.base.push_str(&line);
     }
     triple
+}
+
+/// Writing to a `String` never fails.
+const STRING_WRITE: &str = "a String takes any write";
+
+/// Lines in each unit of a [`generate_braced_changes`] pair: three anchor lines, then a
+/// two-line block on one side.
+const BRACED_UNIT_LINES: usize = 5;
+/// One deleted block in this many units moves.
+const BRACED_MOVE_EVERY: usize = 20;
+/// A moved block lands this many units after the one it left: an odd unit, where left
+/// deletes nothing, so the diff cannot pair it with a deleted `}`.
+const BRACED_MOVE_BY: usize = 11;
+
+/// A left and right text of about `lines` lines each, for the cost of finding moves in a
+/// two-way diff (spec §4.6). Three unique anchor lines keep the diff from matching across
+/// units. After the anchors, left deletes or right inserts a two-line block, in turn, and
+/// every block starts with `}`, so each deleted block's first line keys to every inserted
+/// block. Every [`BRACED_MOVE_EVERY`]th unit's block moves: right inserts it
+/// [`BRACED_MOVE_BY`] units later.
+#[must_use]
+pub fn generate_braced_changes(lines: usize) -> (String, String) {
+    let units = lines / BRACED_UNIT_LINES;
+    let (mut left, mut right) = (String::new(), String::new());
+    for unit in 0..units {
+        let anchors = format!("anchor {unit} a\nanchor {unit} b\nanchor {unit} c\n");
+        left.push_str(&anchors);
+        right.push_str(&anchors);
+        if unit.is_multiple_of(2) {
+            let tag = if unit.is_multiple_of(BRACED_MOVE_EVERY) { "moved" } else { "left" };
+            write!(left, "}}\n{tag} {unit}\n").expect(STRING_WRITE);
+        } else {
+            write!(right, "}}\nright {unit}\n").expect(STRING_WRITE);
+        }
+        if let Some(from) = unit.checked_sub(BRACED_MOVE_BY)
+            && from.is_multiple_of(BRACED_MOVE_EVERY)
+        {
+            write!(right, "}}\nmoved {from}\n").expect(STRING_WRITE);
+        }
+    }
+    (left, right)
 }
 
 fn base_line(n: usize) -> String {

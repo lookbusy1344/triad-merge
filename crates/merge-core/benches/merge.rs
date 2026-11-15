@@ -11,9 +11,11 @@ use std::hint::black_box;
 use std::time::{Duration, Instant};
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use merge_core::diff::{Algorithm, DiffOptions};
+use merge_core::diff2::{DiffDocument, moves, regions};
 use merge_core::document::{Command, EditBatch, Labels, MergeDocument, MergeOptions, TextPatch};
 use merge_core::merge3::{HunkLevel, Inputs, LEFT, RIGHT, Semantics, Source, align};
-use merge_core::testing::{Triple, generate, generate_word_conflicts};
+use merge_core::testing::{Triple, generate, generate_braced_changes, generate_word_conflicts};
 use merge_core::text::Text;
 
 const SEED: u64 = 0x5EED;
@@ -110,5 +112,34 @@ fn benches(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(merge, benches);
+/// The two-way diff's load, regions and moves, on a generated pair and on blocks that all
+/// start with `}` (spec §4.6, §9). The braced pair diffs by Myers: histogram takes 2 s on it
+/// at 100k lines, since `}` repeats on every other unit (`DESIGN.md` §A4.7).
+fn diff_benches(c: &mut Criterion) {
+    let text = |s: &str| Text::decode(s.as_bytes()).expect("generated text decodes");
+    let myers = DiffOptions { algorithm: Algorithm::Myers, ..DiffOptions::default() };
+    let mut group = c.benchmark_group("merge");
+    group.sample_size(SAMPLES);
+    for lines in SIZES {
+        let triple = generate(lines, SEED);
+        let (braced_left, braced_right) = generate_braced_changes(lines);
+        let pairs = [
+            ("diff-load", text(&triple.base), text(&triple.right), DiffOptions::default()),
+            ("diff-load-braced", text(&braced_left), text(&braced_right), myers.clone()),
+        ];
+        for (name, left, right, opts) in &pairs {
+            group.bench_with_input(BenchmarkId::new(*name, lines), &(left, right), |b, (l, r)| {
+                b.iter(|| DiffDocument::new(black_box(l), black_box(r), opts.clone()));
+            });
+            let found = regions(left, right, opts);
+            let id = BenchmarkId::new(format!("{name}-moves"), lines);
+            group.bench_with_input(id, &found, |b, found| {
+                b.iter(|| moves(black_box(left), black_box(right), found, opts));
+            });
+        }
+    }
+    group.finish();
+}
+
+criterion_group!(merge, benches, diff_benches);
 criterion_main!(merge);

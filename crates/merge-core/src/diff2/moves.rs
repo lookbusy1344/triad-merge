@@ -27,12 +27,13 @@ pub struct Move {
     pub right: Range<usize>,
 }
 
-/// One place an inserted block could sit: its first line and the end of its region's right
+/// One inserted line, or the place a block could start: the line, and its region's right
 /// lines.
 #[derive(Debug, Clone, Copy)]
 struct Place {
     region: usize,
     line: usize,
+    start: usize,
     end: usize,
 }
 
@@ -53,19 +54,34 @@ pub fn moves(left: &Text, right: &Text, regions: &[Region2], opts: &DiffOptions)
     if blocks.is_empty() {
         return Vec::new();
     }
-    let mut starts: HashMap<Cow<'_, str>, Vec<Place>> = HashMap::new();
+    let mut inserted: HashMap<Cow<'_, str>, Vec<Place>> = HashMap::new();
     for (region, r) in changed() {
         for line in r.right.clone() {
-            let place = Place { region, line, end: r.right.end };
-            starts.entry(line_key(right.line(line), mode)).or_default().push(place);
+            let place = Place { region, line, start: r.right.start, end: r.right.end };
+            inserted.entry(line_key(right.line(line), mode)).or_default().push(place);
         }
     }
     let mut found: Vec<Move> = blocks
         .into_iter()
         .filter_map(|(from, r)| {
-            let places = starts.get(&line_key(left.line(r.left.start), mode))?;
-            let mut matches =
-                places.iter().filter(|p| holds(left, r.left.clone(), right, **p, mode));
+            // A block sits only where each of its lines does, so its line with the fewest
+            // inserted places bounds the places to check.
+            let (offset, places) = r
+                .left
+                .clone()
+                .enumerate()
+                .map(|(offset, n)| {
+                    let places = inserted.get(&line_key(left.line(n), mode));
+                    (offset, places.map_or(&[][..], Vec::as_slice))
+                })
+                .min_by_key(|(_, places)| places.len())?;
+            let mut matches = places
+                .iter()
+                .filter_map(|p| {
+                    let line = p.line.checked_sub(offset).filter(|&line| line >= p.start)?;
+                    Some(Place { line, ..*p })
+                })
+                .filter(|p| holds(left, r.left.clone(), right, *p, mode));
             let place = matches.next()?;
             matches.next().is_none().then(|| Move {
                 from: RegionIx::new(from),
@@ -283,6 +299,36 @@ mod tests {
             ]
         );
         assert_eq!(moves, [moved(0, 4, 0..1, 7..8), moved(2, 0, 4..5, 0..1)]);
+    }
+
+    #[test]
+    fn braced_blocks_move_only_where_the_generator_moves_them() {
+        // 40 units of 5 lines: units 0 and 20 delete `} moved N`, which right inserts in
+        // units 11 and 31. Every other block starts with `}` too and moves nowhere.
+        let (left, right) = crate::testing::generate_braced_changes(200);
+        let (left, right) = (text(&left), text(&right));
+        let found = moves(
+            &left,
+            &right,
+            &regions(&left, &right, &DiffOptions::default()),
+            &DiffOptions::default(),
+        );
+        let ends: Vec<(&str, &str)> = found
+            .iter()
+            .map(|m| (left.span(m.left.clone()), right.span(m.right.clone())))
+            .collect();
+        assert_eq!(ends, [("}\nmoved 0\n", "}\nmoved 0\n"), ("}\nmoved 20\n", "}\nmoved 20\n")]);
+    }
+
+    #[test]
+    fn a_block_anchored_on_a_later_line_still_needs_room_above_it() {
+        // `x` is rarer among the inserted lines than `m`, and its only place starts the
+        // insertion. The `m` above it is unchanged, outside the region, so `m x` has no place.
+        let (regions, moves) =
+            with("m\nx\na\nb\nc\nm\nz\n", "a\nb\nc\nm\nx\nm\nm\nz\n", &DiffOptions::default());
+        assert_eq!(regions[1], same(2..6, 0..4));
+        assert_eq!(regions[2], changed(6..6, 4..7));
+        assert_eq!(moves, []);
     }
 
     #[test]

@@ -53,6 +53,7 @@ In order. Each is one or more commits.
 | Per-command scans in `MergeWindow::refresh`: bands, placeholders, status counts; a pick at 1M costs 4.4 / 6.3 ms mean / max | A measurement that calls for them | §A6.7 |
 | Whole-text copies: `Recompute::run`, `MergeDocument::output`, 8-byte line starts | A measurement that calls for them | §A6.7 |
 | `DiffScroll`: the diff window's eight scroll fields in one component, as `PaneScroll` | A diff scroll bug | §A13.3 |
+| The two-way diff under histogram on a line repeated on every few lines, such as `}`: 2.1 s at 100k lines against Myers's 29 ms (`diff-load-braced`) | — | §A4.7 |
 | A histogram diff that gives git's hunks faster: 1.5 s against jj's 70 ms on the 100k-line `deep` triple | — | §B6 |
 | A sideways scrollbar for the top panes: a `ScrollbarHandle` over `Sideways` | — | §E4.4 |
 | A `script/measure-app` mode with a search query open | — | §A14 |
