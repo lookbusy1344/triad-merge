@@ -391,7 +391,7 @@ In jj mode, `merge.hunk-level` and `merge.same-change` come from the user's jj c
 - `diff-algorithm` applies in git mode only; jj mode has one diff.
 - `ignore-whitespace` applies in both modes: jj mode passes `ContentDiff::for_tokenizer` a `CompareBytes` keyed by `diff::line_key`. Spec §4.2's output rule applies, so any mode other than `none` diverges from jj and the status bar marks it. `ignore-case` and `ignore-pattern` take the same path and diverge from both git and jj: neither folds case or cuts text.
 - `same_change = keep` in git mode and `hunk_level = word` in git mode diverge from git and are marked.
-- `refine-conflicts` changes no output, so it stays on in both modes.
+- `refine-conflicts` changes no merge result, so it stays on in both modes. Under jj semantics it changes no saved file either: `MergeDocument::output` writes markers over each conflict and the changed regions next to it, the pieces of one jj hunk, so jj reads the base back as it stores it (spec §4.4).
 
 ### B5 Design
 

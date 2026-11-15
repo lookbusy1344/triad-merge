@@ -977,10 +977,17 @@ mod jj {
     /// `merge` of `left` and `right` conflicts in `a.txt`; `child` adds `b.txt`; the working
     /// copy sits on `child`, on disk.
     fn stacked() -> (vcs_jj::testing::Fixture, vcs_jj::testing::Committed) {
+        stacked_with(LEFT, RIGHT)
+    }
+
+    fn stacked_with(
+        left: &[u8],
+        right: &[u8],
+    ) -> (vcs_jj::testing::Fixture, vcs_jj::testing::Committed) {
         let fixture = vcs_jj::testing::Fixture::new();
         let base = fixture.commit_on(&[], "base", &[("a.txt", BASE)]);
-        let left = fixture.commit_on(&[&base], "left", &[("a.txt", LEFT)]);
-        let right = fixture.commit_on(&[&base], "right", &[("a.txt", RIGHT)]);
+        let left = fixture.commit_on(&[&base], "left", &[("a.txt", left)]);
+        let right = fixture.commit_on(&[&base], "right", &[("a.txt", right)]);
         let merge = fixture.commit_merged(&[&left, &right], "merge", &[]);
         let child = fixture.commit_merged(&[&merge], "child", &[("b.txt", b"b\n")]);
         fixture.check_out(&[&child]);
@@ -1095,6 +1102,32 @@ mod jj {
         let rewrite = commit(&record).preview(&markers).expect("previewed");
         // The markers read back as the conflict the commit holds: the write changes nothing
         // (spec §7.5.1).
+        assert!(!rewrite.resolved);
+        assert_eq!(effects(&rewrite), []);
+    }
+
+    #[test]
+    fn a_preview_of_a_refined_conflicts_markers_rebases_nothing() {
+        // Both sides add `shared`, which refinement splits off the conflict. The markers
+        // still hold it in each side and not in the base, as the commit does.
+        let (fixture, merge) = stacked_with(b"left\nshared\n", b"right\nshared\n");
+        let options = merge_core::document::MergeOptions {
+            semantics: merge_core::merge3::Semantics::Jj,
+            ..merge_core::document::MergeOptions::default()
+        };
+        let opened = at_commit(&fixture, &merge.commit).open(options).expect("labels fit");
+        assert_eq!(opened.doc.regions().len(), 2, "refined");
+        let markers = EncodedOutput::new(&opened.doc, merge_core::document::OutputEnding::Keep)
+            .bytes()
+            .to_vec();
+        let record = opened.record.expect("a commit's record");
+        assert_eq!(
+            vcs_jj::testing::without_conflict_labels(
+                &String::from_utf8(markers.clone()).expect("UTF-8")
+            ),
+            "<<<<<<<\nleft\nshared\n|||||||\na\n=======\nright\nshared\n>>>>>>>\n"
+        );
+        let rewrite = commit(&record).preview(&markers).expect("previewed");
         assert!(!rewrite.resolved);
         assert_eq!(effects(&rewrite), []);
     }

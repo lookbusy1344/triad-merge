@@ -785,7 +785,9 @@ impl MergeDocument {
         match resolution {
             // A conflict never holds `Auto`; were it to, it would show its markers.
             Resolution::Auto => auto_text(&self.inputs, r, self.options.same_change)
-                .unwrap_or_else(|| self.markers(r, false).into()),
+                .unwrap_or_else(|| {
+                    self.markers(r, |source| self.source_text(r, source).into(), false).into()
+                }),
             Resolution::Pick(sources) => self.pick_text(r, sources),
             Resolution::Edited => self.region_text(region).into(),
             Resolution::Unresolved => self.pick_text(r, &self.sides()),
@@ -837,15 +839,21 @@ impl MergeDocument {
         self.inputs.text(source).span(lines)
     }
 
-    /// Conflict markers: git's diff3 or merge style for two sides, by the options' marker
-    /// style; jj's snapshot style, holding every input, for more. `at_end`: no text follows
-    /// the markers in the output.
+    /// Conflict markers around each source's `text`: git's diff3 or merge style for two
+    /// sides, by the options' marker style; jj's snapshot style, holding every input, for
+    /// more. `region` spans the lines the markers cover. `at_end`: no text follows the
+    /// markers in the output.
     ///
     /// A section whose last line has no newline gets one, so the next marker starts on its
     /// own line. Under git semantics only that section takes it, as git writes. Under jj
     /// semantics, at the end of the output, every section takes one and the end marker none,
     /// as jj writes, so jj reads each term back whole.
-    fn markers(&self, region: &Region, at_end: bool) -> String {
+    fn markers<'a>(
+        &self,
+        region: &Region,
+        text: impl Fn(Source) -> Cow<'a, str>,
+        at_end: bool,
+    ) -> String {
         let eol = marker_ending(&self.inputs, region).as_str();
         let line = |c: char, label: Option<&str>| {
             let run = c.to_string().repeat(self.marker_length);
@@ -881,10 +889,8 @@ impl MergeDocument {
                     .collect();
                 (Some(line('<', Some("conflict"))), sections, line('>', Some("conflict ends")))
             };
-        let texts: Vec<(String, &str)> = sections
-            .into_iter()
-            .map(|(marker, source)| (marker, self.source_text(region, source)))
-            .collect();
+        let texts: Vec<(String, Cow<'a, str>)> =
+            sections.into_iter().map(|(marker, source)| (marker, text(source))).collect();
         let unbroken = |text: &str| !text.is_empty() && !text.ends_with('\n');
         let spread = at_end
             && self.options.semantics == Semantics::Jj
@@ -947,16 +953,89 @@ impl MergeDocument {
         let last = self.resolutions.iter().enumerate().rposition(|(region, resolution)| {
             *resolution == Resolution::Unresolved || !self.bytes_of(region).is_empty()
         });
-        let text = self
-            .resolutions
-            .iter()
-            .enumerate()
-            .map(|(region, resolution)| match resolution {
-                Resolution::Unresolved => self.markers(&self.regions[region], Some(region) == last),
-                _ => self.region_text(region),
-            })
-            .collect();
+        let mut text = String::new();
+        let mut at = 0;
+        for run in self.marked_runs() {
+            text.extend((at..run.start).map(|region| self.region_text(region)));
+            let at_end = last.is_some_and(|last| last < run.end);
+            text.push_str(&self.markers(
+                &self.span(run.clone()),
+                |source| self.run_text(run.clone(), source),
+                at_end,
+            ));
+            at = run.end;
+        }
+        text.extend((at..self.regions.len()).map(|region| self.region_text(region)));
         Output::Conflicted(text)
+    }
+
+    /// The regions each set of saved markers spans, in order, one run per unresolved
+    /// conflict or group of them. Under git semantics a run is one conflict. Under jj
+    /// semantics it takes in every changed region next to the conflict: the pieces
+    /// refinement split off one hunk of jj's diff. Markers over the whole hunk let jj read
+    /// each term back as it is; jj reads text outside markers into every term, the base
+    /// included.
+    fn marked_runs(&self) -> Vec<Range<usize>> {
+        let changed = |region: usize| self.regions[region].kind != Kind::Unchanged;
+        let jj = self.options.semantics == Semantics::Jj;
+        let mut runs: Vec<Range<usize>> = Vec::new();
+        for (region, resolution) in self.resolutions.iter().enumerate() {
+            let covered = runs.last().is_some_and(|run| run.contains(&region));
+            if *resolution != Resolution::Unresolved || covered {
+                continue;
+            }
+            let (mut start, mut end) = (region, region + 1);
+            if jj {
+                while start > 0 && changed(start - 1) {
+                    start -= 1;
+                }
+                while end < self.regions.len() && changed(end) {
+                    end += 1;
+                }
+            }
+            runs.push(start..end);
+        }
+        runs
+    }
+
+    /// One region covering the lines of the regions in `run`.
+    fn span(&self, run: Range<usize>) -> Region {
+        let (first, last) = (&self.regions[run.start], &self.regions[run.end - 1]);
+        let join = |a: &[Range<usize>], b: &[Range<usize>]| {
+            a.iter().zip(b).map(|(a, b)| a.start..b.end).collect()
+        };
+        Region {
+            kind: Kind::Conflict,
+            bases: join(&first.bases, &last.bases),
+            sides: join(&first.sides, &last.sides),
+        }
+    }
+
+    /// Whether a region in a marked run writes each source's own text into that source's
+    /// section: an unresolved conflict, or a region whose text every side holds. Any other
+    /// region is resolved text, which every section takes.
+    fn keeps_sources(&self, region: usize) -> bool {
+        if self.resolutions[region] == Resolution::Unresolved {
+            return true;
+        }
+        let r = &self.regions[region];
+        let text = self.region_text(region);
+        (0..r.sides.len()).all(|side| self.source_text(r, Source::Side(side)) == text)
+    }
+
+    /// The text of `source`'s section in markers over `run`.
+    fn run_text(&self, run: Range<usize>, source: Source) -> Cow<'_, str> {
+        let piece = |region: usize| -> Cow<'_, str> {
+            if self.keeps_sources(region) {
+                self.source_text(&self.regions[region], source).into()
+            } else {
+                self.region_text(region).into()
+            }
+        };
+        if run.len() == 1 {
+            return piece(run.start);
+        }
+        Cow::Owned(run.map(piece).collect())
     }
 
     /// The text to save with its line endings made as `ending` says.
@@ -993,30 +1072,28 @@ impl MergeDocument {
     #[must_use]
     pub fn output_endings(&self) -> LineEndings {
         let (mut lf, mut crlf) = (self.endings.lf > 0, self.endings.crlf > 0);
-        let unresolved = self
-            .resolutions
-            .iter()
-            .zip(&self.regions)
-            .filter(|(resolution, _)| **resolution == Resolution::Unresolved);
-        for (_, region) in unresolved {
+        let three_way = self.inputs.is_three_way();
+        let bases = if three_way && self.options.marker_style == MarkerStyle::Merge {
+            0
+        } else {
+            self.inputs.bases().len()
+        };
+        for run in self.marked_runs() {
             if lf && crlf {
                 break;
             }
-            match marker_ending(&self.inputs, region) {
+            match marker_ending(&self.inputs, &self.span(run.clone())) {
                 LineEnding::Lf => lf = true,
                 LineEnding::CrLf => crlf = true,
             }
-            let three_way = self.inputs.is_three_way();
-            let bases = if three_way && self.options.marker_style == MarkerStyle::Merge {
-                0
-            } else {
-                region.bases.len()
-            };
-            for base in 0..bases {
-                let counts =
-                    EndingCounts::of(self.source_text(region, Source::Base(base)).as_bytes(), None);
-                lf |= counts.lf > 0;
-                crlf |= counts.crlf > 0;
+            // Resolved text in a base section is in the result already.
+            for region in run.filter(|&region| self.keeps_sources(region)) {
+                for base in 0..bases {
+                    let text = self.source_text(&self.regions[region], Source::Base(base));
+                    let counts = EndingCounts::of(text.as_bytes(), None);
+                    lf |= counts.lf > 0;
+                    crlf |= counts.crlf > 0;
+                }
             }
         }
         LineEndings::from_presence(lf, crlf)
@@ -2986,18 +3063,90 @@ mod tests {
         );
     }
 
+    fn conflicted(d: &MergeDocument) -> String {
+        match d.output() {
+            Output::Conflicted(text) => text,
+            Output::Resolved(text) => panic!("expected conflicts, got {text:?}"),
+        }
+    }
+
+    fn strings<const N: usize>(texts: [&str; N]) -> Vec<String> {
+        texts.map(str::to_owned).to_vec()
+    }
+
     #[test]
-    fn under_jj_a_conflict_with_text_after_it_keeps_its_end_marker_newline() {
-        // Refinement splits the shared `S` off after the conflict, so the base section,
-        // which lacks its newline, is no longer the end of the file.
+    fn under_jj_a_conflict_refined_at_its_end_is_written_whole_with_jjs_newline_rule() {
+        // Refinement splits the shared `S` off after the conflict. Outside the markers jj
+        // would read it into the base too.
         let options = MergeOptions { refine: Refine::Ends, ..jj_options() };
         let d = doc_with("b", "x\nS", "y\nS", options);
+        assert_eq!(d.regions().len(), 2, "refined");
+        let output = conflicted(&d);
+        assert_eq!(output, "<<<<<<< left\nx\nS\n||||||| base\nb\n=======\ny\nS\n>>>>>>> right");
+        assert_eq!(jj_reads(&output, 2), (strings(["x\nS", "y\nS"]), strings(["b"])));
+    }
+
+    #[test]
+    fn under_jj_a_conflict_refined_at_both_ends_is_written_whole() {
+        let options = MergeOptions { refine: Refine::Ends, ..jj_options() };
+        let (base, left, right) = ("a\nb\nc\n", "a\nS\nx\nT\nc\n", "a\nS\ny\nT\nc\n");
+        let d = doc_with(base, left, right, options);
+        assert_eq!(d.regions().len(), 5, "refined");
+        let output = conflicted(&d);
         assert_eq!(
-            d.output(),
-            Output::Conflicted(
-                "<<<<<<< left\nx\n||||||| base\nb\n=======\ny\n>>>>>>> right\nS".to_owned()
-            )
+            output,
+            "a\n<<<<<<< left\nS\nx\nT\n||||||| base\nb\n=======\nS\ny\nT\n>>>>>>> right\nc\n"
         );
+        assert_eq!(jj_reads(&output, 2), (strings([left, right]), strings([base])));
+    }
+
+    #[test]
+    fn under_git_a_refined_conflict_keeps_its_shared_lines_outside_the_markers() {
+        let options = MergeOptions { refine: Refine::Ends, ..MergeOptions::default() };
+        let d = doc_with("a\nb\nc\n", "a\nS\nx\nT\nc\n", "a\nS\ny\nT\nc\n", options);
+        assert_eq!(
+            conflicted(&d),
+            "a\nS\n<<<<<<< left\nx\n||||||| base\nb\n=======\ny\n>>>>>>> right\nT\nc\n"
+        );
+    }
+
+    #[test]
+    fn under_jj_a_deep_refined_conflict_is_written_whole_with_its_picked_pieces_in_every_term() {
+        let options = MergeOptions { refine: Refine::Deep, ..jj_options() };
+        let mut d = doc_with("a\np\nq\nz\n", "a\nX\nm\nY\nz\n", "a\nZ\nm\nW\nz\n", options);
+        // Unchanged a; conflict X|Z; shared m; conflict Y|W over base p, q; unchanged z.
+        assert_eq!(d.regions().len(), 5, "refined");
+        assert_eq!(
+            conflicted(&d),
+            "a\n<<<<<<< left\nX\nm\nY\n||||||| base\np\nq\n=======\nZ\nm\nW\n>>>>>>> right\nz\n"
+        );
+        // A picked conflict piece is resolved text: jj reads it into every term.
+        let pick = |region, side| Command::Pick {
+            region: RegionIx::new(region),
+            sources: vec![Source::Side(side)],
+        };
+        d.apply(pick(1, 0)).expect("region 1 exists");
+        let picked =
+            "a\n<<<<<<< left\nX\nm\nY\n||||||| base\nX\np\nq\n=======\nX\nm\nW\n>>>>>>> right\nz\n";
+        assert_eq!(conflicted(&d), picked);
+        // A pick of a shared piece leaves its text as every side has it: the base keeps its own.
+        d.apply(pick(2, 1)).expect("region 2 exists");
+        assert_eq!(conflicted(&d), picked);
+    }
+
+    #[test]
+    fn under_jj_the_endings_of_a_whole_conflict_leave_out_the_base_of_a_picked_piece() {
+        let options = MergeOptions { refine: Refine::Deep, ..jj_options() };
+        let mut d = doc_with("a\np\r\nq\r\nz\n", "a\nX\nm\nY\nz\n", "a\nZ\nm\nW\nz\n", options);
+        assert_eq!(d.regions().len(), 5, "refined");
+        // The last conflict piece holds the CRLF base lines; Y replaces them in every term.
+        d.apply(Command::Pick { region: RegionIx::new(3), sources: vec![Source::Side(0)] })
+            .expect("region 3 exists");
+        assert_eq!(
+            conflicted(&d),
+            "a\n<<<<<<< left\nX\nm\nY\n||||||| base\nY\n=======\nZ\nm\nY\n>>>>>>> right\nz\n"
+        );
+        assert_eq!(d.output_endings(), LineEndings::Lf);
     }
 
     #[test]

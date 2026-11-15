@@ -15,7 +15,7 @@ use merge_core::document::{
 use merge_core::markers;
 use merge_core::merge3::{Inputs, Kind, LEFT, RIGHT, Refine, Region, Semantics, Source};
 use merge_core::testing::{text, three};
-use merge_core::text::Text;
+use merge_core::text::{LineEndings, Text};
 use proptest::prelude::*;
 use proptest::test_runner::{Config, RngSeed};
 
@@ -119,33 +119,56 @@ fn concat_lines(t: &Text, ranges: impl Iterator<Item = Range<usize>>) -> String 
     ranges.map(|r| t.span(r)).collect()
 }
 
-/// The merge with `source` picked in every conflict, as conflict markers hold it: the writer
-/// ends a section without a final newline with its conflict's marker line ending, `endings`
-/// in conflict order. A conflict whose end marker has no newline, as jj writes the last one,
-/// keeps every section whole: its ending is `None`.
-fn picked_in_conflicts(doc: &MergeDocument, source: Source, endings: &[Option<&str>]) -> String {
-    let mut doc = doc.clone();
-    let conflicts: Vec<usize> =
-        (0..doc.regions().len()).filter(|&r| doc.regions()[r].kind == Kind::Conflict).collect();
-    for &region in &conflicts {
-        doc.apply(Command::Pick { region: RegionIx::new(region), sources: vec![source] })
-            .expect("pick");
+/// The runs of regions each set of markers spans (spec §4.4): under git semantics, each
+/// conflict; under jj semantics, each conflict with the changed regions next to it, the
+/// pieces refinement split off one hunk of jj's diff.
+fn marked_runs(doc: &MergeDocument) -> Vec<Range<usize>> {
+    let regions = doc.regions();
+    let conflict = |r: usize| regions[r].kind == Kind::Conflict;
+    if doc.options().semantics == Semantics::Git {
+        return (0..regions.len()).filter(|&r| conflict(r)).map(|r| r..r + 1).collect();
     }
+    let mut runs: Vec<Range<usize>> = Vec::new();
+    for (r, region) in regions.iter().enumerate() {
+        let changed = region.kind != Kind::Unchanged;
+        match runs.last_mut() {
+            Some(run) if run.end == r && changed => run.end = r + 1,
+            _ if changed => runs.push(r..r + 1),
+            _ => {}
+        }
+    }
+    runs.retain(|run| run.clone().any(conflict));
+    runs
+}
+
+/// `source` as the markers hold it: its own text over each marked run, and the merged text
+/// elsewhere. The writer ends a run's section without a final newline with its marker line
+/// ending, `endings` in run order. A run whose end marker has no newline, as jj writes the
+/// last one, keeps every section whole: its ending is `None`.
+fn read_back_as(doc: &MergeDocument, source: Source, endings: &[Option<&str>]) -> String {
     let text = doc.text();
+    let input = doc.inputs().text(source);
+    let lines = |region: &Region| match source {
+        Source::Side(i) => region.sides[i].clone(),
+        Source::Base(i) => region.bases[i].clone(),
+    };
+    let merged = |r: usize| &text[doc.region_bytes(RegionIx::new(r))];
+    let runs = marked_runs(doc);
     let mut endings = endings.iter().copied();
-    doc.region_ixs()
-        .flat_map(|r| {
-            let region = &text[doc.region_bytes(r)];
-            let unterminated = !region.is_empty() && !region.ends_with('\n');
-            let ending = if conflicts.contains(&r.get()) {
-                let eol = endings.next().expect("one ending per conflict");
-                eol.filter(|_| unterminated).unwrap_or_default()
-            } else {
-                ""
-            };
-            [region, ending]
-        })
-        .collect()
+    let mut out = String::new();
+    let mut at = 0;
+    for run in &runs {
+        out.extend((at..run.start).map(merged));
+        let first = lines(&doc.regions()[run.start]).start;
+        let last = lines(&doc.regions()[run.end - 1]).end;
+        let section = input.span(first..last);
+        let unterminated = !section.is_empty() && !section.ends_with('\n');
+        let eol = endings.next().expect("one ending per run");
+        out.extend([section, eol.filter(|_| unterminated).unwrap_or_default()]);
+        at = run.end;
+    }
+    out.extend((at..doc.regions().len()).map(merged));
+    out
 }
 
 /// Each conflict's line ending, from its close marker: a run of exactly `len` `>`. None for a
@@ -164,8 +187,8 @@ fn close_marker_endings(file: &str, len: usize) -> Vec<Option<&'static str>> {
         .collect()
 }
 
-/// Write `doc`'s conflicts as markers, parse them back, and compare with each input picked in
-/// every conflict. A merge without conflicts writes no markers and checks nothing.
+/// Write `doc`'s conflicts as markers, parse them back, and compare with each input as the
+/// markers hold it. A merge without conflicts writes no markers and checks nothing.
 fn markers_read_back(doc: &MergeDocument) -> Result<(), TestCaseError> {
     let Output::Conflicted(file) = doc.output() else {
         return Ok(());
@@ -174,7 +197,7 @@ fn markers_read_back(doc: &MergeDocument) -> Result<(), TestCaseError> {
     let parsed =
         markers::parse(&text(&file)).map_err(|e| TestCaseError::fail(format!("{e}: {file:?}")))?;
     let picked = |sources: &mut dyn Iterator<Item = Source>| -> Vec<String> {
-        sources.map(|s| picked_in_conflicts(doc, s, &endings)).collect()
+        sources.map(|s| read_back_as(doc, s, &endings)).collect()
     };
     let content =
         |t: &[Text]| -> Vec<String> { t.iter().map(|t| t.content().to_owned()).collect() };
@@ -384,8 +407,8 @@ proptest! {
 proptest! {
     #![proptest_config(config(EDIT_CASES))]
 
-    /// After every command the regions' bytes cover the text and their line ranges cover the
-    /// inputs; undoing everything restores the starting text and regions.
+    /// After every command the regions' bytes cover the text, their line ranges cover the
+    /// inputs and `output_endings` gives the output's endings; undoing everything restores the starting text and regions.
     #[test]
     fn edit_sequences_keep_regions_and_text_consistent(
         base in file_strategy(), left in file_strategy(), right in file_strategy(),
@@ -402,6 +425,12 @@ proptest! {
             prop_assert!(covers(inputs.bases(), |r| &r.bases, doc.regions()), "after {:?}", command);
             prop_assert!(covers(inputs.sides(), |r| &r.sides, doc.regions()), "after {:?}", command);
             prop_assert_eq!(doc.regions().len(), doc.resolutions().len());
+            prop_assert_eq!(
+                doc.output_endings(),
+                LineEndings::of(&doc.output().into_text()),
+                "after {:?}",
+                command
+            );
             prop_assert_eq!(
                 doc.output().is_resolved(),
                 !doc.resolutions().contains(&Resolution::Unresolved)
