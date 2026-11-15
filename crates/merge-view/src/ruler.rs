@@ -5,12 +5,12 @@
 
 use std::ops::Range;
 
-use merge_core::diff2::{DiffDocument, Kind2, Side};
+use merge_core::diff2::{DiffDocument, Side};
 use merge_core::document::MergeDocument;
 use merge_core::index::RegionIx;
 use merge_core::merge3::Kind;
 
-use crate::diff::tone;
+use crate::diff::pieces;
 use crate::marks::{Tone, mark};
 
 /// How a mark paints.
@@ -58,20 +58,16 @@ pub fn total(doc: &MergeDocument) -> usize {
     doc.line_count()
 }
 
-/// The marks beside `side`'s pane of a diff: each changed region in that side's tone. Regions
-/// lag the text until the next recompute, so their lines are clamped to the text.
+/// The marks beside `side`'s pane of a diff: each changed region in that side's tone, with each
+/// end of a move in the move tone (`diff::pieces`). Regions lag the text until the next
+/// recompute, so their lines are clamped to the text.
 pub fn diff_marks(doc: &DiffDocument, side: Side) -> impl Iterator<Item = RulerMark> + '_ {
     let total = diff_total(doc, side);
-    doc.regions().iter().enumerate().filter(|(_, region)| region.kind == Kind2::Changed).map(
-        move |(index, region)| {
-            let lines = region.lines(side);
-            RulerMark {
-                region: RegionIx::new(index),
-                lines: lines.start.min(total)..lines.end.min(total),
-                style: Style::Plain(tone(side)),
-            }
-        },
-    )
+    pieces(doc, side).into_iter().map(move |piece| RulerMark {
+        region: piece.region,
+        lines: piece.lines.start.min(total)..piece.lines.end.min(total),
+        style: Style::Plain(piece.tone),
+    })
 }
 
 /// The lines in `side`'s text, the total a [`diff_marks`] range is a share of. An
@@ -567,6 +563,35 @@ mod tests {
         // Line 50 of 20 px lines starts at 1000 px; a 400 px view puts it 200 px down.
         assert_eq!(centred_top(50, 20., 400.), 800.);
         assert_eq!(centred_top(5, 20., 400.), 0.);
+    }
+
+    #[test]
+    fn a_diffs_moved_lines_mark_in_the_move_tone() {
+        // `m1 m2` moves below `a b c`, among new lines `n` and `o`. Regions: 0 the deletion,
+        // 1 `a b c`, 2 the insertion of `n m1 m2 o`.
+        let d = DiffDocument::new(
+            &text("m1\nm2\na\nb\nc\n"),
+            &text("a\nb\nc\nn\nm1\nm2\no\n"),
+            DiffOptions::default(),
+        );
+        let right: Vec<RulerMark> = diff_marks(&d, Side::Right).collect();
+        assert_eq!(
+            right,
+            [
+                mark(RegionIx::new(0), 0..0, Style::Plain(Tone::Right)),
+                mark(RegionIx::new(2), 3..4, Style::Plain(Tone::Right)),
+                mark(RegionIx::new(2), 4..6, Style::Plain(Tone::Both)),
+                mark(RegionIx::new(2), 6..7, Style::Plain(Tone::Right)),
+            ]
+        );
+        let left: Vec<RulerMark> = diff_marks(&d, Side::Left).collect();
+        assert_eq!(
+            left,
+            [
+                mark(RegionIx::new(0), 0..2, Style::Plain(Tone::Both)),
+                mark(RegionIx::new(2), 5..5, Style::Plain(Tone::Left)),
+            ]
+        );
     }
 
     #[test]

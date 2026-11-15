@@ -119,7 +119,7 @@ Each filter applies when lines are interned (`diff::line_key`), under both seman
 
 ### G5 Moved code in the two-way diff
 
-Done: the matcher, `diff2::moves` (spec §4.6, `DESIGN.md` §A4.7), recomputed and installed with the regions; `moves` in `diff --inspect` (`docs/json-schema.md`); both ends in the move tone with an `M` gutter mark, which goes to the other end (spec §5, `DESIGN.md` §A6.5).
+Done: the matcher, `diff2::moves` (spec §4.6, `DESIGN.md` §A4.7), recomputed and installed with the regions; `moves` in `diff --inspect` (`docs/json-schema.md`); both ends in the move tone on the bands and the ruler, with an `M` gutter mark, which goes to the other end (spec §5, `DESIGN.md` §A6.5).
 
 - Open: a key that goes to the other end of a move from the caret; the jump lands on the block's first line, not its region's start.
 - Later: near matches, and a moved block that was also edited, with an intra-line diff.

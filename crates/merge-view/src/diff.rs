@@ -66,33 +66,63 @@ fn end(m: &Move, side: Side) -> (Range<usize>, RegionIx) {
     }
 }
 
-/// The bands of `side`'s changed regions in its current text: each region in the side's
-/// tone, with the lines of each move's end on this side cut out and banded in
-/// [`MOVE_TONE`]. Lines a region does not have on this side get no band.
+/// A run of one side's lines in one changed region, banded and marked in one tone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Piece {
+    pub region: RegionIx,
+    pub lines: Range<usize>,
+    pub tone: Tone,
+    /// For one end of a move, the region that holds the other end.
+    pub other_end: Option<RegionIx>,
+}
+
+/// `side`'s changed regions in line order, as pieces: each region in the side's tone, with
+/// the lines of each move's end on this side cut out in [`MOVE_TONE`]. A region with no lines
+/// on this side is one empty piece; a region with lines gives no empty piece.
 #[must_use]
-pub fn bands(doc: &DiffDocument, side: Side) -> Vec<Band> {
+pub fn pieces(doc: &DiffDocument, side: Side) -> Vec<Piece> {
     let mut ends: Vec<(Range<usize>, RegionIx)> =
         doc.moves().iter().map(|m| end(m, side)).collect();
     ends.sort_by_key(|(lines, _)| lines.start);
     let mut ends = ends.into_iter().peekable();
-    let mut bands = Vec::new();
-    let mut push = |lines: Range<usize>, tone: Tone, other_end: Option<RegionIx>| {
-        let bytes = line_bytes(doc, side, lines);
-        if !bytes.is_empty() {
-            bands.push(Band { bytes, tone, other_end });
+    let mut pieces = Vec::new();
+    for (index, r) in doc.regions().iter().enumerate().filter(|(_, r)| r.kind == Kind2::Changed) {
+        let region = RegionIx::new(index);
+        let lines = r.lines(side);
+        let piece = |lines: Range<usize>, tone, other_end| Piece { region, lines, tone, other_end };
+        if lines.is_empty() {
+            pieces.push(piece(lines, tone(side), None));
+            continue;
         }
-    };
-    for region in changed(doc) {
-        let lines = region.lines(side);
         let mut at = lines.start;
         while let Some((moved, other)) = ends.next_if(|(moved, _)| moved.end <= lines.end) {
-            push(at..moved.start, tone(side), None);
+            if at < moved.start {
+                pieces.push(piece(at..moved.start, tone(side), None));
+            }
             at = moved.end;
-            push(moved, MOVE_TONE, Some(other));
+            pieces.push(piece(moved, MOVE_TONE, Some(other)));
         }
-        push(at..lines.end, tone(side), None);
+        if at < lines.end {
+            pieces.push(piece(at..lines.end, tone(side), None));
+        }
     }
-    bands
+    pieces
+}
+
+/// The bands of `side`'s changed regions in its current text: its [`pieces`] in bytes.
+/// Lines a region does not have on this side, or that lie past the text while the regions
+/// lag it, get no band.
+#[must_use]
+pub fn bands(doc: &DiffDocument, side: Side) -> Vec<Band> {
+    pieces(doc, side)
+        .into_iter()
+        .map(|p| Band {
+            bytes: line_bytes(doc, side, p.lines),
+            tone: p.tone,
+            other_end: p.other_end,
+        })
+        .filter(|band| !band.bytes.is_empty())
+        .collect()
 }
 
 /// The region of the other end of the move whose end on `side` holds `line`. None while
