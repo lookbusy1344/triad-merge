@@ -69,7 +69,6 @@ In order. Each is one or more commits.
 | The absorb oracle's generator builds text files only: no renames, executable bits, symlinks, conflicted inputs or immutable commits | — | §I5 |
 | jj-cli's config defaults other than the revset aliases: none checked for whether triad depends on one | — | §I5 |
 | Absorb: split one hunk between commits | Part H's line selection (§H6) | §I4 |
-| `diff --rev` evaluates without the user's revset aliases (spec §6.1), but `USER-GUIDE.md` shows `--rev 'trunk()'` | Owner's choice: load the aliases, as `stack` and `resolve -r` do, or change the example | spec §6.1, `USER-GUIDE.md` |
 | Internal jj repositories: a jj command that commits between triad's load and its commit leaves two operation heads, which triad refuses until jj's next command merges them | — | §D5.5 |
 | The stack, history and absorb windows checked on screen: layout, keys, focus and the accessibility tree; their tests run headless only | — | §I2, §I3, §I4 |
 

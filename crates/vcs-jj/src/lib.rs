@@ -394,10 +394,10 @@ impl JjRepository {
         Ok(!self.evaluate(repo, &expr, revsets)?.is_empty())
     }
 
-    /// The commits `expr` names, in jj's revset syntax; at least one. Only jj-lib's built-in
-    /// functions: no aliases.
+    /// The commits `expr` names, in jj's revset syntax with the user's revset aliases; at
+    /// least one.
     fn resolve(&self, expr: &str) -> Result<Vec<Commit>, VcsError> {
-        let commits = self.evaluate(self.repo.as_ref(), expr, &Revsets::default())?;
+        let commits = self.evaluate(self.repo.as_ref(), expr, &self.revsets()?)?;
         if commits.is_empty() {
             return Err(VcsError::UnknownRevision(expr.to_owned()));
         }

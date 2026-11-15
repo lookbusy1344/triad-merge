@@ -242,6 +242,42 @@ mod jj {
     }
 
     #[test]
+    fn rev_takes_the_user_s_revset_aliases() {
+        let fixture = Fixture::new();
+        fixture.commit("one", &[("a.txt", b"one\n")]);
+        fixture.commit("two", &[("a.txt", b"two\n")]);
+        let path = fixture.write("a.txt", b"three\n");
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let config = dir.path().join("config.toml");
+        std::fs::write(&config, "[revset-aliases]\n\"older()\" = \"@--\"\n")
+            .expect("the config is written");
+        let environment = std::collections::HashMap::from([(
+            "JJ_CONFIG".to_owned(),
+            config.to_str().expect("UTF-8").to_owned(),
+        )]);
+        let config = vcs_jj::config::ConfigEnv { environment, ..Default::default() };
+        let mut run = RunRepository::of_file(path.as_std_path()).with_jj_config(config);
+        let diff = native::load(&mut run, path.as_std_path(), Some("older()"))
+            .expect("the alias names a revision");
+        assert_eq!(diff.left.content(), "one\n");
+        assert_eq!(diff.left_title, "older()");
+    }
+
+    #[test]
+    fn rev_takes_jj_s_default_trunk_alias() {
+        // Without a remote bookmark, jj's `trunk()` is the root commit, which holds no file.
+        let fixture = Fixture::new();
+        fixture.commit("one", &[("a.txt", b"one\n")]);
+        let path = fixture.write("a.txt", b"two\n");
+        let mut run = RunRepository::of_file(path.as_std_path())
+            .with_jj_config(vcs_jj::config::ConfigEnv::default());
+        let diff = native::load(&mut run, path.as_std_path(), Some("trunk()"))
+            .expect("jj's default alias names a revision");
+        assert_eq!(diff.left.content(), "");
+        assert_eq!(diff.left_title, "trunk() (no file)");
+    }
+
+    #[test]
     fn a_merge_working_copy_is_titled_by_its_revision() {
         let fixture = Fixture::new();
         let left = fixture.commit_on(&[], "left", &[("a.txt", b"left\n")]);

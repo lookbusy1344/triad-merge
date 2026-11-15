@@ -118,7 +118,7 @@ When `@` is a merge, the left side is the file in the merge of the parents' tree
 
 ### Diff against older revisions
 
-`--rev` takes any revset. A revset of several commits reads from the merge of their trees.
+`--rev` takes any revset, with your revset aliases. A revset of several commits reads from the merge of their trees.
 
 ```sh
 triad-merge diff src/lib.rs --rev 'trunk()'
