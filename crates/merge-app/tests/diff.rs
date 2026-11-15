@@ -1635,6 +1635,32 @@ fn the_toolbar_names_its_tools(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn the_view_toggles_show_pressed_while_their_view_is_on(cx: &mut TestAppContext) {
+    let o = open(cx, &Files::new(FIVE_LEFT, FIVE_RIGHT));
+    let pressed = |cx: &mut TestAppContext| {
+        let mut state = None;
+        act(cx, o.window, |window, _| {
+            state = Some(
+                [Tool::Syntax, Tool::SoftWrap, Tool::Undo]
+                    .map(|tool| window.find(tool.id()).checked()),
+            );
+        });
+        state.expect("the window ran")
+    };
+    let click = |cx: &mut TestAppContext, tool: Tool| {
+        act(cx, o.window, |window, cx| window.click(tool.id(), cx));
+    };
+    // The defaults: syntax colours on, soft wrap off (spec §6.4). Undo is no toggle.
+    assert_eq!(pressed(cx), [Some(true), Some(false), None]);
+    click(cx, Tool::Syntax);
+    assert_eq!(pressed(cx), [Some(false), Some(false), None]);
+    click(cx, Tool::SoftWrap);
+    assert_eq!(pressed(cx), [Some(false), Some(true), None]);
+    click(cx, Tool::Syntax);
+    assert_eq!(pressed(cx), [Some(true), Some(true), None]);
+}
+
+#[gpui_kit::test]
 fn the_toolbar_labels_only_the_navigation_pair(cx: &mut TestAppContext) {
     let o = open(cx, &Files::new(FIVE_LEFT, FIVE_RIGHT));
     let shown = |cx: &mut TestAppContext, tool: Tool| {

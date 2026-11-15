@@ -252,15 +252,60 @@ fn toolbar_choices_act_on_the_current_region(cx: &mut TestAppContext) {
     assert_eq!(resolution(cx), Resolution::Pick(vec![Source::Side(0), Source::Base(0)]));
 }
 
-/// Whether Left, Base and Right show pressed, in that order.
-fn pressed(cx: &mut TestAppContext, window: AnyWindowHandle) -> [Option<bool>; 3] {
+/// Whether each of `tools` shows pressed; `None` for a button that is no toggle.
+fn pressed_of<const N: usize>(
+    cx: &mut TestAppContext,
+    window: AnyWindowHandle,
+    tools: [Tool; N],
+) -> [Option<bool>; N] {
     let mut state = None;
     act(cx, window, |window, _| {
-        state = Some(
-            [Tool::Left, Tool::Base, Tool::Right].map(|tool| window.find(tool.id()).checked()),
-        );
+        state = Some(tools.map(|tool| window.find(tool.id()).checked()));
     });
     state.expect("the window ran")
+}
+
+/// Whether Left, Base and Right show pressed, in that order.
+fn pressed(cx: &mut TestAppContext, window: AnyWindowHandle) -> [Option<bool>; 3] {
+    pressed_of(cx, window, [Tool::Left, Tool::Base, Tool::Right])
+}
+
+/// The view toggles: base pane, syntax colours and soft wrap.
+const VIEW_TOOLS: [Tool; 3] = [Tool::BasePane, Tool::Syntax, Tool::SoftWrap];
+
+#[gpui_kit::test]
+fn the_view_toggles_show_pressed_while_their_view_is_on(cx: &mut TestAppContext) {
+    let (window, _) = in_result(cx, mixed());
+    // The defaults: base pane and soft wrap off, syntax colours on (spec §6.4).
+    assert_eq!(pressed_of(cx, window, VIEW_TOOLS), [Some(false), Some(true), Some(false)]);
+    click(cx, window, Tool::BasePane.id());
+    assert_eq!(pressed_of(cx, window, VIEW_TOOLS), [Some(true), Some(true), Some(false)]);
+    click(cx, window, Tool::Syntax.id());
+    assert_eq!(pressed_of(cx, window, VIEW_TOOLS), [Some(true), Some(false), Some(false)]);
+    click(cx, window, Tool::SoftWrap.id());
+    assert_eq!(pressed_of(cx, window, VIEW_TOOLS), [Some(true), Some(false), Some(true)]);
+    click(cx, window, Tool::BasePane.id());
+    assert_eq!(pressed_of(cx, window, VIEW_TOOLS), [Some(false), Some(false), Some(true)]);
+    // The key and the menu turn the same state.
+    dispatch(cx, window, &merge_app::ToggleSoftWrap);
+    assert_eq!(pressed_of(cx, window, VIEW_TOOLS), [Some(false), Some(false), Some(false)]);
+}
+
+#[gpui_kit::test]
+fn only_the_toggles_report_a_pressed_state(cx: &mut TestAppContext) {
+    let (window, _) = in_result(cx, mixed());
+    let actions = [
+        Tool::PreviousDifference,
+        Tool::NextDifference,
+        Tool::PreviousConflict,
+        Tool::NextConflict,
+        Tool::LeftThenRight,
+        Tool::Undo,
+        Tool::Redo,
+        Tool::Find,
+        Tool::GoToLine,
+    ];
+    assert_eq!(pressed_of(cx, window, actions), [None; 9]);
 }
 
 #[gpui_kit::test]

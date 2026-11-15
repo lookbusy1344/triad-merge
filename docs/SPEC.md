@@ -434,7 +434,7 @@ Each action has a menu item. The toolbar holds the actions people click. Each to
 - Previous and next difference form one control, `‹ Difference ›`: two icon buttons with the label between them. Previous and next conflict form `‹ Conflict ›`.
 - Left, Base and Right each show their label. Each is a toggle button, shown pressed while the current region's pick holds its source, an automatic region's side included (§4.4); an unresolved conflict shows none pressed. Picking nothing has no button: Clear Choice is in the Merge menu and on ⌘0.
 - Both is a split button. It takes left then right; its menu, named "Take both sides in either order", offers Left then right and Right then left, each with its key, in the toolbar's label text. The menu opens with no row selected. ↓ and ↑ select the next and previous row, wrapping, and start at the first and last. Enter runs the selected row; with none selected it does nothing. A row, Escape or a click outside closes the menu and gives the focus back.
-- Undo, Redo, Base pane, Find, Go to line, Syntax and Soft Wrap show icons alone.
+- Undo, Redo, Base pane, Find, Go to line, Syntax and Soft Wrap show icons alone. Base pane, Syntax and Soft Wrap are toggle buttons, shown pressed while the View menu ticks their item, in the merge and diff windows alike. The other controls carry no pressed state.
 
 A merge window narrower than 1052 px shows no labels, so the toolbar and the longest conflict badge fit down to 788 px. In a merge of more than two sides the threshold grows by the width of the badge's sides. The diff window's toolbar has no width rule: it holds `‹ Difference ›`, Undo, Redo, Find, Syntax and Soft Wrap. A toolbar click, or a pick from the Both menu, leaves the focus where it was. The menus:
 

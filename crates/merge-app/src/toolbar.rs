@@ -17,7 +17,7 @@ use crate::{
     Redo, TakeLeftThenRight, TakeRightThenLeft, ToggleBase, ToggleBasePane, ToggleLeft,
     ToggleRight, ToggleSoftWrap, ToggleSyntax, Undo,
 };
-use crate::{logo, menu_bar, strings};
+use crate::{ViewTicks, logo, menu_bar, strings};
 
 /// A toolbar button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -133,6 +133,17 @@ impl Labels {
 /// The tools that toggle a source in the current region's pick.
 pub(crate) const PICKS: [Tool; 3] = [Tool::Left, Tool::Base, Tool::Right];
 
+/// The view toggles that `ticks` turns on, as the View menu ticks them.
+pub(crate) fn views_on(ticks: ViewTicks) -> impl Iterator<Item = Tool> {
+    [
+        (Tool::BasePane, ticks.base_pane),
+        (Tool::Syntax, ticks.syntax),
+        (Tool::SoftWrap, ticks.soft_wrap),
+    ]
+    .into_iter()
+    .filter_map(|(tool, on)| on.then_some(tool))
+}
+
 /// The merge window's controls, in groups, from left to right.
 pub(crate) const GROUPS: [&[Control]; 4] = [
     &[
@@ -203,7 +214,7 @@ pub(crate) fn mark(dark: bool) -> Button {
 }
 
 /// A toolbar of `groups`, labelled `label`, whose tooltips show the keys in `context`, with
-/// text of `text_size`. The pick buttons in `pressed` show pressed.
+/// text of `text_size`. The toggles in `pressed` show pressed.
 pub(crate) fn bar(
     label: &'static str,
     groups: &[&[Control]],
@@ -239,10 +250,9 @@ fn render(
     pressed: &[Tool],
 ) -> AnyElement {
     match control {
-        // A pick button is a toggle: pressed while the current region takes its source.
         Control::Button(tool) => tool
             .button(context, labels, text_size)
-            .when(tool.source().is_some(), |button| {
+            .when(tool.toggles(), |button| {
                 let on = pressed.contains(&tool);
                 button.selected(on).toggled(on)
             })
@@ -311,6 +321,16 @@ impl Tool {
             .on_click(move |_: &ClickEvent, window, cx| {
                 window.dispatch_action(action.boxed_clone(), cx);
             })
+    }
+
+    /// Whether the button is a toggle, shown pressed while its state is on: a source in the
+    /// current region's pick, or a view.
+    #[must_use]
+    pub const fn toggles(self) -> bool {
+        matches!(
+            self,
+            Self::Left | Self::Base | Self::Right | Self::BasePane | Self::Syntax | Self::SoftWrap
+        )
     }
 
     /// The source a pick button toggles in the current region.

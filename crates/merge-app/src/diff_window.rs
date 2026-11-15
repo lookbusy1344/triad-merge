@@ -2147,7 +2147,7 @@ impl Render for DiffWindow {
                 cx.theme().is_dark(),
                 Labels::Shown,
                 self.typography.toolbar_size,
-                &[],
+                &toolbar::views_on(ticks).collect::<Vec<_>>(),
             ))
             .children(render_banner(self.settings_errors.as_ref(), |v| &mut v.settings_errors, cx))
             .when_some(self.banner.clone(), |d, banner| {

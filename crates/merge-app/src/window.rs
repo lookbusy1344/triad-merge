@@ -2725,9 +2725,14 @@ impl MergeWindow {
         if self.session.document().inputs().is_three_way() { Badge::Counts } else { Badge::Sides }
     }
 
-    /// The toolbar, with labels when `window` is wide enough for them, and pressed pick
-    /// buttons for the sources the current region takes.
-    fn render_toolbar(&self, window: &Window, cx: &App) -> impl IntoElement + use<> {
+    /// The toolbar, with labels when `window` is wide enough for them. The pick buttons of
+    /// the sources the current region takes show pressed, and the views `ticks` turns on.
+    fn render_toolbar(
+        &self,
+        ticks: crate::ViewTicks,
+        window: &Window,
+        cx: &App,
+    ) -> impl IntoElement + use<> {
         let (tones, dark) = (self.tones(cx), cx.theme().is_dark());
         let text = strings::conflict_badge(&self.counts, self.conflict_number, self.conflict_sides);
         let badge = text.map(|text| {
@@ -2747,6 +2752,7 @@ impl MergeWindow {
         let pressed: Vec<Tool> = PICKS
             .into_iter()
             .filter(|tool| tool.source().is_some_and(|source| doc.is_picked(region, source)))
+            .chain(toolbar::views_on(ticks))
             .collect();
         toolbar::bar(
             strings::TOOLBAR,
@@ -3814,7 +3820,7 @@ impl Render for MergeWindow {
             .font_family(self.typography.font.clone().unwrap_or(mono))
             .text_size(self.typography.size)
             .children(crate::menu_bar::render(self.menu_bar.bar(), cx.theme().is_dark()))
-            .child(self.render_toolbar(window, cx))
+            .child(self.render_toolbar(ticks, window, cx))
             .children(render_banner(self.settings_errors.as_ref(), |v| &mut v.settings_errors, cx))
             .child(input_headings)
             .child(self.render_rows(cx))
