@@ -92,7 +92,7 @@ use crate::sideways;
 use crate::strings::prompt;
 use crate::syntax::{self, Colouring, InputSyntax};
 use crate::tones::{Palette, Tones};
-use crate::toolbar::{self, Badge, GROUPS, Labels};
+use crate::toolbar::{self, Badge, GROUPS, Labels, PICKS, Tool};
 use crate::wrap::Wrap;
 use crate::{
     Cancel, CarryMovedEdit, ClearChoice, CopyInput, ExitCode, Find, GoToLine, LINE_HEIGHT,
@@ -2725,7 +2725,8 @@ impl MergeWindow {
         if self.session.document().inputs().is_three_way() { Badge::Counts } else { Badge::Sides }
     }
 
-    /// The toolbar, with labels when `window` is wide enough for them.
+    /// The toolbar, with labels when `window` is wide enough for them, and pressed pick
+    /// buttons for the sources the current region takes.
     fn render_toolbar(&self, window: &Window, cx: &App) -> impl IntoElement + use<> {
         let (tones, dark) = (self.tones(cx), cx.theme().is_dark());
         let text = strings::conflict_badge(&self.counts, self.conflict_number, self.conflict_sides);
@@ -2742,6 +2743,11 @@ impl MergeWindow {
                 .text_size(self.typography.toolbar_size)
                 .child(text)
         });
+        let (doc, region) = (self.session.document(), self.current_region(cx));
+        let pressed: Vec<Tool> = PICKS
+            .into_iter()
+            .filter(|tool| tool.source().is_some_and(|source| doc.is_picked(region, source)))
+            .collect();
         toolbar::bar(
             strings::TOOLBAR,
             &GROUPS,
@@ -2752,6 +2758,7 @@ impl MergeWindow {
                 toolbar::labels_min_width(self.typography.toolbar_size, self.badge(), window),
             ),
             self.typography.toolbar_size,
+            &pressed,
         )
         .child(div().flex_1())
         .children(badge)

@@ -451,7 +451,6 @@ pub(crate) fn tool_label(tool: Tool) -> Option<&'static str> {
         Tool::Left => Some("Left"),
         Tool::Base => Some("Base"),
         Tool::Right => Some("Right"),
-        Tool::Clear => Some("Clear"),
         Tool::LeftThenRight => Some("Both"),
         Tool::NextDifference
         | Tool::NextConflict
@@ -483,7 +482,6 @@ pub(crate) fn tool_name(tool: Tool) -> &'static str {
         Tool::Left => "Toggle left in the current region",
         Tool::Base => "Toggle base in the current region",
         Tool::Right => "Toggle right in the current region",
-        Tool::Clear => "Clear the current region's choice",
         Tool::LeftThenRight => "Take left then right in the current region",
         Tool::RightThenLeft => "Take right then left in the current region",
         Tool::Undo => "Undo",

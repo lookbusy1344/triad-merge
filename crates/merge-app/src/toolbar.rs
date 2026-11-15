@@ -2,19 +2,20 @@
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::{Sizable as _, h_flex};
+use gpui_kit::component::{Selectable as _, Sizable as _, h_flex};
 use gpui_kit::{
     Action, AnyElement, ClickEvent, ElementId, InteractiveElement as _, IntoElement, ParentElement,
     Pixels, Role, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div,
-    px,
+    prelude::FluentBuilder as _, px,
 };
+use merge_core::merge3::{LEFT, RIGHT, Source};
 
 use crate::split_menu::{Item, SplitMenu};
 use crate::window::TOOLBAR_ID;
 use crate::{
-    About, ClearChoice, Find, GoToLine, NextConflict, NextDifference, PreviousConflict,
-    PreviousDifference, Redo, TakeLeftThenRight, TakeRightThenLeft, ToggleBase, ToggleBasePane,
-    ToggleLeft, ToggleRight, ToggleSoftWrap, ToggleSyntax, Undo,
+    About, Find, GoToLine, NextConflict, NextDifference, PreviousConflict, PreviousDifference,
+    Redo, TakeLeftThenRight, TakeRightThenLeft, ToggleBase, ToggleBasePane, ToggleLeft,
+    ToggleRight, ToggleSoftWrap, ToggleSyntax, Undo,
 };
 use crate::{logo, menu_bar, strings};
 
@@ -28,7 +29,6 @@ pub enum Tool {
     Left,
     Base,
     Right,
-    Clear,
     LeftThenRight,
     RightThenLeft,
     Undo,
@@ -130,6 +130,9 @@ impl Labels {
     }
 }
 
+/// The tools that toggle a source in the current region's pick.
+pub(crate) const PICKS: [Tool; 3] = [Tool::Left, Tool::Base, Tool::Right];
+
 /// The merge window's controls, in groups, from left to right.
 pub(crate) const GROUPS: [&[Control]; 4] = [
     &[
@@ -140,7 +143,6 @@ pub(crate) const GROUPS: [&[Control]; 4] = [
         Control::Button(Tool::Left),
         Control::Button(Tool::Base),
         Control::Button(Tool::Right),
-        Control::Button(Tool::Clear),
         Control::Both,
     ],
     &[Control::Button(Tool::Undo), Control::Button(Tool::Redo)],
@@ -201,7 +203,7 @@ pub(crate) fn mark(dark: bool) -> Button {
 }
 
 /// A toolbar of `groups`, labelled `label`, whose tooltips show the keys in `context`, with
-/// text of `text_size`.
+/// text of `text_size`. The pick buttons in `pressed` show pressed.
 pub(crate) fn bar(
     label: &'static str,
     groups: &[&[Control]],
@@ -209,6 +211,7 @@ pub(crate) fn bar(
     dark: bool,
     labels: Labels,
     text_size: Pixels,
+    pressed: &[Tool],
 ) -> impl IntoElement + ParentElement + use<> {
     // Linux and Windows show the mark in the title bar.
     let mark = (!menu_bar::IN_WINDOW).then(|| mark(dark));
@@ -222,9 +225,9 @@ pub(crate) fn bar(
         .gap_4()
         .children(mark)
         .children(groups.iter().map(|group| {
-            h_flex()
-                .gap_1()
-                .children(group.iter().map(|&control| render(control, context, labels, text_size)))
+            h_flex().gap_1().children(
+                group.iter().map(|&control| render(control, context, labels, text_size, pressed)),
+            )
         }))
 }
 
@@ -233,9 +236,17 @@ fn render(
     context: &'static str,
     labels: Labels,
     text_size: Pixels,
+    pressed: &[Tool],
 ) -> AnyElement {
     match control {
-        Control::Button(tool) => tool.button(context, labels, text_size).into_any_element(),
+        // A pick button is a toggle: pressed while the current region takes its source.
+        Control::Button(tool) => tool
+            .button(context, labels, text_size)
+            .when(tool.source().is_some(), |button| {
+                let on = pressed.contains(&tool);
+                button.selected(on).toggled(on)
+            })
+            .into_any_element(),
         Control::Pair(previous, next) => h_flex()
             .child(previous.button(context, Labels::Hidden, text_size))
             .children(
@@ -302,6 +313,17 @@ impl Tool {
             })
     }
 
+    /// The source a pick button toggles in the current region.
+    #[must_use]
+    pub const fn source(self) -> Option<Source> {
+        match self {
+            Self::Left => Some(Source::Side(LEFT)),
+            Self::Base => Some(Source::Base(0)),
+            Self::Right => Some(Source::Side(RIGHT)),
+            _ => None,
+        }
+    }
+
     /// The action the button runs, the same one as its key.
     pub(crate) fn action(self) -> Box<dyn Action> {
         match self {
@@ -312,7 +334,6 @@ impl Tool {
             Self::Left => Box::new(ToggleLeft),
             Self::Base => Box::new(ToggleBase),
             Self::Right => Box::new(ToggleRight),
-            Self::Clear => Box::new(ClearChoice),
             Self::LeftThenRight => Box::new(TakeLeftThenRight),
             Self::RightThenLeft => Box::new(TakeRightThenLeft),
             Self::Undo => Box::new(Undo),
@@ -335,7 +356,6 @@ impl Tool {
             Self::Left => IconName::SquareArrowLeft,
             Self::Base => IconName::SquareDot,
             Self::Right => IconName::SquareArrowRight,
-            Self::Clear => IconName::Eraser,
             Self::LeftThenRight => IconName::ArrowLeftRight,
             Self::RightThenLeft => IconName::ArrowRightLeft,
             Self::Undo => IconName::Undo2,
@@ -356,7 +376,7 @@ mod tests {
     use super::*;
 
     /// The number of `Tool` variants.
-    const TOOL_COUNT: usize = 17;
+    const TOOL_COUNT: usize = 16;
 
     #[test]
     fn every_tool_has_its_own_icon() {

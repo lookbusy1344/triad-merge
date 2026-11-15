@@ -241,15 +241,49 @@ fn toolbar_choices_act_on_the_current_region(cx: &mut TestAppContext) {
         resolution(cx),
         Resolution::Pick(vec![Source::Side(1), Source::Side(0), Source::Base(0)])
     );
-    click(cx, window, Tool::Clear.id());
-    assert_eq!(resolution(cx), Resolution::Pick(Vec::new()));
+    click(cx, window, Tool::Right.id());
+    assert_eq!(resolution(cx), Resolution::Pick(vec![Source::Side(0), Source::Base(0)]));
     click(cx, window, Tool::Undo.id());
     assert_eq!(
         resolution(cx),
         Resolution::Pick(vec![Source::Side(1), Source::Side(0), Source::Base(0)])
     );
     click(cx, window, Tool::Redo.id());
-    assert_eq!(resolution(cx), Resolution::Pick(Vec::new()));
+    assert_eq!(resolution(cx), Resolution::Pick(vec![Source::Side(0), Source::Base(0)]));
+}
+
+/// Whether Left, Base and Right show pressed, in that order.
+fn pressed(cx: &mut TestAppContext, window: AnyWindowHandle) -> [Option<bool>; 3] {
+    let mut state = None;
+    act(cx, window, |window, _| {
+        state = Some(
+            [Tool::Left, Tool::Base, Tool::Right].map(|tool| window.find(tool.id()).checked()),
+        );
+    });
+    state.expect("the window ran")
+}
+
+#[gpui_kit::test]
+fn the_pick_buttons_show_pressed_while_the_current_region_takes_their_source(
+    cx: &mut TestAppContext,
+) {
+    const NONE: [Option<bool>; 3] = [Some(false); 3];
+    let (window, _) = in_result(cx, mixed());
+    // Region 0 is unchanged.
+    assert_eq!(pressed(cx, window), NONE);
+    click(cx, window, Tool::NextConflict.id());
+    assert_eq!(pressed(cx, window), NONE, "an unresolved conflict picks nothing");
+    click(cx, window, Tool::Right.id());
+    assert_eq!(pressed(cx, window), [Some(false), Some(false), Some(true)]);
+    click(cx, window, Tool::Left.id());
+    assert_eq!(pressed(cx, window), [Some(true), Some(false), Some(true)]);
+    click(cx, window, Tool::Base.id());
+    assert_eq!(pressed(cx, window), [Some(true); 3]);
+    click(cx, window, Tool::Right.id());
+    assert_eq!(pressed(cx, window), [Some(true), Some(true), Some(false)]);
+    // Region 3 takes the left side automatically.
+    click(cx, window, Tool::NextDifference.id());
+    assert_eq!(pressed(cx, window), [Some(true), Some(false), Some(false)]);
 }
 
 #[gpui_kit::test]
@@ -460,11 +494,10 @@ fn each_navigation_pair_shows_one_label(cx: &mut TestAppContext) {
 }
 
 /// The choice tools keep their labels; the rest show icons alone.
-const LABELLED: [(Tool, bool); 12] = [
+const LABELLED: [(Tool, bool); 11] = [
     (Tool::Left, true),
     (Tool::Base, true),
     (Tool::Right, true),
-    (Tool::Clear, true),
     (Tool::LeftThenRight, true),
     (Tool::Undo, false),
     (Tool::Redo, false),

@@ -432,7 +432,7 @@ The whole flow works from the keyboard. The window opens with the focus in the r
 Each action has a menu item. The toolbar holds the actions people click. Each toolbar control shows a Lucide icon; its tooltip and accessible name name the action. A label, in text 60% of a small button's size, goes only on the controls that pick:
 
 - Previous and next difference form one control, `‹ Difference ›`: two icon buttons with the label between them. Previous and next conflict form `‹ Conflict ›`.
-- Left, Base, Right and Clear each show their label.
+- Left, Base and Right each show their label. Each is a toggle button, shown pressed while the current region's pick holds its source, an automatic region's side included (§4.4); an unresolved conflict shows none pressed. Picking nothing has no button: Clear Choice is in the Merge menu and on ⌘0.
 - Both is a split button. It takes left then right; its menu, named "Take both sides in either order", offers Left then right and Right then left, each with its key, in the toolbar's label text. The menu opens with no row selected. ↓ and ↑ select the next and previous row, wrapping, and start at the first and last. Enter runs the selected row; with none selected it does nothing. A row, Escape or a click outside closes the menu and gives the focus back.
 - Undo, Redo, Base pane, Find, Go to line, Syntax and Soft Wrap show icons alone.
 

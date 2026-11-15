@@ -54,7 +54,6 @@ fn every_tool_is_a_named_button_in_a_toolbar(cx: &mut TestAppContext) {
         (Tool::Left, "Toggle left in the current region"),
         (Tool::Base, "Toggle base in the current region"),
         (Tool::Right, "Toggle right in the current region"),
-        (Tool::Clear, "Clear the current region's choice"),
         (Tool::LeftThenRight, "Take left then right in the current region"),
         (Tool::Undo, "Undo"),
         (Tool::Redo, "Redo"),
