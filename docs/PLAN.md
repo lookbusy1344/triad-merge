@@ -65,7 +65,6 @@ In order. Each is one or more commits.
 | Merge window folds: the untouched lines of an unchanged region whose result is edited | A line diff of the region | §G2 |
 | Ruler marks with folds: the marks keep their place in the whole file while the thumb follows display rows | A choice between the two | §G2 |
 | A key that opens the fold next to the caret | — | §G2 |
-| Moved blocks: a jump to the block's first line | — | §G5 |
 | Review and diff features: blank lines in a merge (§G4), §G6–§G14 | Owner's choices on §G15's open points for §G4, §G6 and §G8 | G |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
 | The absorb oracle's generator builds text files only: no renames, executable bits, symlinks, conflicted inputs or immutable commits | — | §I5 |
@@ -119,9 +118,8 @@ Each filter applies when lines are interned (`diff::line_key`), under both seman
 
 ### G5 Moved code in the two-way diff
 
-Done: the matcher, `diff2::moves` (spec §4.6, `DESIGN.md` §A4.7), recomputed and installed with the regions; `moves` in `diff --inspect` (`docs/json-schema.md`); both ends in the move tone on the bands and the ruler, with an `M` gutter mark and a pill naming the other end's line, each of which, as Go to Other End of Move (⇧⌘M) does, goes to the other end (spec §5, `DESIGN.md` §A6.5).
+Done: the matcher, `diff2::moves` (spec §4.6, `DESIGN.md` §A4.7), recomputed and installed with the regions; `moves` in `diff --inspect` (`docs/json-schema.md`); both ends in the move tone on the bands and the ruler, with an `M` gutter mark and a pill naming the other end's line, each of which, as Go to Other End of Move (⇧⌘M) does, goes to the block's first line at the other end (spec §5, `DESIGN.md` §A6.5).
 
-- Open: the jump lands on its region's start, not the block's first line.
 - Later: near matches, and a moved block that was also edited, with an intra-line diff.
 
 ### G6 Directory diff

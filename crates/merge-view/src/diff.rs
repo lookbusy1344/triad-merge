@@ -138,6 +138,15 @@ pub struct MoveEnd {
     pub other_lines: Range<usize>,
 }
 
+/// Where a jump to a move's other end lands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MoveTarget {
+    /// The region that holds the other end.
+    pub region: RegionIx,
+    /// The byte where the other end's first line starts, on the other side.
+    pub at: usize,
+}
+
 /// The ends of the moves on `side`, in line order. None while the regions lag the text,
 /// since their lines may no longer match it.
 #[must_use]
@@ -161,8 +170,11 @@ pub fn move_ends(doc: &DiffDocument, side: Side) -> Vec<MoveEnd> {
 /// The region of the other end of the move whose end on `side` holds `line`. None while
 /// the regions lag the text.
 #[must_use]
-pub fn move_target(doc: &DiffDocument, side: Side, line: usize) -> Option<RegionIx> {
-    move_ends(doc, side).into_iter().find(|e| e.lines.contains(&line)).map(|e| e.other_region)
+pub fn move_target(doc: &DiffDocument, side: Side, line: usize) -> Option<MoveTarget> {
+    move_ends(doc, side).into_iter().find(|e| e.lines.contains(&line)).map(|e| MoveTarget {
+        region: e.other_region,
+        at: line_bytes(doc, side.other(), e.other_lines).start,
+    })
 }
 
 /// The byte range of `region` in `side`'s current text.
@@ -355,12 +367,15 @@ mod tests {
     #[test]
     fn a_line_of_a_move_end_names_the_other_end() {
         let d = moved();
-        assert_eq!(move_target(&d, Side::Left, 0), Some(RegionIx::new(2)));
-        assert_eq!(move_target(&d, Side::Left, 1), Some(RegionIx::new(2)));
+        let target = |region, at| Some(MoveTarget { region: RegionIx::new(region), at });
+        // Right bytes: a 0, b 2, c 4, n 6, m1 8. The jump lands on m1, not on n, where
+        // region 2 starts.
+        assert_eq!(move_target(&d, Side::Left, 0), target(2, 8));
+        assert_eq!(move_target(&d, Side::Left, 1), target(2, 8));
         assert_eq!(move_target(&d, Side::Left, 2), None, "a is unchanged");
         assert_eq!(move_target(&d, Side::Right, 3), None, "n is new, not moved");
-        assert_eq!(move_target(&d, Side::Right, 4), Some(RegionIx::new(0)));
-        assert_eq!(move_target(&d, Side::Right, 5), Some(RegionIx::new(0)));
+        assert_eq!(move_target(&d, Side::Right, 4), target(0, 0));
+        assert_eq!(move_target(&d, Side::Right, 5), target(0, 0));
         assert_eq!(move_target(&d, Side::Right, 6), None, "o is new, not moved");
     }
 

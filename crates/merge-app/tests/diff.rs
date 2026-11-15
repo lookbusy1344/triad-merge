@@ -783,7 +783,7 @@ fn a_click_on_a_move_mark_goes_to_the_other_end(cx: &mut TestAppContext) {
     let o = open(cx, &Files::new(MOVED_LEFT, MOVED_RIGHT));
     focus_at(cx, &o, Side::Left, 0);
     click_gutter_mark(cx, &o, Side::Left, 1);
-    assert_eq!(carets(cx, &o.view), (12, 6), "both carets at the start of region 2");
+    assert_eq!(carets(cx, &o.view), (12, 8), "the left caret at region 2, the right on m1");
     click_gutter_mark(cx, &o, Side::Right, 4);
     assert_eq!(carets(cx, &o.view), (0, 0), "back at the start of region 0");
     act(cx, o.window, |window, cx| window.input("z", cx));
@@ -844,7 +844,7 @@ fn a_move_pill_sits_on_its_blocks_first_row_against_the_panes_right_edge(cx: &mu
 fn a_click_on_a_move_pill_goes_to_the_other_end(cx: &mut TestAppContext) {
     let o = open(cx, &Files::new(MOVED_LEFT, MOVED_RIGHT));
     act(cx, o.window, |window, cx| window.click(move_pill_id(Side::Left, RegionIx::new(0)), cx));
-    assert_eq!(carets(cx, &o.view), (12, 6), "both carets at the start of region 2");
+    assert_eq!(carets(cx, &o.view), (12, 8), "the left caret at region 2, the right on m1");
     act(cx, o.window, |window, cx| window.click(move_pill_id(Side::Right, RegionIx::new(0)), cx));
     assert_eq!(carets(cx, &o.view), (0, 0), "back at the start of region 0");
 }
@@ -876,7 +876,7 @@ fn the_move_key_goes_from_the_caret_to_the_other_end(cx: &mut TestAppContext) {
     // Left byte 4 is inside `m2`.
     focus_at(cx, &o, Side::Left, 4);
     press(cx, &o, "secondary-shift-m");
-    assert_eq!(carets(cx, &o.view), (12, 6), "both carets at the start of region 2");
+    assert_eq!(carets(cx, &o.view), (12, 8), "the left caret at region 2, the right on m1");
     // The focus is now right; move its caret into `m1`, right byte 9.
     o.view.update(cx, |view, cx| {
         view.editor(Side::Right).update(cx, |state, cx| state.set_selected_range(9..9, cx));

@@ -1189,16 +1189,27 @@ impl DiffWindow {
 
     /// Move both carets to the start of `region` and make it current, with the focus in `side`.
     fn go_to(&mut self, region: RegionIx, side: Side, window: &mut Window, cx: &mut Context<Self>) {
+        let at = region_bytes(&self.doc, side, region).start;
+        self.go_to_at(region, side, at, window, cx);
+    }
+    /// Goes to `region` as `go_to` does, with `side`'s caret at byte `at` inside it.
+    fn go_to_at(
+        &mut self,
+        region: RegionIx,
+        side: Side,
+        at: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let other = region_bytes(&self.doc, side.other(), region).start;
         // Moving a caret focuses its editor, so `side` goes last and keeps the focus.
-        for to in [side.other(), side] {
-            let at = region_bytes(&self.doc, to, region).start;
+        for (to, at) in [(side.other(), other), (side, at)] {
             self.pane(to).editor.update(cx, |state, cx| {
                 let position = state.text().offset_to_position(at);
                 state.set_cursor_position(position, window, cx);
             });
         }
-        self.pinned =
-            Some(Pin { side, region, caret: region_bytes(&self.doc, side, region).start });
+        self.pinned = Some(Pin { side, region, caret: at });
         self.reveal = Some(region);
         cx.notify();
     }
@@ -1212,9 +1223,9 @@ impl DiffWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(region) = move_target(&self.doc, side, line) {
-            self.go_to(region, side.other(), window, cx);
-            self.start_flash(region, cx);
+        if let Some(target) = move_target(&self.doc, side, line) {
+            self.go_to_at(target.region, side.other(), target.at, window, cx);
+            self.start_flash(target.region, cx);
         }
     }
 
