@@ -1,6 +1,6 @@
 // Modified for Triad: full-line fills and gutter marks for range decorations,
-// spacer rows and their notes, line labels, tests of hidden lines and the spacer
-// click, and tests of the editor's tab stops.
+// spacer rows and their notes, line labels, tests of hidden lines, the spacer
+// click and the gutter mark click, and tests of the editor's tab stops.
 // See PATCHES.md.
 use crate::input::{InputExtras as _, InputModeKind};
 use gpui::Corners;
@@ -69,7 +69,7 @@ const SPACER_NOTE_BORDER_WIDTH: Pixels = px(1.);
 /// The gutter mark column: a label, then a strip beside the text.
 const GUTTER_MARK_LABEL_WIDTH: Pixels = px(12.);
 const GUTTER_MARK_STRIP_WIDTH: Pixels = px(3.);
-const GUTTER_MARK_WIDTH: Pixels = px(15.);
+pub(super) const GUTTER_MARK_WIDTH: Pixels = px(15.);
 const MIN_LINE_NUMBER_DIGITS: usize = 3;
 const MAX_LINE_NUMBER_DIGITS: usize = 7;
 const MAX_DISPLAYED_LINE_NUMBER: usize = 9_999_999;
@@ -2798,7 +2798,7 @@ fn visible_decoration_spans(last_layout: &LastLayout) -> Vec<Range<usize>> {
 
 /// The left edge of the gutter mark column, relative to the gutter. The column
 /// sits between the line numbers and the fold icons.
-fn gutter_mark_column_left(line_number_width: Pixels, folding: bool) -> Pixels {
+pub(super) fn gutter_mark_column_left(line_number_width: Pixels, folding: bool) -> Pixels {
     let fold_width = if folding {
         FOLD_ICON_HITBOX_WIDTH
     } else {
@@ -7097,6 +7097,72 @@ mod tests {
             cx.simulate_mouse_up(at_row(row), MouseButton::Left, Modifiers::default());
         }
         assert_eq!(*clicks.borrow(), [3, 5]);
+    }
+
+    /// The lines of each `GutterMarkClick` after a left press and release at
+    /// each of `points`, given the gutter mark column's left edge, the line
+    /// height and the editor's origin.
+    fn gutter_mark_clicks(
+        gutter_marks: bool,
+        points: impl Fn(Pixels, Pixels, Point<Pixels>) -> Vec<Point<Pixels>>,
+        cx: &mut TestAppContext,
+    ) -> Vec<usize> {
+        let (editor, window) = line_decoration_editor(cx, "a\nb\nc\nd", false, gutter_marks);
+        let mut cx = VisualTestContext::from_window(window.into(), cx);
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        let clicks = Rc::new(RefCell::new(Vec::new()));
+        let seen = clicks.clone();
+        let _subscription = cx.update(|_, cx| {
+            cx.subscribe(&editor, move |_, event: &InputEvent, _| {
+                if let InputEvent::GutterMarkClick { line } = event {
+                    seen.borrow_mut().push(*line);
+                }
+            })
+        });
+        let at = cx.update(|_, cx| {
+            let state = editor.read(cx);
+            let layout = state.last_layout.as_ref().unwrap();
+            let column = state.input_bounds.left()
+                + gutter_mark_column_left(layout.line_number_width, true);
+            points(column, layout.line_height, state.last_bounds.unwrap().origin)
+        });
+        for point in at {
+            cx.simulate_mouse_down(point, MouseButton::Left, Modifiers::default());
+            cx.simulate_mouse_up(point, MouseButton::Left, Modifiers::default());
+        }
+        clicks.take()
+    }
+
+    #[gpui::test]
+    fn a_click_in_the_gutter_mark_column_names_its_line(cx: &mut TestAppContext) {
+        let clicks = gutter_mark_clicks(
+            true,
+            |column, line_height, origin| {
+                let row = |row: f32| origin.y + line_height * row;
+                vec![
+                    point(column + px(1.), row(0.5)),
+                    point(column + GUTTER_MARK_WIDTH - px(1.), row(2.5)),
+                    // Left of the column, among the line numbers.
+                    point(column - px(1.), row(1.5)),
+                    // Right of it.
+                    point(column + GUTTER_MARK_WIDTH + px(1.), row(1.5)),
+                    // Below the last line.
+                    point(column + px(1.), row(4.5)),
+                ]
+            },
+            cx,
+        );
+        assert_eq!(clicks, [0, 2]);
+    }
+
+    #[gpui::test]
+    fn without_the_gutter_mark_column_a_click_there_names_nothing(cx: &mut TestAppContext) {
+        let clicks = gutter_mark_clicks(
+            false,
+            |column, line_height, origin| vec![point(column + px(1.), origin.y + line_height * 0.5)],
+            cx,
+        );
+        assert_eq!(clicks, Vec::<usize>::new());
     }
 
     // Triad: tab stops.

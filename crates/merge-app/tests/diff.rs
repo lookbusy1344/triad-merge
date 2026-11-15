@@ -755,6 +755,61 @@ fn next_and_previous_difference_move_both_carets(cx: &mut TestAppContext) {
     assert_eq!(carets(cx, &o.view), (2, 2), "no change before the first");
 }
 
+/// `m1 m2` moves below `a b c`, among new lines `n` and `o`. Regions: 0 the deletion of
+/// `m1 m2`, 1 `a b c`, 2 the insertion of `n m1 m2 o`. Left lines start at 0 3 6 8 10 12,
+/// right lines at 0 2 4 6 8 11 14 16.
+const MOVED_LEFT: &str = "m1\nm2\na\nb\nc\n";
+const MOVED_RIGHT: &str = "a\nb\nc\nn\nm1\nm2\no\n";
+
+fn click_gutter_mark(cx: &mut TestAppContext, o: &Opened, side: Side, line: usize) {
+    o.view.update(cx, |view, cx| {
+        view.editor(side).update(cx, |_, cx| {
+            cx.emit(gpui_kit::component::input::InputEvent::GutterMarkClick { line });
+        });
+    });
+    cx.run_until_parked();
+}
+
+#[gpui_kit::test]
+fn a_moved_block_has_its_own_band_at_each_end(cx: &mut TestAppContext) {
+    let o = open(cx, &Files::new(MOVED_LEFT, MOVED_RIGHT));
+    let bands = |cx: &mut TestAppContext, side| cx.read(|cx| o.view.read(cx).band_ranges(side, cx));
+    assert_eq!(bands(cx, Side::Left), [0..6]);
+    assert_eq!(bands(cx, Side::Right), [6..8, 8..14, 14..16]);
+}
+
+#[gpui_kit::test]
+fn a_click_on_a_move_mark_goes_to_the_other_end(cx: &mut TestAppContext) {
+    let o = open(cx, &Files::new(MOVED_LEFT, MOVED_RIGHT));
+    focus_at(cx, &o, Side::Left, 0);
+    click_gutter_mark(cx, &o, Side::Left, 1);
+    assert_eq!(carets(cx, &o.view), (12, 6), "both carets at the start of region 2");
+    click_gutter_mark(cx, &o, Side::Right, 4);
+    assert_eq!(carets(cx, &o.view), (0, 0), "back at the start of region 0");
+    act(cx, o.window, |window, cx| window.input("z", cx));
+    assert_eq!(texts(cx, &o.view, Side::Left).0, format!("z{MOVED_LEFT}"), "the focus follows");
+    assert_eq!(texts(cx, &o.view, Side::Right).0, MOVED_RIGHT);
+}
+
+#[gpui_kit::test]
+fn a_click_beside_lines_no_move_holds_does_nothing(cx: &mut TestAppContext) {
+    let o = open(cx, &Files::new(MOVED_LEFT, MOVED_RIGHT));
+    focus_at(cx, &o, Side::Right, 6);
+    click_gutter_mark(cx, &o, Side::Right, 3);
+    click_gutter_mark(cx, &o, Side::Right, 6);
+    click_gutter_mark(cx, &o, Side::Left, 2);
+    assert_eq!(carets(cx, &o.view), (0, 6));
+}
+
+#[gpui_kit::test]
+fn a_move_mark_does_nothing_while_the_regions_lag_the_text(cx: &mut TestAppContext) {
+    let o = open(cx, &Files::new(MOVED_LEFT, MOVED_RIGHT));
+    type_at(cx, &o, Side::Right, 0, "z\n");
+    focus_at(cx, &o, Side::Right, 0);
+    click_gutter_mark(cx, &o, Side::Left, 0);
+    assert_eq!(carets(cx, &o.view), (0, 0));
+}
+
 #[gpui_kit::test]
 fn the_bracket_chords_go_to_differences(cx: &mut TestAppContext) {
     let files = Files::new(FIVE_LEFT, FIVE_RIGHT);

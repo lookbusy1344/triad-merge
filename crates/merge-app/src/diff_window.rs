@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use async_channel::Receiver;
 use gpui_kit::base::ScrollbarMode;
-use gpui_kit::base::input::{InputHighlighterFactory, SpacerNote};
+use gpui_kit::base::input::{GutterMark, InputHighlighterFactory, SpacerNote};
 use gpui_kit::component::input::{
     Editor, EditorState, InputEvent, RangeDecoration, RangeDecorationCollection,
     RangeDecorationStyle, RopeExt as _,
@@ -45,8 +45,8 @@ use merge_session::origin::carry;
 use merge_session::repository::Handoff;
 use merge_syntax::language::Language;
 use merge_view::diff::{
-    self, Pin, changed_bytes, differences, first_change, held_region, next_change, previous_change,
-    region_bytes, spacers, spacers_by,
+    self, MOVE_MARK, Pin, differences, first_change, held_region, move_target, next_change,
+    previous_change, region_bytes, spacers, spacers_by,
 };
 use merge_view::fold::{self, Fold, FoldRow, LineEdit, Opened};
 use merge_view::scroll::{Follow, ScrollSync};
@@ -557,6 +557,9 @@ impl DiffWindow {
                 move |this, _, event: &InputEvent, window, cx| match event {
                     InputEvent::Change => this.send_edits(side, window, cx),
                     InputEvent::SpacerClick { line } => this.open_fold_above(side, *line, cx),
+                    InputEvent::GutterMarkClick { line } => {
+                        this.go_to_other_end(side, *line, window, cx);
+                    }
                     InputEvent::PressEnter { .. } | InputEvent::Focus | InputEvent::Blur => {}
                 },
             ));
@@ -635,6 +638,12 @@ impl DiffWindow {
     #[must_use]
     pub fn editor(&self, side: Side) -> &Entity<EditorState> {
         &self.pane(side).editor
+    }
+
+    /// The byte ranges of `side`'s bands, as the editor holds them.
+    #[must_use]
+    pub fn band_ranges(&self, side: Side, cx: &App) -> Vec<Range<usize>> {
+        self.pane(side).bands.get_ranges(cx)
     }
 
     /// Whether a diff of a snapshot of the text runs off the UI thread.
@@ -1181,6 +1190,21 @@ impl DiffWindow {
             Some(Pin { side, region, caret: region_bytes(&self.doc, side, region).start });
         self.reveal = Some(region);
         cx.notify();
+    }
+
+    /// Go to the other end of the move whose end on `side` holds `line`, as a jump does, with
+    /// the focus in the other pane. A line outside every move's end does nothing.
+    fn go_to_other_end(
+        &mut self,
+        side: Side,
+        line: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(region) = move_target(&self.doc, side, line) {
+            self.go_to(region, side.other(), window, cx);
+            self.start_flash(region, cx);
+        }
     }
 
     /// Blink a frame around `region` in each pane where it has lines (the editor drops an
@@ -2034,6 +2058,7 @@ fn new_pane(
         let mut state = EditorState::new(window, cx)
             .language(look.language)
             .line_number(true)
+            .gutter_marks(true)
             .folding(false)
             .indent_guides(false)
             .soft_wrap(look.soft_wrap)
@@ -2085,13 +2110,20 @@ fn carried(origins: &[Option<Carried>; 2], texts: [&Text; 2]) -> [Option<Annotat
     })
 }
 
-/// A full-line band over each of `side`'s changed regions.
+/// A full-line band over each of `side`'s changed regions, with each end of a move in the
+/// move tone and the move mark.
 fn bands(doc: &DiffDocument, side: Side, tones: &Tones) -> Vec<RangeDecoration> {
-    changed_bytes(doc, side)
-        .map(|bytes| {
-            RangeDecoration::new(bytes)
+    diff::bands(doc, side)
+        .into_iter()
+        .map(|band| {
+            let decoration = RangeDecoration::new(band.bytes)
                 .with_style(RangeDecorationStyle::FullLine)
-                .with_color(tones.band(diff::tone(side)))
+                .with_color(tones.band(band.tone));
+            match band.other_end {
+                Some(_) => decoration
+                    .with_gutter_mark(GutterMark::new(MOVE_MARK.label, tones.mark(MOVE_MARK.tone))),
+                None => decoration,
+            }
         })
         .collect()
 }

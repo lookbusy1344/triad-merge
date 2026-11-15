@@ -19,7 +19,7 @@ As of 2026-11-15.
 | M6 native resolution | Done: git stages a resolved save; jj snapshots before the read and after each save | D |
 | M7 syntax highlighting | Done: Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS | F |
 | p4merge parity | Done | E |
-| Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the core and `diff --inspect` (§G5) done; the rest open | G |
+| Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; the rest open | G |
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
 | jj-native features | Done: conflicts across a stack (`stack`, `resolve -r`), operation-log history (`history`, `diff --op`) and absorb by hunk (`absorb`); the stack window, with a preview of a save's effect on the descendants and a confirmation before a save changes them; the history window; the absorb window, by hunk; the three windows' lists follow `docs/STYLE.md` and work from the keys; the conflict badge names the sides a conflict keeps; absorb, `resolve -r` and the default revset aliases checked against jj's CLI (§I5); `stack`, `resolve -r`, `history`, `absorb` and a three-sided save checked through the built binary in scenario repositories (`script/test-jj-repos`) | I |
 
@@ -35,7 +35,7 @@ In order. Each is one or more commits.
 
 1. **Close M3.** Skipped for now by the owner. The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
 2. **Screen-reader support** (part J). Skipped for now by the owner: live status, conflict regions, scrolling the row table, in the order of §J7.
-3. **Review and diff features** (part G): moved code in the diff window, its tone, mark and jump (§G5); then §G6–§G14.
+3. **Review and diff features** (part G): §G6–§G14.
 4. **More grammars,** one commit each: C, C++, Java and Kotlin; then Markdown; then Bash, Ruby, PHP and SQL.
 5. **M4b** (§3) once the owner has the machines and the certificate.
 6. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
@@ -64,6 +64,7 @@ In order. Each is one or more commits.
 | Merge window folds: the untouched lines of an unchanged region whose result is edited | A line diff of the region | §G2 |
 | Ruler marks with folds: the marks keep their place in the whole file while the thumb follows display rows | A choice between the two | §G2 |
 | A key that opens the fold next to the caret | — | §G2 |
+| Moved blocks: a key that goes to the other end; a jump to the block's first line | — | §G5 |
 | Review and diff features: blank lines in a merge (§G4), §G6–§G14 | Owner's choices on §G15's open points for §G4, §G6 and §G8 | G |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
 | The absorb oracle's generator builds text files only: no renames, executable bits, symlinks, conflicted inputs or immutable commits | — | §I5 |
@@ -117,9 +118,9 @@ Each filter applies when lines are interned (`diff::line_key`), under both seman
 
 ### G5 Moved code in the two-way diff
 
-Done: the matcher, `diff2::moves` (spec §4.6, `DESIGN.md` §A4.7), recomputed and installed with the regions, and `moves` in `diff --inspect` (`docs/json-schema.md`).
+Done: the matcher, `diff2::moves` (spec §4.6, `DESIGN.md` §A4.7), recomputed and installed with the regions; `moves` in `diff --inspect` (`docs/json-schema.md`); both ends in the move tone with an `M` gutter mark, which goes to the other end (spec §5, `DESIGN.md` §A6.5).
 
-- Open: both ends show in a move tone with an `M` gutter mark; a click on the mark jumps to the other end. Next Difference visits both ends.
+- Open: a key that goes to the other end of a move from the caret; the jump lands on the block's first line, not its region's start.
 - Later: near matches, and a moved block that was also edited, with an intra-line diff.
 
 ### G6 Directory diff

@@ -3,10 +3,10 @@
 
 use std::ops::Range;
 
-use merge_core::diff2::{DiffDocument, Kind2, Region2, Side};
+use merge_core::diff2::{DiffDocument, Kind2, Move, Region2, Side};
 use merge_core::index::RegionIx;
 
-use crate::marks::Tone;
+use crate::marks::{Mark, Tone};
 
 /// The region navigation last made current on `side`, and the caret it left. While the caret
 /// stays there, that region is current: an empty region shares its start with the next one.
@@ -34,10 +34,78 @@ pub fn changed_bytes(doc: &DiffDocument, side: Side) -> impl Iterator<Item = Ran
 }
 
 fn bytes(doc: &DiffDocument, side: Side, region: &Region2) -> Range<usize> {
+    line_bytes(doc, side, region.lines(side))
+}
+
+/// The bytes of `lines` in `side`'s current text, clamped to the text.
+fn line_bytes(doc: &DiffDocument, side: Side, lines: Range<usize>) -> Range<usize> {
     let text = doc.text(side);
     let byte = |line: usize| text.line_to_byte(line.min(text.len_lines()));
-    let lines = region.lines(side);
     byte(lines.start)..byte(lines.end)
+}
+
+/// The gutter mark of both ends of a moved block (spec §4.6), in the tone of text from both
+/// sides.
+pub const MOVE_MARK: Mark = Mark { label: "M", tone: Tone::Both };
+pub const MOVE_TONE: Tone = MOVE_MARK.tone;
+
+/// A full-line band over a run of one side's lines.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Band {
+    pub bytes: Range<usize>,
+    pub tone: Tone,
+    /// For one end of a move, the region that holds the other end.
+    pub other_end: Option<RegionIx>,
+}
+
+/// `side`'s end of `m`: its lines there, and the region of the other end.
+fn end(m: &Move, side: Side) -> (Range<usize>, RegionIx) {
+    match side {
+        Side::Left => (m.left.clone(), m.to),
+        Side::Right => (m.right.clone(), m.from),
+    }
+}
+
+/// The bands of `side`'s changed regions in its current text: each region in the side's
+/// tone, with the lines of each move's end on this side cut out and banded in
+/// [`MOVE_TONE`]. Lines a region does not have on this side get no band.
+#[must_use]
+pub fn bands(doc: &DiffDocument, side: Side) -> Vec<Band> {
+    let mut ends: Vec<(Range<usize>, RegionIx)> =
+        doc.moves().iter().map(|m| end(m, side)).collect();
+    ends.sort_by_key(|(lines, _)| lines.start);
+    let mut ends = ends.into_iter().peekable();
+    let mut bands = Vec::new();
+    let mut push = |lines: Range<usize>, tone: Tone, other_end: Option<RegionIx>| {
+        let bytes = line_bytes(doc, side, lines);
+        if !bytes.is_empty() {
+            bands.push(Band { bytes, tone, other_end });
+        }
+    };
+    for region in changed(doc) {
+        let lines = region.lines(side);
+        let mut at = lines.start;
+        while let Some((moved, other)) = ends.next_if(|(moved, _)| moved.end <= lines.end) {
+            push(at..moved.start, tone(side), None);
+            at = moved.end;
+            push(moved, MOVE_TONE, Some(other));
+        }
+        push(at..lines.end, tone(side), None);
+    }
+    bands
+}
+
+/// The region of the other end of the move whose end on `side` holds `line`. None while
+/// the regions lag the text, since their lines may no longer match it.
+#[must_use]
+pub fn move_target(doc: &DiffDocument, side: Side, line: usize) -> Option<RegionIx> {
+    if !doc.regions_current() {
+        return None;
+    }
+    doc.moves()
+        .iter()
+        .map(|m| end(m, side))
+        .find_map(|(lines, other)| lines.contains(&line).then_some(other))
 }
 
 /// The byte range of `region` in `side`'s current text.
@@ -183,6 +251,72 @@ mod tests {
 
     fn bytes(doc: &DiffDocument, side: Side) -> Vec<Range<usize>> {
         changed_bytes(doc, side).collect()
+    }
+
+    /// `m1 m2` moves below `a b c`, among new lines `n` and `o`. Regions: the deletion of
+    /// `m1 m2`, `a b c`, the insertion of `n m1 m2 o`.
+    fn moved() -> DiffDocument {
+        doc("m1\nm2\na\nb\nc\n", "a\nb\nc\nn\nm1\nm2\no\n")
+    }
+
+    fn band(bytes: Range<usize>, tone: Tone, other_end: Option<usize>) -> Band {
+        Band { bytes, tone, other_end: other_end.map(RegionIx::new) }
+    }
+
+    #[test]
+    fn a_moved_block_takes_the_move_tone_at_both_ends() {
+        let d = moved();
+        assert_eq!(MOVE_TONE, Tone::Both);
+        assert_eq!(bands(&d, Side::Left), [band(0..6, Tone::Both, Some(2))]);
+        assert_eq!(
+            bands(&d, Side::Right),
+            [
+                band(6..8, Tone::Right, None),
+                band(8..14, Tone::Both, Some(0)),
+                band(14..16, Tone::Right, None)
+            ]
+        );
+    }
+
+    #[test]
+    fn changes_without_moves_band_in_their_sides_tone() {
+        let d = doc("a\nb\nd\n", "a\ncc\nd\n");
+        assert_eq!(bands(&d, Side::Left), [band(2..4, Tone::Left, None)]);
+        assert_eq!(bands(&d, Side::Right), [band(2..5, Tone::Right, None)]);
+        assert_eq!(bands(&doc("a\n", "a\nb\n"), Side::Left), []);
+    }
+
+    #[test]
+    fn a_move_at_the_start_of_its_region_leaves_the_rest_in_the_sides_tone() {
+        let d = doc("m1\nm2\na\nb\nc\n", "a\nb\nc\nm1\nm2\no\n");
+        assert_eq!(
+            bands(&d, Side::Right),
+            [band(6..12, Tone::Both, Some(0)), band(12..14, Tone::Right, None)]
+        );
+    }
+
+    #[test]
+    fn a_line_of_a_move_end_names_the_other_end() {
+        let d = moved();
+        assert_eq!(move_target(&d, Side::Left, 0), Some(RegionIx::new(2)));
+        assert_eq!(move_target(&d, Side::Left, 1), Some(RegionIx::new(2)));
+        assert_eq!(move_target(&d, Side::Left, 2), None, "a is unchanged");
+        assert_eq!(move_target(&d, Side::Right, 3), None, "n is new, not moved");
+        assert_eq!(move_target(&d, Side::Right, 4), Some(RegionIx::new(0)));
+        assert_eq!(move_target(&d, Side::Right, 5), Some(RegionIx::new(0)));
+        assert_eq!(move_target(&d, Side::Right, 6), None, "o is new, not moved");
+    }
+
+    #[test]
+    fn lagging_regions_name_no_other_end() {
+        let mut d = moved();
+        d.edit(
+            Side::Right,
+            EditBatch(vec![merge_core::diff2::TextPatch { range: 0..0, text: "z\n".to_owned() }]),
+        )
+        .expect("edits");
+        assert_eq!(move_target(&d, Side::Right, 4), None);
+        assert_eq!(move_target(&d, Side::Left, 0), None);
     }
 
     #[test]

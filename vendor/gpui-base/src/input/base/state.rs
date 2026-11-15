@@ -1,4 +1,4 @@
-// Modified for Triad: adds the `gutter_marks` switch, spacer rows, the spacer click, hidden
+// Modified for Triad: adds the `gutter_marks` switch and the gutter mark click, spacer rows, the spacer click, hidden
 // lines, line labels and the edit observer, with a test that rounding does not stretch the
 // scroll edge. See PATCHES.md.
 //! A text input field that allows the user to enter text.
@@ -141,6 +141,10 @@ pub enum InputEvent {
     /// spacer sits above, or the line count for a spacer after the last line.
     /// The click then places the caret as on any spacer.
     SpacerClick { line: usize },
+    /// Triad: a left press in the gutter mark column beside buffer line
+    /// `line`, whether or not a mark shows there. The press then places the
+    /// caret as any press does.
+    GutterMarkClick { line: usize },
 }
 
 pub(super) const CONTEXT: &str = "Input";
@@ -2754,6 +2758,11 @@ impl<M: InputModeKind> InputBaseState<M> {
         {
             cx.emit(InputEvent::SpacerClick { line });
         }
+        if event.button == MouseButton::Left
+            && let Some(line) = self.gutter_mark_line_at(event.position)
+        {
+            cx.emit(InputEvent::GutterMarkClick { line });
+        }
 
         self.selecting = true;
         let (offset, line_end_affinity, columns_past_line_end) =
@@ -3631,6 +3640,39 @@ impl<M: InputModeKind> InputBaseState<M> {
                     last_layout.line_height * self.display_map.trailing_spacer_rows() as f32;
                 return (y >= top && y < top + trailing).then_some(line_count);
             }
+        }
+        None
+    }
+
+    /// The buffer line beside `position` when it lies in the gutter mark
+    /// column, on a laid-out line's rows.
+    fn gutter_mark_line_at(&self, position: Point<Pixels>) -> Option<usize> {
+        if !(self.gutter_marks && self.is_code_editor()) {
+            return None;
+        }
+        let (bounds, last_layout) = (self.last_bounds.as_ref()?, self.last_layout.as_ref()?);
+        let left = self.input_bounds.left()
+            + super::element::gutter_mark_column_left(
+                last_layout.line_number_width,
+                self.mode.is_folding(),
+            );
+        if position.x < left || position.x >= left + super::element::GUTTER_MARK_WIDTH {
+            return None;
+        }
+        let y = position.y - bounds.origin.y;
+        let mut top = last_layout.visible_top;
+        for (vi, (line_layout, &line)) in last_layout
+            .lines
+            .iter()
+            .zip(&last_layout.visible_buffer_lines)
+            .enumerate()
+        {
+            top += last_layout.spacer_above(vi);
+            let bottom = top + line_layout.size(last_layout.line_height).height;
+            if y >= top && y < bottom {
+                return Some(line);
+            }
+            top = bottom;
         }
         None
     }
