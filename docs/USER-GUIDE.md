@@ -168,6 +168,8 @@ triad-merge resolve src/lib.rs -r xyz # resolve in commit xyz; @ stays where it 
 
 `stack --list` prints the same list and exits the same way.
 
+`-r` takes any revset that names one commit, with your revset aliases, as `stack` does, and snapshots the working copy first.
+
 Each save to `-r` rewrites the commit and rebases its descendants, as any jj rewrite does. The headless report lists each descendant with its conflicted paths before and after:
 
 ```sh

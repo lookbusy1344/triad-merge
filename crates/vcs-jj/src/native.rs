@@ -192,6 +192,35 @@ impl JjRepository {
             .collect()
     }
 
+    /// The one commit `revset` names, with the user's aliases, after a snapshot of the
+    /// working copy, as a jj command resolves its revision.
+    ///
+    /// # Errors
+    ///
+    /// [`VcsError::UnknownRevision`] when `revset` names no commit and
+    /// [`VcsError::AmbiguousRevision`] when it names several; the errors of a snapshot; and
+    /// [`VcsError::Backend`] when the config or the history cannot be read.
+    pub fn single_commit(&mut self, revset: &str) -> Result<vcs::CommitId, VcsError> {
+        let revsets = self.revsets()?;
+        vcs::Repository::snapshot(self)?;
+        let commit = self.one_commit(self.repo.as_ref(), revset, &revsets)?;
+        Ok(crate::commit_id(commit.id()))
+    }
+
+    /// The one commit `revset` names in `repo` with `revsets`.
+    pub(crate) fn one_commit(
+        &self,
+        repo: &dyn Repo,
+        revset: &str,
+        revsets: &Revsets,
+    ) -> Result<Commit, VcsError> {
+        match <[Commit; 1]>::try_from(self.evaluate(repo, revset, revsets)?) {
+            Ok([commit]) => Ok(commit),
+            Err(found) if found.is_empty() => Err(VcsError::UnknownRevision(revset.to_owned())),
+            Err(_) => Err(VcsError::AmbiguousRevision(revset.to_owned())),
+        }
+    }
+
     /// The conflict at `path` in the commit `id`, as [`vcs::Repository::read_conflict`]
     /// reads the working copy's. None when the path is resolved there.
     ///

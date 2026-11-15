@@ -283,13 +283,7 @@ impl JjRepository {
         match choice {
             HunkChoice::Keep(number) => Ok((*number, Goes::Stays(Stay::Kept))),
             HunkChoice::Move { hunk, rev } => {
-                let commit = match <[Commit; 1]>::try_from(self.evaluate(repo, rev, revsets)?) {
-                    Ok([commit]) => commit,
-                    Err(found) if found.is_empty() => {
-                        return Err(VcsError::UnknownRevision(rev.clone()));
-                    }
-                    Err(_) => return Err(VcsError::AmbiguousRevision(rev.clone())),
-                };
+                let commit = self.one_commit(repo, rev, revsets)?;
                 if !destinations.iter().any(|d| d.id() == commit.id()) {
                     return Err(backend("choosing a hunk's commit")(JjError::NotADestination(
                         rev.clone(),

@@ -1007,6 +1007,40 @@ mod jj {
         .expect("it loads")
     }
 
+    #[test]
+    fn resolve_at_a_revision_takes_the_user_s_revset_aliases() {
+        let (fixture, merge) = stacked();
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let config = dir.path().join("config.toml");
+        let toml = format!("[revset-aliases]\n\"the_merge()\" = \"{}\"\n", merge.commit);
+        std::fs::write(&config, toml).expect("the config is written");
+        let environment = std::collections::HashMap::from([(
+            "JJ_CONFIG".to_owned(),
+            config.to_str().expect("UTF-8").to_owned(),
+        )]);
+        let loaded = resolve::load_at_commit(
+            fixture.root().as_std_path(),
+            "the_merge()",
+            Path::new("a.txt"),
+            Some(ConfigEnv { environment, ..ConfigEnv::default() }),
+        )
+        .expect("the alias names the merge");
+        assert_eq!(texts(&loaded), (vec!["left\n", "right\n"], vec!["a\n"]));
+    }
+
+    #[test]
+    fn resolve_at_the_working_copy_takes_in_unrecorded_edits_first() {
+        let fixture = jj_on_disk(LEFT, RIGHT);
+        // Markers jj reads back as the conflict with its left side changed.
+        fixture.write("a.txt", b"<<<<<<<\nLEFT\n|||||||\na\n=======\nright\n>>>>>>>\n");
+        let before = fixture.operations().len();
+        let loaded = at_commit(&fixture, "@");
+        assert_eq!(texts(&loaded), (vec!["LEFT\n", "right\n"], vec!["a\n"]));
+        let ops = fixture.operations();
+        assert_eq!(ops.len(), before + 1);
+        assert_eq!(ops[0], Op { description: SNAPSHOT.to_owned(), is_snapshot: true });
+    }
+
     fn commit(record: &resolve::Record) -> &resolve::InCommit {
         record.in_commit().expect("a commit's conflict")
     }

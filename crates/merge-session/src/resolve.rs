@@ -437,8 +437,10 @@ pub fn load(
 }
 
 /// The conflict at `path`, relative to `cwd`, in the one commit `rev` names in the jj
-/// repository holding `cwd`, without checking it out (`resolve -r`, spec §7.5.1). The result
-/// saves to a temporary file; each save writes it back into the commit.
+/// repository holding `cwd`, without checking it out (`resolve -r`, spec §7.5.1). The
+/// working copy is snapshotted first, and `rev` takes the user's revset aliases
+/// ([`JjRepository::single_commit`]). The result saves to a temporary file; each save writes
+/// it back into the commit.
 ///
 /// # Errors
 ///
@@ -452,14 +454,12 @@ pub fn load_at_commit(
     path: &Path,
     jj_config: Option<ConfigEnv>,
 ) -> Result<Loaded, ResolveError> {
-    let repo = crate::jj_native::open(cwd, jj_config.clone(), "resolve -r")?;
+    let mut repo = crate::jj_native::open(cwd, jj_config.clone(), "resolve -r")?;
     let root = repo.root().to_owned();
     let file = absolute(&cwd.join(path))?;
     let relative =
         file.strip_prefix(&root).map_err(|_| VcsError::OutsideRepository(file.clone()))?.to_owned();
-    let Ok([id]) = <[CommitId; 1]>::try_from(repo.commits(rev)?) else {
-        return Err(VcsError::AmbiguousRevision(rev.to_owned()).into());
-    };
+    let id = repo.single_commit(rev)?;
     let conflict = repo
         .conflict_at(&id, &relative)?
         .ok_or_else(|| ResolveError::NotConflicted(relative.clone()))?;
