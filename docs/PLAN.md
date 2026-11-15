@@ -19,7 +19,7 @@ As of 2026-11-15.
 | M6 native resolution | Done: git stages a resolved save; jj snapshots before the read and after each save | D |
 | M7 syntax highlighting | Done: Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS | F |
 | p4merge parity | Done | E |
-| Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; the rest open | G |
+| Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; invisible characters drawn as code points and odd spaces shaded in every pane, and escaped in terminal output (§A6.8); the rest open | G |
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
 | jj-native features | Done: conflicts across a stack (`stack`, `resolve -r`), operation-log history (`history`, `diff --op`) and absorb by hunk (`absorb`); the stack window, with a preview of a save's effect on the descendants and a confirmation before a save changes them; the history window; the absorb window, by hunk; the three windows' lists follow `docs/STYLE.md` and work from the keys; the conflict badge names the sides a conflict keeps; absorb, `resolve -r` and the default revset aliases checked against jj's CLI (§I5); `stack`, `resolve -r`, `history`, `absorb` and a three-sided save checked through the built binary in scenario repositories (`script/test-jj-repos`) | I |
 
@@ -59,6 +59,8 @@ In order. Each is one or more commits.
 | A `script/measure-app` mode with a search query open | — | §A14 |
 | More grammars | — | §2 |
 | Razor | A grammar that covers its code blocks | §F1 |
+| Unusual characters checked on screen with the platform shapers: badges and shades in the top panes and the editors, and no reordering around a masked bidirectional control | The owner at the machine | §A6.8 |
+| Lookalike letters, such as Cyrillic а for Latin a: a confusables table and a rule for text in other scripts | Owner's choice | §A6.8 |
 | Fuzzing | After release 1; `cargo-fuzz` needs nightly | spec §8.9 |
 | Screen-reader support: status announcements, conflict regions, scrolling the row table, the accessibility tree in headless tests, a keyboard and contrast audit | §J1 needs the owner at the machine | J |
 | gpui-kit 0.9: build, rebase the patch, measure | — | `docs/gpui-kit-issues.md` |

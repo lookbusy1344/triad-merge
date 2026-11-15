@@ -1,6 +1,6 @@
 // Modified for Triad: test layouts carry spacer heights; lines are read in one pass, unwrapped
 // lines by their lengths alone, and a change of font, indent or tab size rebuilds them only
-// when they wrap. See PATCHES.md.
+// when they wrap; marked characters measure and paint as badges and shades. See PATCHES.md.
 use super::inline_line::InputLine;
 use gpui::Half;
 use std::borrow::Cow;
@@ -17,6 +17,7 @@ use unicode_segmentation::UnicodeSegmentation as _;
 
 use crate::input::{
     Point as TreeSitterPoint, RopeExt, TabSize,
+    char_marks::{self, CharMarker, MarkPaint},
     layout::{LastLayout, WhitespaceIndicators},
     tab_stops::{expanded_width, tab_stop_width},
 };
@@ -271,6 +272,8 @@ pub(crate) struct TextWrapper {
     wrapping_indent: WrappingIndent,
     /// Spaces per tab stop, so tabs are measured as they are drawn.
     tab_size: usize,
+    /// Triad: the characters that draw as badges, so lines are measured as they are drawn.
+    char_marker: Option<CharMarker>,
     /// The lines by split \n
     pub(crate) lines: SumTree<LineItem>,
 
@@ -288,6 +291,7 @@ impl TextWrapper {
             wrap_width,
             wrapping_indent: WrappingIndent::default(),
             tab_size: TabSize::default().tab_size,
+            char_marker: None,
             lines: SumTree::new(&()),
             inline_metrics: Rc::from([]),
             _initialized: false,
@@ -399,6 +403,25 @@ impl TextWrapper {
         true
     }
 
+    /// Triad: measure badge characters as their badges. Returns whether the wrapping changed.
+    pub(crate) fn set_char_marker(&mut self, marker: Option<CharMarker>, cx: &mut App) -> bool {
+        // Two copies of one function may differ in address; that costs only a rebuild.
+        let same = match (marker, self.char_marker) {
+            (None, None) => true,
+            (Some(new), Some(old)) => std::ptr::fn_addr_eq(new, old),
+            _ => false,
+        };
+        if same {
+            return false;
+        }
+        self.char_marker = marker;
+        if !self.layout_depends_on_font() {
+            return false;
+        }
+        self.update_all(&self.text.clone(), cx);
+        true
+    }
+
     pub(crate) fn set_font(&mut self, font: Font, font_size: Pixels, cx: &mut App) {
         if self.font.eq(&font) && self.font_size == font_size {
             return;
@@ -451,6 +474,8 @@ impl TextWrapper {
         let font_size = self.font_size;
         let wrapping_indent = self.wrapping_indent;
         let tab_stop = tab_stop_width(&text_system, &font, font_size, self.tab_size);
+        let marker = self.char_marker;
+        let digit = text_system.layout_width(text_system.resolve_font(&font), font_size, '0');
         self._update(
             changed_text,
             range,
@@ -479,13 +504,17 @@ impl TextWrapper {
                     offset = range.end;
                 }
                 if fragments.is_empty() {
+                    // A part ends the line when it ends where `line_str` does.
+                    let line_end = line_str.as_ptr().addr() + line_str.len();
                     return measured_wrap_boundaries(
                         line_str,
                         wrap_width,
                         wrapping_indent,
                         |text| {
+                            let ends_line = text.as_ptr().addr() + text.len() == line_end;
+                            let shaped = char_marks::masked(text, marker, ends_line);
                             let layout = text_system.layout_line(
-                                text,
+                                &shaped,
                                 font_size,
                                 &[gpui::TextRun {
                                     len: text.len(),
@@ -497,6 +526,8 @@ impl TextWrapper {
                                 }],
                                 None,
                             );
+                            let layout =
+                                char_marks::widened(layout, text, marker, digit, ends_line);
                             expanded_width(&layout, text, tab_stop)
                         },
                     );
@@ -840,6 +871,8 @@ pub(crate) struct LineLayout {
     /// Whether any run of this line carries a background color, so [`Self::paint_background`]
     /// can skip the glyph walk for the common case of a line without highlights.
     has_background: bool,
+    /// Triad: the marked characters of each visual line.
+    pub(crate) char_marks: Vec<MarkPaint>,
 }
 
 impl LineLayout {
@@ -852,7 +885,25 @@ impl LineLayout {
             whitespace_chars: Vec::new(),
             whitespace_indicators: None,
             has_background: false,
+            char_marks: Vec::new(),
         }
+    }
+
+    /// Triad: where visual line `ix` starts, from the line's origin, as gpui aligns it.
+    fn mark_left(&self, ix: usize, align: TextAlign, align_width: Option<Pixels>) -> Pixels {
+        let width = self.wrapped_lines.get(ix).map_or(px(0.), |line| line.width);
+        let offset = match (align, align_width) {
+            (TextAlign::Left, _) | (_, None) => px(0.),
+            (TextAlign::Center, Some(align_width)) => (align_width - width) / 2.,
+            (TextAlign::Right, Some(align_width)) => align_width - width,
+        };
+        self.line_indent(ix) + offset
+    }
+
+    /// Triad: paint `marks` as badges and shades.
+    pub(crate) fn with_char_marks(mut self, marks: Vec<MarkPaint>) -> Self {
+        self.char_marks = marks;
+        self
     }
 
     /// Record whether any run of this line carries a background color.
@@ -1120,6 +1171,11 @@ impl LineLayout {
         window: &mut Window,
         cx: &mut App,
     ) {
+        if !self.char_marks.is_empty() {
+            let (fill, _) = char_marks::char_mark_colours(cx);
+            let left = |ix| self.mark_left(ix, text_align, align_width);
+            char_marks::paint_fills(&self.char_marks, pos, line_height, left, fill, window);
+        }
         // Painting a background walks every glyph and pushes a scene layer, so skip the
         // whole pass for lines that have no background color to paint.
         if !self.has_background {
@@ -1156,6 +1212,11 @@ impl LineLayout {
                 window,
                 cx,
             );
+        }
+
+        if !self.char_marks.is_empty() {
+            let left = |ix| self.mark_left(ix, text_align, align_width);
+            char_marks::paint_labels(&self.char_marks, pos, line_height, left, window, cx);
         }
 
         // Paint whitespace indicators

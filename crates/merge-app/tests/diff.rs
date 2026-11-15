@@ -2931,3 +2931,14 @@ fn a_jump_scrolls_to_the_difference_past_folds(cx: &mut TestAppContext) {
     assert_eq!(row, 12);
     assert_row_shows(cx, &o, Side::Right, 300);
 }
+
+#[gpui_kit::test]
+fn both_diff_editors_mark_unusual_characters(cx: &mut TestAppContext) {
+    let files = Files::new("a\n", "b\n");
+    let o = open(cx, &files);
+    let marks = cx.read(|cx| {
+        [Side::Left, Side::Right]
+            .map(|side| crate::unusual::marks(o.view.read(cx).editor(side).read(cx).char_marker()))
+    });
+    assert_eq!(marks, [Some(crate::unusual::EDITOR_MARKS); 2]);
+}

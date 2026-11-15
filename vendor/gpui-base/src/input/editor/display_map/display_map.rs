@@ -1,4 +1,5 @@
-// Modified for Triad: display rows include spacer rows; hidden lines. See PATCHES.md.
+// Modified for Triad: display rows include spacer rows; hidden lines; the char marker. See
+// PATCHES.md.
 /// DisplayMap: Public facade for Editor/Input display mapping.
 ///
 /// This combines WrapMap and FoldMap to provide a unified API:
@@ -278,6 +279,13 @@ impl DisplayMap {
     /// Set the number of spaces per tab stop.
     pub(crate) fn set_tab_size(&mut self, tab_size: usize, cx: &mut App) {
         if self.wrap_map.set_tab_size(tab_size, cx) {
+            self.rebuild_fold_projection();
+        }
+    }
+
+    /// Triad: measure badge characters as their badges.
+    pub(crate) fn set_char_marker(&mut self, marker: Option<crate::input::CharMarker>, cx: &mut App) {
+        if self.wrap_map.set_char_marker(marker, cx) {
             self.rebuild_fold_projection();
         }
     }

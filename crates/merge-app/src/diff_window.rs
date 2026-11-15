@@ -2146,6 +2146,7 @@ fn new_pane(
             .language(look.language)
             .line_number(true)
             .gutter_marks(true)
+            .char_marks(crate::window::char_mark)
             .folding(false)
             .indent_guides(false)
             .soft_wrap(look.soft_wrap)

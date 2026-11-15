@@ -1,3 +1,4 @@
+// Modified for Triad: passes the char marker to the wrapper. See PATCHES.md.
 /// WrapMap: Soft-wrapping layer (Buffer → Wrap rows).
 ///
 /// This module wraps the existing TextWrapper and provides:
@@ -132,6 +133,15 @@ impl WrapMap {
     /// Set the number of spaces per tab stop. Returns whether it changed.
     pub(super) fn set_tab_size(&mut self, tab_size: usize, cx: &mut App) -> bool {
         self.wrapper.set_tab_size(tab_size, cx)
+    }
+
+    /// Triad: measure badge characters as their badges.
+    pub(super) fn set_char_marker(
+        &mut self,
+        marker: Option<crate::input::CharMarker>,
+        cx: &mut App,
+    ) -> bool {
+        self.wrapper.set_char_marker(marker, cx)
     }
 
     /// Set font parameters

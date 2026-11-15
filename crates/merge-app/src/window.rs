@@ -12,6 +12,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
+use gpui_kit::base::input::CharMark;
 use gpui_kit::base::input::{self, GutterMark, SpacerNote};
 use gpui_kit::base::{Scrollbar, ScrollbarMode};
 use gpui_kit::component::input::{
@@ -621,6 +622,7 @@ fn result_editor(
             .indent_guides(false)
             .soft_wrap(wrap.wraps())
             .gutter_marks(true)
+            .char_marks(char_mark)
             .searchable(true)
             .tab_size(settings.typography.tab_size())
             .default_value(text);
@@ -3412,14 +3414,21 @@ pub(crate) struct UnusualPaint {
     pub text: Hsla,
 }
 
-/// The opacity of the muted text colour behind an unusual character.
-const UNUSUAL_FILL_OPACITY: f32 = 0.25;
-
 impl UnusualPaint {
+    /// The editors' colours, so every pane marks alike.
     pub(crate) fn of(cx: &App) -> Self {
-        let text = cx.theme().muted_foreground;
-        Self { fill: text.opacity(UNUSUAL_FILL_OPACITY), text }
+        let (fill, text) = gpui_kit::base::input::char_mark_colours(cx);
+        Self { fill, text }
     }
+}
+
+/// How the editors draw an unusual character (spec §5): an invisible one as a badge showing
+/// its code point, an odd space on a grey background.
+pub(crate) fn char_mark(c: char) -> Option<CharMark> {
+    Some(match merge_core::unusual::classify(c)? {
+        Unusual::Invisible => CharMark::Badge,
+        Unusual::Space => CharMark::Shade,
+    })
 }
 
 impl CellPaint {

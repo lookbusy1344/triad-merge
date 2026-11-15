@@ -1,7 +1,7 @@
 // Modified for Triad: full-line fills and gutter marks for range decorations,
 // spacer rows and their notes, line labels, tests of hidden lines, the spacer
-// click and the gutter mark click, and tests of the editor's tab stops.
-// See PATCHES.md.
+// click and the gutter mark click, tests of the editor's tab stops, and
+// characters drawn as badges and shades. See PATCHES.md.
 use crate::input::{InputExtras as _, InputModeKind};
 use gpui::Corners;
 use gpui::Half;
@@ -25,7 +25,7 @@ use crate::{
 };
 
 use super::{
-    InputBaseState, PrepaintCaretGeometry, RangeDecorationStyle, TextDecoration,
+    InputBaseState, PrepaintCaretGeometry, RangeDecorationStyle, TextDecoration, char_marks,
     layout::{LastLayout, WhitespaceIndicators},
     mode::LayoutMode,
     tab_stops::{expand_tabs, expanded_width, tab_stop_width},
@@ -2493,6 +2493,7 @@ impl<M: InputModeKind> TextElement<M> {
         runs: &[TextRun],
         bg_segments: &[(Range<usize>, Hsla)],
         whitespace_indicators: Option<WhitespaceIndicators>,
+        label_colour: Hsla,
         window: &mut Window,
     ) -> Vec<LineLayout> {
         let is_single_line = state.is_single_line();
@@ -2505,20 +2506,45 @@ impl<M: InputModeKind> TextElement<M> {
             font_size,
             state.mode.tab_size().tab_size,
         );
+        // Triad: badge characters shape as spaces and widen to their badges.
+        let marker = state.char_marker;
+        let font = window.text_style().font();
+        let digit = {
+            let font_id = window.text_system().resolve_font(&font);
+            window.text_system().layout_width(font_id, font_size, '0')
+        };
+        let shape_label = |label: String, window: &mut Window| {
+            let run = TextRun {
+                len: label.len(),
+                font: font.clone(),
+                color: label_colour,
+                background_color: None,
+                underline: None,
+                strikethrough: None,
+            };
+            window.text_system().shape_line(label.into(), font_size, &[run], None)
+        };
 
         if is_single_line {
-            let text: SharedString = display_text.to_string().into();
+            let original = display_text.to_string();
+            let text: SharedString =
+                char_marks::masked(&original, marker, true).into_owned().into();
             let aligned_runs = align_runs_to_char_boundaries(&text, runs);
             let line_runs = aligned_runs.as_deref().unwrap_or(runs);
             let mut shaped_line = window
                 .text_system()
                 .shape_line(text, font_size, line_runs, None);
+            char_marks::widen(&mut shaped_line, &original, marker, digit, true);
             expand_tabs(&mut shaped_line, tab_stop);
+            let marks = char_marks::marks_of(&shaped_line, &original, 0, marker, true, |label| {
+                shape_label(label, window)
+            });
 
             let line_layout = LineLayout::new()
                 .lines(smallvec::smallvec![shaped_line])
                 .with_background(has_background(line_runs))
-                .with_whitespaces(whitespace_indicators);
+                .with_whitespaces(whitespace_indicators)
+                .with_char_marks(marks);
             return vec![line_layout];
         }
 
@@ -2564,6 +2590,7 @@ impl<M: InputModeKind> TextElement<M> {
 
             let mut wrapped_lines: SmallVec<[ShapedLine; 1]> = SmallVec::with_capacity(1);
             let mut line_has_background = false;
+            let mut marks = Vec::new();
 
             for range in &line_item.wrapped_lines {
                 let line_runs = runs_for_range(runs, run_offset, &range);
@@ -2577,13 +2604,25 @@ impl<M: InputModeKind> TextElement<M> {
                     )
                 };
 
-                let sub_line: SharedString = line_text[range.clone()].to_string().into();
+                let original = &line_text[range.clone()];
+                let ends_line = range.end == line_text.len();
+                let sub_line: SharedString =
+                    char_marks::masked(original, marker, ends_line).into_owned().into();
                 let line_runs =
                     align_runs_to_char_boundaries(&sub_line, &line_runs).unwrap_or(line_runs);
                 let mut shaped_line = window
                     .text_system()
                     .shape_line(sub_line, font_size, &line_runs, None);
+                char_marks::widen(&mut shaped_line, original, marker, digit, ends_line);
                 expand_tabs(&mut shaped_line, tab_stop);
+                marks.extend(char_marks::marks_of(
+                    &shaped_line,
+                    original,
+                    wrapped_lines.len(),
+                    marker,
+                    ends_line,
+                    |label| shape_label(label, window),
+                ));
 
                 line_has_background |= has_background(&line_runs);
                 wrapped_lines.push(shaped_line);
@@ -2605,7 +2644,8 @@ impl<M: InputModeKind> TextElement<M> {
                 .lines(wrapped_lines)
                 .wrap_indent(wrap_indent)
                 .with_background(line_has_background)
-                .with_whitespaces(whitespace_indicators.clone());
+                .with_whitespaces(whitespace_indicators.clone())
+                .with_char_marks(marks);
             lines.push(line_layout);
 
             // +1 for the `\n`
@@ -3137,6 +3177,7 @@ impl<M: InputModeKind> Element for TextElement<M> {
             state.display_map.set_font(font, text_size, cx);
             let tab_size = state.mode.tab_size().tab_size;
             state.display_map.set_tab_size(tab_size, cx);
+            state.display_map.set_char_marker(state.char_marker, cx);
             state.display_map.ensure_text_prepared(&state.text, cx);
             if cx.reduce_motion() {
                 state.overscroll.reset();
@@ -3341,6 +3382,7 @@ impl<M: InputModeKind> Element for TextElement<M> {
             &runs,
             &document_colors,
             whitespace_indicators,
+            char_marks::char_mark_colours(cx).1,
             window,
         );
 
@@ -7213,5 +7255,120 @@ mod tests {
     fn the_editors_tab_size_moves_its_stops(cx: &mut TestAppContext) {
         let (xs, space) = tab_xs(cx, "a\tb", 8);
         assert_eq!(xs[2], hundredths(space * 8.));
+    }
+
+
+    // Triad: char marks.
+
+    fn marker(c: char) -> Option<crate::input::CharMark> {
+        match c {
+            '\u{202E}' | '\r' => Some(crate::input::CharMark::Badge),
+            '\u{A0}' => Some(crate::input::CharMark::Shade),
+            _ => None,
+        }
+    }
+
+    fn marked_editor(
+        cx: &mut TestAppContext,
+        text: &str,
+        wrap: bool,
+    ) -> (Entity<EditorState>, gpui::WindowHandle<DecorationHarness>) {
+        cx.update(crate::init);
+        let mut editor = None;
+        let window = cx.open_window(size(px(240.), px(140.)), |window, cx| {
+            let state = cx.new(|cx| {
+                EditorState::new(window, cx)
+                    .soft_wrap(wrap)
+                    .char_marks(marker)
+                    .default_value(text)
+            });
+            editor = Some(state.clone());
+            DecorationHarness(state)
+        });
+        (editor.unwrap(), window)
+    }
+
+    /// The width of a badge of six label characters: each as wide as `0` in the editor
+    /// font, with 2 px each side.
+    fn six_digit_badge(window: &mut Window) -> Pixels {
+        let font = window.text_style().font();
+        let font_id = window.text_system().resolve_font(&font);
+        let size = window.text_style().font_size.to_pixels(window.rem_size());
+        window.text_system().layout_width(font_id, size, '0') * 6. + px(4.)
+    }
+
+    #[gpui::test]
+    fn a_badge_character_takes_its_badges_width(cx: &mut TestAppContext) {
+        let text = "a\u{202E}b\u{A0}c";
+        let (editor, window) = marked_editor(cx, text, false);
+        let mut cx = VisualTestContext::from_window(window.into(), cx);
+        cx.update(|window, cx| {
+            window.draw(cx).clear(cx);
+            let badge = six_digit_badge(window);
+            let state = editor.read(cx);
+            let x = |offset| state.line_and_position_for_offset(offset).2.unwrap().x;
+            let space = state.last_layout.as_ref().unwrap().space_width;
+            // a, RLO (bytes 1..4) as a badge, b, no-break space (5..7), c.
+            let xs: Vec<i64> = [0, 1, 4, 5, 7, 8].map(|o| hundredths(x(o) - x(0))).to_vec();
+            let expected: Vec<i64> = [px(0.), space, space + badge, space * 2. + badge]
+                .into_iter()
+                .chain([space * 2. + badge + space, space * 4. + badge])
+                .map(hundredths)
+                .collect();
+            assert_eq!(xs, expected);
+            let line = &state.last_layout.as_ref().unwrap().lines[0];
+            let marks: Vec<(i64, i64, bool)> = line
+                .char_marks
+                .iter()
+                .map(|m| (hundredths(m.x), hundredths(m.width), m.label.is_some()))
+                .collect();
+            assert_eq!(
+                marks,
+                [
+                    (hundredths(space), hundredths(badge), true),
+                    (hundredths(space * 2. + badge), hundredths(space), false),
+                ]
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn a_line_of_badges_wraps_where_the_badges_fill_the_row(cx: &mut TestAppContext) {
+        const BADGES: usize = 12;
+        let text = "\u{202E}".repeat(BADGES);
+        let (editor, window) = marked_editor(cx, &text, true);
+        let mut cx = VisualTestContext::from_window(window.into(), cx);
+        cx.update(|window, cx| {
+            window.draw(cx).clear(cx);
+            let badge = six_digit_badge(window);
+            let state = editor.read(cx);
+            let wrap_width = state.last_layout.as_ref().unwrap().wrap_width.unwrap();
+            let per_row = (f32::from(wrap_width) / f32::from(badge)).floor() as usize;
+            assert!((1..BADGES).contains(&per_row), "{per_row} badges per row");
+            let rows = &state.display_map.line(0).unwrap().wrapped_lines;
+            // RLO is three bytes.
+            assert_eq!(rows[0], 0..per_row * 3);
+            assert_eq!(rows.len(), BADGES.div_ceil(per_row));
+        });
+    }
+
+
+    #[gpui::test]
+    fn a_carriage_return_is_a_badge_inside_a_line_and_part_of_its_ending_at_its_end(
+        cx: &mut TestAppContext,
+    ) {
+        let (editor, window) = marked_editor(cx, "a\r\nb\rc\r\n", false);
+        let mut cx = VisualTestContext::from_window(window.into(), cx);
+        cx.update(|window, cx| {
+            window.draw(cx).clear(cx);
+            let state = editor.read(cx);
+            let lines = &state.last_layout.as_ref().unwrap().lines;
+            let labels: Vec<usize> = lines
+                .iter()
+                .map(|line| line.char_marks.iter().filter(|m| m.label.is_some()).count())
+                .collect();
+            // Line 0 `a\r`, line 1 `b\rc\r`, and the empty last line.
+            assert_eq!(labels, [0, 1, 0]);
+        });
     }
 }

@@ -1,5 +1,5 @@
 // Modified for Triad: adds the `gutter_marks` switch and the gutter mark click, spacer rows, the spacer click, hidden
-// lines, line labels and the edit observer, with a test that rounding does not stretch the
+// lines, line labels, the char marker and the edit observer, with a test that rounding does not stretch the
 // scroll edge. See PATCHES.md.
 //! A text input field that allows the user to enter text.
 //!
@@ -464,6 +464,8 @@ pub struct InputBaseState<M: InputModeKind> {
     pub(super) line_labels: Option<crate::input::LineLabels>,
     /// Triad: notes on spacer rows, in line order.
     pub(super) spacer_notes: Vec<crate::input::SpacerNote>,
+    /// Triad: the characters that draw as badges or shades.
+    pub(super) char_marker: Option<crate::input::CharMarker>,
     pub(super) wrapping_indent: WrappingIndent,
     pub(super) scroll_beyond_last_line: Option<usize>,
     pub(super) cursor_surrounding_lines: Option<usize>,
@@ -811,6 +813,7 @@ impl<M: InputModeKind> InputBaseState<M> {
         self.display_map.set_font(font, font_size, cx);
         self.display_map
             .set_tab_size(self.mode.tab_size().tab_size, cx);
+        self.display_map.set_char_marker(self.char_marker, cx);
         self.display_map
             .on_layout_changed(self.soft_wrap.then_some(wrap_width), cx);
         self.display_map
@@ -986,6 +989,7 @@ impl<M: InputModeKind> InputBaseState<M> {
             gutter_marks: false,
             line_labels: None,
             spacer_notes: Vec::new(),
+            char_marker: None,
             wrapping_indent: WrappingIndent::default(),
             scroll_beyond_last_line: None,
             cursor_surrounding_lines: None,
@@ -12880,6 +12884,18 @@ impl InputBaseState<crate::input::EditorMode> {
             self.gutter_marks = gutter_marks;
             cx.notify();
         }
+    }
+
+    /// Triad: draw the characters `marker` marks as badges showing their code points, or on a
+    /// grey background. See [`CharMark`](crate::input::CharMark).
+    pub fn char_marks(mut self, marker: crate::input::CharMarker) -> Self {
+        self.char_marker = Some(marker);
+        self
+    }
+
+    /// Triad: which characters draw as badges or shades; none when no character does.
+    pub fn char_marker(&self) -> Option<crate::input::CharMarker> {
+        self.char_marker
     }
 
     /// Triad: show `notes` on spacer rows, replacing the earlier notes. See

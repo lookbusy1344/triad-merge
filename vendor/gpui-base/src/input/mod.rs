@@ -1,4 +1,4 @@
-// Modified for Triad: exports `GutterMark`, the line labels and `EditObserver`. See
+// Modified for Triad: exports `GutterMark`, the line labels, `EditObserver` and the char marks. See
 // PATCHES.md.
 //! Text input: the shared editing engine and the three states built on it.
 //!
@@ -74,6 +74,9 @@ mod selection;
 mod state;
 #[path = "base/tab_stops.rs"]
 mod tab_stops;
+#[path = "base/char_marks.rs"]
+mod char_marks;
+pub use char_marks::{CharMark, CharMarker, char_mark_colours};
 mod textarea;
 pub use scrollbar_presentation::{EditorScrollbarContext, EditorScrollbarRenderer};
 #[path = "base/touch.rs"]

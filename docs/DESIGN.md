@@ -107,7 +107,7 @@ Proptest suites for spec §8.2, with a fixed seed and checked-in regressions: al
 
 #### A4.10 Headless CLI
 
-`--headless`, `inspect --json` and `diff --inspect --json` (schema in `docs/json-schema.md`). Logging goes to stderr and a rotating file in the cache directory, filtered by `TRIAD_LOG`; `TRIAD_LOG_DIR` moves it, which the binary tests use. Each `fixtures/core/<case>/` holds `base`, `left`, `right`, the `expected` bytes, the `exit` code, and optionally `args` and `config`.
+`--headless`, `inspect --json` and `diff --inspect --json` (schema in `docs/json-schema.md`). Every report and error passes through `merge_core::unusual::escaped` (§A6.8). Logging goes to stderr and a rotating file in the cache directory, filtered by `TRIAD_LOG`; `TRIAD_LOG_DIR` moves it, which the binary tests use. Each `fixtures/core/<case>/` holds `base`, `left`, `right`, the `expected` bytes, the `exit` code, and optionally `args` and `config`.
 
 #### A4.11 Atomic write
 
@@ -236,6 +236,15 @@ What sets these figures:
 - **Known whole-text copies**, each a few milliseconds and one file's size at 1M: `Recompute::run` copies both diff texts twice; `MergeDocument::output` copies the rope to save; `Text` keeps an 8-byte line start per line where `u32` would do under 4 GiB.
 
 **Idle memory.** The caret's blink draws every 500 ms, which keeps the Metal driver's reclaimable blocks in use: a bare GPUI window takes 52 MB idle and 185 MB blinking. The vendored caret rests, shown, after 10 s without a key, click or focus. At rest the demo diff of `fixtures/demo/code_a.py` and `code_b.py` takes 98 MB of physical footprint (p4merge: 121 MB): 37 MB of drawables, 33 MB of heap, and the binary. GPUI counts a window losing the front as a blur, which stops the blink. GPUI's per-window path texture and the drawables remain.
+
+#### A6.8 Unusual characters
+
+`merge_core::unusual` holds spec §5's lists in two sorted range tables and classifies a character by binary search; `escaped` writes the classified characters of terminal output as JSON escapes, so `report` in `merge-cli` and the app's error line need no JSON-aware path.
+
+- **Top panes.** `merge_view::tabs::expand` writes each invisible character as its `CodePoint`, as it writes a tab as spaces, and keeps the map between line and drawn bytes, so wrapping, hit testing, selection and the sideways extent follow without change. `runs::cell` carries the marks as a fifth layer; the window paints them in `UnusualPaint`'s colours.
+- **Editors.** The vendored editor takes a `CharMarker` (`EditorState::char_marks`). A badge character is shaped as spaces of its byte length, so bytes and glyph indices stay aligned and no bidirectional control reaches the shaper; its glyphs then become one, as wide as its label in `0`s plus 2 px each side, the way tab stops widen tabs. The wrapper measures with the same steps. A `\r` that ends a line is left to the line ending. The fills paint with the line backgrounds and the labels after the text.
+- **Colours.** `gpui_base::input::char_mark_colours` gives both the editors and the top panes the muted text colour and that colour at 25 % opacity, which shows on white, on dark and on the change bands.
+- **Not marked.** Lookalike letters need a confusables table and a rule for text in other scripts; spec §5 leaves them out.
 
 ### A7 Tool integration and the macOS release
 

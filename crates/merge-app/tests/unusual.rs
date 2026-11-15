@@ -4,6 +4,7 @@
 use crate::common;
 
 use common::{doc, open};
+use gpui_kit::base::input::{CharMark, CharMarker};
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{HighlightStyle, SharedString, TestAppContext};
 use merge_view::rows::RowIx;
@@ -44,4 +45,21 @@ fn an_odd_space_draws_on_a_grey_background(cx: &mut TestAppContext) {
     let shade = HighlightStyle { background_color: Some(fill), ..HighlightStyle::default() };
     assert_eq!(text.as_ref(), "a\u{00A0}b");
     assert_eq!(highlights, [(1..3, shade)]);
+}
+
+/// How `marker` marks a right-to-left override, a no-break space and a letter.
+pub(crate) fn marks(marker: Option<CharMarker>) -> Option<[Option<CharMark>; 3]> {
+    marker.map(|marker| ['\u{202E}', '\u{00A0}', 'a'].map(marker))
+}
+
+/// What spec §5 asks of every editor: a badge for an invisible character, a shade for an
+/// odd space, nothing for a letter.
+pub(crate) const EDITOR_MARKS: [Option<CharMark>; 3] =
+    [Some(CharMark::Badge), Some(CharMark::Shade), None];
+
+#[gpui_kit::test]
+fn the_result_editor_marks_unusual_characters(cx: &mut TestAppContext) {
+    let (_, view) = open(cx, doc("a\n", "a\n", "a\n"));
+    let marker = view.update(cx, |view, cx| view.result_editor().read(cx).char_marker());
+    assert_eq!(marks(marker), Some(EDITOR_MARKS));
 }
