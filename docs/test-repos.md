@@ -10,6 +10,22 @@ Scripts that build disposable jj repositories to try triad in by hand, and a scr
 
 Each generator prints the new repository's path, under `$TMPDIR` without `dest`, and fails when jj does not see the state it meant to build. The repositories stay until you delete them (`docs/residue.md`).
 
+## Quick start
+
+```sh
+cd "$(script/gen-jj-repo stack)"     # build a scenario and enter it
+script/test-jj-repos                 # from the repo root, after cargo build --workspace
+```
+
+| Scenario | What it holds | Try |
+|---|---|---|
+| `stack` | A stack of conflicted commits; later commits inherit the earlier conflict, and `stack-3` adds its own | `triad-merge stack`; `triad-merge resolve a.txt -r stack-1`, with `--headless --dry-run` to change nothing |
+| `sides` | A three-sided conflict in the working copy | `triad-merge resolve s.txt`: one pane per side; the badge shows `3 of 3 sides`, then `2 of 3 sides` |
+| `history` | `notes.txt` across nine operations, a deletion and a conflict among them | `triad-merge history notes.txt`; `triad-merge diff notes.txt --op OP` |
+| `absorb` | Working-copy fixes over commits A, B and C, on an immutable `base` | `triad-merge absorb`: hunks go to A or B, or stay: `base` wrote the lines, a new file, or it would conflict in A |
+
+`test-jj-repos` needs the jj release that jj-lib is pinned to, and takes about 4 s.
+
 ## gen-jj-repo scenarios
 
 Bookmarks name every commit but `@`. In each repository, `jj log` shows the history below.
