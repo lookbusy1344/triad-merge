@@ -122,20 +122,14 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | Task | Command |
 |---|---|
 | Format | `cargo fmt --all` |
-| Try a merge by hand | `cargo build --workspace`, then `target/debug/triad-merge inspect fixtures/demo/{base,left,right}.txt` (`fixtures/demo/README.md`) |
-| A disposable jj repository with conflicts in two Rust files | `script/gen-conflict-repo [dest]` (`fixtures/conflict-repo/README.md`) |
-| A disposable jj repository for one jj-enabled feature: `stack`, `sides`, `history` or `absorb` (`docs/test-repos.md`) | `script/gen-jj-repo SCENARIO [dest]` |
-| Check `stack`, `resolve -r`, a three-sided save, `history` and `absorb` through the built binary in each `gen-jj-repo` scenario; needs the pinned `jj` on `PATH`. `script/checks` runs it on a full run and when either script changes | `script/test-jj-repos [SCENARIO...]` |
-| Build `target/release/triad.app`; `dist` builds `target/dist/triad.app` with fat LTO, as a release does | `script/macos-app [dist]` |
+| Try a merge by hand | `cargo build --workspace`, then the inputs in `fixtures/demo/README.md` |
+| Disposable jj repositories, and the check of triad's jj commands in them; needs the pinned `jj` on `PATH` | `script/gen-conflict-repo`, `script/gen-jj-repo SCENARIO`, `script/test-jj-repos` (`docs/test-repos.md`) |
 | Upgrade jj: pins, oracles, the jj-cli behaviour triad copies, docs and checks | `docs/jj-upgrade.md` |
-| Write the oracles from jj's CLI after a jj-lib upgrade; the `jj` on `PATH` must be the pinned release (`DESIGN.md` §I5) | `script/gen-jj-cli-oracle` |
 | Benchmarks against spec §9 | `cargo bench -p merge-core --bench merge`, `cargo bench -p merge-syntax --bench boundaries`, `cargo bench -p merge-cli --bench memory`, then `script/check-bench` |
 | Cost of `resolve`'s repository steps on 10k and 100k files (`DESIGN.md` §D5.5) | `cargo bench -p merge-cli --bench resolve` |
-| Measure the running app against spec §9 (`DESIGN.md` §A6.7) | `script/measure-app [refresh-hz] [output-extension]` (`rs` adds Rust highlighting); one mode: `TRIAD_MEASURE=<open\|scroll-rows\|scroll-result\|type\|pick\|syntax> target/release/triad-merge target/measure/<lines>/{base,left,right}.txt target/measure/<lines>/out.txt` |
+| Measure the running app against spec §9 (`DESIGN.md` §A6.7) | `script/measure-app` (`docs/release-checklist.md`) |
 | Check that `script/pre-push` removes its git clone on every exit; `script/checks` runs it when either script changes | `script/test-pre-push` |
 | Check the revision `script/build-id` names and `script/pre-push` checks, merges included; `script/checks` runs it when one of the three changes | `script/test-tip` |
-| Rewrite `images/` from the mark's geometry | `swift script/gen-images.swift` |
-| Print the accessibility tree of a running window | `swift script/ax-tree.swift PID [NAME...]` (`docs/release-checklist.md`) |
 | Linux test machine in OrbStack (`DESIGN.md` §E7.1) | `script/linux/run image` once; then `script/linux/run cargo build -p triad-merge`, `script/linux/run cargo nextest run --workspace --profile linux-emulated`, `script/linux/run script/linux/smoke wayland` or `x11` |
 | Linux CI locally (needs OrbStack running) | `act workflow_dispatch -W .github/workflows/<triad\|bench\|audit>.yml [-j <job>] -P ubuntu-latest=catthehacker/ubuntu:act-latest --container-architecture linux/arm64`; `triad.yml` runs only its Linux matrix entry under act. act runs as root, so the four tests of unreadable or unwritable paths fail there; GitHub's runners do not run as root |
 | Linux packages into `target/linux/dist` | `script/linux/run script/package x86_64-unknown-linux-gnu` |
@@ -158,8 +152,8 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | `fixtures/syntax` | One sample file per highlighted language, for the highlighting tests. |
 | `fixtures/oracle` | `jj-corpus.jsonl`: jj-lib merges with jj seeds, from `script/gen-jj-oracle`. `corpus.jsonl`: `git merge-file` triples, from `script/gen-oracle`. `jj-cli-aliases.json`, `jj-cli-absorb.json` and `jj-cli-resolve.json`: jj's default revset aliases, `jj absorb` results and repositories after `jj resolve -r`, from `script/gen-jj-cli-oracle`. |
 | `fixtures/conflict-repo` | Sources of a disposable jj repository with two conflicted Rust files, for `script/gen-conflict-repo`. |
-| `fixtures/demo` | A 980-line Rust merge with 20 conflicts, from `script/gen-demo`. |
+| `fixtures/demo` | Merges to try by hand: a 980-line Rust merge with 20 conflicts, and one of unusual characters (`fixtures/demo/README.md`). |
 | `images` | Mark, logo and app icon as SVG, PNG, ICNS and ICO, from `script/gen-images.swift`. |
 | `packaging/linux` | Desktop entry of the Linux packages. |
-| `docs` | User guide (`USER-GUIDE.md`), spec, plan, design notes, the diff editor plan (`PLAN-diff-editor.md`, part H), UI style, JSON schema, release checklist, the steps of a jj upgrade (`jj-upgrade.md`), gpui-kit and gix issues, `scroll-debugging.md`, `mark-colours.md`: the mark's colour schemes, geometry and the shapes not taken, and `residue.md`: the files triad and its scripts leave behind, and `test-repos.md`: the scripts that build test repositories and what `script/test-jj-repos` checks. |
+| `docs` | The documents README § Documents lists. |
 | `vendor/gpui-base` | `gpui-base` 0.8.1 with triad's editor patch, through `[patch.crates-io]`. Outside the workspace: no workspace lints, `cargo fmt` or `jj fix`. See its `PATCHES.md`. |

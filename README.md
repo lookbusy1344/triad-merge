@@ -185,7 +185,7 @@ triad-merge diff LEFT RIGHT                        # the diff window
 triad-merge diff --inspect --json LEFT RIGHT       # the diff's regions, as JSON
 ```
 
-`fixtures/demo` holds a 980-line merge with 20 conflicts to try: `triad-merge fixtures/demo/{base,left,right}.txt /tmp/out.txt`.
+`fixtures/demo` holds a 980-line merge with 20 conflicts to try, `triad-merge fixtures/demo/{base,left,right}.txt /tmp/out.txt`, and a merge of unusual characters (`fixtures/demo/README.md`).
 
 Exit codes: 0 all conflicts resolved, 1 conflicts left, 2 cancelled, 3 error. `diff --inspect` exits 0 for equal files and 1 for different ones, as `diff(1)` does. `docs/json-schema.md` defines the JSON and the `--commands` file that drives a headless merge.
 
@@ -254,8 +254,11 @@ On macOS, Gatekeeper scans each newly linked binary on its first run, so the fir
 | `AGENTS.md` | Rules for changes, the commit gate and commands |
 | `docs/STYLE.md` | UI style |
 | `docs/json-schema.md` | JSON output and merge commands |
+| `docs/PLAN-diff-editor.md` | The diff editor plan, part H |
 | `docs/release-checklist.md` | Manual checks before a release |
-| `docs/gpui-kit-issues.md` | UI toolkit problems and triad's answers |
+| `docs/jj-upgrade.md` | The steps of a jj upgrade |
+| `docs/gpui-kit-issues.md`, `docs/gix-issues.md` | UI toolkit and gix problems, and triad's answers |
+| `docs/mark-colours.md` | The mark's colour schemes, geometry and the shapes not taken |
 | `docs/scroll-debugging.md` | Trackpad scrolling: failure modes and how to reproduce them |
 | `docs/residue.md` | Files triad and its scripts leave behind |
 | `docs/test-repos.md` | Scripts that build test repositories, and what they check |

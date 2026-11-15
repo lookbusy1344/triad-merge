@@ -58,6 +58,10 @@ Two aligned, editable panes, each with copy to the other side. A block deleted i
 
 Line origins (⌘I) show the commit, author and jj change that wrote each line, in both windows.
 
+### Unusual characters
+
+Both windows show each character that draws nothing, or changes how the text around it draws, as a grey badge with its code point, such as `U+202E`. These are control characters, bidirectional controls, zero-width characters, tag characters and similar; spec §5 lists them. A bidirectional control reorders nothing, so text that hides a Trojan Source trick reads in its true order. A space other than an ordinary space, such as a no-break space, draws on the same grey. A badge is one character: the caret steps over it in one move, and copying copies the character. `fixtures/demo/README.md` has a merge to try.
+
 ## 3. jj
 
 Sections without a mark work the same in git (§4). Those marked *jj-enabled* rest on what jj records: conflicts in commits, the operation log and the commits that wrote each line. git has no form of them.
@@ -328,6 +332,8 @@ triad-merge absorb --json
 ```
 
 `--commands` takes JSON Lines, one command per line, each naming a region by its index in `inspect`'s output. `docs/json-schema.md` defines the commands and every JSON output.
+
+Everything triad prints, reports and errors alike, writes each unusual character as a JSON escape, `\u202e`, so a path or commit description cannot rewrite the terminal.
 
 ## 7. Settings
 
