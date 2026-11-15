@@ -70,7 +70,6 @@ In order. Each is one or more commits.
 | jj-cli's config defaults other than the revset aliases: none checked for whether triad depends on one | — | §I5 |
 | Absorb: split one hunk between commits | Part H's line selection (§H6) | §I4 |
 | Refined conflicts under jj: a save that leaves conflicts writes the lines refinement split off after the base section, so jj reads them into the base too and stores a changed base. Refinement is on by default | Owner's choice: write each conflict whole under jj, or turn refinement off there | spec §4.3, §4.4 |
-| `Recorded::changed`: computed on every `recorded` call, read nowhere; removing it removes three of its tests | Owner's approval to delete the tests | `vcs-jj` `recorded` |
 | `diff --rev` evaluates without the user's revset aliases (spec §6.1), but `USER-GUIDE.md` shows `--rev 'trunk()'` | Owner's choice: load the aliases, as `stack` and `resolve -r` do, or change the example | spec §6.1, `USER-GUIDE.md` |
 | Internal jj repositories: a jj command that commits between triad's load and its commit leaves two operation heads, which triad refuses until jj's next command merges them | — | §D5.5 |
 | The stack, history and absorb windows checked on screen: layout, keys, focus and the accessibility tree; their tests run headless only | — | §I2, §I3, §I4 |

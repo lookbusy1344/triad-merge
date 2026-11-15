@@ -220,9 +220,6 @@ impl MergeCandidates {
 /// snapshot. git records nothing a merge needs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Recorded {
-    /// The file's modification time or size differs from the record: it holds edits the
-    /// VCS has not taken in. A file deleted since counts as unchanged.
-    pub changed: bool,
     /// The conflict marker length the VCS wrote the file with, when it wrote markers.
     pub marker_length: Option<usize>,
 }
@@ -378,7 +375,7 @@ pub trait Repository: Send {
     /// # Errors
     ///
     /// [`VcsError::OutsideRepository`] for a path that is not inside the repository, and
-    /// [`VcsError::Backend`] when the record or the file's metadata cannot be read.
+    /// [`VcsError::Backend`] when the record cannot be read.
     fn recorded(&self, path: &Utf8Path) -> Result<Option<Recorded>, VcsError>;
 
     /// The commits each term of a merge in the working copy may hold (spec §7.3). git: side 0

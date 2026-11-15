@@ -553,16 +553,10 @@ fn recorded(fixture: &Fixture, path: &str) -> Option<vcs::Recorded> {
 }
 
 #[test]
-fn a_file_as_jj_wrote_it_is_recorded_unchanged_with_its_marker_length() {
+fn a_file_as_jj_wrote_it_is_recorded_with_its_marker_length() {
     let fixture = checked_out_conflict(b"left\n", b"right\n");
-    assert_eq!(
-        recorded(&fixture, "a.txt"),
-        Some(vcs::Recorded { changed: false, marker_length: Some(7) })
-    );
-    assert_eq!(
-        recorded(&fixture, "clean.txt"),
-        Some(vcs::Recorded { changed: false, marker_length: None })
-    );
+    assert_eq!(recorded(&fixture, "a.txt"), Some(vcs::Recorded { marker_length: Some(7) }));
+    assert_eq!(recorded(&fixture, "clean.txt"), Some(vcs::Recorded { marker_length: None }));
 }
 
 #[test]
@@ -573,46 +567,10 @@ fn marker_like_lines_lengthen_jjs_markers_by_four() {
 }
 
 #[test]
-fn a_file_edited_since_the_checkout_is_changed() {
+fn an_unknown_file_is_unrecorded() {
     let fixture = checked_out_conflict(b"left\n", b"right\n");
-    fixture.write("a.txt", b"resolved by hand, a different size\n");
-    assert_eq!(recorded(&fixture, "a.txt").map(|r| r.changed), Some(true));
-}
-
-#[test]
-fn a_deleted_file_is_unchanged_and_an_unknown_one_unrecorded() {
-    let fixture = checked_out_conflict(b"left\n", b"right\n");
-    std::fs::remove_file(fixture.root().join("a.txt")).expect("removed");
-    assert_eq!(recorded(&fixture, "a.txt").map(|r| r.changed), Some(false));
     fixture.write("new.txt", b"new\n");
     assert_eq!(recorded(&fixture, "new.txt"), None);
-}
-
-#[cfg(unix)]
-#[test]
-fn a_file_that_cannot_be_examined_is_a_backend_error_not_a_deleted_file() {
-    use std::os::unix::fs::PermissionsExt as _;
-    const NO_ACCESS: u32 = 0o000;
-    const OPEN: u32 = 0o755;
-
-    let fixture = Fixture::new();
-    let commit = fixture.commit_on(&[], "one", &[("sub/a.txt", b"a\n")]);
-    fixture.check_out(&[&commit]);
-    fixture.check_out_to_disk();
-    let sub = fixture.root().join("sub");
-    let set_mode = |mode| {
-        std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(mode)).expect("chmod");
-    };
-    let repo = fixture.open();
-    set_mode(NO_ACCESS);
-    let result = repo.recorded(Utf8Path::new("sub/a.txt"));
-    set_mode(OPEN);
-    match result {
-        Err(VcsError::Backend { context, .. }) => {
-            assert_eq!(context, "reading a file's metadata");
-        }
-        other => panic!("expected a backend error, got {other:?}"),
-    }
 }
 
 #[test]
@@ -633,7 +591,7 @@ fn a_file_checked_out_from_another_conflict_is_stale() {
     assert!(matches!(&error, VcsError::StaleWorkingCopy(path) if path == "a.txt"), "{error:?}");
     assert_eq!(
         recorded(&fixture, "b.txt"),
-        Some(vcs::Recorded { changed: false, marker_length: None }),
+        Some(vcs::Recorded { marker_length: None }),
         "b.txt is the same in both"
     );
 }
@@ -644,10 +602,7 @@ fn a_new_working_copy_commit_with_the_same_conflict_is_not_stale() {
     let [_, left, right] = fixture.three_way("a.txt", [b"a\n", b"left\n", b"right\n"]);
     fixture.check_out_to_disk();
     fixture.check_out(&[&left, &right]);
-    assert_eq!(
-        recorded(&fixture, "a.txt"),
-        Some(vcs::Recorded { changed: false, marker_length: Some(7) })
-    );
+    assert_eq!(recorded(&fixture, "a.txt"), Some(vcs::Recorded { marker_length: Some(7) }));
 }
 
 #[test]
@@ -661,27 +616,7 @@ fn a_third_parent_that_leaves_the_file_alone_is_not_stale() {
     fixture.check_out_to_disk();
     // `@`'s tree has three sides, and a.txt's conflict, simplified, is the one on disk.
     fixture.check_out(&[&left, &right, &third]);
-    assert_eq!(
-        recorded(&fixture, "a.txt"),
-        Some(vcs::Recorded { changed: false, marker_length: Some(7) })
-    );
-}
-
-#[test]
-fn a_same_size_edit_is_changed_by_its_modification_time() {
-    /// A time well before the checkout: 1000 s after the epoch.
-    const EARLIER: std::time::Duration = std::time::Duration::from_secs(1000);
-    let fixture = checked_out_conflict(b"left\n", b"right\n");
-    let path = fixture.root().join("a.txt");
-    let size = std::fs::metadata(&path).expect("the file exists").len();
-    let same_size = vec![b'x'; usize::try_from(size).expect("a small file")];
-    fixture.write("a.txt", &same_size);
-    std::fs::File::options()
-        .write(true)
-        .open(&path)
-        .and_then(|file| file.set_modified(std::time::UNIX_EPOCH + EARLIER))
-        .expect("the modification time is set");
-    assert_eq!(recorded(&fixture, "a.txt").map(|r| r.changed), Some(true));
+    assert_eq!(recorded(&fixture, "a.txt"), Some(vcs::Recorded { marker_length: Some(7) }));
 }
 
 // The commits each input of a merge or a diff tool's copy may hold (spec §7.3).

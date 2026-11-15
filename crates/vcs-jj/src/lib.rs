@@ -128,14 +128,6 @@ fn backend<E: Error + Send + Sync + 'static>(context: &'static str) -> impl FnOn
     move |error| VcsError::Backend { context, source: Box::new(error) }
 }
 
-/// `time` in milliseconds since the epoch, as jj records a file's modification time.
-fn millis(time: std::time::SystemTime) -> Option<i64> {
-    match time.duration_since(std::time::UNIX_EPOCH) {
-        Ok(after) => i64::try_from(after.as_millis()).ok(),
-        Err(before) => i64::try_from(before.duration().as_millis()).ok().map(|m| -m),
-    }
-}
-
 /// The repository at the workspace's single head operation.
 fn head_repo(workspace: &Workspace) -> Result<Arc<ReadonlyRepo>, VcsError> {
     let loader = workspace.repo_loader();
@@ -748,21 +740,12 @@ impl Repository for JjRepository {
         if on_disk != value(&self.working_copy_commit()?.tree())? {
             return Err(VcsError::StaleWorkingCopy(path.to_owned()));
         }
-        let changed = match std::fs::symlink_metadata(self.root.join(path)) {
-            Ok(metadata) => {
-                let modified =
-                    metadata.modified().map_err(backend("reading a file's modification time"))?;
-                millis(modified) != Some(state.mtime.0) || metadata.len() != state.size
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
-            Err(error) => return Err(backend("reading a file's metadata")(error)),
-        };
         let marker_length = state
             .materialized_conflict_data
             .map(|data| usize::try_from(data.conflict_marker_len))
             .transpose()
             .map_err(backend("reading a marker length"))?;
-        Ok(Some(Recorded { changed, marker_length }))
+        Ok(Some(Recorded { marker_length }))
     }
 
     /// The terms of the working-copy commit's merged tree value: its adds are the sides and
@@ -970,15 +953,6 @@ mod tests {
 
     fn jj_time(millis: i64, tz_offset: i32) -> jj_lib::backend::Timestamp {
         jj_lib::backend::Timestamp { timestamp: MillisSinceEpoch(millis), tz_offset }
-    }
-
-    #[test]
-    fn a_time_before_the_epoch_has_negative_milliseconds() {
-        const OFFSET: std::time::Duration = std::time::Duration::from_millis(1500);
-        let epoch = std::time::UNIX_EPOCH;
-        assert_eq!(millis(epoch - OFFSET), Some(-1500));
-        assert_eq!(millis(epoch), Some(0));
-        assert_eq!(millis(epoch + OFFSET), Some(1500));
     }
 
     #[test]
