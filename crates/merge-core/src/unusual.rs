@@ -75,6 +75,23 @@ fn within(ranges: &[(char, char)], c: char) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CodePoint(pub char);
 
+/// Fewest hex digits a code point is written with.
+const MIN_HEX_DIGITS: u32 = 4;
+/// Bits one hex digit holds.
+const BITS_PER_HEX_DIGIT: u32 = 4;
+/// The `U+` before the digits.
+const PREFIX_LEN: usize = 2;
+
+impl CodePoint {
+    /// The characters the code point is written with, all ASCII: 6 for `U+202E`.
+    #[must_use]
+    pub fn width(self) -> usize {
+        let bits = u32::from(self.0).bit_width();
+        let digits = bits.div_ceil(BITS_PER_HEX_DIGIT).max(MIN_HEX_DIGITS);
+        PREFIX_LEN + digits as usize
+    }
+}
+
 impl fmt::Display for CodePoint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "U+{:04X}", u32::from(self.0))
@@ -227,6 +244,15 @@ mod tests {
         // é, Cyrillic а, a CJK ideograph, an emoji, VS15 and VS16.
         let usual = ['é', 'а', '中', '😀', '\u{FE0E}', '\u{FE0F}'];
         assert_eq!(all(&usual), vec![None; usual.len()]);
+    }
+
+    #[test]
+    fn a_code_points_width_is_the_length_it_is_written_with() {
+        let chars =
+            ['\0', '\u{1B}', '\u{202E}', '\u{FFFF}', '\u{10000}', '\u{E0041}', '\u{10FFFF}'];
+        let widths: Vec<usize> = chars.iter().map(|&c| CodePoint(c).width()).collect();
+        assert_eq!(widths, [6, 6, 6, 6, 7, 7, 8]);
+        assert!(chars.iter().all(|&c| CodePoint(c).width() == CodePoint(c).to_string().len()));
     }
 
     #[test]

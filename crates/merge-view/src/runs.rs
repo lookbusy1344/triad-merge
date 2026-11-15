@@ -4,6 +4,8 @@
 use std::borrow::Cow;
 use std::ops::Range;
 
+use merge_core::unusual::Unusual;
+
 use crate::highlight::CellSpans;
 use crate::tabs;
 
@@ -19,6 +21,8 @@ pub struct Run<S> {
     pub matched: Option<Matched>,
     /// The run lies in the pane's selection.
     pub selected: bool,
+    /// The run is an unusual character: an invisible one's code point, or an odd space.
+    pub unusual: Option<Unusual>,
 }
 
 /// Which search match a run lies in.
@@ -37,15 +41,17 @@ pub fn runs<S: Copy>(
     changed: &[Range<usize>],
     matched: &[(Range<usize>, Matched)],
 ) -> Vec<Run<S>> {
-    layered(syntax, changed, matched, None)
+    layered(syntax, changed, matched, None, &[])
 }
 
-/// [`runs`] with the bytes of `selected` as a fourth layer.
+/// [`runs`] with the bytes of `selected` as a fourth layer and the unusual characters as a
+/// fifth, sorted and disjoint.
 fn layered<S: Copy>(
     syntax: &[(Range<usize>, S)],
     changed: &[Range<usize>],
     matched: &[(Range<usize>, Matched)],
     selected: Option<Range<usize>>,
+    unusual: &[(Range<usize>, Unusual)],
 ) -> Vec<Run<S>> {
     let selected = selected.filter(|range| !range.is_empty());
     let mut bounds: Vec<usize> = syntax
@@ -54,6 +60,7 @@ fn layered<S: Copy>(
         .chain(changed)
         .chain(matched.iter().map(|(range, _)| range))
         .chain(&selected)
+        .chain(unusual.iter().map(|(range, _)| range))
         .filter(|range| !range.is_empty())
         .flat_map(|range| [range.start, range.end])
         .collect();
@@ -62,6 +69,7 @@ fn layered<S: Copy>(
     let mut styles = syntax.iter().peekable();
     let mut marks = changed.iter().peekable();
     let mut found = matched.iter().peekable();
+    let mut odd = unusual.iter().peekable();
     bounds
         .windows(2)
         .filter_map(|pair| {
@@ -70,19 +78,22 @@ fn layered<S: Copy>(
             let changed = covering(&mut marks, |r| r, range.start).is_some();
             let matched = covering(&mut found, |(r, _)| r, range.start).map(|&(_, m)| m);
             let selected = selected.as_ref().is_some_and(|s| s.contains(&range.start));
-            (style.is_some() || changed || matched.is_some() || selected).then_some(Run {
+            let unusual = covering(&mut odd, |(r, _)| r, range.start).map(|&(_, u)| u);
+            let marked = changed || matched.is_some() || selected || unusual.is_some();
+            (style.is_some() || marked).then_some(Run {
                 range,
                 style,
                 changed,
                 matched,
                 selected,
+                unusual,
             })
         })
         .collect()
 }
 
 /// A cell's text as it draws, and its runs in bytes of that text: the line without its
-/// terminator, tabs expanded to `tab_width`, with `syntax`, `spans`, `matched` and `selected`
+/// terminator as [`tabs::expand`] draws it, with its unusual characters marked and `syntax`, `spans`, `matched` and `selected`
 /// (all in bytes of the line) moved onto the expanded text. Ranges past the line stop at its end.
 #[must_use]
 pub fn cell<'a, S: Copy>(
@@ -111,7 +122,8 @@ pub fn cell<'a, S: Copy>(
         .filter(|(range, _)| !range.is_empty())
         .collect();
     let selected = selected.map(|range| at(range.start)..at(range.end));
-    (expanded.into_text(), layered(&syntax, &changed, &matched, selected))
+    let runs = layered(&syntax, &changed, &matched, selected, expanded.marks());
+    (expanded.into_text(), runs)
 }
 
 /// The item of a sorted, disjoint sequence whose range holds byte `at`, skipping the items
@@ -138,7 +150,29 @@ mod tests {
     }
 
     fn run(range: Range<usize>, style: Option<char>, changed: bool) -> Run<char> {
-        Run { range, style, changed, matched: None, selected: false }
+        Run { range, style, changed, matched: None, selected: false, unusual: None }
+    }
+
+    #[test]
+    fn an_invisible_characters_code_point_is_its_own_run() {
+        // a, RLO (bytes 1..4), b: the code point U+202E draws at 1..7.
+        let (text, runs) = cell("a\u{202E}b\n", &CellSpans::None, &[(0..5, K)], &[], None, 4);
+        assert_eq!(text, "aU+202Eb");
+        assert_eq!(
+            runs,
+            [
+                run(0..1, Some(K), false),
+                Run { unusual: Some(Unusual::Invisible), ..run(1..7, Some(K), false) },
+                run(7..8, Some(K), false),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_odd_space_without_a_span_is_a_run() {
+        let (text, runs) = cell("a\u{3000}b", &CellSpans::None, &[], &[], None, 4);
+        assert_eq!(text, "a\u{3000}b");
+        assert_eq!(runs, [Run { unusual: Some(Unusual::Space), ..run(1..4, None, false) }]);
     }
 
     fn found(run: Run<char>, matched: Matched) -> Run<char> {

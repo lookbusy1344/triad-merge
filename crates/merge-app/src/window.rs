@@ -42,6 +42,7 @@ use merge_core::journal::{Journal, RestoreError};
 use merge_core::merge3::{Inputs, Kind, LEFT, RIGHT, Source};
 use merge_core::suggest::{self, EditSuggestion};
 use merge_core::text::Text;
+use merge_core::unusual::Unusual;
 use merge_session::ending::{self, Closing, Next, SaveFailed, Undone, UnresolvedSave};
 use merge_session::io::WriteError;
 use merge_session::jj_native::CommitEffect;
@@ -1009,7 +1010,13 @@ impl MergeWindow {
         let spans = self.highlights.row(self.session.document(), &self.rows, row).get(pane)?;
         let tab_width = self.typography.tab_width;
         let selected = self.input_select.in_line(self.session.document(), source, line);
-        let paint = CellPaint { changed, fills, selected: cx.theme().selection, tab_width };
+        let paint = CellPaint {
+            changed,
+            fills,
+            selected: cx.theme().selection,
+            unusual: UnusualPaint::of(cx),
+            tab_width,
+        };
         Some(line_highlights(text.line(line), spans, &syntax, &matched, selected, paint))
     }
 
@@ -2845,6 +2852,7 @@ impl MergeWindow {
                 changed: None,
                 fills: self.match_fills(pane, cx),
                 selected: cx.theme().selection,
+                unusual: UnusualPaint::of(cx),
                 tab_width: self.typography.tab_width,
             })
             .collect()
@@ -3392,7 +3400,26 @@ struct CellPaint {
     fills: MatchFills,
     /// The background of the selected characters.
     selected: Hsla,
+    unusual: UnusualPaint,
     tab_width: usize,
+}
+
+/// How an unusual character paints (spec §5): an invisible one's code point in `text` on
+/// `fill`, an odd space on `fill`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct UnusualPaint {
+    pub fill: Hsla,
+    pub text: Hsla,
+}
+
+/// The opacity of the muted text colour behind an unusual character.
+const UNUSUAL_FILL_OPACITY: f32 = 0.25;
+
+impl UnusualPaint {
+    pub(crate) fn of(cx: &App) -> Self {
+        let text = cx.theme().muted_foreground;
+        Self { fill: text.opacity(UNUSUAL_FILL_OPACITY), text }
+    }
 }
 
 impl CellPaint {
@@ -3482,7 +3509,11 @@ fn line_highlights(
         runs.into_iter()
             .map(|run| {
                 let style = match_style(
-                    run_style(run.style, run.changed, paint.changed),
+                    unusual_style(
+                        run_style(run.style, run.changed, paint.changed),
+                        run.unusual,
+                        paint.unusual,
+                    ),
                     run.matched,
                     paint.fills,
                 );
@@ -3495,6 +3526,22 @@ fn line_highlights(
             })
             .collect(),
     )
+}
+
+/// A run's style with the grey of the unusual character it shows: an invisible character's
+/// code point also takes the muted text colour.
+fn unusual_style(
+    style: HighlightStyle,
+    unusual: Option<Unusual>,
+    paint: UnusualPaint,
+) -> HighlightStyle {
+    match unusual {
+        None => style,
+        Some(Unusual::Space) => HighlightStyle { background_color: Some(paint.fill), ..style },
+        Some(Unusual::Invisible) => {
+            HighlightStyle { color: Some(paint.text), background_color: Some(paint.fill), ..style }
+        }
+    }
 }
 
 /// A run's style with the fill of the search match it lies in.

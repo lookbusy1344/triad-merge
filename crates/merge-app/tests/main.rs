@@ -33,5 +33,6 @@ mod scrollbars;
 mod stack;
 mod syntax;
 mod tools;
+mod unusual;
 mod window;
 mod wrap;
