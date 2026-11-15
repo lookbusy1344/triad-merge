@@ -501,6 +501,14 @@ impl Fixture {
             .expect("the working copy is checked out");
     }
 
+    /// Whether the working copy records the head operation, as a checkout or snapshot there
+    /// leaves it.
+    #[must_use]
+    pub fn working_copy_at_head(&self) -> bool {
+        let workspace = self.fresh_workspace();
+        workspace.working_copy().operation_id() == self.repo().op_id()
+    }
+
     /// The workspace loaded afresh: its working copy's state as it is on disk now, which a
     /// checkout or a snapshot may have changed since the fixture's own workspace loaded.
     fn fresh_workspace(&self) -> Workspace {
@@ -638,6 +646,13 @@ impl Fixture {
                 shown.then_some(id.map(|id| (name, id))).flatten()
             })
             .collect()
+    }
+
+    /// The full ID jj's local bookmark `name` points at, at the head operation; none
+    /// without one, or for a conflicted bookmark.
+    #[must_use]
+    pub fn bookmark(&self, name: &str) -> Option<String> {
+        self.repo().view().get_local_bookmark(RefName::new(name)).as_normal().map(CommitId::hex)
     }
 
     /// The full ID of the working-copy commit at the head operation.

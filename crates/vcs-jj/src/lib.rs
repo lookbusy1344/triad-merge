@@ -28,7 +28,7 @@ use jj_lib::default_backend_factories::{
     default_backend_factories, default_working_copy_factories,
 };
 use jj_lib::fileset::FilesetAliasesMap;
-use jj_lib::git::REMOTE_NAME_FOR_LOCAL_GIT_REPO;
+use jj_lib::git::{GitImportOptions, REMOTE_NAME_FOR_LOCAL_GIT_REPO};
 use jj_lib::local_working_copy::LocalWorkingCopy;
 use jj_lib::merged_tree::MergedTree;
 use jj_lib::object_id::ObjectId as _;
@@ -40,6 +40,7 @@ use jj_lib::revset::{
     RevsetParseContext, RevsetResolutionError, RevsetStreamExt as _, RevsetWorkspaceContext,
     SymbolResolver, SymbolResolverExtension,
 };
+use jj_lib::rewrite::RebaseOptions;
 use jj_lib::settings::UserSettings;
 use jj_lib::ui_path::RepoPathUiConverter;
 use jj_lib::working_copy::{WorkingCopy as _, WorkingCopyFreshness};
@@ -56,6 +57,15 @@ pub(crate) const JJ_DIR: &str = ".jj";
 const SNAPSHOT_DESCRIPTION: &str = "snapshot working copy";
 /// The operation that imports a moved git HEAD, as jj names it.
 const IMPORT_HEAD_DESCRIPTION: &str = "import git head";
+/// The operations that import git's refs after a snapshot, and export jj's when nothing was
+/// imported, as jj names them.
+const IMPORT_REFS_DESCRIPTION: &str = "import git refs";
+const EXPORT_REFS_DESCRIPTION: &str = "export git refs";
+/// The file under the repository directory that jj locks around git's HEAD and refs import
+/// and export in a colocated workspace (jj-cli 0.47 `lock_git_import_export`).
+const GIT_IMPORT_EXPORT_LOCK: &str = "git_import_export.lock";
+/// The commits jj will not rewrite, as jj-cli builds the set from `immutable_heads()`.
+const IMMUTABLE: &str = "::(immutable_heads() | root())";
 /// The working copy's parents, in revset syntax.
 const PARENT: &str = "@-";
 /// jj shows commit and change IDs with at least this many characters, more when shorter
@@ -195,16 +205,20 @@ impl JjRepository {
 
     /// Snapshot the working copy as jj does before a command, with the user's jj config.
     /// When the snapshot changed the working-copy commit's tree, it is written in an
-    /// operation described by `description`, marked as a snapshot when `as_snapshot`. The
+    /// operation described by `description`, marked as a snapshot when `as_snapshot`. In a
+    /// colocated workspace, as in jj, git's HEAD is imported before and git's refs after,
+    /// under jj's git import and export lock, taken before the head operation loads. The
     /// repository reads at the resulting operation afterwards.
     fn take_snapshot(&mut self, description: &str, as_snapshot: bool) -> Result<(), VcsError> {
         let env = self.config.clone().unwrap_or_else(config::ConfigEnv::from_process);
-        let config::JjConfig { mut workspace, snapshot, .. } =
+        let config::JjConfig { mut workspace, snapshot, settings } =
             config::load(&env, self.root.as_std_path()).map_err(backend("reading jj's config"))?;
         let name = workspace.workspace_name().to_owned();
+        let colocated =
+            colocated_git(workspace.repo_loader().store(), workspace.workspace_root()).is_some();
+        let _git_lock = colocated.then(|| lock_git_import_export(&workspace)).transpose()?;
         let mut repo = head_repo(&workspace)?;
-        let git = colocated_git(&repo, workspace.workspace_root());
-        if git.is_some() {
+        if colocated {
             repo = import_git_head(&mut workspace, repo, &name)?;
         }
         let wc_id = |repo: &ReadonlyRepo| {
@@ -265,7 +279,7 @@ impl JjRepository {
                 .rebase_descendants()
                 .block_on()
                 .map_err(backend("rebasing the working copy's descendants"))?;
-            if git.is_some() {
+            if colocated {
                 // As jj does in a colocated workspace: new files show in git's index as
                 // intended to be added.
                 jj_lib::git::update_intent_to_add(
@@ -287,8 +301,105 @@ impl JjRepository {
             .finish(repo.op_id().clone())
             .block_on()
             .map_err(backend("saving the working copy's state"))?;
+        if colocated {
+            let revsets = native::revsets_from(&settings)?;
+            repo = self.import_export_git_refs(&mut workspace, repo, &settings, &revsets)?;
+        }
         self.repo = repo;
         Ok(())
+    }
+
+    /// As jj does after its snapshot in a colocated workspace (jj-cli 0.47
+    /// `import_export_git_refs`): import git's refs with the user's import settings. When
+    /// that changes nothing, export jj's refs, in an operation only when that changes
+    /// something. Otherwise rebase the mutable descendants of what git rewrote, give a
+    /// working-copy commit that became immutable a new one on it, move git's HEAD and export
+    /// jj's refs, commit, and check out a moved working-copy commit. The repository at the
+    /// new operation; `repo` when nothing changed.
+    fn import_export_git_refs(
+        &self,
+        workspace: &mut Workspace,
+        repo: Arc<ReadonlyRepo>,
+        settings: &UserSettings,
+        revsets: &Revsets,
+    ) -> Result<Arc<ReadonlyRepo>, VcsError> {
+        let options = git_import_options(settings)?;
+        let mut tx = repo.start_transaction();
+        tx.set_workspace_name(&self.workspace);
+        let stats = jj_lib::git::import_refs(tx.repo_mut(), &options)
+            .block_on()
+            .map_err(backend("importing git's refs"))?;
+        for name in &stats.failed_ref_names {
+            tracing::warn!(%name, "cannot import a ref from git");
+        }
+        if !tx.repo().has_changes() {
+            export_refs(tx.repo_mut())?;
+            if !tx.repo().has_changes() {
+                return Ok(repo);
+            }
+            return tx
+                .commit(EXPORT_REFS_DESCRIPTION)
+                .block_on()
+                .map_err(backend("writing the export's operation"));
+        }
+        // Immutable as the repository was before the import: git may rewrite immutable
+        // commits, whose immutable descendants stay where they are.
+        let immutable = self.resolve_expression(repo.as_ref(), IMMUTABLE, revsets)?.into_inner().0;
+        tx.repo_mut()
+            .rebase_descendants_with_options(&immutable, &RebaseOptions::default(), |_, _| {})
+            .block_on()
+            .map_err(backend("rebasing the descendants of what git rewrote"))?;
+        let old_wc = repo
+            .view()
+            .get_wc_commit_id(&self.workspace)
+            .map(|id| repo.store().get_commit(id))
+            .transpose()
+            .map_err(backend("reading the working-copy commit"))?;
+        let mut new_wc = tx
+            .repo()
+            .view()
+            .get_wc_commit_id(&self.workspace)
+            .map(|id| tx.repo().store().get_commit(id))
+            .transpose()
+            .map_err(backend("reading the working-copy commit"))?;
+        if let Some(wc) = &new_wc
+            && self.is_immutable(tx.repo(), wc, revsets)?
+        {
+            let fresh = tx
+                .repo_mut()
+                .new_commit(vec![wc.id().clone()], wc.tree())
+                .write()
+                .block_on()
+                .map_err(backend("writing a working-copy commit"))?;
+            tx.repo_mut()
+                .set_wc_commit(self.workspace.clone(), fresh.id().clone())
+                .map_err(backend("moving the working copy"))?;
+            new_wc = Some(fresh);
+        }
+        let moved = new_wc.filter(|new| old_wc.as_ref().is_none_or(|old| old.id() != new.id()));
+        sync_git(tx.repo_mut(), workspace, old_wc.as_ref(), moved.as_ref())?;
+        let repo = tx
+            .commit(IMPORT_REFS_DESCRIPTION)
+            .block_on()
+            .map_err(backend("writing the import's operation"))?;
+        if let Some(new) = &moved {
+            workspace
+                .check_out(repo.op_id().clone(), old_wc.as_ref().map(Commit::tree).as_ref(), new)
+                .block_on()
+                .map_err(backend("checking out the working copy git's refs moved"))?;
+        }
+        Ok(repo)
+    }
+
+    /// Whether `commit` is one jj will not rewrite in `repo`, with `revsets`.
+    fn is_immutable(
+        &self,
+        repo: &dyn jj_lib::repo::Repo,
+        commit: &Commit,
+        revsets: &Revsets,
+    ) -> Result<bool, VcsError> {
+        let expr = format!("{} & ({IMMUTABLE})", commit.id().hex());
+        Ok(!self.evaluate(repo, &expr, revsets)?.is_empty())
     }
 
     /// The commits `expr` names, in jj's revset syntax; at least one. Only jj-lib's built-in
@@ -764,6 +875,27 @@ fn import_git_head(
     Ok(repo)
 }
 
+/// As jj does before it commits in a colocated workspace: move git's HEAD to the parents of
+/// `new`, a working-copy commit that replaced `old`, then export jj's refs.
+fn sync_git(
+    repo: &mut jj_lib::repo::MutableRepo,
+    workspace: &Workspace,
+    old: Option<&Commit>,
+    new: Option<&Commit>,
+) -> Result<(), VcsError> {
+    if let Some(new) = new {
+        jj_lib::git::reset_head(
+            repo,
+            workspace.workspace_name(),
+            workspace.workspace_root(),
+            (old, new),
+        )
+        .block_on()
+        .map_err(backend("moving git's HEAD"))?;
+    }
+    export_refs(repo)
+}
+
 /// Export jj's bookmarks and tags to the colocated git repository, as jj does after each
 /// command, so a bookmark the snapshot moved with `@` moves in git too. A ref git holds
 /// otherwise than jj last saw stays as it is, as in jj; the next jj command reports it.
@@ -777,8 +909,37 @@ fn export_refs(repo: &mut jj_lib::repo::MutableRepo) -> Result<(), VcsError> {
 
 /// git's repository at the workspace root when the workspace is colocated with it, as jj
 /// finds it; none for an internal git store.
-fn colocated_git(repo: &ReadonlyRepo, root: &std::path::Path) -> Option<gix::Repository> {
-    jj_lib::git::get_git_backend(repo.store()).ok()?.open_git_repo_at_workdir(root).ok()
+fn colocated_git(store: &jj_lib::store::Store, root: &std::path::Path) -> Option<gix::Repository> {
+    jj_lib::git::get_git_backend(store).ok()?.open_git_repo_at_workdir(root).ok()
+}
+
+/// jj's git import and export lock, held until the guard drops; another jj process waits
+/// for it before it loads the repository.
+fn lock_git_import_export(workspace: &Workspace) -> Result<jj_lib::lock::FileLock, VcsError> {
+    jj_lib::lock::FileLock::lock(workspace.repo_path().join(GIT_IMPORT_EXPORT_LOCK))
+        .map_err(backend("locking git's import and export"))
+}
+
+/// The options jj imports git's refs with (jj-cli 0.47 `load_git_import_options`): the
+/// `git.*` settings, and each remote's `auto-track-bookmarks` as a string pattern.
+fn git_import_options(settings: &UserSettings) -> Result<GitImportOptions, VcsError> {
+    let git = jj_lib::git::GitSettings::from_settings(settings)
+        .map_err(backend("reading jj's git settings"))?;
+    let remotes = settings.remote_settings().map_err(backend("reading jj's remote settings"))?;
+    let remote_auto_track_bookmarks = remotes
+        .into_iter()
+        .filter_map(|(name, remote)| remote.auto_track_bookmarks.map(|text| (name, text)))
+        .map(|(name, text)| {
+            let expr = revset::parse_string_expression(&mut RevsetDiagnostics::new(), &text)
+                .map_err(backend("parsing a remote's auto-track-bookmarks"))?;
+            Ok((name, expr.to_matcher()))
+        })
+        .collect::<Result<_, VcsError>>()?;
+    Ok(GitImportOptions {
+        abandon_unreachable_commits: git.abandon_unreachable_commits,
+        record_synthetic_predecessors: git.record_synthetic_predecessors,
+        remote_auto_track_bookmarks,
+    })
 }
 
 /// The file `path` holds in `tree`: `None` when it is no file there.

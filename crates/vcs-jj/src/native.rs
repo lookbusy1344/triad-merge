@@ -19,10 +19,11 @@ use jj_lib::object_id::ObjectId as _;
 use jj_lib::repo::{MutableRepo, ReadonlyRepo, Repo};
 use jj_lib::repo_path::{RepoPath, RepoPathBuf};
 use jj_lib::revset::RevsetAliasesMap;
+use jj_lib::settings::UserSettings;
 use pollster::FutureExt as _;
 use vcs::{ChangeInfo, VcsError};
 
-use crate::{JjError, JjRepository, Revsets, backend, colocated_git, config, export_refs};
+use crate::{JjError, JjRepository, Revsets, backend, colocated_git, config, sync_git};
 
 /// jj's default revset aliases, as jj's own config sets them, less `builtin_log()`, which
 /// only `jj log` reads. The user's `revset-aliases` replace any of them.
@@ -126,17 +127,7 @@ impl JjRepository {
         let env = self.config.clone().unwrap_or_else(config::ConfigEnv::from_process);
         let loaded =
             config::load(&env, self.root.as_std_path()).map_err(backend("reading jj's config"))?;
-        let config = loaded.settings.config();
-        let mut aliases = RevsetAliasesMap::new();
-        for &(decl, defn) in DEFAULT_ALIASES {
-            aliases.insert(decl, defn, None).map_err(backend("declaring a revset alias"))?;
-        }
-        for decl in config.table_keys(ALIASES_TABLE) {
-            let defn: String =
-                config.get([ALIASES_TABLE, decl]).map_err(backend("reading a revset alias"))?;
-            aliases.insert(decl, defn, None).map_err(backend("declaring a revset alias"))?;
-        }
-        Ok(Revsets { aliases, user_email: loaded.settings.user_email().to_owned() })
+        revsets_from(&loaded.settings)
     }
 
     /// The commits `revset` names that hold conflicts, parents first, with the user's
@@ -441,6 +432,12 @@ impl JjRepository {
             .block_on()
             .map_err(backend("rebasing the descendants"))?;
         let written = !dry_run && tx.repo().has_changes();
+        let colocated = colocated_git(repo.store(), workspace.workspace_root()).is_some();
+        // As jj: git's HEAD and refs export, the commit and the checkout under jj's git
+        // import and export lock.
+        let _git_lock = (written && colocated)
+            .then(|| crate::lock_git_import_export(&workspace))
+            .transpose()?;
         let new_wc = if written {
             let new_wc_id = tx
                 .repo()
@@ -452,18 +449,8 @@ impl JjRepository {
                 .then(|| tx.repo().store().get_commit(&new_wc_id))
                 .transpose()
                 .map_err(backend("reading the working-copy commit"))?;
-            if colocated_git(&repo, workspace.workspace_root()).is_some() {
-                if let Some(new_wc) = &new_wc {
-                    jj_lib::git::reset_head(
-                        tx.repo_mut(),
-                        &self.workspace,
-                        workspace.workspace_root(),
-                        (Some(&old_wc), new_wc),
-                    )
-                    .block_on()
-                    .map_err(backend("moving git's HEAD"))?;
-                }
-                export_refs(tx.repo_mut())?;
+            if colocated {
+                sync_git(tx.repo_mut(), &workspace, Some(&old_wc), new_wc.as_ref())?;
             }
             new_wc
         } else {
@@ -532,6 +519,22 @@ impl JjRepository {
         self.repo = after;
         Ok(report(stale))
     }
+}
+
+/// The user's revset aliases in `settings` over jj's defaults, and the user's email for
+/// `mine()`.
+pub(crate) fn revsets_from(settings: &UserSettings) -> Result<Revsets, VcsError> {
+    let config = settings.config();
+    let mut aliases = RevsetAliasesMap::new();
+    for &(decl, defn) in DEFAULT_ALIASES {
+        aliases.insert(decl, defn, None).map_err(backend("declaring a revset alias"))?;
+    }
+    for decl in config.table_keys(ALIASES_TABLE) {
+        let defn: String =
+            config.get([ALIASES_TABLE, decl]).map_err(backend("reading a revset alias"))?;
+        aliases.insert(decl, defn, None).map_err(backend("declaring a revset alias"))?;
+    }
+    Ok(Revsets { aliases, user_email: settings.user_email().to_owned() })
 }
 
 /// The visible commits of `change_id` in `repo`.

@@ -307,6 +307,65 @@ fn in_a_colocated_workspace_a_bookmark_the_snapshot_moves_is_exported_to_git() {
     assert_eq!(fixture.git_branch("topic"), saved);
 }
 
+/// Point git's ref `name` at `id`, as a git command run beside jj would.
+fn git_ref(fixture: &Fixture, name: &str, id: &str) {
+    fixture.write(&format!(".git/{name}"), format!("{id}\n").as_bytes());
+}
+
+#[test]
+fn in_a_colocated_workspace_a_branch_git_made_is_imported_after_the_snapshot() {
+    // As jj imports git's refs after its snapshot, in an operation of its own.
+    let fixture = conflict_on_disk(Fixture::colocated());
+    let [left, _right] = <[String; 2]>::try_from(fixture.parent_ids(0)).expect("two parents");
+    git_ref(&fixture, "refs/heads/made-in-git", &left);
+    fixture.write("other.txt", EDITED);
+    let before = fixture.operations().len();
+    open(&fixture).snapshot().expect("the snapshot is taken");
+    let ops = fixture.operations();
+    assert_eq!(
+        ops[..2],
+        [
+            Op { description: "import git refs".to_owned(), is_snapshot: false },
+            Op { description: SNAPSHOT.to_owned(), is_snapshot: true },
+        ]
+    );
+    assert_eq!(ops.len(), before + 2);
+    assert_eq!(fixture.bookmark("made-in-git"), Some(left));
+}
+
+#[test]
+fn a_remote_branch_git_fetched_is_tracked_as_the_user_s_auto_track_setting_says() {
+    let toml = "[remotes.origin]\nauto-track-bookmarks = 'glob:feat*'\n";
+    let fixture = conflict_on_disk(Fixture::colocated());
+    let [left, right] = <[String; 2]>::try_from(fixture.parent_ids(0)).expect("two parents");
+    git_ref(&fixture, "refs/remotes/origin/feature", &left);
+    git_ref(&fixture, "refs/remotes/origin/other", &right);
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    open_with_config(&fixture, &dir, toml).snapshot().expect("the snapshot is taken");
+    assert_eq!(fixture.bookmark("feature"), Some(left));
+    assert_eq!(fixture.bookmark("other"), None, "untracked: no local bookmark");
+}
+
+#[test]
+fn a_working_copy_the_import_makes_immutable_gets_a_new_commit_on_it() {
+    // As jj: a bookmark git made at `@`, in the user's immutable heads, freezes `@`; jj puts
+    // a new working-copy commit on it and moves git's HEAD there.
+    let toml = "[revset-aliases]\n'immutable_heads()' = 'bookmarks(exact:\"pinned\")'\n";
+    let fixture = conflict_on_disk(Fixture::colocated());
+    let wc = fixture.working_copy_id();
+    git_ref(&fixture, "refs/heads/pinned", &wc);
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    open_with_config(&fixture, &dir, toml).snapshot().expect("the snapshot is taken");
+    assert_eq!(
+        fixture.operations()[0],
+        Op { description: "import git refs".to_owned(), is_snapshot: false }
+    );
+    assert_ne!(fixture.working_copy_id(), wc);
+    assert_eq!(fixture.parent_ids(0), std::slice::from_ref(&wc));
+    assert_eq!(fixture.git_head(), Some(wc));
+    assert!(fixture.working_copy_at_head(), "the new commit is checked out");
+}
+
 #[test]
 fn a_save_outside_the_repository_is_refused() {
     let fixture = conflict_on_disk(Fixture::new());
