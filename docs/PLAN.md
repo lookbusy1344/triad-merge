@@ -61,10 +61,10 @@ In order. Each is one or more commits.
 | Fuzzing | After release 1; `cargo-fuzz` needs nightly | spec §8.9 |
 | Screen-reader support: status announcements, conflict regions, scrolling the row table, the accessibility tree in headless tests, a keyboard and contrast audit | §J1 needs the owner at the machine | J |
 | gpui-kit 0.9: build, rebase the patch, measure | — | `docs/gpui-kit-issues.md` |
-| Collapse unchanged regions in the merge window | — | §G2 |
+| Merge window folds: the untouched lines of an unchanged region whose result is edited | A line diff of the region | §G2 |
 | Ruler marks with folds: the marks keep their place in the whole file while the thumb follows display rows | A choice between the two | §G2 |
 | A key that opens the fold next to the caret | — | §G2 |
-| Review and diff features, §G4–§G14 | Owner's choices on §G15's open points | G |
+| Review and diff features: blank lines in a merge (§G4), §G6–§G14 | Owner's choices on §G15's open points for §G4, §G6 and §G8 | G |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
 | The absorb oracle's generator builds text files only: no renames, executable bits, symlinks, conflicted inputs or immutable commits | — | §I5 |
 | jj-cli's config defaults other than the revset aliases: none checked for whether triad depends on one | — | §I5 |
