@@ -148,8 +148,8 @@ pub fn inspect(
     Ok((text, code))
 }
 
-/// The two-way regions and the exit code: 0 if the files are equal under the whitespace mode,
-/// 1 if they differ.
+/// The two-way regions and the exit code: 0 if the files are equal under the comparison
+/// options, 1 if they differ.
 ///
 /// # Errors
 ///
@@ -169,6 +169,7 @@ pub fn diff_inspect(
             kind: match r.kind {
                 Kind2::Unchanged => "unchanged",
                 Kind2::Changed => "changed",
+                Kind2::Ignored => "ignored",
             },
             left: span(&r.left),
             right: span(&r.right),

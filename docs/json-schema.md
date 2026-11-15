@@ -72,9 +72,9 @@ Exit code: 0 with no conflicts, 1 with conflicts, 3 on error.
 |---|---|---|
 | `changes` | integer | The number of `changed` regions. |
 
-`encodings` has the keys `left` and `right`. Each region has `kind`, `"unchanged"` or `"changed"`, and the ranges `left` and `right`. Either range of a `changed` region may be empty, for a pure insertion or deletion. Identical inputs give one `unchanged` region.
+`encodings` has the keys `left` and `right`. Each region has `kind`, `"unchanged"`, `"changed"` or `"ignored"`, and the ranges `left` and `right`. Either range of a `changed` or `ignored` region may be empty, for a pure insertion or deletion. An `ignored` region differs only in blank lines, under `diff-ignore-blank-lines` (spec §4.2), and is not counted in `changes`. Identical inputs give one `unchanged` region.
 
-Exit code, as `diff(1)`: 0 if the inputs are equal under the whitespace mode, `diff-ignore-line-endings`, `ignore-case` and `ignore-pattern` (spec §4.2), 1 if they differ, 3 on error.
+Exit code, as `diff(1)`: 0 if the inputs are equal under the whitespace mode, `diff-ignore-line-endings`, `ignore-case`, `ignore-pattern` and `diff-ignore-blank-lines` (spec §4.2), 1 if they differ, 3 on error.
 
 ```json
 {

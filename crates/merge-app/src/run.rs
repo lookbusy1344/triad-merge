@@ -453,7 +453,9 @@ fn exit(code: ExitCode) -> ! {
 
 #[cfg(test)]
 mod tests {
-    use merge_core::diff::{Algorithm, CaseRule, DiffOptions, LineEndingRule, Whitespace};
+    use merge_core::diff::{
+        Algorithm, BlankLineRule, CaseRule, DiffOptions, LineEndingRule, Whitespace,
+    };
     use merge_core::merge3::Refine;
     use merge_core::pattern::Patterns;
 
@@ -546,8 +548,10 @@ mod tests {
                 line_endings: LineEndingRule::Ignore,
                 case: CaseRule::Ignore,
                 patterns: Patterns::new(["x"]).expect("valid"),
+                blank_lines: BlankLineRule::Compare,
             },
             diff_line_endings: LineEndingRule::Compare,
+            diff_blank_lines: BlankLineRule::Ignore,
             refine: Refine::Off,
             syntax_boundaries: true,
             font: Some("Menlo".to_owned()),
@@ -614,6 +618,7 @@ mod tests {
                 line_endings: LineEndingRule::Compare,
                 case: CaseRule::Ignore,
                 patterns: Patterns::new(["x"]).expect("valid"),
+                blank_lines: BlankLineRule::Ignore,
             }
         );
         assert_eq!(settings.options.refine, Refine::Off);

@@ -99,8 +99,8 @@ pub fn previous_change(doc: &DiffDocument, from: RegionIx) -> Option<RegionIx> {
         .map(RegionIx::new)
 }
 
-/// The spacer rows that level `side` with the other: `(line, rows)` for each changed region
-/// with fewer lines here, set above the line after it. A region at the end puts its rows
+/// The spacer rows that level `side` with the other: `(line, rows)` for each changed or
+/// ignored region with fewer lines here, set above the line after it. A region at the end puts its rows
 /// after the last line.
 pub fn spacers(doc: &DiffDocument, side: Side) -> impl Iterator<Item = (usize, usize)> + '_ {
     spacers_by(doc, side, |_, lines| lines.len())
@@ -362,6 +362,21 @@ mod tests {
         assert_eq!(region_rows(&d, RegionIx::new(2)), 4..5);
         assert_eq!(region_rows(&d, RegionIx::new(3)), 5..7);
         assert_eq!(region_rows(&d, RegionIx::new(4)), 7..8);
+    }
+
+    #[test]
+    fn ignored_blank_lines_take_spacers_and_are_no_difference() {
+        // Regions: 0 a, 1 two blank lines|nothing (right gets 2 spacers), 2 b.
+        let options = DiffOptions {
+            blank_lines: merge_core::diff::BlankLineRule::Ignore,
+            ..DiffOptions::default()
+        };
+        let d = DiffDocument::new(&text("a\n\n\nb\n"), &text("a\nb\n"), options);
+        assert_eq!(spacer_rows(&d, Side::Right), [(1, 2)]);
+        assert_eq!(region_rows(&d, RegionIx::new(2)), 3..4);
+        assert_eq!(differences(&d), 0);
+        assert_eq!(first_change(&d), None);
+        assert_eq!(bytes(&d, Side::Left), NO_BYTES);
     }
 
     /// Display rows per line, from a table for each side: the rows each line wraps to.

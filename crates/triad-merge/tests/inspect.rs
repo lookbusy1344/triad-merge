@@ -209,6 +209,58 @@ fn diff_inspect_compares_case_unless_ignore_case_is_on() {
 }
 
 #[test]
+fn diff_inspect_counts_blank_line_changes_unless_diff_ignore_blank_lines_is_on() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let left = dir.path().join("left.txt");
+    let right = dir.path().join("right.txt");
+    std::fs::write(&left, "a\n\nb\n").expect("written");
+    std::fs::write(&right, "a\nb\n  \n").expect("written");
+    let ignore = dir.path().join("config.triad");
+    std::fs::write(&ignore, "diff-ignore-blank-lines = true\n").expect("written");
+    let diff = |config: Option<&std::path::Path>, json: bool| {
+        let mut command = command();
+        if let Some(config) = config {
+            command.env("TRIAD_CONFIG", config);
+        }
+        command
+            .arg("diff")
+            .args(["--inspect".as_ref(), left.as_os_str(), right.as_os_str()])
+            .args(json.then_some("--json"))
+            .output()
+            .expect("binary runs")
+    };
+    let counted = diff(None, false);
+    assert_eq!(
+        String::from_utf8_lossy(&counted.stdout),
+        "unchanged left 0..1 right 0..1\n\
+         changed left 1..2 right 1..1\n\
+         unchanged left 2..3 right 1..2\n\
+         changed left 3..3 right 2..3\n\
+         changes: 2\n"
+    );
+    assert_eq!(counted.status.code(), Some(1));
+    let ignored = diff(Some(&ignore), false);
+    assert_eq!(
+        String::from_utf8_lossy(&ignored.stdout),
+        "unchanged left 0..1 right 0..1\n\
+         ignored left 1..2 right 1..1\n\
+         unchanged left 2..3 right 1..2\n\
+         ignored left 3..3 right 2..3\n\
+         changes: 0\n"
+    );
+    assert_eq!(ignored.status.code(), Some(0), "equal but for blank lines");
+    let json: serde_json::Value =
+        serde_json::from_slice(&diff(Some(&ignore), true).stdout).expect("json");
+    assert_eq!(json["changes"], 0);
+    assert_eq!(
+        json["regions"][1],
+        serde_json::json!({"kind": "ignored", "left": [1, 2], "right": [1, 1]})
+    );
+    std::fs::write(&right, "a\nc\n\n").expect("written");
+    assert_eq!(diff(Some(&ignore), false).status.code(), Some(1), "a change beside blank lines");
+}
+
+#[test]
 fn inspect_merges_a_side_that_only_changed_case_when_ignore_case_is_on() {
     let texts = ["A\nB\nC\n", "a\nb\nc\n", "A\nX\nC\n"];
     assert_eq!(inspect_texts("", "", texts).status.code(), Some(CONFLICTS_EXIT));

@@ -706,6 +706,7 @@ mod tests {
             line_endings: crate::diff::LineEndingRule::Compare,
             case: crate::diff::CaseRule::Compare,
             patterns: crate::pattern::Patterns::empty(),
+            blank_lines: crate::diff::BlankLineRule::Compare,
         },
         refine: crate::merge3::Refine::Ends,
         syntax_boundaries: false,

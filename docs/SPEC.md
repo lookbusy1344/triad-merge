@@ -178,6 +178,7 @@ All inputs are decoded to Rust strings before diffing.
 - Line endings: `merge-ignore-line-endings` (merges, off by default) and `diff-ignore-line-endings` (the two-way diff, on by default) make `\r\n`, `\n` and a missing final newline compare equal, under any whitespace mode. A lone `\r` stays part of the line. Every whitespace mode other than `none` drops line endings already.
 - Case: `ignore-case` (off by default) makes lines compare after full Unicode case folding (`CaseFolding.txt`, statuses C and F), in merges, the diff window and `diff --inspect`, under any whitespace mode and line-ending rule. `ß` and `SS` compare equal, as do `ς`, `σ` and `Σ`.
 - Patterns: each `ignore-pattern` line names a regular expression (Rust `regex` syntax). Before comparison, every match of each pattern is cut from the line, pattern by pattern in the order given, and the next pattern runs on what the last left. Patterns see the line without its terminator (`\n` or `\r\n`) and before case folding: `(?i)` makes one match either case. A line a pattern empties compares equal to a blank line. A pattern that does not compile, or that matches empty text, is a bad config line (§6.4).
+- Blank lines: `diff-ignore-blank-lines` (off by default) makes the two-way diff count no change made only of blank lines. A line is blank when, after the patterns cut it, it holds only spaces, tabs and `\r` before its terminator; a non-breaking space or a form feed is text. A change counts as ignored when every line it holds on both sides is blank: an inserted or deleted run of blank lines, or blank lines replaced by others. A change that holds one line with text stays a change, blank lines and all, as under git's `--ignore-blank-lines`. Merges compare blank lines as any other: there they change which changes touch, and so which regions conflict.
 - Whitespace modes, the line-ending rule, the case rule and the patterns change which lines count as equal, under both semantics. They never change output bytes. On each line of a region that compares equal under the mode, the output takes the bytes of a side that differs from base. If both sides differ, it takes left's. A `BothSame` region takes left's bytes. The region shows as a dimmed whitespace-only change and is not counted as a difference.
 - Changed line pairs get a second, character-level diff for highlighting inside lines. This diff runs lazily for visible rows only.
 
@@ -263,8 +264,9 @@ Two-way diff reuses the decoding (§4.1) and diffing (§4.2) code: the same algo
 |---|---|
 | `Unchanged` | Lines equal |
 | `Changed` | Lines differ; either range may be empty, for a pure insert or delete |
+| `Ignored` | Lines differ, and every line on both sides is blank, under `diff-ignore-blank-lines` (§4.2); either range may be empty |
 
-Identical inputs give one `Unchanged` region.
+Identical inputs give one `Unchanged` region. An `Ignored` region is no difference: it takes filler rows as a change does, but no tone, no copy button and no stop for next and previous difference.
 
 Both sides are editable buffers:
 
@@ -337,9 +339,9 @@ Two-way diff:
 - Closing the window (⌘W, ⌘Q or the close button) with unsaved edits asks whether to save (the first answer), discard or keep editing. A save that fails shows an alert and leaves the window open.
 - Undo and redo act on the pane with the focus. Each side has its own history.
 - Next and previous difference (⌘↓, ⌘↑) go from the region holding the focused pane's caret, and put both panes' carets at the start of the target region. While the regions lag the text, the step waits for the recompute off the UI thread, which then starts without the debounce. Steps asked for while waiting run in order once it lands; an edit or a reload drops them. A region reached this way stays current while the caret stays put, so an empty region can be left in either direction.
-- Regions are recomputed off the UI thread once edits pause for 100 ms (`DIFF_DEBOUNCE`). The status bar shows the repository (§5), the number of differences and the whitespace mode, or `line endings ignored` under `none` with `diff-ignore-line-endings` (§4.2), then `case ignored` under `ignore-case` and `patterns ignored` with any `ignore-pattern`.
+- Regions are recomputed off the UI thread once edits pause for 100 ms (`DIFF_DEBOUNCE`). The status bar shows the repository (§5), the number of differences and the whitespace mode, or `line endings ignored` under `none` with `diff-ignore-line-endings` (§4.2), then `case ignored` under `ignore-case`, `patterns ignored` with any `ignore-pattern` and `blank lines ignored` under `diff-ignore-blank-lines`.
 - If a file changes on disk while it's open, the pane reloads it, unless the pane has unsaved edits. Then the pane asks whether to keep its own version (Keep Mine, the first answer) or reload, once for any number of changes while it asks; Reload reads the file as it is then. A reload clears that side's undo history and takes the file's encoding. A file that cannot be read, or reads as the pane's own text in the same encoding, or as a text the window is saving there or last saved there, until the pane next reloads, changes nothing; a save counts from the moment it starts, since its write can reach the watcher before its result. The window watches each file's directory, since editors save by renaming a new file over the old one. It waits 100 ms (`DISK_SETTLE`) after a change for the events that follow it, then reads each changed file once, off the UI thread.
-- Exit codes: the window exits with 0. `diff --inspect` follows `diff(1)`: 0 if the inputs are equal under the whitespace mode and line-ending rule, 1 if they differ. Errors exit with 3, as in merge mode.
+- Exit codes: the window exits with 0. `diff --inspect` follows `diff(1)`: 0 if the inputs are equal under the comparison settings (§4.2), ignored changes included, 1 if they differ. Errors exit with 3, as in merge mode.
 
 Native mode (`triad-merge diff PATH`):
 
@@ -499,6 +501,7 @@ Every key is optional:
 | `ignore-whitespace` | `none`, `trailing`, `amount`, `all` | `none` |
 | `merge-ignore-line-endings` | `true`, `false`: merges compare `\r\n`, `\n` and a missing final newline as equal (§4.2) | `false` |
 | `diff-ignore-line-endings` | `true`, `false`: the same for the diff window and `diff --inspect` | `true` |
+| `diff-ignore-blank-lines` | `true`, `false`: the diff window and `diff --inspect` count no change made only of blank lines (§4.2) | `false` |
 | `ignore-case` | `true`, `false`: merges, the diff window and `diff --inspect` compare lines after Unicode case folding (§4.2) | `false` |
 | `ignore-pattern` | A regular expression whose matches lines drop before comparison, in merges, the diff window and `diff --inspect` (§4.2). Each line adds one; an empty value drops those before it | none |
 | `refine-conflicts` | `true`, `false`, `deep` | `true` |

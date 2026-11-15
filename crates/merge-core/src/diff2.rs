@@ -6,7 +6,7 @@ use std::ops::Range;
 /// return. Front ends name it here, so the core alone picks the rope crate.
 pub use ropey::{Rope, RopeSlice};
 
-use crate::diff::{DiffOptions, diff_lines};
+use crate::diff::{BlankLineRule, DiffOptions, Hunk, diff_lines, is_blank_line};
 pub use crate::edit::{BatchError, EditBatch, TextPatch};
 use crate::edit::{apply, caret_after, inverse, prepare};
 use crate::index::RegionIx;
@@ -17,6 +17,9 @@ pub enum Kind2 {
     Unchanged,
     /// Either range may be empty, for a pure insertion or deletion.
     Changed,
+    /// A change the comparison ignores: under [`BlankLineRule::Ignore`], one whose lines on
+    /// both sides are all blank. It is no difference, and either range may be empty.
+    Ignored,
 }
 
 /// One stretch of both files, as line ranges.
@@ -28,8 +31,8 @@ pub struct Region2 {
 }
 
 /// The regions that cover both files in order, from one diff left→right. Equal stretches
-/// between changes are `Unchanged`. Identical files, empty ones included, give one
-/// `Unchanged` region.
+/// between changes are `Unchanged`, and a change the options ignore is `Ignored`. Identical
+/// files, empty ones included, give one `Unchanged` region.
 #[must_use]
 pub fn regions(left: &Text, right: &Text, opts: &DiffOptions) -> Vec<Region2> {
     let hunks = diff_lines(left, right, opts);
@@ -41,13 +44,24 @@ pub fn regions(left: &Text, right: &Text, opts: &DiffOptions) -> Vec<Region2> {
             regions.push(unchanged(at, start));
         }
         at = (hunk.before.end, hunk.after.end);
-        regions.push(Region2 { kind: Kind2::Changed, left: hunk.before, right: hunk.after });
+        let kind = if ignores(&hunk, left, right, opts) { Kind2::Ignored } else { Kind2::Changed };
+        regions.push(Region2 { kind, left: hunk.before, right: hunk.after });
     }
     let end = (left.line_count(), right.line_count());
     if end != at || regions.is_empty() {
         regions.push(unchanged(at, end));
     }
     regions
+}
+
+/// Whether `opts` ignore `hunk`: every line it holds on either side is blank.
+fn ignores(hunk: &Hunk, left: &Text, right: &Text, opts: &DiffOptions) -> bool {
+    let blank = |text: &Text, lines: &Range<usize>| {
+        lines.clone().all(|n| is_blank_line(text.line(n), &opts.patterns))
+    };
+    opts.blank_lines == BlankLineRule::Ignore
+        && blank(left, &hunk.before)
+        && blank(right, &hunk.after)
 }
 
 /// Equal lines from `from` to `to`, each a (left, right) pair of line numbers.
@@ -368,7 +382,8 @@ impl DiffDocument {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::diff::Whitespace;
+    use crate::diff::{BlankLineRule, Whitespace};
+    use crate::pattern::Patterns;
     use crate::testing::text;
 
     fn of(left: &str, right: &str) -> Vec<Region2> {
@@ -507,6 +522,106 @@ mod tests {
         for (mode, left, right, expected) in cases {
             assert_eq!(with(mode, left, right), *expected, "{mode:?} {left:?} {right:?}");
         }
+    }
+
+    fn ignored(left: Range<usize>, right: Range<usize>) -> Region2 {
+        Region2 { kind: Kind2::Ignored, left, right }
+    }
+
+    fn ignoring_blank_lines(left: &str, right: &str, patterns: Patterns) -> Vec<Region2> {
+        let opts =
+            DiffOptions { blank_lines: BlankLineRule::Ignore, patterns, ..DiffOptions::default() };
+        regions(&text(left), &text(right), &opts)
+    }
+
+    fn blank(left: &str, right: &str) -> Vec<Region2> {
+        ignoring_blank_lines(left, right, Patterns::empty())
+    }
+
+    #[test]
+    fn blank_lines_differ_unless_ignored() {
+        assert_eq!(
+            of("a\n\nb\n", "a\nb\n"),
+            [same(0..1, 0..1), changed(1..2, 1..1), same(2..3, 1..2)]
+        );
+        assert_eq!(
+            blank("a\n\nb\n", "a\nb\n"),
+            [same(0..1, 0..1), ignored(1..2, 1..1), same(2..3, 1..2)]
+        );
+        assert_eq!(blank("a\n", "\n\na\n"), [ignored(0..0, 0..2), same(0..1, 2..3)]);
+    }
+
+    #[test]
+    fn a_line_of_spaces_tabs_and_carriage_returns_is_blank() {
+        assert_eq!(
+            blank("a\n \t\nb\n", "a\nb\n"),
+            [same(0..1, 0..1), ignored(1..2, 1..1), same(2..3, 1..2)]
+        );
+        assert_eq!(
+            blank("a\n\r\nb\n", "a\nb\n"),
+            [same(0..1, 0..1), ignored(1..2, 1..1), same(2..3, 1..2)]
+        );
+        assert_eq!(
+            blank("a\n  \nb\n", "a\n\nb\n"),
+            [same(0..1, 0..1), ignored(1..2, 1..2), same(2..3, 2..3)],
+            "a blank line replaced by another"
+        );
+    }
+
+    #[test]
+    fn other_white_space_is_not_blank() {
+        assert_eq!(
+            blank("a\n\u{a0}\nb\n", "a\nb\n"),
+            [same(0..1, 0..1), changed(1..2, 1..1), same(2..3, 1..2)]
+        );
+        assert_eq!(
+            blank("a\n\u{c}\nb\n", "a\nb\n"),
+            [same(0..1, 0..1), changed(1..2, 1..1), same(2..3, 1..2)]
+        );
+    }
+
+    #[test]
+    fn a_change_with_one_line_not_blank_stays_a_change() {
+        assert_eq!(blank("a\nb\n", "a\n\nc\n"), [same(0..1, 0..1), changed(1..2, 1..3)]);
+    }
+
+    #[test]
+    fn a_blank_last_line_without_a_newline_is_blank() {
+        assert_eq!(blank("a\n", "a\n  "), [same(0..1, 0..1), ignored(1..1, 1..2)]);
+    }
+
+    #[test]
+    fn a_missing_final_newline_on_a_line_with_text_is_not_blank() {
+        assert_eq!(blank("a", "a\n"), [changed(0..1, 0..1)]);
+    }
+
+    #[test]
+    fn a_line_a_pattern_empties_is_blank() {
+        let comments = || Patterns::new(["//.*"]).expect("valid");
+        assert_eq!(
+            ignoring_blank_lines("a\n  // note\nb\n", "a\nb\n", comments()),
+            [same(0..1, 0..1), ignored(1..2, 1..1), same(2..3, 1..2)]
+        );
+        assert_eq!(
+            ignoring_blank_lines("a\nx // note\nb\n", "a\nb\n", comments()),
+            [same(0..1, 0..1), changed(1..2, 1..1), same(2..3, 1..2)]
+        );
+    }
+
+    #[test]
+    fn files_that_differ_only_in_blank_lines_have_no_change() {
+        let regions = blank("\na\n\n\nb\n", "a\nb\n\n");
+        assert_eq!(regions.iter().filter(|r| r.kind == Kind2::Changed).count(), 0);
+        assert_eq!(
+            regions,
+            [
+                ignored(0..1, 0..0),
+                same(1..2, 0..1),
+                ignored(2..4, 1..1),
+                same(4..5, 1..2),
+                ignored(5..5, 2..3),
+            ]
+        );
     }
 
     #[test]

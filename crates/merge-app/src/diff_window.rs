@@ -570,7 +570,7 @@ impl DiffWindow {
             this.menu_bar.forget();
             cx.notify();
         }));
-        let comparison = strings::diff_comparison(settings.options.comparison());
+        let comparison = strings::diff_comparison(&settings.options);
         // Without a working directory, a relative path stays relative.
         let cwd = settings.cwd.as_deref().unwrap_or(Path::new(""));
         let editable = panes.iter().filter(|p| !p.read_only);

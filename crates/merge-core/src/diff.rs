@@ -50,6 +50,16 @@ pub enum LineEndingRule {
     Ignore,
 }
 
+/// Whether a change made only of blank lines counts as a difference in the two-way diff
+/// (spec §4.2). Merges compare blank lines whatever the rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum BlankLineRule {
+    #[default]
+    Compare,
+    /// A change whose lines on both sides are all blank is no difference.
+    Ignore,
+}
+
 /// Whether letter case takes part in comparison (spec §4.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum CaseRule {
@@ -72,6 +82,9 @@ pub struct DiffOptions {
     /// Journals written before the field cut no patterns.
     #[serde(default)]
     pub patterns: Patterns,
+    /// Read by the two-way diff only; journals written before the field compared blank lines.
+    #[serde(default)]
+    pub blank_lines: BlankLineRule,
 }
 
 impl DiffOptions {
@@ -232,6 +245,13 @@ pub fn line_key<'t>(line: &'t str, mode: Comparison<'_>) -> Cow<'t, str> {
         CaseRule::Compare => key,
         CaseRule::Ignore => fold_case(key),
     }
+}
+
+/// Whether `line` is blank once `patterns`' matches are cut: whitespace and its terminator
+/// alone.
+#[must_use]
+pub fn is_blank_line(line: &str, patterns: &Patterns) -> bool {
+    cut_patterns(line, patterns).chars().all(|c| c == '\n' || is_blank(c))
 }
 
 /// `key` after full Unicode case folding; borrowed when ASCII without capitals.

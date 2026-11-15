@@ -1,7 +1,9 @@
 //! Every string the window shows, in one place for later translation (spec §6.5).
 
 use gpui_kit::SharedString;
-use merge_core::diff::{CaseRule, Comparison, LineEndingRule, Whitespace};
+use merge_core::diff::{
+    BlankLineRule, CaseRule, Comparison, DiffOptions, LineEndingRule, Whitespace,
+};
 use merge_core::diff2::Side;
 use merge_core::index::RegionIx;
 use merge_core::merge3::{HunkLevel, Semantics};
@@ -618,13 +620,15 @@ pub(crate) fn comparison(mode: Comparison<'_>) -> &'static str {
     }
 }
 
-/// The diff window's items for how lines compare: [`comparison`]'s, then `case ignored` and
-/// `patterns ignored` where they apply.
-pub(crate) fn diff_comparison(mode: Comparison<'_>) -> String {
+/// The diff window's items for how lines compare: [`comparison`]'s, then `case ignored`,
+/// `patterns ignored` and `blank lines ignored` where they apply.
+pub(crate) fn diff_comparison(options: &DiffOptions) -> String {
+    let mode = options.comparison();
     [
         Some(comparison(mode)),
         (mode.case == CaseRule::Ignore).then_some("case ignored"),
         (!mode.patterns.is_empty()).then_some("patterns ignored"),
+        (options.blank_lines == BlankLineRule::Ignore).then_some("blank lines ignored"),
     ]
     .into_iter()
     .flatten()
@@ -1100,22 +1104,38 @@ mod tests {
 
     #[test]
     fn the_diff_status_adds_an_item_when_case_is_ignored() {
-        let ignoring = Comparison { case: CaseRule::Ignore, ..Comparison::default() };
-        assert_eq!(diff_comparison(ignoring), "whitespace significant · case ignored");
-        let spaces = Comparison { whitespace: Whitespace::All, ..ignoring };
-        assert_eq!(diff_comparison(spaces), "all whitespace ignored · case ignored");
-        assert_eq!(diff_comparison(Comparison::default()), "whitespace significant");
+        let ignoring = DiffOptions { case: CaseRule::Ignore, ..DiffOptions::default() };
+        assert_eq!(diff_comparison(&ignoring), "whitespace significant · case ignored");
+        let spaces = DiffOptions { whitespace: Whitespace::All, ..ignoring };
+        assert_eq!(diff_comparison(&spaces), "all whitespace ignored · case ignored");
+        assert_eq!(diff_comparison(&DiffOptions::default()), "whitespace significant");
     }
 
     #[test]
     fn the_diff_status_adds_an_item_when_patterns_are_in_force() {
         let digits = Patterns::new([r"\d"]).expect("valid");
-        let cutting = Comparison { patterns: &digits, ..Comparison::default() };
-        assert_eq!(diff_comparison(cutting), "whitespace significant · patterns ignored");
-        let both = Comparison { case: CaseRule::Ignore, ..cutting };
+        let cutting = DiffOptions { patterns: digits, ..DiffOptions::default() };
+        assert_eq!(diff_comparison(&cutting), "whitespace significant · patterns ignored");
+        let both = DiffOptions { case: CaseRule::Ignore, ..cutting };
         assert_eq!(
-            diff_comparison(both),
+            diff_comparison(&both),
             "whitespace significant · case ignored · patterns ignored"
+        );
+    }
+
+    #[test]
+    fn the_diff_status_adds_an_item_when_blank_lines_are_ignored() {
+        let blank = DiffOptions { blank_lines: BlankLineRule::Ignore, ..DiffOptions::default() };
+        assert_eq!(diff_comparison(&blank), "whitespace significant · blank lines ignored");
+        let every = DiffOptions {
+            case: CaseRule::Ignore,
+            patterns: Patterns::new([r"\d"]).expect("valid"),
+            whitespace: Whitespace::Trailing,
+            ..blank
+        };
+        assert_eq!(
+            diff_comparison(&every),
+            "trailing whitespace ignored · case ignored · patterns ignored · blank lines ignored"
         );
     }
 
