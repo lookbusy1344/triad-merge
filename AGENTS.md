@@ -104,7 +104,7 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
   - Never drop an error silently. Handle it, return it, or log it with `tracing` and say why going on is safe.
   - `Option` for a value that may be absent, never an error or a sentinel.
 - **Named constants.** No magic numbers.
-- **UI style.** Views follow `docs/STYLE.md`: 12 px chrome text, `.small()` controls, menus from `split_menu`, a 4 px grid, theme colours. Zed's `ui` crate is the reference. A view that departs from it says why in a comment.
+- **UI style.** Views follow `docs/STYLE.md`: 12 px chrome text, `.small()` controls, menus from `menu_button`, a 4 px grid, theme colours. Zed's `ui` crate is the reference. A view that departs from it says why in a comment.
 - **Borrow before you copy.** triad holds whole files, often several copies of a large one.
   - Parameters take `&str`, `&[T]` and `&Path`. Take ownership only to store or consume the value.
   - Return borrows, slices or iterators when the data outlives the call; an owned value only when the function builds it.

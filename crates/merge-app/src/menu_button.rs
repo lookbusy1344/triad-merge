@@ -1,4 +1,4 @@
-//! A split button: a button, and beside it a compact menu of related actions (spec §6.3,
+//! A menu button: a button that opens a compact menu of related actions (spec §6.3,
 //! `docs/STYLE.md`). gpui-base's `Popover` owns the open state, Escape, a click outside and
 //! giving the focus back; this module draws the rows and moves the selection.
 
@@ -6,27 +6,27 @@ use std::rc::Rc;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::base::Popover;
-use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::button::Button;
 use gpui_kit::component::kbd::Kbd;
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, h_flex, v_flex};
 use gpui_kit::{
     Action, AnyElement, App, ClickEvent, Entity, EntityId, FocusHandle, InteractiveElement as _,
     IntoElement, KeyBinding, ParentElement as _, Pixels, Role, SharedString,
-    StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, actions, div,
-    prelude::FluentBuilder as _, px, transparent_black,
+    StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Toggled, Window, actions,
+    div, prelude::FluentBuilder as _, px, transparent_black,
 };
 
-actions!(split_menu, [SelectNext, SelectPrevious, Activate]);
+actions!(menu_button, [SelectNext, SelectPrevious, Activate]);
 
 /// The key context of an open menu.
 const CONTEXT: &str = "SplitMenu";
 /// A menu row (`docs/STYLE.md`).
 const ROW_HEIGHT: Pixels = px(20.);
+/// The slot of a toggling row's tick: a 12 px icon.
+const CHECK_WIDTH: Pixels = px(12.);
 /// The gap between the trigger and the menu.
 const MENU_OFFSET: Pixels = px(2.);
 
-/// The menu's trigger, inside its split button; also used by tests.
-pub const MENU_TRIGGER_ID: &str = "popup";
 /// An open menu; its rows' ids are their positions. Also used by tests.
 pub const POPUP_MENU_ID: &str = "popup-menu";
 
@@ -44,6 +44,8 @@ pub(crate) struct Item {
     pub icon: IconName,
     pub label: &'static str,
     pub action: Box<dyn Action>,
+    /// A row that toggles a state shows a tick while it is on; `None` for a plain row.
+    pub checked: Option<bool>,
 }
 
 /// The row after `selected`, wrapping; the first when none is selected.
@@ -59,38 +61,38 @@ fn previous(selected: Option<usize>, len: usize) -> usize {
     }
 }
 
-/// A button with a menu of related actions beside it. Each row shows the key of its action
-/// in `key_context`.
+/// A button that opens a menu of related actions. Each row shows the key of its action in
+/// `key_context`.
 #[derive(IntoElement)]
-pub(crate) struct SplitMenu {
+pub(crate) struct MenuButton {
     id: &'static str,
-    button: Button,
+    trigger: Button,
     label: &'static str,
     key_context: &'static str,
     text_size: Pixels,
     items: Rc<[Item]>,
 }
 
-impl SplitMenu {
-    /// `button`, and a menu named `label` of `items`, whose text is `text_size`.
+impl MenuButton {
+    /// `trigger`, which opens a menu named `label` of `items`, whose text is `text_size`.
     pub(crate) fn new(
         id: &'static str,
-        button: Button,
+        trigger: Button,
         label: &'static str,
         key_context: &'static str,
         text_size: Pixels,
         items: impl IntoIterator<Item = Item>,
     ) -> Self {
-        Self { id, button, label, key_context, text_size, items: items.into_iter().collect() }
+        Self { id, trigger, label, key_context, text_size, items: items.into_iter().collect() }
     }
 
-    /// The id of one piece of the split button's element state.
+    /// The id of one piece of the menu button's element state.
     fn state_id(&self, piece: &str) -> SharedString {
         format!("{}-{piece}", self.id).into()
     }
 }
 
-impl gpui_kit::RenderOnce for SplitMenu {
+impl gpui_kit::RenderOnce for MenuButton {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let selected = window.use_keyed_state(self.state_id("selected"), cx, |_, _| None);
         let focus = window
@@ -98,12 +100,6 @@ impl gpui_kit::RenderOnce for SplitMenu {
             .read(cx)
             .clone();
         let view = window.current_view();
-        let trigger = Button::new(MENU_TRIGGER_ID)
-            .ghost()
-            .small()
-            .icon(IconName::ChevronDown)
-            .accessibility_label(self.label)
-            .tooltip(self.label);
         let popover = Popover::new(self.state_id("popover"))
             .anchor(gpui_kit::Anchor::TopLeft)
             .offset(MENU_OFFSET)
@@ -112,7 +108,7 @@ impl gpui_kit::RenderOnce for SplitMenu {
                 let selected = selected.clone();
                 move |_, _, cx| selected.update(cx, |selected, _| *selected = None)
             })
-            .trigger(trigger);
+            .trigger(self.trigger);
         let menu = Menu {
             label: self.label,
             key_context: self.key_context,
@@ -122,10 +118,7 @@ impl gpui_kit::RenderOnce for SplitMenu {
             focus,
             view,
         };
-        h_flex()
-            .id(self.id)
-            .child(self.button)
-            .child(popover.content(move |_, window, cx| menu.render(cx.entity(), window, cx)))
+        popover.content(move |_, window, cx| menu.render(cx.entity(), window, cx))
     }
 }
 
@@ -137,7 +130,7 @@ struct Menu {
     items: Rc<[Item]>,
     selected: Entity<Option<usize>>,
     focus: FocusHandle,
-    /// The view that draws the split button.
+    /// The view that draws the menu button.
     view: EntityId,
 }
 
@@ -185,11 +178,15 @@ impl Menu {
             let key = Kbd::binding_for_action(item.action.as_ref(), Some(key_context), window)
                 .map(|key| key.p_0().border_0().bg(transparent_black()).text_size(text_size));
             let activate = Rc::clone(&activate);
+            let role = if item.checked.is_some() { Role::MenuItemCheckBox } else { Role::MenuItem };
             h_flex()
                 .id(ix)
                 .test_support()
-                .role(Role::MenuItem)
+                .role(role)
                 .aria_label(item.label)
+                .when_some(item.checked, |row, on| {
+                    row.aria_toggled(if on { Toggled::True } else { Toggled::False })
+                })
                 .h(ROW_HEIGHT)
                 .px_2()
                 .gap_1p5()
@@ -199,6 +196,11 @@ impl Menu {
                 .hover(|style| style.bg(accent).text_color(accent_text))
                 .child(Icon::new(item.icon).xsmall())
                 .child(div().flex_1().child(item.label))
+                .children(item.checked.map(|on| {
+                    div()
+                        .w(CHECK_WIDTH)
+                        .when(on, |slot| slot.child(Icon::new(IconName::Check).xsmall()))
+                }))
                 .children(key.map(|key| div().ml_3().child(key)))
                 .on_click(move |_: &ClickEvent, window, cx| activate(ix, window, cx))
         });

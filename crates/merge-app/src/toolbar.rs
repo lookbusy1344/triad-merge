@@ -10,12 +10,12 @@ use gpui_kit::{
 };
 use merge_core::merge3::{LEFT, RIGHT, Source};
 
-use crate::split_menu::{Item, SplitMenu};
+use crate::menu_button::{Item, MenuButton};
 use crate::window::TOOLBAR_ID;
 use crate::{
-    About, Find, GoToLine, NextConflict, NextDifference, PreviousConflict, PreviousDifference,
-    Redo, TakeLeftThenRight, TakeRightThenLeft, ToggleBase, ToggleBasePane, ToggleLeft,
-    ToggleRight, ToggleSoftWrap, ToggleSyntax, Undo,
+    About, ClearChoice, Find, GoToLine, NextConflict, NextDifference, PreviousConflict,
+    PreviousDifference, Redo, TakeLeftThenRight, TakeRightThenLeft, ToggleBase, ToggleBasePane,
+    ToggleLeft, ToggleRight, ToggleSoftWrap, ToggleSyntax, Undo,
 };
 use crate::{ViewTicks, logo, menu_bar, strings};
 
@@ -31,6 +31,7 @@ pub enum Tool {
     Right,
     LeftThenRight,
     RightThenLeft,
+    Clear,
     Undo,
     Redo,
     BasePane,
@@ -43,16 +44,23 @@ pub enum Tool {
 /// The mark that opens the About window, also used by tests.
 pub const MARK_ID: &str = "mark";
 
-/// The split button that takes both sides, also used by tests.
-pub const BOTH_ID: &str = "tool-both";
-pub use crate::split_menu::{MENU_TRIGGER_ID, POPUP_MENU_ID};
-/// The orders the Both menu offers, at their positions in the menu.
-const BOTH_MENU: [(Tool, &str); 2] = [
+/// The menu button of the picks beyond Left and Right, and its label; also used by tests.
+pub const MORE_ID: &str = "tool-more";
+pub const MORE_LABEL_ID: &str = "tool-label-more";
+pub use crate::menu_button::POPUP_MENU_ID;
+/// The More button's icon.
+pub(crate) const MORE_ICON: IconName = IconName::SquareMenu;
+/// The picks the More menu offers, at their positions in the menu.
+const MORE_MENU: [(Tool, &str); 4] = [
+    (Tool::Base, strings::BASE),
     (Tool::LeftThenRight, strings::LEFT_THEN_RIGHT),
     (Tool::RightThenLeft, strings::RIGHT_THEN_LEFT),
+    (Tool::Clear, strings::NONE),
 ];
-pub const BOTH_MENU_LEFT_THEN_RIGHT: usize = 0;
-pub const BOTH_MENU_RIGHT_THEN_LEFT: usize = 1;
+pub const MORE_MENU_BASE: usize = 0;
+pub const MORE_MENU_LEFT_THEN_RIGHT: usize = 1;
+pub const MORE_MENU_RIGHT_THEN_LEFT: usize = 2;
+pub const MORE_MENU_NONE: usize = 3;
 
 /// The narrowest window whose merge toolbar shows its labels at the default text size; a
 /// narrower one shows icons alone. It fits [`REFERENCE_BADGE`].
@@ -89,29 +97,27 @@ pub(crate) enum Control {
     Button(Tool),
     /// Previous and next as icons, with the label between them.
     Pair(Tool, Tool),
-    /// Left then right, with a menu of both orders.
-    Both,
+    /// A menu of the picks beyond Left and Right.
+    More,
 }
 
 impl Control {
-    /// The tool whose label the control shows.
-    fn labelled(self) -> Tool {
+    /// The label the control shows, when labels show.
+    fn label(self) -> Option<&'static str> {
         match self {
-            Self::Button(tool) | Self::Pair(tool, _) => tool,
-            Self::Both => Tool::LeftThenRight,
+            Self::Button(tool) | Self::Pair(tool, _) => strings::tool_label(tool),
+            Self::More => Some(strings::MORE),
         }
     }
 
     /// The tools the control runs.
     #[cfg(test)]
-    fn tools(self) -> impl Iterator<Item = Tool> {
-        let [(first, _), (second, _)] = BOTH_MENU;
-        let (first, second) = match self {
-            Self::Button(tool) => (tool, None),
-            Self::Pair(previous, next) => (previous, Some(next)),
-            Self::Both => (first, Some(second)),
-        };
-        std::iter::once(first).chain(second)
+    fn tools(self) -> Vec<Tool> {
+        match self {
+            Self::Button(tool) => vec![tool],
+            Self::Pair(previous, next) => vec![previous, next],
+            Self::More => MORE_MENU.map(|(tool, _)| tool).to_vec(),
+        }
     }
 }
 
@@ -150,12 +156,7 @@ pub(crate) const GROUPS: [&[Control]; 4] = [
         Control::Pair(Tool::PreviousDifference, Tool::NextDifference),
         Control::Pair(Tool::PreviousConflict, Tool::NextConflict),
     ],
-    &[
-        Control::Button(Tool::Left),
-        Control::Button(Tool::Base),
-        Control::Button(Tool::Right),
-        Control::Both,
-    ],
+    &[Control::Button(Tool::Left), Control::Button(Tool::Right), Control::More],
     &[Control::Button(Tool::Undo), Control::Button(Tool::Redo)],
     &[
         Control::Button(Tool::BasePane),
@@ -185,7 +186,7 @@ pub fn labels_min_width(text_size: Pixels, badge: Badge, window: &Window) -> Pix
         GROUPS
             .iter()
             .flat_map(|group| group.iter())
-            .filter_map(|&control| strings::tool_label(control.labelled()))
+            .filter_map(|&control| control.label())
             .chain([badge.reference()])
             .map(|text| {
                 let run = style.to_run(text.len());
@@ -199,7 +200,7 @@ pub fn labels_min_width(text_size: Pixels, badge: Badge, window: &Window) -> Pix
 /// Every tool `groups` runs, in order.
 #[cfg(test)]
 pub(crate) fn tools(groups: &[&[Control]]) -> impl Iterator<Item = Tool> {
-    groups.iter().flat_map(|group| group.iter()).flat_map(|control| control.tools())
+    groups.iter().flat_map(|group| group.iter()).flat_map(|&control| control.tools())
 }
 
 /// The mark, as the button that opens the About window.
@@ -266,21 +267,35 @@ fn render(
             )
             .child(next.button(context, Labels::Hidden, text_size))
             .into_any_element(),
-        // The menu's text matches the toolbar's labels.
-        Control::Both => SplitMenu::new(
-            BOTH_ID,
-            Tool::LeftThenRight.button(context, labels, text_size),
-            strings::BOTH_MENU,
+        // The menu's text matches the toolbar's labels. Base ticks while the region takes it.
+        Control::More => MenuButton::new(
+            MORE_ID,
+            more_trigger(labels, text_size),
+            strings::MORE_MENU,
             context,
             text_size,
-            BOTH_MENU.iter().map(|&(tool, label)| Item {
+            MORE_MENU.iter().map(|&(tool, label)| Item {
                 icon: tool.icon(),
                 label,
                 action: tool.action(),
+                checked: tool.toggles().then(|| pressed.contains(&tool)),
             }),
         )
         .into_any_element(),
     }
+}
+
+/// The button that opens the More menu, with its label when `labels` shows it.
+fn more_trigger(labels: Labels, text_size: Pixels) -> Button {
+    Button::new(MORE_ID)
+        .ghost()
+        .small()
+        .icon(MORE_ICON)
+        .children((labels == Labels::Shown).then(|| {
+            div().id(MORE_LABEL_ID).test_support().text_size(text_size).child(strings::MORE)
+        }))
+        .accessibility_label(strings::MORE_MENU)
+        .tooltip(strings::MORE_MENU)
 }
 
 /// A tool's text label, in the toolbar's text.
@@ -356,6 +371,7 @@ impl Tool {
             Self::Right => Box::new(ToggleRight),
             Self::LeftThenRight => Box::new(TakeLeftThenRight),
             Self::RightThenLeft => Box::new(TakeRightThenLeft),
+            Self::Clear => Box::new(ClearChoice),
             Self::Undo => Box::new(Undo),
             Self::Redo => Box::new(Redo),
             Self::BasePane => Box::new(ToggleBasePane),
@@ -378,6 +394,7 @@ impl Tool {
             Self::Right => IconName::SquareArrowRight,
             Self::LeftThenRight => IconName::ArrowLeftRight,
             Self::RightThenLeft => IconName::ArrowRightLeft,
+            Self::Clear => IconName::Eraser,
             Self::Undo => IconName::Undo2,
             Self::Redo => IconName::Redo2,
             Self::BasePane => IconName::Columns3,
@@ -396,7 +413,7 @@ mod tests {
     use super::*;
 
     /// The number of `Tool` variants.
-    const TOOL_COUNT: usize = 16;
+    const TOOL_COUNT: usize = 17;
 
     #[test]
     fn every_tool_has_its_own_icon() {

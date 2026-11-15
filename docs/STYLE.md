@@ -22,7 +22,7 @@ Zed's scale is 14, 12 and 10 px; triad's chrome takes 12 px. Two settings size t
 ## Controls
 
 - Every `Button` and `Input` is `.small()`.
-- A menu is a `split_menu::SplitMenu`: 20 px rows, a 12 px icon, the label and the action's key, in the text size it is given. gpui-component's `PopupMenu` has 26 px rows with 14 px text, which triad cannot shrink (`docs/gpui-kit-issues.md`).
+- A menu is a `menu_button::MenuButton`: 20 px rows, a 12 px icon, the label and the action's key, in the text size it is given. A row that toggles a state is a checkbox row, with a tick after its label while the state is on. gpui-component's `PopupMenu` has 26 px rows with 14 px text, which triad cannot shrink (`docs/gpui-kit-issues.md`).
 - Toolbar buttons are `.ghost()`. A dialog has one `.primary()` button, the one that finishes it.
 - A list in a tool window (stack, history, absorb) is built from `pick_list`, after Zed's `ListItem` (`crates/ui/src/components/list/list_item.rs`). A row spans the list, 24 px tall with 8 px side padding. Its text ends in an ellipsis when it does not fit; IDs, counts and states take `muted_foreground`. The list takes the focus when its window opens: ↑ and ↓ move the selection, Enter opens the selected row, and the selection scrolls into view.
 - Heights: a small control 24 px, a list row 24 px, a menu row 20 px, a tab 22 px inside a 2 px inset.

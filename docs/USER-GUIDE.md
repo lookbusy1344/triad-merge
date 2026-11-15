@@ -34,7 +34,7 @@ triad finds the repository from the working directory. It reads and writes jj an
 
 Left and right sit side by side, each showing its changes from base. The editable result sits below. Changes on one side, or the same change on both, apply without you. A conflict, marked `!`, waits for you; until then the result previews both sides, and a save writes conflict markers there.
 
-Resolve a conflict by picking sources, or type in the result. Each region's first row has a pick target per source: `●` picked, `◐` previewed in an unresolved conflict, `○` not picked. Several picks write in the order you click them. The toolbar's Left, Base and Right buttons toggle the same picks in the current region and show pressed while it holds them.
+Resolve a conflict by picking sources, or type in the result. Each region's first row has a pick target per source: `●` picked, `◐` previewed in an unresolved conflict, `○` not picked. Several picks write in the order you click them. The toolbar's Left and Right buttons toggle the same picks in the current region and show pressed while it holds them. Its More menu holds Base, ticked while picked, both sides in either order, and None, which picks nothing.
 
 | Action | Key |
 |---|---|

@@ -27,6 +27,7 @@ icon_assets!(
         Hash,
         Highlighter,
         TextWrap,
+        SquareMenu,
     ]
 );
 
@@ -61,16 +62,16 @@ impl AssetSource for AppAssets {
 
 #[cfg(test)]
 mod tests {
-    use crate::toolbar::{GROUPS, tools};
+    use crate::toolbar::{GROUPS, MORE_ICON, tools};
 
     use super::*;
 
     const SVG_START: &[u8] = b"<svg";
     /// GPUI Kit's component icons: the lines of `gpui-kit-assets` 0.8.1's `default-icons.txt`.
     const COMPONENT_ICONS: usize = 106;
-    /// Toolbar icons outside the component set: all 17 but chevron-up, chevron-down, undo-2,
-    /// redo-2 and search.
-    const EXTRA_TOOL_ICONS: usize = 12;
+    /// Toolbar icons outside the component set: the 17 tools' but chevron-up, chevron-down,
+    /// undo-2, redo-2 and search, and the More button's square-menu.
+    const EXTRA_TOOL_ICONS: usize = 13;
 
     #[test]
     fn every_tool_icon_loads() {
@@ -82,6 +83,13 @@ mod tests {
                 .unwrap_or_else(|| panic!("{tool:?}: no asset at {path}"));
             assert!(bytes.starts_with(SVG_START), "{tool:?}: {path} is not an SVG");
         }
+    }
+
+    #[test]
+    fn the_more_icon_loads() {
+        let path = MORE_ICON.path();
+        let bytes = AppAssets.load(&path).unwrap().unwrap_or_else(|| panic!("no asset at {path}"));
+        assert!(bytes.starts_with(SVG_START), "{path} is not an SVG");
     }
 
     #[test]

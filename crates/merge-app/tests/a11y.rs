@@ -10,8 +10,8 @@ use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{AnyWindowHandle, ElementId, Entity, Role, TestAppContext};
 use merge_app::MergeWindow;
 use merge_app::toolbar::{
-    BOTH_ID, BOTH_MENU_LEFT_THEN_RIGHT, BOTH_MENU_RIGHT_THEN_LEFT, MENU_TRIGGER_ID, POPUP_MENU_ID,
-    Tool,
+    MORE_ID, MORE_MENU_BASE, MORE_MENU_LEFT_THEN_RIGHT, MORE_MENU_NONE, MORE_MENU_RIGHT_THEN_LEFT,
+    POPUP_MENU_ID, Tool,
 };
 use merge_app::window::{
     CONFLICT_BADGE_ID, GO_TO_LINE_FIELD_ID, GO_TO_LINE_ID, INPUT_LINES_ID, RESULT_ID, STATUS_ID,
@@ -52,9 +52,7 @@ fn every_tool_is_a_named_button_in_a_toolbar(cx: &mut TestAppContext) {
         (Tool::PreviousConflict, "Previous conflict"),
         (Tool::NextConflict, "Next conflict"),
         (Tool::Left, "Toggle left in the current region"),
-        (Tool::Base, "Toggle base in the current region"),
         (Tool::Right, "Toggle right in the current region"),
-        (Tool::LeftThenRight, "Take left then right in the current region"),
         (Tool::Undo, "Undo"),
         (Tool::Redo, "Redo"),
         (Tool::BasePane, "Show or hide the base pane"),
@@ -72,49 +70,54 @@ fn every_tool_is_a_named_button_in_a_toolbar(cx: &mut TestAppContext) {
     }
     let mut trigger = None;
     act(cx, window, |window, _| {
-        let element = window.within(BOTH_ID).find(MENU_TRIGGER_ID);
+        let element = window.find(MORE_ID);
         trigger = Some((element.role(), element.label().map(str::to_owned)));
     });
-    assert_eq!(
-        trigger,
-        Some((Some(Role::Button), Some("Take both sides in either order".to_owned())))
-    );
+    assert_eq!(trigger, Some((Some(Role::Button), Some("More picks".to_owned()))));
 }
 
+/// The More menu's rows, in order.
+const MORE_ROWS: [usize; 4] =
+    [MORE_MENU_BASE, MORE_MENU_LEFT_THEN_RIGHT, MORE_MENU_RIGHT_THEN_LEFT, MORE_MENU_NONE];
+
 #[gpui_kit::test]
-fn the_both_menu_names_each_order(cx: &mut TestAppContext) {
+fn the_more_menu_names_each_row(cx: &mut TestAppContext) {
     let (window, _) = deleted_on_the_right(cx);
-    act(cx, window, |window, cx| {
-        window.within(BOTH_ID).click(MENU_TRIGGER_ID, cx);
-    });
+    act(cx, window, |window, cx| window.click(MORE_ID, cx));
     let mut labels = Vec::new();
     act(cx, window, |window, _| {
-        labels = [BOTH_MENU_LEFT_THEN_RIGHT, BOTH_MENU_RIGHT_THEN_LEFT]
+        labels = MORE_ROWS
             .map(|item| window.within(POPUP_MENU_ID).find(item).label().map(str::to_owned))
             .to_vec();
     });
-    assert_eq!(labels, [Some("Left then right".to_owned()), Some("Right then left".to_owned())]);
+    let expected = ["Base", "Left then right", "Right then left", "None"];
+    assert_eq!(labels, expected.map(|label| Some(label.to_owned())));
 }
 
 #[gpui_kit::test]
-fn the_both_menu_is_a_menu_of_menu_items(cx: &mut TestAppContext) {
+fn the_more_menu_is_a_menu_whose_base_row_is_a_checkbox(cx: &mut TestAppContext) {
     let (window, _) = deleted_on_the_right(cx);
-    act(cx, window, |window, cx| {
-        window.within(BOTH_ID).click(MENU_TRIGGER_ID, cx);
-    });
+    act(cx, window, |window, cx| window.click(MORE_ID, cx));
     let mut roles = None;
     act(cx, window, |window, _| {
         let menu = window.find(POPUP_MENU_ID);
-        let items = [BOTH_MENU_LEFT_THEN_RIGHT, BOTH_MENU_RIGHT_THEN_LEFT]
-            .map(|item| window.within(POPUP_MENU_ID).find(item).role());
+        let items = MORE_ROWS.map(|item| {
+            let row = window.within(POPUP_MENU_ID).find(item);
+            (row.role(), row.checked())
+        });
         roles = Some((menu.role(), menu.label().map(str::to_owned), items));
     });
     assert_eq!(
         roles,
         Some((
             Some(Role::Menu),
-            Some("Take both sides in either order".to_owned()),
-            [Some(Role::MenuItem), Some(Role::MenuItem)]
+            Some("More picks".to_owned()),
+            [
+                (Some(Role::MenuItemCheckBox), Some(false)),
+                (Some(Role::MenuItem), None),
+                (Some(Role::MenuItem), None),
+                (Some(Role::MenuItem), None),
+            ]
         ))
     );
 }

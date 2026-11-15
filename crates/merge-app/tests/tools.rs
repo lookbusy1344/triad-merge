@@ -11,8 +11,9 @@ use common::{act, caret, doc, open, set_caret, texts};
 use gpui_kit::test::TestWindowExt;
 use gpui_kit::{AnyWindowHandle, Entity, OwnedMenuItem, TestAppContext};
 use merge_app::toolbar::{
-    BOTH_ID, BOTH_MENU_LEFT_THEN_RIGHT, BOTH_MENU_RIGHT_THEN_LEFT, Badge, COMPACT_MIN_WIDTH,
-    LABELS_MIN_WIDTH, MENU_TRIGGER_ID, POPUP_MENU_ID, Tool, labels_min_width,
+    Badge, COMPACT_MIN_WIDTH, LABELS_MIN_WIDTH, MORE_ID, MORE_LABEL_ID, MORE_MENU_BASE,
+    MORE_MENU_LEFT_THEN_RIGHT, MORE_MENU_NONE, MORE_MENU_RIGHT_THEN_LEFT, POPUP_MENU_ID, Tool,
+    labels_min_width,
 };
 use merge_app::window::{CONFLICT_BADGE_ID, GO_TO_LINE_ID, RESULT_ID, TOOLBAR_ID, cell_id};
 use merge_app::{Find, MergeWindow, Typography, WindowSettings};
@@ -236,7 +237,7 @@ fn toolbar_choices_act_on_the_current_region(cx: &mut TestAppContext) {
     assert_eq!(resolution(cx), Resolution::Pick(vec![Source::Side(1)]));
     click(cx, window, Tool::Left.id());
     assert_eq!(resolution(cx), Resolution::Pick(vec![Source::Side(1), Source::Side(0)]));
-    click(cx, window, Tool::Base.id());
+    from_more(cx, window, MORE_MENU_BASE);
     assert_eq!(
         resolution(cx),
         Resolution::Pick(vec![Source::Side(1), Source::Side(0), Source::Base(0)])
@@ -265,9 +266,42 @@ fn pressed_of<const N: usize>(
     state.expect("the window ran")
 }
 
-/// Whether Left, Base and Right show pressed, in that order.
+fn open_more_menu(cx: &mut TestAppContext, window: AnyWindowHandle) {
+    click(cx, window, MORE_ID);
+}
+
+fn more_menu_open(cx: &mut TestAppContext, window: AnyWindowHandle) -> bool {
+    let mut open = false;
+    act(cx, window, |window, _| {
+        open = window.try_find(POPUP_MENU_ID).is_some();
+    });
+    open
+}
+
+/// Run the More menu's row `row`.
+fn from_more(cx: &mut TestAppContext, window: AnyWindowHandle, row: usize) {
+    open_more_menu(cx, window);
+    act(cx, window, |window, cx| {
+        window.within(POPUP_MENU_ID).click(row, cx);
+    });
+}
+
+/// Whether the More menu ticks its Base row, read with the menu open, then closed.
+fn base_ticked(cx: &mut TestAppContext, window: AnyWindowHandle) -> Option<bool> {
+    open_more_menu(cx, window);
+    let mut ticked = None;
+    act(cx, window, |window, _| {
+        ticked = window.within(POPUP_MENU_ID).find(MORE_MENU_BASE).checked();
+    });
+    press(cx, window, "escape");
+    ticked
+}
+
+/// Whether Left, Base and Right are on: the Left and Right buttons pressed, the More menu's
+/// Base row ticked.
 fn pressed(cx: &mut TestAppContext, window: AnyWindowHandle) -> [Option<bool>; 3] {
-    pressed_of(cx, window, [Tool::Left, Tool::Base, Tool::Right])
+    let [left, right] = pressed_of(cx, window, [Tool::Left, Tool::Right]);
+    [left, base_ticked(cx, window), right]
 }
 
 /// The view toggles: base pane, syntax colours and soft wrap.
@@ -299,13 +333,15 @@ fn only_the_toggles_report_a_pressed_state(cx: &mut TestAppContext) {
         Tool::NextDifference,
         Tool::PreviousConflict,
         Tool::NextConflict,
-        Tool::LeftThenRight,
         Tool::Undo,
         Tool::Redo,
         Tool::Find,
         Tool::GoToLine,
     ];
-    assert_eq!(pressed_of(cx, window, actions), [None; 9]);
+    assert_eq!(pressed_of(cx, window, actions), [None; 8]);
+    let mut more = Some(false);
+    act(cx, window, |window, _| more = window.find(MORE_ID).checked());
+    assert_eq!(more, None, "More opens a menu");
 }
 
 #[gpui_kit::test]
@@ -322,7 +358,7 @@ fn the_pick_buttons_show_pressed_while_the_current_region_takes_their_source(
     assert_eq!(pressed(cx, window), [Some(false), Some(false), Some(true)]);
     click(cx, window, Tool::Left.id());
     assert_eq!(pressed(cx, window), [Some(true), Some(false), Some(true)]);
-    click(cx, window, Tool::Base.id());
+    from_more(cx, window, MORE_MENU_BASE);
     assert_eq!(pressed(cx, window), [Some(true); 3]);
     click(cx, window, Tool::Right.id());
     assert_eq!(pressed(cx, window), [Some(true), Some(true), Some(false)]);
@@ -332,84 +368,95 @@ fn the_pick_buttons_show_pressed_while_the_current_region_takes_their_source(
 }
 
 #[gpui_kit::test]
-fn toolbar_takes_both_sides_in_either_order(cx: &mut TestAppContext) {
+fn the_more_menu_takes_both_orders_and_nothing(cx: &mut TestAppContext) {
     let (window, view) = in_result(cx, mixed());
     let resolution =
         |cx: &mut TestAppContext| cx.read(|cx| view.read(cx).document().resolutions()[1].clone());
-    let left_right = Resolution::Pick(vec![Source::Side(0), Source::Side(1)]);
-    let right_left = Resolution::Pick(vec![Source::Side(1), Source::Side(0)]);
-    let from_menu = |cx: &mut TestAppContext, item: usize| {
-        act(cx, window, |window, cx| {
-            window.within(BOTH_ID).click(MENU_TRIGGER_ID, cx);
-        });
-        act(cx, window, |window, cx| {
-            window.within(POPUP_MENU_ID).click(item, cx);
-        });
-    };
     click(cx, window, Tool::NextConflict.id());
-    // The button takes left then right; the menu offers both orders.
-    click(cx, window, Tool::LeftThenRight.id());
-    assert_eq!(resolution(cx), left_right);
-    from_menu(cx, BOTH_MENU_RIGHT_THEN_LEFT);
-    assert_eq!(resolution(cx), right_left);
-    from_menu(cx, BOTH_MENU_LEFT_THEN_RIGHT);
-    assert_eq!(resolution(cx), left_right);
+    from_more(cx, window, MORE_MENU_LEFT_THEN_RIGHT);
+    assert_eq!(resolution(cx), Resolution::Pick(vec![Source::Side(0), Source::Side(1)]));
+    from_more(cx, window, MORE_MENU_RIGHT_THEN_LEFT);
+    assert_eq!(resolution(cx), Resolution::Pick(vec![Source::Side(1), Source::Side(0)]));
+    // None picks nothing on purpose: the conflict resolves to no text.
+    from_more(cx, window, MORE_MENU_NONE);
+    assert_eq!(resolution(cx), Resolution::Pick(Vec::new()));
+    assert!(!more_menu_open(cx, window));
     // The menu gives the focus back to the result.
     type_text(cx, window, "z");
     assert_eq!(texts(cx, &view).1.matches('z').count(), 1);
+}
+
+#[gpui_kit::test]
+fn toggling_off_both_sides_leaves_the_conflict_unresolved(cx: &mut TestAppContext) {
+    let (window, view) = in_result(cx, mixed());
+    let resolution =
+        |cx: &mut TestAppContext| cx.read(|cx| view.read(cx).document().resolutions()[1].clone());
+    click(cx, window, Tool::NextConflict.id());
+    click(cx, window, Tool::Left.id());
+    click(cx, window, Tool::Left.id());
+    assert_eq!(resolution(cx), Resolution::Unresolved, "left on, then off");
+    click(cx, window, Tool::Right.id());
+    click(cx, window, Tool::Left.id());
+    click(cx, window, Tool::Right.id());
+    click(cx, window, Tool::Left.id());
+    assert_eq!(resolution(cx), Resolution::Unresolved, "both on, then both off");
+    from_more(cx, window, MORE_MENU_LEFT_THEN_RIGHT);
+    click(cx, window, Tool::Left.id());
+    click(cx, window, Tool::Right.id());
+    assert_eq!(resolution(cx), Resolution::Unresolved, "both from the menu, then both off");
+}
+
+#[gpui_kit::test]
+fn the_more_menu_base_row_toggles_base(cx: &mut TestAppContext) {
+    let (window, view) = in_result(cx, mixed());
+    let resolution =
+        |cx: &mut TestAppContext| cx.read(|cx| view.read(cx).document().resolutions()[1].clone());
+    click(cx, window, Tool::NextConflict.id());
+    from_more(cx, window, MORE_MENU_BASE);
+    assert_eq!(resolution(cx), Resolution::Pick(vec![Source::Base(0)]));
+    // Toggling off a conflict's last source leaves it unresolved (spec §4.4).
+    from_more(cx, window, MORE_MENU_BASE);
+    assert_eq!(resolution(cx), Resolution::Unresolved);
 }
 
 /// A compact menu row, as `docs/STYLE.md` sets it.
 const MENU_ROW_HEIGHT: gpui_kit::Pixels = gpui_kit::px(20.);
 
 #[gpui_kit::test]
-fn the_both_menu_has_compact_rows(cx: &mut TestAppContext) {
+fn the_more_menu_has_compact_rows(cx: &mut TestAppContext) {
     let (window, _) = in_result(cx, mixed());
-    act(cx, window, |window, cx| {
-        window.within(BOTH_ID).click(MENU_TRIGGER_ID, cx);
-    });
+    open_more_menu(cx, window);
     let mut heights = Vec::new();
     act(cx, window, |window, _| {
-        heights = [BOTH_MENU_LEFT_THEN_RIGHT, BOTH_MENU_RIGHT_THEN_LEFT]
+        heights = MORE_ROWS
             .map(|item| window.within(POPUP_MENU_ID).find(item).bounds().size.height)
             .to_vec();
     });
-    assert_eq!(heights, [MENU_ROW_HEIGHT, MENU_ROW_HEIGHT]);
+    assert_eq!(heights, [MENU_ROW_HEIGHT; 4]);
 }
+
+/// The More menu's rows, in order.
+const MORE_ROWS: [usize; 4] =
+    [MORE_MENU_BASE, MORE_MENU_LEFT_THEN_RIGHT, MORE_MENU_RIGHT_THEN_LEFT, MORE_MENU_NONE];
 
 /// The toolbar's label size, 0.525 rem of the theme's 16 px rem.
 const TOOLBAR_TEXT_HEIGHT: gpui_kit::Pixels = gpui_kit::px(8.4);
 
-/// The debug selector of the Both menu's key hint: ⌘4 on macOS, Ctrl-4 elsewhere.
-const BOTH_KEY_HINT: &str = if cfg!(target_os = "macos") { "kbd:cmd-4" } else { "kbd:ctrl-4" };
+/// The debug selector of the More menu's key hint for Left then right: ⌘4 on macOS, Ctrl-4
+/// elsewhere.
+const MORE_KEY_HINT: &str = if cfg!(target_os = "macos") { "kbd:cmd-4" } else { "kbd:ctrl-4" };
 
 #[gpui_kit::test]
-fn the_both_menu_text_matches_the_toolbar_labels(cx: &mut TestAppContext) {
+fn the_more_menu_text_matches_the_toolbar_labels(cx: &mut TestAppContext) {
     let (window, _) = in_result(cx, mixed());
-    act(cx, window, |window, cx| {
-        window.within(BOTH_ID).click(MENU_TRIGGER_ID, cx);
-    });
+    open_more_menu(cx, window);
     // A key hint has no padding and a line height of one text size.
     let mut visual = gpui_kit::VisualTestContext::from_window(window, cx);
-    let hint = visual.debug_bounds(BOTH_KEY_HINT).expect("the menu shows the key");
+    let hint = visual.debug_bounds(MORE_KEY_HINT).expect("the menu shows the key");
     // Layout lands on whole device pixels.
     let scale = visual.update(|window, _| window.scale_factor());
     let expected = gpui_kit::px((f32::from(TOOLBAR_TEXT_HEIGHT) * scale).round() / scale);
     assert_eq!(hint.size.height, expected);
-}
-
-fn open_both_menu(cx: &mut TestAppContext, window: AnyWindowHandle) {
-    act(cx, window, |window, cx| {
-        window.within(BOTH_ID).click(MENU_TRIGGER_ID, cx);
-    });
-}
-
-fn both_menu_open(cx: &mut TestAppContext, window: AnyWindowHandle) -> bool {
-    let mut open = false;
-    act(cx, window, |window, _| {
-        open = window.try_find(POPUP_MENU_ID).is_some();
-    });
-    open
 }
 
 /// The second region's resolution: the conflict in `mixed`.
@@ -427,15 +474,17 @@ fn at_the_conflict(cx: &mut TestAppContext) -> (AnyWindowHandle, Entity<MergeWin
 #[gpui_kit::test]
 fn down_selects_each_row_in_turn_and_enter_takes_it(cx: &mut TestAppContext) {
     let (window, view) = at_the_conflict(cx);
-    open_both_menu(cx, window);
-    press(cx, window, "down");
-    press(cx, window, "down");
+    open_more_menu(cx, window);
+    // Base, Left then right, Right then left.
+    for _ in 0..3 {
+        press(cx, window, "down");
+    }
     press(cx, window, "enter");
     assert_eq!(
         conflict_resolution(cx, &view),
         Resolution::Pick(vec![Source::Side(1), Source::Side(0)])
     );
-    assert!(!both_menu_open(cx, window));
+    assert!(!more_menu_open(cx, window));
     // Enter gives the focus back to the result.
     type_text(cx, window, "z");
     assert_eq!(texts(cx, &view).1.matches('z').count(), 1);
@@ -444,47 +493,43 @@ fn down_selects_each_row_in_turn_and_enter_takes_it(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn down_past_the_last_row_wraps_to_the_first(cx: &mut TestAppContext) {
     let (window, view) = at_the_conflict(cx);
-    open_both_menu(cx, window);
-    for _ in 0..3 {
+    open_more_menu(cx, window);
+    // Four rows, then Base again.
+    for _ in 0..5 {
         press(cx, window, "down");
     }
     press(cx, window, "enter");
-    assert_eq!(
-        conflict_resolution(cx, &view),
-        Resolution::Pick(vec![Source::Side(0), Source::Side(1)])
-    );
+    assert_eq!(conflict_resolution(cx, &view), Resolution::Pick(vec![Source::Base(0)]));
 }
 
 #[gpui_kit::test]
 fn up_from_no_selection_selects_the_last_row(cx: &mut TestAppContext) {
     let (window, view) = at_the_conflict(cx);
-    open_both_menu(cx, window);
+    open_more_menu(cx, window);
     press(cx, window, "up");
     press(cx, window, "enter");
-    assert_eq!(
-        conflict_resolution(cx, &view),
-        Resolution::Pick(vec![Source::Side(1), Source::Side(0)])
-    );
+    // The last row is None.
+    assert_eq!(conflict_resolution(cx, &view), Resolution::Pick(Vec::new()));
 }
 
 #[gpui_kit::test]
 fn enter_with_no_selection_takes_nothing_and_keeps_the_menu(cx: &mut TestAppContext) {
     let (window, view) = at_the_conflict(cx);
     let before = conflict_resolution(cx, &view);
-    open_both_menu(cx, window);
+    open_more_menu(cx, window);
     press(cx, window, "enter");
     assert_eq!(conflict_resolution(cx, &view), before);
-    assert!(both_menu_open(cx, window));
+    assert!(more_menu_open(cx, window));
 }
 
 #[gpui_kit::test]
 fn a_reopened_menu_starts_with_no_selection(cx: &mut TestAppContext) {
     let (window, view) = at_the_conflict(cx);
     let before = conflict_resolution(cx, &view);
-    open_both_menu(cx, window);
+    open_more_menu(cx, window);
     press(cx, window, "down");
     press(cx, window, "escape");
-    open_both_menu(cx, window);
+    open_more_menu(cx, window);
     press(cx, window, "enter");
     assert_eq!(conflict_resolution(cx, &view), before);
 }
@@ -493,10 +538,10 @@ fn a_reopened_menu_starts_with_no_selection(cx: &mut TestAppContext) {
 fn escape_closes_the_menu_and_gives_the_focus_back(cx: &mut TestAppContext) {
     let (window, view) = at_the_conflict(cx);
     let before = conflict_resolution(cx, &view);
-    open_both_menu(cx, window);
-    assert!(both_menu_open(cx, window));
+    open_more_menu(cx, window);
+    assert!(more_menu_open(cx, window));
     press(cx, window, "escape");
-    assert!(!both_menu_open(cx, window));
+    assert!(!more_menu_open(cx, window));
     assert_eq!(conflict_resolution(cx, &view), before);
     type_text(cx, window, "z");
     assert_eq!(texts(cx, &view).1.matches('z').count(), 1);
@@ -506,25 +551,35 @@ fn escape_closes_the_menu_and_gives_the_focus_back(cx: &mut TestAppContext) {
 fn a_click_outside_closes_the_menu(cx: &mut TestAppContext) {
     let (window, view) = at_the_conflict(cx);
     let before = conflict_resolution(cx, &view);
-    open_both_menu(cx, window);
+    open_more_menu(cx, window);
     click(cx, window, CONFLICT_BADGE_ID);
-    assert!(!both_menu_open(cx, window));
+    assert!(!more_menu_open(cx, window));
     assert_eq!(conflict_resolution(cx, &view), before);
 }
 
 #[gpui_kit::test]
 fn the_trigger_closes_an_open_menu(cx: &mut TestAppContext) {
     let (window, _) = at_the_conflict(cx);
-    open_both_menu(cx, window);
-    open_both_menu(cx, window);
-    assert!(!both_menu_open(cx, window));
+    open_more_menu(cx, window);
+    open_more_menu(cx, window);
+    assert!(!more_menu_open(cx, window));
 }
 
 /// Whether `tool` shows its text label.
 fn label_shown(cx: &mut TestAppContext, window: AnyWindowHandle, tool: Tool) -> bool {
+    shown(cx, window, tool.label_id())
+}
+
+/// Whether the element `id` is drawn.
+fn shown(
+    cx: &mut TestAppContext,
+    window: AnyWindowHandle,
+    id: impl Into<gpui_kit::ElementId>,
+) -> bool {
+    let id = id.into();
     let mut shown = false;
     act(cx, window, |window, _| {
-        shown = window.try_find(tool.label_id()).is_some();
+        shown = window.try_find(id.clone()).is_some();
     });
     shown
 }
@@ -539,11 +594,9 @@ fn each_navigation_pair_shows_one_label(cx: &mut TestAppContext) {
 }
 
 /// The choice tools keep their labels; the rest show icons alone.
-const LABELLED: [(Tool, bool); 11] = [
+const LABELLED: [(Tool, bool); 9] = [
     (Tool::Left, true),
-    (Tool::Base, true),
     (Tool::Right, true),
-    (Tool::LeftThenRight, true),
     (Tool::Undo, false),
     (Tool::Redo, false),
     (Tool::BasePane, false),
@@ -556,6 +609,7 @@ const LABELLED: [(Tool, bool); 11] = [
 #[gpui_kit::test]
 fn only_the_choice_tools_show_labels(cx: &mut TestAppContext) {
     let (window, _) = open(cx, mixed());
+    assert!(shown(cx, window, MORE_LABEL_ID));
     for (tool, labelled) in LABELLED {
         assert_eq!(label_shown(cx, window, tool), labelled, "{tool:?}");
     }
@@ -678,6 +732,7 @@ fn a_narrower_window_drops_every_label_and_the_tools_fit(cx: &mut TestAppContext
     for (tool, _) in LABELLED {
         assert!(!label_shown(cx, window, tool), "{tool:?}");
     }
+    assert!(!shown(cx, window, MORE_LABEL_ID));
     assert!(!label_shown(cx, window, Tool::PreviousDifference));
     assert!(!label_shown(cx, window, Tool::PreviousConflict));
     resize(cx, window, COMPACT_MIN_WIDTH);
@@ -741,11 +796,11 @@ fn the_toolbar_text_setting_scales_the_labels_and_the_badge(cx: &mut TestAppCont
 }
 
 #[gpui_kit::test]
-fn the_toolbar_text_setting_sizes_the_both_menu(cx: &mut TestAppContext) {
+fn the_toolbar_text_setting_sizes_the_more_menu(cx: &mut TestAppContext) {
     let (window, _) = with_toolbar_text(cx, mixed(), LARGE_TOOLBAR_TEXT);
-    open_both_menu(cx, window);
+    open_more_menu(cx, window);
     let mut visual = gpui_kit::VisualTestContext::from_window(window, cx);
-    let hint = visual.debug_bounds(BOTH_KEY_HINT).expect("the menu shows the key");
+    let hint = visual.debug_bounds(MORE_KEY_HINT).expect("the menu shows the key");
     assert_eq!(hint.size.height, LARGE_TOOLBAR_TEXT);
 }
 

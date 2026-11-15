@@ -449,10 +449,11 @@ pub(crate) fn tool_label(tool: Tool) -> Option<&'static str> {
         Tool::PreviousDifference => Some("Difference"),
         Tool::PreviousConflict => Some("Conflict"),
         Tool::Left => Some("Left"),
-        Tool::Base => Some("Base"),
         Tool::Right => Some("Right"),
-        Tool::LeftThenRight => Some("Both"),
-        Tool::NextDifference
+        Tool::Base
+        | Tool::LeftThenRight
+        | Tool::Clear
+        | Tool::NextDifference
         | Tool::NextConflict
         | Tool::RightThenLeft
         | Tool::Undo
@@ -465,12 +466,15 @@ pub(crate) fn tool_label(tool: Tool) -> Option<&'static str> {
     }
 }
 
-/// The accessible label of the Both button's menu trigger.
-pub(crate) const BOTH_MENU: &str = "Take both sides in either order";
+/// The More button's label, and the accessible label and tooltip of it and its menu.
+pub(crate) const MORE: &str = "More";
+pub(crate) const MORE_MENU: &str = "More picks";
 
-/// The orders in the Both button's menu.
+/// The rows of the More menu.
+pub(crate) const BASE: &str = "Base";
 pub(crate) const LEFT_THEN_RIGHT: &str = "Left then right";
 pub(crate) const RIGHT_THEN_LEFT: &str = "Right then left";
+pub(crate) const NONE: &str = "None";
 
 /// A toolbar button's accessible label and tooltip.
 pub(crate) fn tool_name(tool: Tool) -> &'static str {
@@ -484,6 +488,7 @@ pub(crate) fn tool_name(tool: Tool) -> &'static str {
         Tool::Right => "Toggle right in the current region",
         Tool::LeftThenRight => "Take left then right in the current region",
         Tool::RightThenLeft => "Take right then left in the current region",
+        Tool::Clear => "Clear the current region's choice",
         Tool::Undo => "Undo",
         Tool::Redo => "Redo",
         Tool::BasePane => "Show or hide the base pane",
