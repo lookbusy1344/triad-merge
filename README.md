@@ -239,7 +239,7 @@ script/macos-app dist                                           # target/dist/tr
 
 A tag `vX.Y.Z` that matches the workspace version runs `.github/workflows/release.yml`, which builds the three platforms' packages and publishes them as a release.
 
-`script/gen-conflict-repo` builds a disposable jj repository with conflicts in two Rust files, for trying `jj resolve` and `triad-merge resolve`.
+`script/gen-conflict-repo` builds a disposable jj repository with conflicts in two Rust files, for trying `jj resolve` and `triad-merge resolve`. `script/gen-jj-repo SCENARIO` builds one for each jj-enabled feature: `stack`, `sides`, `history` and `absorb`. `script/test-jj-repos` checks triad in each (`docs/test-repos.md`).
 
 On macOS, Gatekeeper scans each newly linked binary on its first run, so the first test run after a rebuild can stall before any test starts, with `syspolicyd` at full CPU. Add your terminal and IDE under System Settings → Privacy & Security → Developer Tools and restart them. `spctl developer-mode enable-terminal` shows that pane if it is missing.
 
@@ -258,6 +258,7 @@ On macOS, Gatekeeper scans each newly linked binary on its first run, so the fir
 | `docs/gpui-kit-issues.md` | UI toolkit problems and triad's answers |
 | `docs/scroll-debugging.md` | Trackpad scrolling: failure modes and how to reproduce them |
 | `docs/residue.md` | Files triad and its scripts leave behind |
+| `docs/test-repos.md` | Scripts that build test repositories, and what they check |
 | `fixtures/demo/README.md`, `fixtures/conflict-repo/README.md` | Inputs for trying triad by hand |
 
 ## Licence

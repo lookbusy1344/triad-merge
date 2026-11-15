@@ -14,8 +14,9 @@
 # the workspace root, it also runs only the tests of the changed crates and the crates that
 # depend on them, `cargo deny` only when a manifest or the lock file changed, and
 # the vendored crate's tests only when vendor/ changed, script/test-pre-push only
-# when script/pre-push or that test changed, and script/test-tip only when script/build-id,
-# script/pre-push or that test changed. A vendor/ change also runs
+# when script/pre-push or that test changed, script/test-tip only when script/build-id,
+# script/pre-push or that test changed, and script/test-jj-repos only when script/gen-jj-repo
+# or that test changed. A vendor/ change also runs
 # the tests of the crates that depend on gpui-kit, through which the vendored crate
 # reaches the workspace, and of their dependents. A change to docs/ or to a Markdown file
 # at the root runs no tests. Any other changed path outside crates/ runs every test.
@@ -55,6 +56,7 @@ deny=true
 vendor=true
 pre_push=true
 tip=true
+jj_repos=true
 crate_dirs=()
 if [[ "${quick}" == true && ${#changed[@]} -gt 0 ]]; then
     all_tests=false
@@ -62,6 +64,7 @@ if [[ "${quick}" == true && ${#changed[@]} -gt 0 ]]; then
     vendor=false
     pre_push=false
     tip=false
+    jj_repos=false
     for path in "${changed[@]}"; do
         case "${path}" in
             crates/*/Cargo.toml)
@@ -82,6 +85,10 @@ if [[ "${quick}" == true && ${#changed[@]} -gt 0 ]]; then
                 ;;
             script/build-id | script/test-tip)
                 tip=true
+                all_tests=true
+                ;;
+            script/gen-jj-repo | script/test-jj-repos)
+                jj_repos=true
                 all_tests=true
                 ;;
             */*) all_tests=true ;;
@@ -155,6 +162,8 @@ fi
 [[ "${deny}" == true ]] && run cargo deny check
 [[ "${pre_push}" == true ]] && run script/test-pre-push
 [[ "${tip}" == true ]] && run script/test-tip
+# Runs the binary that the build, or nextest's build of the integration tests, leaves.
+[[ "${jj_repos}" == true ]] && run script/test-jj-repos
 # The vendored crate sits outside the workspace; its own unit tests cover the patch.
 if [[ "${vendor}" == true ]]; then
     run ${test_prefix[@]+"${test_prefix[@]}"} env CARGO_TARGET_DIR=target/vendor \

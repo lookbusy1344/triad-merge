@@ -124,6 +124,8 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | Format | `cargo fmt --all` |
 | Try a merge by hand | `cargo build --workspace`, then `target/debug/triad-merge inspect fixtures/demo/{base,left,right}.txt` (`fixtures/demo/README.md`) |
 | A disposable jj repository with conflicts in two Rust files | `script/gen-conflict-repo [dest]` (`fixtures/conflict-repo/README.md`) |
+| A disposable jj repository for one jj-enabled feature: `stack`, `sides`, `history` or `absorb` (`docs/test-repos.md`) | `script/gen-jj-repo SCENARIO [dest]` |
+| Check `stack`, `resolve -r`, a three-sided save, `history` and `absorb` through the built binary in each `gen-jj-repo` scenario; needs the pinned `jj` on `PATH`. `script/checks` runs it on a full run and when either script changes | `script/test-jj-repos [SCENARIO...]` |
 | Build `target/release/triad.app`; `dist` builds `target/dist/triad.app` with fat LTO, as a release does | `script/macos-app [dist]` |
 | Upgrade jj: pins, oracles, the jj-cli behaviour triad copies, docs and checks | `docs/jj-upgrade.md` |
 | Write the oracles from jj's CLI after a jj-lib upgrade; the `jj` on `PATH` must be the pinned release (`DESIGN.md` §I5) | `script/gen-jj-cli-oracle` |
@@ -159,5 +161,5 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | `fixtures/demo` | A 980-line Rust merge with 20 conflicts, from `script/gen-demo`. |
 | `images` | Mark, logo and app icon as SVG, PNG, ICNS and ICO, from `script/gen-images.swift`. |
 | `packaging/linux` | Desktop entry of the Linux packages. |
-| `docs` | User guide (`USER-GUIDE.md`), spec, plan, design notes, the diff editor plan (`PLAN-diff-editor.md`, part H), UI style, JSON schema, release checklist, the steps of a jj upgrade (`jj-upgrade.md`), gpui-kit and gix issues, `scroll-debugging.md`, `mark-colours.md`: the mark's colour schemes, geometry and the shapes not taken, and `residue.md`: the files triad and its scripts leave behind. |
+| `docs` | User guide (`USER-GUIDE.md`), spec, plan, design notes, the diff editor plan (`PLAN-diff-editor.md`, part H), UI style, JSON schema, release checklist, the steps of a jj upgrade (`jj-upgrade.md`), gpui-kit and gix issues, `scroll-debugging.md`, `mark-colours.md`: the mark's colour schemes, geometry and the shapes not taken, and `residue.md`: the files triad and its scripts leave behind, and `test-repos.md`: the scripts that build test repositories and what `script/test-jj-repos` checks. |
 | `vendor/gpui-base` | `gpui-base` 0.8.1 with triad's editor patch, through `[patch.crates-io]`. Outside the workspace: no workspace lints, `cargo fmt` or `jj fix`. See its `PATCHES.md`. |

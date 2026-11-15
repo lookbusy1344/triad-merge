@@ -108,7 +108,8 @@ script/checks
 The tests reach jj through jj-lib only. These steps run the new jj binary against triad:
 
 - `docs/release-checklist.md` § Merge and diff tool integration, the jj rows: `jj resolve` and `jj diff --tool` with triad, in a scratch repository and config.
-- `script/gen-conflict-repo`, then `triad-merge stack`, `resolve -r`, `absorb --list` and `history` in it, and `jj log`, `jj op log` and `jj st` after each write: jj reads what triad wrote without complaint.
+- `script/test-jj-repos`, with the new jj on `PATH`: triad's `stack`, `resolve -r`, `history` and `absorb` in each scenario, and jj's CLI reading back each write (`docs/test-repos.md`).
+- `script/gen-jj-repo` for each scenario, then its windows by hand as `docs/test-repos.md` lists them, and `jj log`, `jj op log` and `jj st` after each write: jj reads what triad wrote without complaint.
 
 ## 9. Commit
 
