@@ -284,3 +284,6 @@ yarn.lock text eol=lf
 
 # to normalise line endings:
 # git add . --renormalize
+
+# Fixtures whose CRLF line endings are the test: keep their bytes.
+fixtures/demo/unusual_*.py -text

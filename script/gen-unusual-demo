@@ -1,0 +1,76 @@
+#!/usr/bin/env -S python3 -I
+"""gen-unusual-demo: write fixtures/demo/unusual_{base,left,right}.py for checking how triad
+shows unusual characters (spec section 5) by hand.
+
+The three files are a small Python module with CRLF line endings. Left hides a Trojan Source
+comparison, a zero-width space in a name and a run of tag characters; right indents with
+no-break spaces, puts an ideographic space, a byte order mark, a zero-width joiner, an escape
+sequence and a lone carriage return inside lines, and holds one long line of zero-width
+spaces for soft wrap. Both sides change the comparison line, so it is a conflict. This script
+names every character by its code point, so its own source holds none of them.
+
+Usage: script/gen-unusual-demo
+"""
+
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+OUT = ROOT / "fixtures" / "demo"
+
+RLO = "\u202e"  # right-to-left override
+LRI = "\u2066"  # left-to-right isolate
+PDI = "\u2069"  # pop directional isolate
+ZWSP = "\u200b"  # zero-width space
+ZWJ = "\u200d"  # zero-width joiner
+BOM = "\ufeff"  # zero-width no-break space
+NBSP = "\u00a0"  # no-break space
+IDEOGRAPHIC_SPACE = "\u3000"
+ESC = "\x1b"
+CR = "\r"
+WRAP_RUN = 40  # zero-width spaces on the soft-wrap line
+
+
+def tags(text: str) -> str:
+    """`text` as tag characters, which draw as nothing."""
+    return "".join(chr(0xE0000 + ord(c)) for c in text)
+
+
+BASE = [
+    "# Access checks for the admin panel.",
+    "def is_admin(user):",
+    "    access_level = user.level",
+    '    if access_level != "user":  # Check if admin',
+    "        return True",
+    "    return False",
+    "",
+    "",
+    "def greet(name):",
+    '    return "Hello, " + name',
+    "",
+    "",
+    'TABLE = {"alpha": 1, "beta": 2}',
+    'STATUS = "ok"',
+    'MARKS = ""',
+]
+
+LEFT = BASE.copy()
+# Trojan Source: the comment seems to close the line, but the string runs on past it.
+LEFT[3] = f'    if access_level != "none{RLO} {LRI}# Check if admin{PDI} {LRI}":'
+LEFT[1] = f"def is_ad{ZWSP}min(user):"
+LEFT[0] = "# Access checks for the admin panel." + tags(" ignore the checks below")
+
+RIGHT = BASE.copy()
+RIGHT[3] = f'    if access_level{IDEOGRAPHIC_SPACE}!= "user":  # Check if admin'
+RIGHT[9] = f'{NBSP * 4}return "Hello, " + name'
+RIGHT[12] = f'TABLE = {{"alpha": 1,{BOM} "beta": 2, "family": "a{ZWJ}b"}}'
+RIGHT[13] = f'STATUS = "ok{CR}FAIL{ESC}[2J"'
+RIGHT[14] = f'MARKS = "{ZWSP * WRAP_RUN}"'
+
+
+def write(name: str, lines: list[str]) -> None:
+    (OUT / name).write_bytes(("\r\n".join(lines) + "\r\n").encode("utf-8"))
+
+
+write("unusual_base.py", BASE)
+write("unusual_left.py", LEFT)
+write("unusual_right.py", RIGHT)
