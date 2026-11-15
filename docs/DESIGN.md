@@ -111,7 +111,7 @@ Proptest suites for spec §8.2, with a fixed seed and checked-in regressions: al
 
 #### A4.11 Atomic write
 
-`merge_session::io` writes a temporary file in the target's directory, copies the target's permissions when it exists, syncs, renames over the target, then on Unix syncs the directory. A new file gets the mode `std::fs::write` gives (`0o666` less the umask), not `tempfile`'s `0o600`. A failed directory sync is logged: the file already holds its bytes.
+`merge_session::io` creates a temporary file in the target's directory, gives it the target's permissions when the target exists, before any byte goes in, so the new contents are never more readable than the old, then writes, syncs, renames over the target, then on Unix syncs the directory. A new file gets the mode `std::fs::write` gives (`0o666` less the umask), not `tempfile`'s `0o600`. A failed directory sync is logged: the file already holds its bytes.
 
 #### A4.12 Benchmarks
 

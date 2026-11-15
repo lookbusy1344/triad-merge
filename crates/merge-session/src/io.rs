@@ -79,17 +79,19 @@ fn write_replacing(
     let fail = |source| WriteError { path: path.to_owned(), source };
     let target = link_target(path).map_err(fail)?;
     let mut temp = temp_file_beside(&target, access).map_err(fail)?;
-    write(temp.as_file_mut()).map_err(fail)?;
-    temp.as_file().sync_all().map_err(fail)?;
+    // The mode goes on before any byte, so the new contents are never more readable than
+    // the old.
     if access == Access::Shared {
         match fs::metadata(&target) {
             Ok(existing) => {
-                fs::set_permissions(temp.path(), existing.permissions()).map_err(fail)?;
+                temp.as_file().set_permissions(existing.permissions()).map_err(fail)?;
             }
             Err(e) if e.kind() == io::ErrorKind::NotFound => {}
             Err(e) => return Err(fail(e)),
         }
     }
+    write(temp.as_file_mut()).map_err(fail)?;
+    temp.as_file().sync_all().map_err(fail)?;
     // On failure the error owns the temporary file, which deletes it when dropped.
     temp.persist(&target).map_err(|e| fail(e.error))?;
     sync_dir_of(&target);
@@ -292,6 +294,32 @@ mod tests {
                 write_atomic(&path, b"new").expect("write");
                 assert_eq!(mode(&path), wanted, "{name}");
             }
+        }
+
+        /// The modes of the files in `dir` other than `except`.
+        fn other_modes(dir: &Path, except: &Path) -> Vec<u32> {
+            fs::read_dir(dir)
+                .expect("dir lists")
+                .map(|entry| entry.expect("entry").path())
+                .filter(|path| path != except)
+                .map(|path| mode(&path))
+                .collect()
+        }
+
+        #[test]
+        fn the_temporary_file_has_the_targets_permissions_before_any_byte_goes_in() {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join("private");
+            fs::write(&path, b"old").expect("seed");
+            fs::set_permissions(&path, fs::Permissions::from_mode(PRIVATE)).expect("chmod");
+            let mut seen = Vec::new();
+            write_atomic_with(&path, |out| {
+                seen = other_modes(dir.path(), &path);
+                out.write_all(b"secret")
+            })
+            .expect("write");
+            assert_eq!(seen, [PRIVATE]);
+            assert_eq!(mode(&path), PRIVATE);
         }
 
         #[test]
