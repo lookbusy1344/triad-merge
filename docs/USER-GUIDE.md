@@ -331,7 +331,7 @@ triad-merge absorb --json
 
 ## 7. Settings
 
-The config file is `~/.config/triad/config.triad` (`$XDG_CONFIG_HOME` if set, or `TRIAD_CONFIG`), one `key = value` per line. Settings… (⌘,) opens it. Every key is also a flag that overrides the file for one run.
+The config file is `~/.config/triad/config.triad` (`$XDG_CONFIG_HOME` if set, or `TRIAD_CONFIG`), one `key = value` per line. Settings… (⌘,) opens it. Five keys are also flags that override the file for one run: `--diff-algorithm`, `--ignore-whitespace`, `--merge-semantics`, `--same-change` and `--hunk-level`. The diff window takes the first two.
 
 ```sh
 triad-merge show-config --default --docs   # every key, its default and what it does

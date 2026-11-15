@@ -210,7 +210,7 @@ Each region's first row has a pick target per source at the left of each top pan
 
 ### Settings
 
-`~/.config/triad/config.triad` (`$XDG_CONFIG_HOME` if set, or `TRIAD_CONFIG`), one `key = value` per line. Settings… (⌘,) opens it. Every key is also a flag of the same name, which overrides the file for one run.
+`~/.config/triad/config.triad` (`$XDG_CONFIG_HOME` if set, or `TRIAD_CONFIG`), one `key = value` per line. Settings… (⌘,) opens it. Five keys are also flags that override the file for one run: `--diff-algorithm`, `--ignore-whitespace`, `--merge-semantics`, `--same-change` and `--hunk-level`. The diff window takes the first two.
 
 ```sh
 triad-merge show-config --default --docs   # every key, its default and what it does

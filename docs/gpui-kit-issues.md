@@ -12,7 +12,7 @@ A `gpui-base` test in `src/text/text_view.rs` includes `../../../../README.md`, 
 
 ## Popup menus have one size
 
-`gpui-component`'s `PopupMenu` has a `size` field and 20 px rows for `Size::Small`, but no setter, and every row sets `text_sm()` (14 px). A toolbar menu is then larger than the toolbar's labels. Custom element rows can set their own text, but lose their accessible names. triad draws its toolbar menus itself on gpui-base's `Popover` (`merge_app::split_menu`).
+`gpui-component`'s `PopupMenu` has a `size` field and 20 px rows for `Size::Small`, but no setter, and every row sets `text_sm()` (14 px). A toolbar menu is then larger than the toolbar's labels. Custom element rows can set their own text, but lose their accessible names. triad draws its toolbar menus itself on gpui-base's `Popover` (`merge_app::menu_button`).
 
 ## Whole-text copy per frame
 
