@@ -268,6 +268,8 @@ Two-way diff reuses the decoding (§4.1) and diffing (§4.2) code: the same algo
 
 Identical inputs give one `Unchanged` region. An `Ignored` region is no difference: it takes filler rows as a change does, but no tone, no copy button and no stop for next and previous difference.
 
+**Moved blocks.** Each `Changed` region's left lines form a block. A block with at least `MOVE_MIN_LINES` (1) line that is not blank, as `diff-ignore-blank-lines` counts blank (§4.2), is matched against the right lines of every `Changed` region, line by line under the whitespace mode and filters. It moves when it matches at exactly one place, and no other block's place overlaps that place. Places may lie among new lines, and overlapping places count apart: `m m` in `m m m` matches twice. The rule is Carry Edit's (§4.4): one place, one line not blank. A move joins its two regions and changes neither.
+
 Both sides are editable buffers:
 
 - After an edit, the diff runs again. It runs on a background task, debounced by `DIFF_DEBOUNCE_MS` (100 ms). Lines outside the changed area keep their regions, so the view doesn't jump.

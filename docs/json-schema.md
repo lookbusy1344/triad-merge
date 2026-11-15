@@ -74,6 +74,8 @@ Exit code: 0 with no conflicts, 1 with conflicts, 3 on error.
 
 `encodings` has the keys `left` and `right`. Each region has `kind`, `"unchanged"`, `"changed"` or `"ignored"`, and the ranges `left` and `right`. Either range of a `changed` or `ignored` region may be empty, for a pure insertion or deletion. An `ignored` region differs only in blank lines, under `diff-ignore-blank-lines` (spec §4.2), and is not counted in `changes`. Identical inputs give one `unchanged` region.
 
+`moves` lists the moved blocks (spec §4.6), ordered by `from`. Each has `from`, the index of the `changed` region whose left lines moved, `to`, the index of the `changed` region that holds them in right, `left`, region `from`'s left lines, and `right`, the block's lines in right, inside region `to`'s. One region can be the `from` of one move and the `to` of others.
+
 Exit code, as `diff(1)`: 0 if the inputs are equal under the whitespace mode, `diff-ignore-line-endings`, `ignore-case`, `ignore-pattern` and `diff-ignore-blank-lines` (spec §4.2), 1 if they differ, 3 on error.
 
 ```json
@@ -87,7 +89,8 @@ Exit code, as `diff(1)`: 0 if the inputs are equal under the whitespace mode, `d
     { "kind": "unchanged", "left": [0, 1], "right": [0, 1] },
     { "kind": "changed", "left": [1, 2], "right": [1, 2] },
     { "kind": "unchanged", "left": [2, 3], "right": [2, 3] }
-  ]
+  ],
+  "moves": []
 }
 ```
 
@@ -125,6 +128,16 @@ unchanged left 0..1 right 0..1
 changed left 1..2 right 1..2
 unchanged left 2..3 right 2..3
 changes: 1
+```
+
+A move prints after the regions:
+
+```
+changed left 0..2 right 0..0
+unchanged left 2..5 right 0..3
+changed left 5..5 right 3..5
+move from 0 left 0..2 to 2 right 3..5
+changes: 2
 ```
 
 The text form is for people. Scripts use `--json`.

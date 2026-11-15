@@ -87,7 +87,11 @@ Region offsets live in a Fenwick tree of region byte lengths, and a second one o
 
 #### A4.7 Two-way diff (`merge_core::diff2`)
 
-`DiffDocument` holds two buffers, each a rope with its own history and read-only flag, and the regions with a version. `recompute` takes O(1) rope clones for a background diff; `install` takes the result only when its version still matches, which gives spec §4.6's debounce. `copy_region` recomputes first when the regions lag the text. `merge_core::edit` holds what both documents share: `TextPatch`, `EditBatch`, batch checks, inverse patches and line-ending fixes.
+`DiffDocument` holds two buffers, each a rope with its own history and read-only flag, and the regions with a version. `recompute` takes O(1) rope clones for a background diff; `install` takes the result only when its version still matches, which gives spec §4.6's debounce. `copy_region` recomputes first when the regions lag the text.
+
+The moves (spec §4.6) run with the regions in each recompute and install with them as one `Diffed`, so they never name regions of another version. `diff2::moves` keys every right line of a `Changed` region once, by `line_key`, into a map from key to its places, then checks each block only at the places its first line keys to; a block that matches twice stops at the second. Places that overlap another block's, found by a sweep in order of start with the largest end so far, drop out. `suggest::carried_edit` keeps its own search: it compares bytes, inside one-side regions of a merge, and needs no map for one conflict.
+
+`merge_core::edit` holds what both documents share: `TextPatch`, `EditBatch`, batch checks, inverse patches and line-ending fixes.
 
 #### A4.8 Oracle corpus
 

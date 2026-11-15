@@ -61,6 +61,17 @@ struct DiffReport {
     warnings: Vec<&'static str>,
     changes: usize,
     regions: Vec<DiffRegion>,
+    moves: Vec<DiffMove>,
+}
+
+/// A block that changed region `from` deletes from left and changed region `to` inserts
+/// in right (spec §4.6).
+#[derive(Serialize)]
+struct DiffMove {
+    from: usize,
+    to: usize,
+    left: [usize; 2],
+    right: [usize; 2],
 }
 
 #[derive(Serialize)]
@@ -163,7 +174,17 @@ pub fn diff_inspect(
     let left = read_text(left)?;
     let right = read_text(right)?;
     let encodings = [left.encoding(), right.encoding()];
-    let regions: Vec<DiffRegion> = diff2::regions(&left, &right, diff)
+    let found = diff2::regions(&left, &right, diff);
+    let moves = diff2::moves(&left, &right, &found, diff)
+        .iter()
+        .map(|m| DiffMove {
+            from: m.from.get(),
+            to: m.to.get(),
+            left: span(&m.left),
+            right: span(&m.right),
+        })
+        .collect();
+    let regions: Vec<DiffRegion> = found
         .iter()
         .map(|r| DiffRegion {
             kind: match r.kind {
@@ -185,15 +206,26 @@ pub fn diff_inspect(
         warnings: warnings(&encodings),
         changes: regions.iter().filter(|r| r.kind == "changed").count(),
         regions,
+        moves,
     };
     let code = exit_code(report.changes);
     let text = if json {
         to_json(&report)?
     } else {
-        let lines = report
+        let regions = report
             .regions
             .iter()
             .map(|r| format!("{} left {} right {}", r.kind, dots(r.left), dots(r.right)));
+        let moves = report.moves.iter().map(|m| {
+            format!(
+                "move from {} left {} to {} right {}",
+                m.from,
+                dots(m.left),
+                m.to,
+                dots(m.right)
+            )
+        });
+        let lines = regions.chain(moves);
         to_text(&report.warnings, lines, &format!("changes: {}", report.changes))
     };
     Ok((text, code))
@@ -534,9 +566,59 @@ mod tests {
                     { "kind": "unchanged", "left": [0, 1], "right": [0, 1] },
                     { "kind": "changed", "left": [1, 2], "right": [1, 2] },
                     { "kind": "unchanged", "left": [2, 3], "right": [2, 3] }
-                ]
+                ],
+                "moves": []
             })
         );
+    }
+
+    /// `m1 m2` moves below `a b c`: regions 0 and 2 are its ends.
+    fn moved_block() -> Files {
+        two(b"m1\nm2\na\nb\nc\n", b"a\nb\nc\nm1\nm2\n")
+    }
+
+    #[test]
+    fn diff_json_names_both_ends_of_a_move() {
+        let files = moved_block();
+        let (out, code) =
+            diff_inspect(&files.path("left"), &files.path("right"), &DiffOptions::default(), true)
+                .expect("ok");
+        assert_eq!(code, ExitCode::Conflicts);
+        let value = json_of(&out);
+        assert_eq!(value["changes"], json!(2));
+        assert_eq!(
+            value["moves"],
+            json!([{ "from": 0, "to": 2, "left": [0, 2], "right": [3, 5] }])
+        );
+    }
+
+    #[test]
+    fn diff_text_lists_moves_after_the_regions() {
+        let files = moved_block();
+        let (out, _) =
+            diff_inspect(&files.path("left"), &files.path("right"), &DiffOptions::default(), false)
+                .expect("ok");
+        assert_eq!(
+            out,
+            "changed left 0..2 right 0..0\n\
+             unchanged left 2..5 right 0..3\n\
+             changed left 5..5 right 3..5\n\
+             move from 0 left 0..2 to 2 right 3..5\n\
+             changes: 2\n"
+        );
+    }
+
+    #[test]
+    fn diff_moves_follow_the_whitespace_mode() {
+        let files = two(b"m1\nm2\na\nb\nc\n", b"a\nb\nc\nm 1\nm2\n");
+        let all = DiffOptions { whitespace: Whitespace::All, ..DiffOptions::default() };
+        let moves = |opts: &DiffOptions| {
+            let (out, _) =
+                diff_inspect(&files.path("left"), &files.path("right"), opts, true).expect("ok");
+            json_of(&out)["moves"].clone()
+        };
+        assert_eq!(moves(&DiffOptions::default()), json!([]));
+        assert_eq!(moves(&all), json!([{ "from": 0, "to": 2, "left": [0, 2], "right": [3, 5] }]));
     }
 
     #[test]

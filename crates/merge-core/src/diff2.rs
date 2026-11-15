@@ -12,6 +12,9 @@ use crate::edit::{apply, caret_after, inverse, prepare};
 use crate::index::RegionIx;
 use crate::text::{Encoding, LineEnding, Text};
 
+mod moves;
+pub use moves::{MOVE_MIN_LINES, Move, moves};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind2 {
     Unchanged,
@@ -187,8 +190,17 @@ pub struct DiffDocument {
     right: Buffer,
     options: DiffOptions,
     regions: Vec<Region2>,
+    moves: Vec<Move>,
     regions_version: u64,
     version: u64,
+}
+
+/// The regions and moves of one version of both texts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Diffed {
+    pub version: u64,
+    pub regions: Vec<Region2>,
+    pub moves: Vec<Move>,
 }
 
 /// A snapshot of both texts to diff off the UI thread. Cloning a rope is O(1).
@@ -201,30 +213,32 @@ pub struct Recompute {
 }
 
 impl Recompute {
-    /// The regions, and the version they belong to.
+    /// The regions and moves, and the version they belong to.
     #[must_use]
-    pub fn run(self) -> (u64, Vec<Region2>) {
-        let (version, regions, ()) = self.run_with(|_| ());
-        (version, regions)
+    pub fn run(self) -> Diffed {
+        self.run_with(|_| ()).0
     }
 
     /// [`Recompute::run`], also handing the snapshot's texts, left then right, to `also`. Its
     /// result belongs to the same version.
     #[must_use]
-    pub fn run_with<T>(self, also: impl FnOnce([&Text; 2]) -> T) -> (u64, Vec<Region2>, T) {
+    pub fn run_with<T>(self, also: impl FnOnce([&Text; 2]) -> T) -> (Diffed, T) {
         // The encoding plays no part in diffing.
         let text = |rope: Rope| Text::new(Encoding::Utf8, rope.to_string());
         let (left, right) = (text(self.left), text(self.right));
         let regions = regions(&left, &right, &self.options);
-        (self.version, regions, also([&left, &right]))
+        let moves = moves(&left, &right, &regions, &self.options);
+        (Diffed { version: self.version, regions, moves }, also([&left, &right]))
     }
 }
 
 impl DiffDocument {
     #[must_use]
     pub fn new(left: &Text, right: &Text, options: DiffOptions) -> Self {
+        let regions = regions(left, right, &options);
         Self {
-            regions: regions(left, right, &options),
+            moves: moves(left, right, &regions, &options),
+            regions,
             left: Buffer::new(left),
             right: Buffer::new(right),
             options,
@@ -248,6 +262,12 @@ impl DiffDocument {
     #[must_use]
     pub fn regions(&self) -> &[Region2] {
         &self.regions
+    }
+
+    /// The moves among the regions last installed, ordered by the region each moves from.
+    #[must_use]
+    pub fn moves(&self) -> &[Move] {
+        &self.moves
     }
 
     #[must_use]
@@ -293,8 +313,8 @@ impl DiffDocument {
     pub fn copy_region(&mut self, region: RegionIx, to: Side) -> Result<Edited, DiffEditError> {
         self.writable(to)?;
         if !self.regions_current() {
-            let (version, regions) = self.recompute().run();
-            self.install(version, regions);
+            let diffed = self.recompute().run();
+            self.install(diffed);
         }
         let r = self
             .regions
@@ -336,13 +356,14 @@ impl DiffDocument {
         }
     }
 
-    /// Install regions computed for `version`. A result for an older version is dropped:
-    /// returns whether the regions were installed.
-    pub fn install(&mut self, version: u64, regions: Vec<Region2>) -> bool {
-        let current = version == self.version;
+    /// Install regions and moves computed for their version. A result for an older version is
+    /// dropped: returns whether it was installed.
+    pub fn install(&mut self, diffed: Diffed) -> bool {
+        let current = diffed.version == self.version;
         if current {
-            self.regions = regions;
-            self.regions_version = version;
+            self.regions = diffed.regions;
+            self.moves = diffed.moves;
+            self.regions_version = diffed.version;
         }
         current
     }
@@ -406,11 +427,9 @@ mod tests {
         assert!(!d.regions_current());
         let stale = d.recompute();
         d.edit(Side::Left, insert(0, "y")).expect("edits");
-        let (version, regions) = stale.run();
-        assert!(!d.install(version, regions));
+        assert!(!d.install(stale.run()));
         assert!(!d.regions_current(), "a stale result is not installed");
-        let (version, regions) = d.recompute().run();
-        assert!(d.install(version, regions));
+        assert!(d.install(d.recompute().run()));
         assert!(d.regions_current());
     }
 
@@ -662,18 +681,43 @@ mod tests {
         assert_eq!(d.text(Side::Right), "a\nB\n");
     }
 
+    fn moved(from: usize, to: usize, left: Range<usize>, right: Range<usize>) -> Move {
+        Move { from: RegionIx::new(from), to: RegionIx::new(to), left, right }
+    }
+
+    #[test]
+    fn moves_lag_the_text_with_the_regions_and_install_with_them() {
+        let mut d = doc("m1\nm2\na\nb\nc\n", "a\nb\nc\nm1\nm2\n");
+        assert_eq!(d.moves(), [moved(0, 2, 0..2, 3..5)]);
+        d.edit(Side::Right, insert(11, "!")).expect("edits");
+        assert_eq!(d.text(Side::Right), "a\nb\nc\nm1\nm2!\n");
+        assert_eq!(d.moves(), [moved(0, 2, 0..2, 3..5)], "moves wait for the recompute");
+        let diffed = d.recompute().run();
+        assert_eq!(diffed.moves, []);
+        assert!(d.install(diffed));
+        assert_eq!(d.moves(), []);
+    }
+
+    #[test]
+    fn a_document_matches_moves_under_its_options() {
+        let all = DiffOptions { whitespace: Whitespace::All, ..DiffOptions::default() };
+        let mut d = DiffDocument::new(&text("m1\nm2\na\nb\nc\n"), &text("a\nb\nc\nm 1\nm2\n"), all);
+        assert_eq!(d.moves(), [moved(0, 2, 0..2, 3..5)]);
+        d.edit(Side::Left, insert(12, "q\n")).expect("edits");
+        assert_eq!(d.recompute().run().moves, [moved(0, 2, 0..2, 3..5)], "a recompute keeps them");
+        assert_eq!(doc("m1\nm2\na\nb\nc\n", "a\nb\nc\nm 1\nm2\n").moves(), []);
+    }
+
     #[test]
     fn an_edit_takes_a_new_version_and_regions_wait_for_the_recompute() {
         let mut d = doc("a\nb\nc\n", "a\nb\nc\n");
         assert_eq!(d.edit(Side::Left, insert(2, "x")), edited(Side::Left, 1, vec![]));
         assert_eq!(d.text(Side::Left), "a\nxb\nc\n");
         assert_eq!(d.regions(), [same(0..3, 0..3)]);
-        let (version, regions) = d.recompute().run();
-        assert_eq!(
-            (version, regions.clone()),
-            (1, vec![same(0..1, 0..1), changed(1..2, 1..2), same(2..3, 2..3)])
-        );
-        assert!(d.install(version, regions.clone()));
+        let diffed = d.recompute().run();
+        let regions = vec![same(0..1, 0..1), changed(1..2, 1..2), same(2..3, 2..3)];
+        assert_eq!(diffed, Diffed { version: 1, regions: regions.clone(), moves: vec![] });
+        assert!(d.install(diffed));
         assert_eq!(d.regions(), regions);
     }
 
@@ -682,10 +726,10 @@ mod tests {
         let mut d = doc("a\n", "b\n");
         let job = d.recompute();
         d.edit(Side::Left, insert(0, "x")).expect("edit");
-        let (version, regions, seen) =
+        let (diffed, seen) =
             job.run_with(|[left, right]| (left.content().to_owned(), right.content().to_owned()));
-        assert_eq!(version, 0);
-        assert_eq!(regions, [changed(0..1, 0..1)]);
+        assert_eq!(diffed.version, 0);
+        assert_eq!(diffed.regions, [changed(0..1, 0..1)]);
         assert_eq!(seen, ("a\n".to_owned(), "b\n".to_owned()));
     }
 
@@ -705,9 +749,9 @@ mod tests {
         let mut d = doc("a\n", "a\n");
         let job = d.recompute();
         d.edit(Side::Right, insert(0, "x\n")).expect("edit");
-        let (version, regions) = job.run();
-        assert_eq!(version, 0);
-        assert!(!d.install(version, regions));
+        let diffed = job.run();
+        assert_eq!(diffed.version, 0);
+        assert!(!d.install(diffed));
         assert_eq!(d.regions(), [same(0..1, 0..1)]);
     }
 

@@ -473,8 +473,7 @@ mod tests {
         )
         .expect("edits");
         assert_eq!(bytes(&d, Side::Left), [4..6]);
-        let (version, regions) = d.recompute().run();
-        assert!(d.install(version, regions));
+        assert!(d.install(d.recompute().run()));
         // zza→a changed and b→c changed join into one region over both lines.
         assert_eq!(bytes(&d, Side::Left), [0..6]);
         assert_eq!(differences(&d), 1);

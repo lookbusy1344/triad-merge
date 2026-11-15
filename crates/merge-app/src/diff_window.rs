@@ -863,12 +863,12 @@ impl DiffWindow {
             }) else {
                 return;
             };
-            let (version, regions, carried) = cx
+            let (diffed, carried) = cx
                 .background_spawn(async move { job.run_with(|texts| carried(&origins, texts)) })
                 .await;
             ignore_closed_view(this.update_in(cx, |this, window, cx| {
                 this.computing = false;
-                if this.doc.install(version, regions) {
+                if this.doc.install(diffed) {
                     this.install_origins(carried);
                     this.refresh(cx);
                     for navigation in std::mem::take(&mut this.waiting) {
