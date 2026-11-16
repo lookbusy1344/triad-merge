@@ -19,8 +19,8 @@ use crate::index::{ByteOffset, Line, RegionIx};
 use crate::journal::alignment_hash;
 use crate::lengths::RegionLengths;
 use crate::merge3::{
-    Aligned, Alignment, HunkLevel, Inputs, Kind, Refine, Region, SameChange, Semantics, Source,
-    align_bounded, word_merge,
+    Aligned, Alignment, HunkLevel, Inputs, Kind, Refine, Region, SameChange, Semantics, SideMove,
+    Source, align_bounded, side_moves, word_merge,
 };
 use crate::region_lines::{LineCount, RegionLines};
 use crate::text::{EndingCounts, LineEnding, LineEndings, Text, typed_ending, with_endings};
@@ -330,6 +330,8 @@ pub struct MergeDocument {
     /// The hash of the alignment as [`MergeDocument::new_bounded`] made it.
     alignment: String,
     regions: Vec<Region>,
+    /// The blocks each side moved from base, found once from the aligned regions.
+    moves: Vec<SideMove>,
     resolutions: Vec<Resolution>,
     result: Rope,
     lengths: RegionLengths,
@@ -400,6 +402,7 @@ impl MergeDocument {
                 _ => Resolution::Auto,
             })
             .collect();
+        let moves = side_moves(&inputs, &regions, &options.diff);
         let mut doc = Self {
             marker_length: marker_length(&inputs, options.marker_length),
             options,
@@ -408,6 +411,7 @@ impl MergeDocument {
             inputs,
             labels,
             regions,
+            moves,
             resolutions,
             result: Rope::new(),
             endings: EndingCounts::default(),
@@ -440,6 +444,12 @@ impl MergeDocument {
     #[must_use]
     pub fn regions(&self) -> &[Region] {
         &self.regions
+    }
+
+    /// The blocks each side moved from base, by input lines (`PLAN.md` §G16). Edits leave them.
+    #[must_use]
+    pub fn moves(&self) -> &[SideMove] {
+        &self.moves
     }
 
     #[must_use]
@@ -1460,6 +1470,19 @@ mod tests {
 
     fn patch(range: Range<usize>, text: &str) -> TextPatch {
         TextPatch { range, text: text.to_owned() }
+    }
+
+    #[test]
+    fn moves_found_at_load_outlive_an_edit_that_joins_regions() {
+        let mut d = doc("m1\nm2\na\nb\nc\n", "a\nb\nc\nm1\nm2\n", "m1\nm2\na\nb\nc\n");
+        let left_move = SideMove { side: LEFT, base: 0..2, lines: 3..5 };
+        assert_eq!(d.moves(), std::slice::from_ref(&left_move));
+        assert_eq!(d.regions().len(), 3);
+        let whole = 0..d.text().len();
+        d.apply(Command::Edit(EditBatch(vec![patch(whole, "x\n")]))).expect("applies");
+        // Left's deletion holds no bytes and stays; the edit joins `a b c` and the insertion.
+        assert_eq!(d.regions().len(), 2);
+        assert_eq!(d.moves(), [left_move]);
     }
 
     #[expect(clippy::unnecessary_wraps, reason = "compared with `apply`'s result")]

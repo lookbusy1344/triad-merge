@@ -73,6 +73,8 @@ Git semantics:
 
 git's histogram matches `git diff --histogram --no-indent-heuristic`: anchor choice without prefix stripping, skipping lines commoner than the best anchor, the 64-occurrence limit and its Myers fallback, sliding, and the re-diff of a moved group. Part B gives jj semantics.
 
+Moved blocks (`merge3::side_moves`, `PLAN.md` §G16) come from the aligned regions, three-way only. For each side, every region that is not `Unchanged` gives one change of base against that side: its base and side ranges, less the lines at either end that compare equal, since a git region joins hunks of both sides that touch. `diff2::moves` matches those changes as in the two-way diff (§A4.7), so the two windows agree on what a move is. A move names input lines, never regions: `MergeDocument` finds the moves once at load, and edits that join the result's regions leave them.
+
 #### A4.5 Resolution, result text and output (`merge_core::document`)
 
 `MergeDocument` owns everything a session changes: the inputs, the options, the regions and their resolutions, the result as a `ropey` rope, and the undo history. The core is the single source of truth. Every command, undo included, returns the minimal patches the GUI applies to its editor; the GUI never replaces the whole text. `Applied::regions_changed` tells the view to rebuild its region-indexed state.
