@@ -49,6 +49,8 @@ The regions follow the merge semantics, same-change rule and hunk level chosen b
 
 The regions are those of the default merge, with conflict refinement on, under the given `--diff-algorithm` and `--ignore-whitespace`.
 
+`moves` lists the blocks a side moved from base, ordered by side, then by `base`. Each has `side`, `"left"` or `"right"`, `base`, the block's lines in base, which that side deletes, and `lines`, the block's lines in that side. A block moves when it holds a line that is not blank and the side holds it, among its changed lines, at exactly one place. When both sides move one block, each side lists it: to one place, the merge takes it once; to two places, the merge holds it twice.
+
 Exit code: 0 with no conflicts, 1 with conflicts, 3 on error.
 
 ```json
@@ -64,7 +66,8 @@ Exit code: 0 with no conflicts, 1 with conflicts, 3 on error.
     { "kind": "unchanged", "base": [0, 1], "left": [0, 1], "right": [0, 1] },
     { "kind": "conflict", "base": [1, 2], "left": [1, 2], "right": [1, 2] },
     { "kind": "unchanged", "base": [2, 3], "left": [2, 3], "right": [2, 3] }
-  ]
+  ],
+  "moves": []
 }
 ```
 
@@ -157,7 +160,20 @@ unchanged left 2..3 right 2..3
 changes: 1
 ```
 
-A move prints after the regions:
+A move prints after the regions. In a merge it names its side, its base lines and its lines in that side:
+
+```
+both-same base 0..2 left 0..0 right 0..0
+unchanged base 2..5 left 0..3 right 0..3
+right-only base 5..5 left 3..3 right 3..5
+unchanged base 5..7 left 3..5 right 5..7
+left-only base 7..7 left 5..7 right 7..7
+move left base 0..2 to 5..7
+move right base 0..2 to 3..5
+conflicts: 0
+```
+
+In a two-way diff it names the regions at both ends:
 
 ```
 changed left 0..2 right 0..0
