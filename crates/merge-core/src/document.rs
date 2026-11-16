@@ -19,8 +19,8 @@ use crate::index::{ByteOffset, Line, RegionIx};
 use crate::journal::alignment_hash;
 use crate::lengths::RegionLengths;
 use crate::merge3::{
-    Aligned, Alignment, HunkLevel, Inputs, Kind, Refine, Region, SameChange, Semantics, SideMove,
-    Source, align_bounded, side_moves, word_merge,
+    Aligned, Alignment, Duplicate, HunkLevel, Inputs, Kind, LEFT, RIGHT, Refine, Region,
+    SameChange, Semantics, SideMove, Source, align_bounded, duplicates, side_moves, word_merge,
 };
 use crate::region_lines::{LineCount, RegionLines};
 use crate::text::{EndingCounts, LineEnding, LineEndings, Text, typed_ending, with_endings};
@@ -332,6 +332,8 @@ pub struct MergeDocument {
     regions: Vec<Region>,
     /// The blocks each side moved from base, found once from the aligned regions.
     moves: Vec<SideMove>,
+    /// The blocks both sides insert at different places, found once with the moves.
+    duplicates: Vec<Duplicate>,
     resolutions: Vec<Resolution>,
     result: Rope,
     lengths: RegionLengths,
@@ -403,6 +405,7 @@ impl MergeDocument {
             })
             .collect();
         let moves = side_moves(&inputs, &regions, &options.diff);
+        let duplicates = duplicates(&inputs, &regions, &options.diff);
         let mut doc = Self {
             marker_length: marker_length(&inputs, options.marker_length),
             options,
@@ -412,6 +415,7 @@ impl MergeDocument {
             labels,
             regions,
             moves,
+            duplicates,
             resolutions,
             result: Rope::new(),
             endings: EndingCounts::default(),
@@ -450,6 +454,38 @@ impl MergeDocument {
     #[must_use]
     pub fn moves(&self) -> &[SideMove] {
         &self.moves
+    }
+
+    /// The blocks both sides insert at different places, by input lines (`PLAN.md` §G16).
+    #[must_use]
+    pub fn duplicates(&self) -> &[Duplicate] {
+        &self.duplicates
+    }
+
+    /// The result lines of both copies, left's then right's, of each duplicate the result
+    /// still holds twice: while the region holding each copy takes its side's text, by
+    /// itself or picked alone.
+    pub fn held_duplicates(&self) -> impl Iterator<Item = [Range<usize>; 2]> + '_ {
+        self.duplicates.iter().filter_map(|d| {
+            Some([self.copy_lines(LEFT, &d.left)?, self.copy_lines(RIGHT, &d.right)?])
+        })
+    }
+
+    /// The result lines of `side`'s `lines` while the region holding them takes `side`'s
+    /// text: automatically, or picked alone.
+    fn copy_lines(&self, side: usize, lines: &Range<usize>) -> Option<Range<usize>> {
+        let index = self.regions.partition_point(|r| r.sides[side].end <= lines.start);
+        let region = self.regions.get(index)?;
+        let takes_side = match &self.resolutions[index] {
+            Resolution::Auto => region.kind == Kind::OneSide(side),
+            Resolution::Pick(sources) => sources[..] == [Source::Side(side)],
+            Resolution::Edited | Resolution::Unresolved => false,
+        };
+        takes_side.then(|| {
+            let start = self.region_lines(RegionIx::new(index)).start.get() + lines.start
+                - region.sides[side].start;
+            start..start + lines.len()
+        })
     }
 
     #[must_use]
@@ -1372,7 +1408,6 @@ mod tests {
     use super::*;
     use crate::boundaries::{Marked, node};
     use crate::diff::{CaseRule, LineEndingRule, Whitespace};
-    use crate::merge3::{LEFT, RIGHT};
     use crate::testing::{text, three};
 
     const L: Source = Source::Side(LEFT);
@@ -1470,6 +1505,37 @@ mod tests {
 
     fn patch(range: Range<usize>, text: &str) -> TextPatch {
         TextPatch { range, text: text.to_owned() }
+    }
+
+    #[test]
+    fn a_duplicate_holds_while_both_copies_take_their_sides_text() {
+        // Result: `a b c` (lines 0–2), right's `m1 m2` (3–4), `d e` (5–6), left's `m1 m2`
+        // (7–8). Regions: 0 both delete, 1 `a b c`, 2 right's copy, 3 `d e`, 4 left's copy.
+        let mut d =
+            doc("m1\nm2\na\nb\nc\nd\ne\n", "a\nb\nc\nd\ne\nm1\nm2\n", "a\nb\nc\nm1\nm2\nd\ne\n");
+        assert_eq!(d.duplicates(), [Duplicate { left: 5..7, right: 3..5 }]);
+        let held = |d: &MergeDocument| d.held_duplicates().collect::<Vec<[Range<usize>; 2]>>();
+        assert_eq!(held(&d), [[7..9, 3..5]]);
+        let right_copy = RegionIx::new(2);
+        d.apply(Command::Pick { region: right_copy, sources: vec![R] }).expect("picks");
+        assert_eq!(held(&d), [[7..9, 3..5]], "picking right alone keeps right's text");
+        d.apply(Command::Pick { region: right_copy, sources: vec![B] }).expect("picks");
+        assert_eq!(held(&d), Vec::<[Range<usize>; 2]>::new(), "base drops right's copy");
+        d.apply(Command::Undo).expect("undoes");
+        assert_eq!(held(&d), [[7..9, 3..5]]);
+        let left_copy = d.region_bytes(RegionIx::new(4));
+        d.apply(Command::Edit(EditBatch(vec![patch(left_copy.start..left_copy.start, "x")])))
+            .expect("edits");
+        assert_eq!(held(&d), Vec::<[Range<usize>; 2]>::new(), "an edit of left's copy ends it");
+        assert_eq!(d.duplicates(), [Duplicate { left: 5..7, right: 3..5 }], "found at load");
+    }
+
+    #[test]
+    fn a_copy_partway_into_its_region_maps_to_its_own_result_lines() {
+        // Left inserts `n x1 x2` after `a` (result lines 1–3); right inserts `x1 x2` before
+        // `e` (result lines 7–8). Left's copy is its lines 2–3, result lines 2–3.
+        let d = doc("a\nb\nc\nd\ne\n", "a\nn\nx1\nx2\nb\nc\nd\ne\n", "a\nb\nc\nd\nx1\nx2\ne\n");
+        assert_eq!(d.held_duplicates().collect::<Vec<_>>(), [[2..4, 7..9]]);
     }
 
     #[test]

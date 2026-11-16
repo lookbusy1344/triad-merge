@@ -75,6 +75,8 @@ git's histogram matches `git diff --histogram --no-indent-heuristic`: anchor cho
 
 Moved blocks (`merge3::side_moves`, `PLAN.md` §G16) come from the aligned regions, three-way only. For each side, every region that is not `Unchanged` gives one change of base against that side: its base and side ranges, less the lines at either end that compare equal, since a git region joins hunks of both sides that touch. `diff2::moves` matches those changes as in the two-way diff (§A4.7), so the two windows agree on what a move is. A move names input lines, never regions: `MergeDocument` finds the moves once at load, and edits that join the result's regions leave them.
 
+Duplicates (`merge3::duplicates`) are blocks both sides insert at different places, each in a `OneSide` region, so a clean merge takes the block twice. Each side's changes in those regions, trimmed as above, are matched against the other side's by `diff2::moves`, once in each direction, so a block inside the other side's larger insert is found too. A conflict is left out: the user resolves it. `MergeDocument` finds them at load with the moves; `held_duplicates` maps both copies to result lines while each copy's region takes its side's text, automatically or picked alone.
+
 #### A4.5 Resolution, result text and output (`merge_core::document`)
 
 `MergeDocument` owns everything a session changes: the inputs, the options, the regions and their resolutions, the result as a `ropey` rope, and the undo history. The core is the single source of truth. Every command, undo included, returns the minimal patches the GUI applies to its editor; the GUI never replaces the whole text. `Applied::regions_changed` tells the view to rebuild its region-indexed state.
