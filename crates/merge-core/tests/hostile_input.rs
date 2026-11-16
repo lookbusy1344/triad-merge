@@ -4,7 +4,7 @@
 use std::cell::Cell;
 
 use merge_core::markers::{self, MarkerError};
-use merge_core::text::{DecodeError, Encoding, Text};
+use merge_core::text::{Encoding, Text};
 use proptest::prelude::*;
 use proptest::test_runner::{Config, RngSeed, TestRunner};
 
@@ -108,27 +108,31 @@ proptest! {
     #[test]
     fn what_decodes_encodes_back_to_the_same_bytes(bytes in hostile_bytes()) {
         if let Ok(text) = Text::decode(bytes.clone()) {
-            let encoded = text.encode(text.content());
+            let encoded = text.bytes();
             prop_assert_eq!(encoded.as_ref(), bytes.as_slice());
         }
     }
 
     #[test]
-    fn a_utf8_error_names_the_first_invalid_byte(
+    fn bytes_without_a_mark_or_nul_decode_as_utf8_else_windows_1252(
         bytes in prop::collection::vec(1..=u8::MAX, 0..MAX_BYTES)
     ) {
         prop_assume!(!bytes.starts_with(&UTF8_BOM));
         prop_assume!(!bytes.starts_with(&UTF16LE_BOM) && !bytes.starts_with(&UTF16BE_BOM));
-        let expected = std::str::from_utf8(&bytes)
-            .err()
-            .map(|e| DecodeError::InvalidUtf8 { offset: e.valid_up_to() });
-        prop_assert_eq!(Text::decode(bytes).err(), expected);
+        let expected = match std::str::from_utf8(&bytes) {
+            Ok(_) => Encoding::Utf8,
+            Err(_) => Encoding::Windows1252,
+        };
+        let text = Text::decode(bytes.clone()).expect("bytes without a mark or NUL decode");
+        prop_assert_eq!(text.encoding(), expected);
+        let encoded = text.bytes();
+        prop_assert_eq!(encoded.as_ref(), bytes.as_slice());
     }
 
     #[test]
     fn utf16_of_any_text_decodes_to_it(content in ".*", little in any::<bool>()) {
         let encoding = if little { Encoding::Utf16Le } else { Encoding::Utf16Be };
-        let bytes = encoding.encode(&content).into_owned();
+        let bytes = encoding.encode(&content).expect("UTF-16 holds any text").into_owned();
         let text = Text::decode(bytes).expect("encoded text decodes");
         prop_assert_eq!(text.content(), content.as_str());
         prop_assert_eq!(text.encoding(), encoding);

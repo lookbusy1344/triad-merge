@@ -42,7 +42,7 @@ use merge_core::index::{ByteOffset, Line, RegionIx};
 use merge_core::journal::{Journal, RestoreError};
 use merge_core::merge3::{Inputs, Kind, LEFT, RIGHT, Source};
 use merge_core::suggest::{self, EditSuggestion};
-use merge_core::text::Text;
+use merge_core::text::{EncodeError, Text};
 use merge_core::unusual::Unusual;
 use merge_session::ending::{self, Closing, Next, SaveFailed, Undone, UnresolvedSave};
 use merge_session::io::WriteError;
@@ -998,8 +998,11 @@ impl MergeWindow {
 
     /// A dry run of Save & Exit into the jj commit the merge came from, as it stands; none
     /// for a merge whose saves go to no commit (spec §7.5.1).
-    #[must_use]
-    pub fn preview_job(&self) -> Option<PreviewJob> {
+    ///
+    /// # Errors
+    ///
+    /// [`EncodeError`] when the output encoding cannot hold the result.
+    pub fn preview_job(&self) -> Result<Option<PreviewJob>, EncodeError> {
         self.session.preview()
     }
 
@@ -2275,7 +2278,10 @@ impl MergeWindow {
     /// OUTPUT, the exit code and the journal are unchanged. A failure shows an alert.
     pub fn save_copy(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
         self.send_edits(window, cx);
-        let (encoded, unresolved) = self.session.copy();
+        let (encoded, unresolved) = match self.session.copy() {
+            Ok(copy) => copy,
+            Err(error) => return alert(prompt::CANNOT_WRITE_COPY, &error.to_string(), window, cx),
+        };
         let path = path.to_owned();
         let before = self.copying.take();
         self.copying = Some(cx.spawn_in(window, async move |this, cx| {
@@ -2301,22 +2307,7 @@ impl MergeWindow {
                 self.copy_note = Some(strings::copy_saved(unresolved).into());
                 cx.notify();
             }
-            Err(error) => {
-                let detail = error.to_string();
-                tracing::error!(detail, "cannot write the copy");
-                let answer = window.prompt(
-                    PromptLevel::Critical,
-                    prompt::CANNOT_WRITE_COPY,
-                    Some(&detail),
-                    &[prompt::OK],
-                    cx,
-                );
-                cx.spawn(async move |_, _| {
-                    // The alert's one button only closes it; the window stays as it was.
-                    let _ = answer.await;
-                })
-                .detach();
-            }
+            Err(error) => alert(prompt::CANNOT_WRITE_COPY, &error.to_string(), window, cx),
         }
     }
 
@@ -2340,7 +2331,8 @@ impl MergeWindow {
         if self.save_task.is_some() {
             return;
         }
-        let Some(job) = self.session.preview() else {
+        // An output the encoding cannot hold: the save meets the same refusal and reports it.
+        let Ok(Some(job)) = self.session.preview() else {
             return self.write_and_finish(window, cx);
         };
         self.set_saving(true, cx);
@@ -2398,6 +2390,11 @@ impl MergeWindow {
             Ok(job) => self.save_in_background(job, window, cx),
             Err(CannotSave::NoOutput) => Self::fail(prompt::NO_OUTPUT, window, cx),
             Err(CannotSave::Saving) => {}
+            Err(CannotSave::Unencodable(error)) => {
+                // Nothing is written and the merge goes on, so its journal does too.
+                self.schedule_journal(cx);
+                alert(prompt::CANNOT_WRITE, &error.to_string(), window, cx);
+            }
         }
     }
 
@@ -4027,6 +4024,18 @@ impl Render for MergeWindow {
 enum Keep {
     Yes,
     No,
+}
+
+/// Show `title` and `detail` in an alert whose one button only closes it: the window stays
+/// as it was.
+fn alert(title: &str, detail: &str, window: &mut Window, cx: &mut App) {
+    tracing::error!(detail, "{title}");
+    let answer = window.prompt(PromptLevel::Critical, title, Some(detail), &[prompt::OK], cx);
+    cx.spawn(async move |_| {
+        // The one button only closes the alert.
+        let _ = answer.await;
+    })
+    .detach();
 }
 
 #[cfg(test)]

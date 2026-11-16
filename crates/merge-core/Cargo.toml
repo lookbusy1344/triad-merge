@@ -33,6 +33,7 @@ criterion.workspace = true
 # Turns on `testing` for the benches.
 merge-core = { path = ".", features = ["testing"] }
 proptest.workspace = true
+encoding_rs.workspace = true
 
 [[bench]]
 name = "merge"

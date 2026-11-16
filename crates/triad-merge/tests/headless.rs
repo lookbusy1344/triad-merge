@@ -233,13 +233,61 @@ fn binary_input_fails_with_3_and_writes_nothing() {
 }
 
 #[test]
-fn invalid_utf8_fails_with_3_and_writes_nothing() {
-    let (result, tmp) = merge_bytes(b"a\n", b"a\n", b"a\xff\n");
+fn invalid_utf8_after_a_utf8_mark_fails_with_3_and_writes_nothing() {
+    let (result, tmp) = merge_bytes(b"a\n", b"a\n", b"\xEF\xBB\xBFa\xff\n");
     assert_failed(
         &result,
-        &format!("triad-merge: {}: invalid UTF-8 at byte 1\n", tmp.path().join("right").display()),
+        &format!("triad-merge: {}: invalid UTF-8 at byte 4\n", tmp.path().join("right").display()),
     );
     assert_eq!(fs::read(tmp.path().join("out")).expect("output"), STALE_OUTPUT.as_bytes());
+}
+
+#[test]
+fn text_that_is_not_utf8_merges_as_windows_1252_and_keeps_its_bytes() {
+    // Latin-1 `é` on every side, curly quotes on the right: each side changes its own line,
+    // so the merge takes both changes, as `git merge-file` does on the bytes.
+    let (result, tmp) = merge_bytes(
+        b"caf\xe9\nx\nend\n",
+        b"caf\xe9 au lait\nx\nend\n",
+        b"caf\xe9\nx\n\x93end\x94\n",
+    );
+    assert_eq!(stderr(&result), "");
+    assert_eq!(result.status.code(), Some(0));
+    assert_eq!(
+        fs::read(tmp.path().join("out")).expect("output"),
+        b"caf\xe9 au lait\nx\n\x93end\x94\n"
+    );
+}
+
+#[test]
+fn a_character_windows_1252_cannot_hold_fails_with_3_and_writes_nothing() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    for name in ["base", "left", "right"] {
+        fs::write(tmp.path().join(name), b"caf\xe9\n").expect("input");
+    }
+    fs::write(tmp.path().join("out"), STALE_OUTPUT).expect("stale output");
+    // Type `ł` at the start of the result.
+    let commands = "{\"Edit\":[{\"range\":{\"start\":0,\"end\":0},\"text\":\"ł\"}]}\n";
+    fs::write(tmp.path().join("commands"), commands).expect("command file");
+    let p = |f: &str| tmp.path().join(f);
+    let result = triad(&[
+        Path::new("--headless"),
+        &p("base"),
+        &p("left"),
+        &p("right"),
+        Path::new("-o"),
+        &p("out"),
+        Path::new("--commands"),
+        &p("commands"),
+    ]);
+    assert_failed(
+        &result,
+        &format!(
+            "triad-merge: cannot save {}: Windows-1252 cannot hold 'ł' (U+0142) on line 1\n",
+            p("out").display()
+        ),
+    );
+    assert_eq!(fs::read(p("out")).expect("output"), STALE_OUTPUT.as_bytes());
 }
 
 #[test]

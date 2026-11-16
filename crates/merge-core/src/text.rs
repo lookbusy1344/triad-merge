@@ -15,14 +15,38 @@ pub enum Encoding {
     Utf8Bom,
     Utf16Le,
     Utf16Be,
+    /// The fallback for text that is not UTF-8 and has no byte order mark: one byte per
+    /// character, each of the 256 bytes mapping to one character and back (spec §4.1).
+    Windows1252,
+}
+
+/// A character `encoding` cannot hold, on the 1-based `line` of the text being encoded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("{} cannot hold {character:?} (U+{:04X}) on line {line}", .encoding.name(), u32::from(*.character))]
+pub struct EncodeError {
+    pub encoding: Encoding,
+    pub character: char,
+    pub line: usize,
 }
 
 impl Encoding {
+    /// The encoding's name, as an error names it.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Encoding::Utf8 => "UTF-8",
+            Encoding::Utf8Bom => "UTF-8 with BOM",
+            Encoding::Utf16Le => "UTF-16 LE",
+            Encoding::Utf16Be => "UTF-16 BE",
+            Encoding::Windows1252 => "Windows-1252",
+        }
+    }
+
     /// The byte order mark a file in this encoding starts with; empty for plain UTF-8.
     #[must_use]
     pub fn bom(self) -> &'static [u8] {
         match self {
-            Encoding::Utf8 => &[],
+            Encoding::Utf8 | Encoding::Windows1252 => &[],
             Encoding::Utf8Bom => &UTF8_BOM,
             Encoding::Utf16Le => &UTF16LE_BOM,
             Encoding::Utf16Be => &UTF16BE_BOM,
@@ -31,9 +55,13 @@ impl Encoding {
 
     /// `text` in this encoding without the byte order mark, so a text split at `char`
     /// boundaries encodes piece by piece. UTF-8 borrows it.
-    #[must_use]
-    pub fn encode_chunk(self, text: &str) -> Cow<'_, [u8]> {
-        match self {
+    ///
+    /// # Errors
+    ///
+    /// [`EncodeError`] for the first character the encoding cannot hold, its line counted
+    /// from the start of `text`.
+    pub fn encode_chunk(self, text: &str) -> Result<Cow<'_, [u8]>, EncodeError> {
+        Ok(match self {
             Encoding::Utf8 | Encoding::Utf8Bom => Cow::Borrowed(text.as_bytes()),
             Encoding::Utf16Le => {
                 text.encode_utf16().flat_map(u16::to_le_bytes).collect::<Vec<u8>>().into()
@@ -41,26 +69,91 @@ impl Encoding {
             Encoding::Utf16Be => {
                 text.encode_utf16().flat_map(u16::to_be_bytes).collect::<Vec<u8>>().into()
             }
+            Encoding::Windows1252 => text
+                .char_indices()
+                .map(|(at, c)| {
+                    windows_1252_byte(c).ok_or_else(|| EncodeError {
+                        encoding: self,
+                        character: c,
+                        line: line_number(text, at),
+                    })
+                })
+                .collect::<Result<Vec<u8>, _>>()?
+                .into(),
+        })
+    }
+
+    /// Whether this encoding holds every character of `chunks`, pieces of one text in order,
+    /// without encoding them.
+    ///
+    /// # Errors
+    ///
+    /// [`EncodeError`] for the first character it cannot hold, its line counted over all
+    /// the pieces.
+    pub fn holds<'t>(self, chunks: impl IntoIterator<Item = &'t str>) -> Result<(), EncodeError> {
+        if self != Encoding::Windows1252 {
+            return Ok(());
         }
+        let mut lines_before = 0;
+        for chunk in chunks {
+            if let Some((at, c)) =
+                chunk.char_indices().find(|&(_, c)| windows_1252_byte(c).is_none())
+            {
+                let line = lines_before + line_number(chunk, at);
+                return Err(EncodeError { encoding: self, character: c, line });
+            }
+            lines_before += chunk.bytes().filter(|&byte| byte == b'\n').count();
+        }
+        Ok(())
     }
 
     /// `text` in this encoding, after its byte order mark if it has one. UTF-8 borrows it.
-    #[must_use]
-    pub fn encode(self, text: &str) -> Cow<'_, [u8]> {
-        match self {
-            Encoding::Utf8 => Cow::Borrowed(text.as_bytes()),
-            Encoding::Utf8Bom => Cow::Owned([&UTF8_BOM[..], text.as_bytes()].concat()),
-            Encoding::Utf16Le => UTF16LE_BOM
-                .into_iter()
-                .chain(text.encode_utf16().flat_map(u16::to_le_bytes))
-                .collect::<Vec<u8>>()
-                .into(),
-            Encoding::Utf16Be => UTF16BE_BOM
-                .into_iter()
-                .chain(text.encode_utf16().flat_map(u16::to_be_bytes))
-                .collect::<Vec<u8>>()
-                .into(),
-        }
+    ///
+    /// # Errors
+    ///
+    /// [`EncodeError`] for the first character the encoding cannot hold.
+    pub fn encode(self, text: &str) -> Result<Cow<'_, [u8]>, EncodeError> {
+        let bom = self.bom();
+        let body = self.encode_chunk(text)?;
+        Ok(if bom.is_empty() { body } else { Cow::Owned([bom, &body].concat()) })
+    }
+}
+
+/// The 1-based line of `text` that byte `at` lies on.
+fn line_number(text: &str, at: usize) -> usize {
+    text[..at].matches('\n').count() + 1
+}
+
+/// Windows-1252's characters for the bytes 0x80–0x9F, from WHATWG's index: the five bytes the
+/// code page leaves unassigned (0x81, 0x8D, 0x8F, 0x90, 0x9D) take the C1 control of the
+/// same value. Every other byte is the character of the same value, as in Latin-1.
+const WINDOWS_1252_HIGH: [char; 32] = [
+    '\u{20AC}', '\u{0081}', '\u{201A}', '\u{0192}', '\u{201E}', '\u{2026}', '\u{2020}', '\u{2021}',
+    '\u{02C6}', '\u{2030}', '\u{0160}', '\u{2039}', '\u{0152}', '\u{008D}', '\u{017D}', '\u{008F}',
+    '\u{0090}', '\u{2018}', '\u{2019}', '\u{201C}', '\u{201D}', '\u{2022}', '\u{2013}', '\u{2014}',
+    '\u{02DC}', '\u{2122}', '\u{0161}', '\u{203A}', '\u{0153}', '\u{009D}', '\u{017E}', '\u{0178}',
+];
+/// The first byte [`WINDOWS_1252_HIGH`] covers.
+const WINDOWS_1252_HIGH_START: u8 = 0x80;
+
+/// The character Windows-1252 gives `byte`.
+fn windows_1252_char(byte: u8) -> char {
+    match byte.checked_sub(WINDOWS_1252_HIGH_START) {
+        Some(at) if usize::from(at) < WINDOWS_1252_HIGH.len() => WINDOWS_1252_HIGH[usize::from(at)],
+        _ => char::from(byte),
+    }
+}
+
+/// The byte Windows-1252 gives `c`, if it holds it.
+fn windows_1252_byte(c: char) -> Option<u8> {
+    let high = WINDOWS_1252_HIGH_START..WINDOWS_1252_HIGH_START + 32;
+    match u8::try_from(u32::from(c)) {
+        Ok(byte) if !high.contains(&byte) => Some(byte),
+        _ => WINDOWS_1252_HIGH
+            .iter()
+            .position(|&high| high == c)
+            .and_then(|at| u8::try_from(at).ok())
+            .map(|at| WINDOWS_1252_HIGH_START + at),
     }
 }
 
@@ -118,12 +211,14 @@ struct Shared {
 }
 
 impl Text {
-    /// Decode a file's bytes: byte order mark first, then the binary check, then UTF-8.
-    /// UTF-8 decodes in place, in the buffer read from the file.
+    /// Decode a file's bytes: byte order mark first, then the binary check, then UTF-8, then
+    /// Windows-1252, which takes any bytes. UTF-8 decodes in place, in the buffer read from
+    /// the file.
     ///
     /// # Errors
     ///
-    /// Binary input, invalid UTF-8, an unpaired UTF-16 surrogate or an odd UTF-16 length.
+    /// Binary input; after a byte order mark, invalid UTF-8, an unpaired UTF-16 surrogate or
+    /// an odd UTF-16 length.
     pub fn decode(bytes: impl Into<Vec<u8>>) -> Result<Text, DecodeError> {
         let mut bytes = bytes.into();
         let (encoding, content) = if bytes.starts_with(&UTF8_BOM) {
@@ -136,7 +231,10 @@ impl Text {
         } else if bytes.iter().take(BINARY_SNIFF_BYTES).any(|&byte| byte == 0) {
             return Err(DecodeError::Binary);
         } else {
-            (Encoding::Utf8, decode_utf8(bytes, 0)?)
+            match String::from_utf8(bytes) {
+                Ok(content) => (Encoding::Utf8, content),
+                Err(error) => (Encoding::Windows1252, decode_windows_1252(error.as_bytes())),
+            }
         };
         Ok(Text::new(encoding, content))
     }
@@ -156,8 +254,10 @@ impl Text {
             check_utf16(rest, u16::from_be_bytes).map(|()| Encoding::Utf16Be)
         } else if bytes.iter().take(BINARY_SNIFF_BYTES).any(|&byte| byte == 0) {
             Err(DecodeError::Binary)
+        } else if std::str::from_utf8(bytes).is_ok() {
+            Ok(Encoding::Utf8)
         } else {
-            check_utf8(bytes, 0).map(|()| Encoding::Utf8)
+            Ok(Encoding::Windows1252)
         }
     }
 
@@ -178,9 +278,26 @@ impl Text {
     }
 
     /// Encode `text` in this file's encoding, with its byte order mark if it has one.
-    #[must_use]
-    pub fn encode<'a>(&self, text: &'a str) -> Cow<'a, [u8]> {
+    ///
+    /// # Errors
+    ///
+    /// [`EncodeError`] for the first character the encoding cannot hold.
+    pub fn encode<'a>(&self, text: &'a str) -> Result<Cow<'a, [u8]>, EncodeError> {
         self.encoding.encode(text)
+    }
+
+    /// The file's bytes: its content encoded again, with its byte order mark.
+    ///
+    /// # Panics
+    ///
+    /// Never: decoding gave every character of the content, so its encoding holds each.
+    #[must_use]
+    pub fn bytes(&self) -> Cow<'_, [u8]> {
+        #[expect(
+            clippy::expect_used,
+            reason = "invariant: decoding gave every character of the content, so its encoding holds each"
+        )]
+        self.encoding.encode(self.content()).expect("a decoded text encodes in its own encoding")
     }
 
     #[must_use]
@@ -275,6 +392,11 @@ fn decode_utf8(bytes: Vec<u8>, offset: usize) -> Result<String, DecodeError> {
     String::from_utf8(bytes).map_err(|error| DecodeError::InvalidUtf8 {
         offset: offset + error.utf8_error().valid_up_to(),
     })
+}
+
+/// `bytes`, one character each.
+fn decode_windows_1252(bytes: &[u8]) -> String {
+    bytes.iter().copied().map(windows_1252_char).collect()
 }
 
 /// `bytes` follow a two-byte byte order mark.
@@ -444,22 +566,25 @@ mod tests {
     #[test]
     fn a_chunk_encodes_without_the_byte_order_mark() {
         // `é` is U+00E9: C3 A9 in UTF-8, E9 00 in UTF-16LE.
-        assert_eq!(&*Encoding::Utf8.encode_chunk("é\n"), [0xC3, 0xA9, 0x0A]);
-        assert_eq!(&*Encoding::Utf8Bom.encode_chunk("é\n"), [0xC3, 0xA9, 0x0A]);
-        assert_eq!(&*Encoding::Utf16Le.encode_chunk("é\n"), [0xE9, 0x00, 0x0A, 0x00]);
-        assert_eq!(&*Encoding::Utf16Be.encode_chunk("é\n"), [0x00, 0xE9, 0x00, 0x0A]);
+        assert_eq!(&*Encoding::Utf8.encode_chunk("é\n").unwrap(), [0xC3, 0xA9, 0x0A]);
+        assert_eq!(&*Encoding::Utf8Bom.encode_chunk("é\n").unwrap(), [0xC3, 0xA9, 0x0A]);
+        assert_eq!(&*Encoding::Utf16Le.encode_chunk("é\n").unwrap(), [0xE9, 0x00, 0x0A, 0x00]);
+        assert_eq!(&*Encoding::Utf16Be.encode_chunk("é\n").unwrap(), [0x00, 0xE9, 0x00, 0x0A]);
         // U+1F600 is the surrogate pair D83D DE00.
-        assert_eq!(&*Encoding::Utf16Le.encode_chunk("😀"), [0x3D, 0xD8, 0x00, 0xDE]);
-        assert!(matches!(Encoding::Utf8Bom.encode_chunk("a"), Cow::Borrowed(_)));
+        assert_eq!(&*Encoding::Utf16Le.encode_chunk("😀").unwrap(), [0x3D, 0xD8, 0x00, 0xDE]);
+        assert!(matches!(Encoding::Utf8Bom.encode_chunk("a").unwrap(), Cow::Borrowed(_)));
     }
 
     #[test]
     fn a_text_encodes_as_its_mark_then_its_chunks() {
         for encoding in [Encoding::Utf8, Encoding::Utf8Bom, Encoding::Utf16Le, Encoding::Utf16Be] {
-            let pieces =
-                [encoding.bom(), &encoding.encode_chunk("ab"), &encoding.encode_chunk("é\n")]
-                    .concat();
-            assert_eq!(&*encoding.encode("abé\n"), pieces, "{encoding:?}");
+            let pieces = [
+                encoding.bom(),
+                &encoding.encode_chunk("ab").unwrap(),
+                &encoding.encode_chunk("é\n").unwrap(),
+            ]
+            .concat();
+            assert_eq!(&*encoding.encode("abé\n").unwrap(), pieces, "{encoding:?}");
         }
     }
 
@@ -666,9 +791,81 @@ mod tests {
 
     // Decoding errors
 
+    // Windows-1252 fallback
+
     #[test]
-    fn invalid_utf8_reports_the_first_bad_byte() {
-        assert_eq!(Text::decode(b"ab\xFFcd").unwrap_err(), DecodeError::InvalidUtf8 { offset: 2 });
+    fn text_that_is_not_utf8_decodes_as_windows_1252() {
+        // Latin-1's `é` is 0xE9; Windows-1252's curly quotes and euro sign sit in 0x80–0x9F.
+        let text = decoded(b"caf\xE9\n\x93quoted\x94 \x80\n".to_vec());
+        assert_eq!(text.encoding(), Encoding::Windows1252);
+        assert_eq!(text.content(), "café\n\u{201C}quoted\u{201D} \u{20AC}\n");
+        assert_eq!(text.line_count(), 2);
+        assert_eq!(Text::check(b"caf\xE9\n"), Ok(Encoding::Windows1252));
+    }
+
+    #[test]
+    fn a_truncated_utf8_sequence_decodes_as_windows_1252() {
+        // `€` in UTF-8 is E2 82 AC; without its last byte the file is not UTF-8.
+        let text = decoded(b"a\xE2\x82".to_vec());
+        assert_eq!((text.encoding(), text.content()), (Encoding::Windows1252, "a\u{E2}\u{201A}"));
+    }
+
+    #[test]
+    fn valid_utf8_stays_utf8() {
+        let text = decoded("café\n".as_bytes().to_vec());
+        assert_eq!((text.encoding(), text.content()), (Encoding::Utf8, "café\n"));
+    }
+
+    #[test]
+    fn every_byte_but_nul_decodes_as_whatwg_windows_1252_and_encodes_back() {
+        let bytes: Vec<u8> = (1..=u8::MAX).collect();
+        let text = decoded(bytes.clone());
+        assert_eq!(text.encoding(), Encoding::Windows1252);
+        let (oracle, _, malformed) = encoding_rs::WINDOWS_1252.decode(&bytes);
+        assert!(!malformed);
+        assert_eq!(text.content(), oracle);
+        assert_eq!(text.bytes().as_ref(), bytes.as_slice());
+        assert_eq!(Encoding::Windows1252.encode(text.content()).unwrap().as_ref(), bytes);
+    }
+
+    #[test]
+    fn the_unassigned_bytes_are_c1_controls_and_encode_back() {
+        let text = decoded(b"\x81\x8D\x8F\x90\x9D\xFF".to_vec());
+        assert_eq!(text.content(), "\u{81}\u{8D}\u{8F}\u{90}\u{9D}\u{FF}");
+        assert_eq!(text.bytes().as_ref(), b"\x81\x8D\x8F\x90\x9D\xFF");
+    }
+
+    #[test]
+    fn windows_1252_refuses_a_character_it_cannot_hold_and_names_its_line() {
+        let encoding = Encoding::Windows1252;
+        let error = encoding.encode("ok €\nfine\nZdzisław\n").unwrap_err();
+        assert_eq!(error, EncodeError { encoding, character: 'ł', line: 3 });
+        assert_eq!(error.to_string(), "Windows-1252 cannot hold 'ł' (U+0142) on line 3");
+        // A C1 control Windows-1252 assigns elsewhere: 0x80 is `€`, so U+0080 has no byte.
+        let error = encoding.encode("\u{80}").unwrap_err();
+        assert_eq!(error, EncodeError { encoding, character: '\u{80}', line: 1 });
+        // An emoji, past the Basic Multilingual Plane.
+        assert_eq!(encoding.encode_chunk("a\n😀").unwrap_err().line, 2);
+    }
+
+    #[test]
+    fn holds_counts_lines_across_chunks() {
+        let encoding = Encoding::Windows1252;
+        assert_eq!(encoding.holds(["a\nb", "c\n", "d\n€"]), Ok(()));
+        assert_eq!(
+            encoding.holds(["a\nb", "c\n", "d\nł"]),
+            Err(EncodeError { encoding, character: 'ł', line: 4 })
+        );
+        assert_eq!(Encoding::Utf16Le.holds(["ł"]), Ok(()));
+    }
+
+    #[test]
+    fn utf_encodings_hold_every_character() {
+        for encoding in [Encoding::Utf8, Encoding::Utf8Bom, Encoding::Utf16Le, Encoding::Utf16Be] {
+            let bytes = encoding.encode("ł😀\u{80}").unwrap().into_owned();
+            let text = decoded(bytes);
+            assert_eq!((text.encoding(), text.content()), (encoding, "ł😀\u{80}"));
+        }
     }
 
     #[test]
@@ -680,8 +877,11 @@ mod tests {
     }
 
     #[test]
-    fn truncated_utf8_sequence_at_the_end_is_invalid() {
-        assert_eq!(Text::decode(b"a\xE2\x82").unwrap_err(), DecodeError::InvalidUtf8 { offset: 1 });
+    fn invalid_utf8_after_a_utf8_bom_stays_an_error() {
+        assert_eq!(
+            Text::decode(with_prefix(&UTF8_BOM, b"caf\xE9")).unwrap_err(),
+            DecodeError::InvalidUtf8 { offset: 6 }
+        );
     }
 
     #[test]
@@ -833,25 +1033,31 @@ mod tests {
         ];
         for input in inputs {
             let text = decoded(input.clone());
-            assert_eq!(*text.encode(text.content()), input, "{input:?}");
+            assert_eq!(*text.encode(text.content()).unwrap(), input, "{input:?}");
         }
     }
 
     #[test]
     fn an_encoding_writes_its_byte_order_mark_and_code_units() {
         assert!(
-            matches!(Encoding::Utf8.encode("é"), Cow::Borrowed(b) if b == [0xC3, 0xA9]),
+            matches!(Encoding::Utf8.encode("é").unwrap(), Cow::Borrowed(b) if b == [0xC3, 0xA9]),
             "UTF-8 output borrows the text"
         );
-        assert_eq!(*Encoding::Utf8Bom.encode(""), UTF8_BOM);
-        assert_eq!(*Encoding::Utf16Le.encode("a"), [0xFF, 0xFE, b'a', 0]);
-        assert_eq!(*Encoding::Utf16Be.encode("a"), [0xFE, 0xFF, 0, b'a']);
+        assert_eq!(*Encoding::Utf8Bom.encode("").unwrap(), UTF8_BOM);
+        assert_eq!(*Encoding::Utf16Le.encode("a").unwrap(), [0xFF, 0xFE, b'a', 0]);
+        assert_eq!(*Encoding::Utf16Be.encode("a").unwrap(), [0xFE, 0xFF, 0, b'a']);
     }
 
     #[test]
     fn encode_writes_new_text_in_the_file_encoding() {
-        assert_eq!(*decoded(UTF16BE_BOM).encode("é\n"), [0xFE, 0xFF, 0x00, 0xE9, 0x00, 0x0A]);
-        assert_eq!(*decoded(UTF8_BOM).encode("x"), [0xEF, 0xBB, 0xBF, b'x']);
-        assert_eq!(*decoded(UTF16LE_BOM).encode("\u{1F600}"), [0xFF, 0xFE, 0x3D, 0xD8, 0x00, 0xDE]);
+        assert_eq!(
+            *decoded(UTF16BE_BOM).encode("é\n").unwrap(),
+            [0xFE, 0xFF, 0x00, 0xE9, 0x00, 0x0A]
+        );
+        assert_eq!(*decoded(UTF8_BOM).encode("x").unwrap(), [0xEF, 0xBB, 0xBF, b'x']);
+        assert_eq!(
+            *decoded(UTF16LE_BOM).encode("\u{1F600}").unwrap(),
+            [0xFF, 0xFE, 0x3D, 0xD8, 0x00, 0xDE]
+        );
     }
 }

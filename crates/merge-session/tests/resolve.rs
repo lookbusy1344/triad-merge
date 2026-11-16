@@ -510,19 +510,33 @@ fn a_binary_working_tree_file_is_refused_since_a_save_would_overwrite_it() {
 }
 
 #[test]
-fn a_hand_edit_that_is_not_utf8_is_refused_at_its_first_bad_byte() {
-    // An editor saved the hand resolution in Latin-1: `caf\xe9` is `café`.
+fn a_hand_edit_in_latin_1_is_text_and_refused_as_resolved() {
+    // An editor saved the hand resolution in Latin-1: `caf\xe9` is `café`, Windows-1252 text
+    // with no marker line.
     let (fixture, _) = git_stopped(&[], &[("a.txt", files(BOTH_CHANGED))]);
     fixture.write("a.txt", b"caf\xe9\n");
     let error = load(fixture.root().as_std_path(), Path::new("a.txt")).expect_err("Latin-1");
     assert!(
-        matches!(&error, ResolveError::WorkingTreeNotText {
-            path,
-            source: DecodeError::InvalidUtf8 { offset: 3 },
-        } if path == "a.txt"),
+        matches!(&error, ResolveError::ResolvedInWorkingTree(path) if path == "a.txt"),
         "{error:?}"
     );
     assert_eq!(on_disk(&fixture, "a.txt"), b"caf\xe9\n");
+}
+
+#[test]
+fn a_hand_edit_that_is_not_text_is_refused_at_its_first_bad_byte() {
+    // A UTF-8 mark over Latin-1 bytes: the mark says UTF-8, and `\xe9` is not.
+    let (fixture, _) = git_stopped(&[], &[("a.txt", files(BOTH_CHANGED))]);
+    fixture.write("a.txt", b"\xEF\xBB\xBFcaf\xe9\n");
+    let error = load(fixture.root().as_std_path(), Path::new("a.txt")).expect_err("not text");
+    assert!(
+        matches!(&error, ResolveError::WorkingTreeNotText {
+            path,
+            source: DecodeError::InvalidUtf8 { offset: 6 },
+        } if path == "a.txt"),
+        "{error:?}"
+    );
+    assert_eq!(on_disk(&fixture, "a.txt"), b"\xEF\xBB\xBFcaf\xe9\n");
 }
 
 #[cfg(unix)]
@@ -613,6 +627,7 @@ fn a_resolved_save_writes_the_file_then_stages_it() {
     let (fixture, _) = git_stopped(&[], &[("a.txt", files(BOTH_CHANGED))]);
     let opened = resolved_to_left(&fixture);
     let code = EncodedOutput::new(&opened.doc, OutputEnding::Keep)
+        .unwrap()
         .save(opened.file.as_std_path(), opened.record.as_ref(), None)
         .expect("the save is written and recorded");
     assert_eq!(code, ExitCode::Resolved);
@@ -630,6 +645,7 @@ fn a_save_the_index_refuses_is_written_and_says_it_is_not_recorded() {
     // Another git command holds the index.
     fixture.write(".git/index.lock", b"");
     let error = EncodedOutput::new(&opened.doc, OutputEnding::Keep)
+        .unwrap()
         .save(opened.file.as_std_path(), opened.record.as_ref(), None)
         .expect_err("the index is locked");
     match &error {
@@ -661,6 +677,7 @@ fn a_save_that_cannot_be_written_records_nothing() {
     let opened = resolved_to_left(&fixture);
     let output = fixture.root().join("missing").join("a.txt");
     let error = EncodedOutput::new(&opened.doc, OutputEnding::Keep)
+        .unwrap()
         .save(output.as_std_path(), opened.record.as_ref(), None)
         .expect_err("the directory is missing");
     assert!(
@@ -694,7 +711,7 @@ fn a_save_through_the_runs_repository_stages_it_there_and_refuses_another() {
     use merge_session::SaveError;
     let (fixture, _) = git_stopped(&[], &[("a.txt", files(BOTH_CHANGED))]);
     let opened = resolved_to_left(&fixture);
-    let encoded = EncodedOutput::new(&opened.doc, OutputEnding::Keep);
+    let encoded = EncodedOutput::new(&opened.doc, OutputEnding::Keep).unwrap();
     let (other, _) = git_stopped(&[], &[("a.txt", files(BOTH_CHANGED))]);
     let mut elsewhere = RunRepository::find([other.root().as_std_path()]);
     let error = encoded
@@ -1075,7 +1092,8 @@ mod jj {
         let opened = at_commit(fixture, &merge.commit)
             .open(merge_core::document::MergeOptions::default())
             .expect("labels fit");
-        let markers = EncodedOutput::new(&opened.doc, merge_core::document::OutputEnding::Keep);
+        let markers = EncodedOutput::new(&opened.doc, merge_core::document::OutputEnding::Keep)
+            .expect("UTF-8 holds every character");
         assert_eq!(markers.code(), ExitCode::Conflicts);
         (markers.bytes().to_vec(), opened.record.expect("a commit's record"))
     }
@@ -1118,6 +1136,7 @@ mod jj {
         let opened = at_commit(&fixture, &merge.commit).open(options).expect("labels fit");
         assert_eq!(opened.doc.regions().len(), 2, "refined");
         let markers = EncodedOutput::new(&opened.doc, merge_core::document::OutputEnding::Keep)
+            .unwrap()
             .bytes()
             .to_vec();
         let record = opened.record.expect("a commit's record");
@@ -1139,7 +1158,8 @@ mod jj {
             .open(merge_core::document::MergeOptions::default())
             .expect("labels fit");
         // The saved file holds the conflict as the commit does: a write of it changes nothing.
-        let markers = EncodedOutput::new(&opened.doc, merge_core::document::OutputEnding::Keep);
+        let markers =
+            EncodedOutput::new(&opened.doc, merge_core::document::OutputEnding::Keep).unwrap();
         std::fs::write(&opened.file, markers.bytes()).expect("written");
         let record = opened.record.expect("a commit's record");
         let rewrite = commit(&record).preview(LEFT).expect("previewed");
@@ -1153,7 +1173,8 @@ mod jj {
         let opened = at_commit(&fixture, &merge.commit)
             .open(merge_core::document::MergeOptions::default())
             .expect("labels fit");
-        let markers = EncodedOutput::new(&opened.doc, merge_core::document::OutputEnding::Keep);
+        let markers =
+            EncodedOutput::new(&opened.doc, merge_core::document::OutputEnding::Keep).unwrap();
         let text = String::from_utf8(markers.bytes().to_vec()).expect("UTF-8");
         let edited = text.replacen("\nleft\n", "\nleft edited\n", 1);
         assert_ne!(edited, text, "the left side is in the markers");

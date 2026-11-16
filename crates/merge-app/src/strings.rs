@@ -677,6 +677,7 @@ fn encoding(encoding: Encoding) -> &'static str {
         Encoding::Utf8Bom => "UTF-8 with BOM",
         Encoding::Utf16Le => "UTF-16 LE",
         Encoding::Utf16Be => "UTF-16 BE",
+        Encoding::Windows1252 => "Windows-1252",
     }
 }
 

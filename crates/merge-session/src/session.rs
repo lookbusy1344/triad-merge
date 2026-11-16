@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use merge_core::document::{Applied, Command, CommandError, MergeDocument, OutputEnding, Start};
 use merge_core::journal::{Journal as JournalFile, input_hashes};
 use merge_core::merge3::Inputs;
+use merge_core::text::EncodeError;
 
 use crate::ending::{self, Journal, Next, UnresolvedSave};
 use crate::recovery::Recovery;
@@ -33,6 +34,9 @@ pub enum CannotSave {
     NoOutput,
     #[error("a save is running")]
     Saving,
+    /// The output encoding cannot hold a character of the result: nothing is written.
+    #[error(transparent)]
+    Unencodable(#[from] EncodeError),
 }
 
 /// What a session saves to and how.
@@ -255,13 +259,15 @@ impl Session {
     ///
     /// # Errors
     ///
-    /// [`CannotSave::NoOutput`] without an output, and [`CannotSave::Saving`] while a save
-    /// runs. The session is then unchanged.
+    /// [`CannotSave::NoOutput`] without an output, [`CannotSave::Saving`] while a save runs,
+    /// and [`CannotSave::Unencodable`] when the output encoding cannot hold the result. The
+    /// session is then unchanged.
     pub fn start_save(&mut self) -> Result<SaveJob, CannotSave> {
         if self.saving {
             return Err(CannotSave::Saving);
         }
         let output = self.target.output.clone().ok_or(CannotSave::NoOutput)?;
+        let encoded = EncodedOutput::new(&self.doc, self.target.line_ending)?;
         self.saving = true;
         let journal = self.recovery.take().map(|recovery| JournalFlush {
             recovery,
@@ -269,11 +275,7 @@ impl Session {
             inputs: self.doc.inputs().clone(),
             start: self.doc.start(),
         });
-        let work = SaveWork::Write {
-            encoded: EncodedOutput::new(&self.doc, self.target.line_ending),
-            output,
-            record: self.target.record.clone(),
-        };
+        let work = SaveWork::Write { encoded, output, record: self.target.record.clone() };
         Ok(SaveJob { work, journal })
     }
 
@@ -306,17 +308,25 @@ impl Session {
     /// What a save would write into the jj commit `resolve -r` opened, to run on a thread of
     /// its own: the save's output and its record. None for a merge whose saves go to no
     /// commit (spec §7.5.1).
-    #[must_use]
-    pub fn preview(&self) -> Option<PreviewJob> {
-        let commit = self.target.record.as_ref()?.in_commit()?.clone();
-        let encoded = EncodedOutput::new(&self.doc, self.target.line_ending);
-        Some(PreviewJob { encoded, commit })
+    ///
+    /// # Errors
+    ///
+    /// [`EncodeError`] when the output encoding cannot hold the result.
+    pub fn preview(&self) -> Result<Option<PreviewJob>, EncodeError> {
+        let Some(commit) = self.target.record.as_ref().and_then(Record::in_commit) else {
+            return Ok(None);
+        };
+        let encoded = EncodedOutput::new(&self.doc, self.target.line_ending)?;
+        Ok(Some(PreviewJob { encoded, commit: commit.clone() }))
     }
 
     /// The output as Save Copy As writes it, and the conflicts it holds as markers.
-    #[must_use]
-    pub fn copy(&self) -> (EncodedOutput, usize) {
-        (EncodedOutput::new(&self.doc, self.target.line_ending), self.doc.unresolved())
+    ///
+    /// # Errors
+    ///
+    /// [`EncodeError`] when the output encoding cannot hold the result.
+    pub fn copy(&self) -> Result<(EncodedOutput, usize), EncodeError> {
+        Ok((EncodedOutput::new(&self.doc, self.target.line_ending)?, self.doc.unresolved()))
     }
 }
 
@@ -358,7 +368,7 @@ mod tests {
     #[test]
     fn a_merge_saved_to_no_commit_has_no_preview() {
         let session = Session::new(conflict(), SaveTarget::default(), None);
-        assert!(session.preview().is_none());
+        assert!(matches!(session.preview(), Ok(None)));
     }
 
     fn journal_commands(session: &Session) -> usize {
@@ -559,11 +569,11 @@ mod tests {
     fn a_copy_holds_the_current_merge_and_counts_its_conflicts() {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut session = journalled(dir.path());
-        let (copy, unresolved) = session.copy();
+        let (copy, unresolved) = session.copy().unwrap();
         assert_eq!(unresolved, 1);
         assert_eq!(copy.code(), ExitCode::Conflicts);
         session.apply(pick_left()).expect("applies");
-        let (copy, unresolved) = session.copy();
+        let (copy, unresolved) = session.copy().unwrap();
         assert_eq!(unresolved, 0);
         let path = dir.path().join("copy");
         assert_eq!(copy.write(&path).expect("writes"), ExitCode::Resolved);

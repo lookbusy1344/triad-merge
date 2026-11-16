@@ -5635,6 +5635,7 @@ name = "merge-core"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "encoding_rs",
  "imara-diff",
  "jj-core",
  "merge-core",

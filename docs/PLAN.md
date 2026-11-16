@@ -19,7 +19,7 @@ As of 2026-11-16.
 | M6 native resolution | Done: git stages a resolved save; jj snapshots before the read and after each save | D |
 | M7 syntax highlighting | Done: Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS | F |
 | p4merge parity | Done | E |
-| Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; §G6 done: the files that differ between two directories, or between a revision and the working copy (`diff`, `diff --rev`), in the directory window and printed by `diff --inspect`, and from `jj diff --tool` and `git difftool -d`, with renames and copies paired as jj pairs them; invisible characters drawn as code points and odd spaces shaded in every pane, and escaped in terminal output (§A6.8); moved and duplicated blocks in the merge window and `inspect`, with a suggestion to drop a duplicate (§G16), done; the rest open | G |
+| Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; §G6 done: the files that differ between two directories, or between a revision and the working copy (`diff`, `diff --rev`), in the directory window and printed by `diff --inspect`, and from `jj diff --tool` and `git difftool -d`, with renames and copies paired as jj pairs them; text that is not UTF-8 read and saved as Windows-1252 (§G17); invisible characters drawn as code points and odd spaces shaded in every pane, and escaped in terminal output (§A6.8); moved and duplicated blocks in the merge window and `inspect`, with a suggestion to drop a duplicate (§G16), done; the rest open | G |
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
 | jj-native features | Done: conflicts across a stack (`stack`, `resolve -r`), operation-log history (`history`, `diff --op`) and absorb by hunk (`absorb`); the stack window, with a preview of a save's effect on the descendants and a confirmation before a save changes them; the history window; the absorb window, by hunk; these windows and the directory window share one frame after Zed's panels (`docs/STYLE.md`): a header with a count and the buttons, status icons and file-name-first paths, keys for the lists, and Escape and Cancel to close; the conflict badge names the sides a conflict keeps; absorb, `resolve -r` and the default revset aliases checked against jj's CLI (§I5); `stack`, `resolve -r`, `history`, `absorb` and a three-sided save checked through the built binary in scenario repositories (`script/test-jj-repos`) | I |
 
@@ -35,7 +35,7 @@ In order. Each is one or more commits.
 
 1. **Close M3.** Skipped for now by the owner. The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
 2. **Screen-reader support** (part J). Skipped for now by the owner: live status, conflict regions, scrolling the row table, in the order of §J7.
-3. **Review and diff features** (part G): §G17, then §G7–§G14.
+3. **Review and diff features** (part G): §G7–§G14.
 4. **More grammars,** one commit each: C, C++, Java and Kotlin; then Markdown; then Bash, Ruby, PHP and SQL.
 5. **M4b** (§3) once the owner has the machines and the certificate.
 6. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
@@ -67,7 +67,7 @@ In order. Each is one or more commits.
 | Merge window folds: the untouched lines of an unchanged region whose result is edited | A line diff of the region | §G2 |
 | Ruler marks with folds: the marks keep their place in the whole file while the thumb follows display rows | A choice between the two | §G2 |
 | A key that opens the fold next to the caret | — | §G2 |
-| Windows-1252 as a fallback for text that is not UTF-8 | — | §G17 |
+| A `fallback-encoding` setting to turn the Windows-1252 fallback off | Someone who needs it off | §G17 |
 | Review and diff features: blank lines in a merge (§G4), §G7–§G14 | Owner's choices on §G15's open points for §G4 and §G8 | G |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
 | The absorb oracle's generator builds text files only: no renames, executable bits, symlinks, conflicted inputs or immutable commits | — | §I5 |
@@ -96,9 +96,9 @@ In order. Each is one or more commits.
 
 Features other merge and diff tools have and triad lacks, from a comparison with Beyond Compare, Araxis Merge, Kaleidoscope, Meld, KDiff3, IntelliJ and VS Code. None blocks the beta.
 
-Order: G2–G6, then G16, then G17, then G7–G10, then G11–G14. Each section is one or more commits and updates the spec when it lands. Every comparison rule keeps spec §4.2's rule: it changes which lines count as equal, never the output bytes.
+Order: G2–G6, then G16, then G17 (step 1 done), then G7–G10, then G11–G14. Each section is one or more commits and updates the spec when it lands. Every comparison rule keeps spec §4.2's rule: it changes which lines count as equal, never the output bytes.
 
-Out of scope (spec §1.3): image and binary comparison, encodings other than UTF-8, UTF-16 and, once §G17 lands, Windows-1252, printing, HTML reports.
+Out of scope: image and binary comparison, encodings other than UTF-8, UTF-16 and Windows-1252, printing, HTML reports.
 
 ### G2 Collapse unchanged regions
 
@@ -205,7 +205,7 @@ Shows how blocks moved, from base to a side or between the sides, in the merge w
 
 ### G17 Windows-1252 fallback
 
-A file that is not valid UTF-8 and has no byte order mark decodes as Windows-1252, in every mode: merge, diff, `resolve`, `stack`, `history`, `absorb` and the directory listings. Today such a file exits with 3 (spec §4.1), so `jj resolve` and `git mergetool` cannot merge it in triad, while git and jj merge its bytes. Legacy files hold it: Java `.properties` before Java 9, Windows-era source with accented comments, SQL scripts, CSV exports.
+A file that is not valid UTF-8 and has no byte order mark decodes as Windows-1252, in every mode: merge, diff, `resolve`, `stack`, `history`, `absorb` and the directory listings. git and jj merge its bytes, and so does triad. Legacy files hold it: Java `.properties` before Java 9, Windows-era source with accented comments, SQL scripts, CSV exports.
 
 **Why Windows-1252.** Files called Latin-1 are nearly always Windows-1252: their curly quotes, `€` and dashes sit at 0x80–0x9F, which Latin-1 gives to C1 controls. With its five unassigned bytes (0x81, 0x8D, 0x8F, 0x90, 0x9D) decoded as the C1 controls of the same value, as WHATWG's index and `encoding_rs` do, each of the 256 bytes maps to one character and back. Decoding never fails and loses nothing, so a byte no one edits saves as it was, and a line-level merge of the decoded text gives the bytes git and jj give. Spec §8's reason for refusing, that lossy decoding corrupts the output, does not hold for it.
 
@@ -213,7 +213,7 @@ A file that is not valid UTF-8 and has no byte order mark decodes as Windows-125
 
 **Steps.**
 
-1. Decoding and saving. A `Windows1252` variant of `merge_core::text::Encoding`, tried after UTF-8 fails; `Text::check` takes it, so the listings open such files. `Encoding::encode` returns a `Result`: a character Windows-1252 cannot hold refuses the save, naming the character and its line, in Save & Exit, Save Copy As, the diff window's save and headless output. A conflict marker whose label holds such a character is written without the label. The recovery journal, the own-write check (`own_writes`) and line origins (`origin`) take the fallible encode. Spec §1.3, §4.1 and §8 change with it. `encoding_rs` is in the tree already, or the 32-entry table for 0x80–0x9F is written out. About two days.
+1. Done: decoding and saving (spec §4.1, §6.2, `DESIGN.md` §A4.2). A `Windows1252` variant of `merge_core::text::Encoding`, tried after UTF-8 fails; `Text::check` takes it, so the listings open such files. `Encoding::encode` returns a `Result`: a character Windows-1252 cannot hold refuses the save, naming the character and its line, in Save & Exit, Save Copy As, the diff window's save and headless output. A conflict marker whose label holds such a character is written without the label. The recovery journal, the own-write check (`own_writes`) and line origins (`origin`) take the fallible encode. Spec §4.1, §6.2, §8 and §13 change with it. triad holds the 32-entry table for 0x80–0x9F; `encoding_rs` checks it in a test.
 2. A `fallback-encoding` setting, `"windows-1252"` by default or `"none"` for today's refusal, passed to every decode. Only if someone needs it off: about half a day.
 
 **Tests.** Expected bytes by hand: every byte 0x00–0xFF but NUL decodes and encodes back to itself, the five unassigned bytes included; a Latin-1 file with `ë` and a Windows-1252 file with curly quotes and `€` merge to the bytes `git merge-file` writes; UTF-8 and BOM files decode as before; a file with a NUL stays binary; typing `ł` or an emoji into a Windows-1252 result refuses Save & Exit and Save Copy As and names it, with OUTPUT unchanged; a label with an emoji leaves the marker without its label; mixed inputs warn; the directory demo's `names-latin1.txt` lists as text and opens.

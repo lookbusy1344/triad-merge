@@ -62,12 +62,13 @@ target/debug/triad-merge diff fixtures/demo/moved_{base,left}.py                
 | `legacy.txt` | deleted | Only in `left` |
 | `invoice/cli.py` | added | Only in `right` |
 | `assets/logo.png`, `assets/icon.png` | modified, added; binary | NUL bytes; listed, greyed, and do not open |
-| `names-latin1.txt` | added, undecodable | Latin-1 bytes, neither UTF-8 nor UTF-16 |
+| `names-latin1.txt` | added | Latin-1 bytes: not UTF-8, so they decode as Windows-1252; opens, and the status bar says Windows-1252 |
+| `names-bad-mark.txt` | added, undecodable | Latin-1 bytes after a UTF-8 mark: the mark says UTF-8, and the bytes are not; greyed, and does not open |
 | `README.md` | left out | The same on both sides |
 
 ```sh
 cargo build --workspace
-target/debug/triad-merge diff --inspect fixtures/demo/dirs/{left,right}   # exit 1: 11 files
+target/debug/triad-merge diff --inspect fixtures/demo/dirs/{left,right}   # exit 1: 12 files
 target/debug/triad-merge diff fixtures/demo/dirs/{left,right}             # the directory window
 ```
 

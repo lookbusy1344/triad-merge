@@ -13,7 +13,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use merge_config::settings::{self, Settings};
-use merge_core::document::OutputEnding;
+use merge_core::document::{MergeDocument, OutputEnding};
 use merge_session::dir_diff::{self, Pair};
 use merge_session::env::Env;
 use merge_session::invocation::{
@@ -495,7 +495,7 @@ fn resolve_in_commit(
     if let Some(commands) = &resolve.commands {
         replay::apply_file(&mut opened.doc, commands)?;
     }
-    let output = EncodedOutput::new(&opened.doc, ending);
+    let output = encoded(&opened.doc, ending, opened.file.as_std_path())?;
     let code = output.write(opened.file.as_std_path()).map_err(SaveError::from)?;
     let rewrite = opened
         .record
@@ -541,7 +541,7 @@ fn resolve_headless(
         if let Some(path) = &resolve.commands {
             replay::apply_file(&mut opened.doc, path)?;
         }
-        let written = EncodedOutput::new(&opened.doc, ending).save(
+        let written = encoded(&opened.doc, ending, opened.file.as_std_path())?.save(
             opened.file.as_std_path(),
             opened.record.as_ref(),
             Some(repo),
@@ -618,7 +618,22 @@ pub fn headless(
     if let Some(path) = commands {
         replay::apply_file(&mut document, path)?;
     }
-    Ok(EncodedOutput::new(&document, ending).write(&merge.output).map_err(SessionError::from)?)
+    let output = encoded(&document, ending, &merge.output)?;
+    Ok(output.write(&merge.output).map_err(SessionError::from)?)
+}
+
+/// `document`'s output as a save to `path` writes it.
+///
+/// # Errors
+///
+/// [`SessionError::Encode`], naming `path`, when the output encoding cannot hold the result.
+fn encoded(
+    document: &MergeDocument,
+    ending: OutputEnding,
+    path: &Path,
+) -> Result<EncodedOutput, SessionError> {
+    EncodedOutput::new(document, ending)
+        .map_err(|source| SessionError::Encode { path: path.to_owned(), source })
 }
 
 #[cfg(test)]

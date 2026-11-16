@@ -23,7 +23,10 @@ use crate::merge3::{
     SameChange, Semantics, SideMove, Source, align_bounded, duplicates, side_moves, word_merge,
 };
 use crate::region_lines::{LineCount, RegionLines};
-use crate::text::{EndingCounts, LineEnding, LineEndings, Text, typed_ending, with_endings};
+use crate::text::{
+    Encoding, EndingCounts, LineEnding, LineEndings, Text, output_encoding, typed_ending,
+    with_endings,
+};
 
 /// git's and jj's conflict marker length.
 pub const DEFAULT_MARKER_LENGTH: usize = 7;
@@ -909,19 +912,22 @@ impl MergeDocument {
             }
         };
         let (sides, bases) = (&self.labels.sides, &self.labels.bases);
+        // A label the output encoding cannot hold is left out, so the save can encode.
+        let encoding = output_encoding(&self.inputs.bases()[0], &self.inputs.sides()[0]);
         // Each section's marker line and source, in order; then the opening and end lines.
         let (start, sections, end): (Option<String>, Vec<(String, Source)>, String) =
             if self.inputs.is_three_way() {
                 let base = (self.options.marker_style == MarkerStyle::Diff3)
-                    .then(|| (line('|', label(bases, 0)), Source::Base(0)));
-                let sections = std::iter::once((line('<', label(sides, 0)), Source::Side(0)))
-                    .chain(base)
-                    .chain(std::iter::once((line('=', None), Source::Side(1))))
-                    .collect();
-                (None, sections, line('>', label(sides, 1)))
+                    .then(|| (line('|', label(bases, 0, encoding)), Source::Base(0)));
+                let sections =
+                    std::iter::once((line('<', label(sides, 0, encoding)), Source::Side(0)))
+                        .chain(base)
+                        .chain(std::iter::once((line('=', None), Source::Side(1))))
+                        .collect();
+                (None, sections, line('>', label(sides, 1, encoding)))
             } else {
                 let term = |c: char, labels: &[String], i: usize, kind: &str, source: Source| {
-                    let name = label(labels, i)
+                    let name = label(labels, i, encoding)
                         .map_or_else(|| format!("{kind} #{}", i + 1), str::to_owned);
                     (line(c, Some(&name)), source)
                 };
@@ -1348,8 +1354,12 @@ fn marker_ending(inputs: &Inputs, region: &Region) -> LineEnding {
     }
 }
 
-fn label(labels: &[String], i: usize) -> Option<&str> {
-    labels.get(i).map(String::as_str).filter(|label| !label.is_empty())
+/// Label `i`, unless it is empty or `encoding` cannot hold it.
+fn label(labels: &[String], i: usize, encoding: Encoding) -> Option<&str> {
+    labels
+        .get(i)
+        .map(String::as_str)
+        .filter(|label| !label.is_empty() && encoding.holds([*label]).is_ok())
 }
 
 /// The automatic text of a region; none for a conflict, which has no automatic text. A
@@ -2124,6 +2134,21 @@ mod tests {
             MergeDocument::new(inputs, MergeOptions::default(), Labels::three_way("ours", "", ""))
                 .expect("three labels fit");
         assert_eq!(d.output().into_text(), "<<<<<<< ours\nL\n|||||||\nb\n=======\nR\n>>>>>>>\n");
+    }
+
+    #[test]
+    fn a_label_the_output_encoding_cannot_hold_leaves_its_marker_bare() {
+        // Windows-1252 inputs: `ł` has no byte there, `é` has.
+        let w = |bytes: &[u8]| Text::decode(bytes.to_vec()).expect("Windows-1252 decodes");
+        let inputs = Inputs::three_way(w(b"b\xE9\n"), w(b"L\xE9\n"), w(b"R\xE9\n"));
+        let labels = Labels::three_way("Zdzisław", "base", "café");
+        let d = MergeDocument::new(inputs, MergeOptions::default(), labels).expect("labels fit");
+        assert_eq!(
+            d.output().into_text(),
+            "<<<<<<<\nLé\n||||||| base\nbé\n=======\nRé\n>>>>>>> café\n"
+        );
+        // The pane titles keep every label.
+        assert_eq!(d.labels(), &Labels::three_way("Zdzisław", "base", "café"));
     }
 
     #[test]

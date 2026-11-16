@@ -54,6 +54,9 @@ clap = { version = "4.6", features = ["derive"] }
 # A counting allocator for the memory bench: safe code cannot implement `GlobalAlloc`.
 cap = { version = "0.1.2", features = ["stats"] }
 directories = "6"
+# Already in the tree through gix-filter; the WHATWG Windows-1252 table, as a test oracle for
+# triad's own decoder.
+encoding_rs = "0.8.44"
 # Already in the tree through jj-lib; streams and readers from its async APIs.
 futures = { version = "0.3", default-features = false, features = ["std"] }
 # jj-cli 0.47's choice of the user's config and home directories, so triad reads jj's config where jj does.

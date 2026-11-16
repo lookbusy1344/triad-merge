@@ -366,6 +366,7 @@ fn encoding_name(encoding: Encoding) -> &'static str {
         Encoding::Utf8Bom => "utf-8-bom",
         Encoding::Utf16Le => "utf-16le",
         Encoding::Utf16Be => "utf-16be",
+        Encoding::Windows1252 => "windows-1252",
     }
 }
 
@@ -857,8 +858,10 @@ mod tests {
 
     #[test]
     fn dirs_text_prints_one_line_per_file_with_the_path_last() {
-        let files =
-            dirs(&[("a b.txt", b"1\n"), ("u", b"ok\n")], &[("a b.txt", b"2\n"), ("u", b"\xC3")]);
+        let files = dirs(
+            &[("a b.txt", b"1\n"), ("u", b"ok\n")],
+            &[("a b.txt", b"2\n"), ("u", b"\xEF\xBB\xBF\xC3")],
+        );
         let (out, code) =
             dirs_inspect(&files.path("left"), &files.path("right"), false).expect("ok");
         assert_eq!(code, ExitCode::Conflicts);

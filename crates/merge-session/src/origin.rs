@@ -346,8 +346,7 @@ fn git_tool_side(
         Err(VcsError::OutsideRepository(_)) => return Ok(None),
         staged => staged?,
     };
-    let is_staged =
-        is_utf8(input) && staged.is_some_and(|bytes| bytes == *input.encode(input.content()));
+    let is_staged = is_utf8(input) && staged.is_some_and(|bytes| bytes == *input.bytes());
     if is_staged { Ok(changed(path, input, repo.index_base()?)) } else { Ok(None) }
 }
 
@@ -414,7 +413,7 @@ fn first_exact(
     if !is_utf8(input) {
         return Ok(None);
     }
-    let bytes = input.encode(input.content());
+    let bytes = input.bytes();
     for commit in commits {
         let commit = commit.borrow();
         match repo.file_at(path, &RevSpec::Commit(commit.clone())) {

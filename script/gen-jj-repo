@@ -239,8 +239,8 @@ gen_dirs() {
 
   local summary
   summary=$(cd "$dest" && jj --quiet diff --summary | paste -sd, -)
-  [[ "$summary" == "A assets/icon.png,M assets/logo.png,A docs/design.md,D docs/notes.md,A invoice/cli.py,R invoice/{util.py => helpers.py},R invoice/{ => io}/parser.py,C invoice/{totals.py => summary.py},M invoice/totals.py,D legacy.txt,A names-latin1.txt" ]] ||
-    fail "expected two renames and a copy among eleven changes, jj lists: $summary"
+  [[ "$summary" == "A assets/icon.png,M assets/logo.png,A docs/design.md,D docs/notes.md,A invoice/cli.py,R invoice/{util.py => helpers.py},R invoice/{ => io}/parser.py,C invoice/{totals.py => summary.py},M invoice/totals.py,D legacy.txt,A names-bad-mark.txt,A names-latin1.txt" ]] ||
+    fail "expected two renames and a copy among twelve changes, jj lists: $summary"
 }
 
 "gen_$scenario"

@@ -556,8 +556,9 @@ fn the_directory_demo_lists_what_its_readme_says() {
          copied text invoice/totals.py => invoice/summary.py\n\
          modified text invoice/totals.py\n\
          deleted text legacy.txt\n\
-         added undecodable names-latin1.txt\n\
-         files: 11\n"
+         added undecodable names-bad-mark.txt\n\
+         added text names-latin1.txt\n\
+         files: 12\n"
     );
     assert_eq!(result.status.code(), Some(1));
 }

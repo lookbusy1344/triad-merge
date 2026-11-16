@@ -31,7 +31,7 @@ use merge_core::document::{
     LabelCountError, Labels, MarkerStyle, MergeDocument, MergeOptions, Output, OutputEnding,
 };
 use merge_core::merge3::{Inputs, Semantics};
-use merge_core::text::{DecodeError, Encoding, Text, output_encoding};
+use merge_core::text::{DecodeError, EncodeError, Encoding, Text, output_encoding};
 use merge_syntax::boundaries::SyntaxBoundaries;
 use merge_syntax::language::Language;
 use vcs::{RepoKind, VcsError};
@@ -98,6 +98,8 @@ pub enum SessionError {
     Read { path: PathBuf, source: std::io::Error },
     #[error("{}: {source}", path.display())]
     Decode { path: PathBuf, source: DecodeError },
+    #[error("cannot save {}: {source}", path.display())]
+    Encode { path: PathBuf, source: EncodeError },
     #[error(transparent)]
     Labels(#[from] LabelCountError),
     #[error(transparent)]
@@ -225,8 +227,11 @@ pub struct EncodedOutput {
 
 impl EncodedOutput {
     /// `document`'s result as a save writes it, its line endings made as `ending` says.
-    #[must_use]
-    pub fn new(document: &MergeDocument, ending: OutputEnding) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// [`EncodeError`] when the output encoding cannot hold a character of the result.
+    pub fn new(document: &MergeDocument, ending: OutputEnding) -> Result<Self, EncodeError> {
         let inputs = document.inputs();
         let encoding = output_encoding(&inputs.bases()[0], &inputs.sides()[0]);
         let (text, code) = match document.output_with(ending) {
@@ -234,12 +239,12 @@ impl EncodedOutput {
             Output::Conflicted(text) => (text, ExitCode::Conflicts),
         };
         // UTF-8 without a mark encodes as the text's own bytes: take them, not a copy.
-        let encoded = match encoding.encode(&text) {
+        let encoded = match encoding.encode(&text)? {
             Cow::Owned(bytes) => Some(bytes),
             Cow::Borrowed(_) => None,
         };
         let bytes = encoded.unwrap_or_else(|| text.into_bytes());
-        Self { bytes, code }
+        Ok(Self { bytes, code })
     }
 
     /// The bytes a save writes.
@@ -301,15 +306,22 @@ impl EncodedOutput {
 ///
 /// # Errors
 ///
+/// [`SessionError::Encode`] when `encoding` cannot hold a character of the text, and
 /// [`SessionError::Write`] when `path` cannot be written; it is then unchanged.
-pub fn save_text<'t>(
-    path: &Path,
-    encoding: Encoding,
-    chunks: impl IntoIterator<Item = &'t str>,
-) -> Result<(), SessionError> {
+pub fn save_text<'t, C>(path: &Path, encoding: Encoding, chunks: C) -> Result<(), SessionError>
+where
+    C: IntoIterator<Item = &'t str> + Clone,
+{
+    encoding
+        .holds(chunks.clone())
+        .map_err(|source| SessionError::Encode { path: path.to_owned(), source })?;
     write_atomic_with(path, |out| {
         out.write_all(encoding.bom())?;
-        chunks.into_iter().try_for_each(|chunk| out.write_all(&encoding.encode_chunk(chunk)))
+        chunks.into_iter().try_for_each(|chunk| {
+            // `holds` checked every character, so this encodes; an error stays typed.
+            let bytes = encoding.encode_chunk(chunk).map_err(std::io::Error::other)?;
+            out.write_all(&bytes)
+        })
     })?;
     tracing::info!(path = %path.display(), "saved");
     Ok(())
@@ -344,6 +356,36 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), expected);
         save_text(&path, Encoding::Utf8Bom, ["a", "é\n"]).unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), [0xEF, 0xBB, 0xBF, b'a', 0xC3, 0xA9, b'\n']);
+    }
+
+    #[test]
+    fn a_windows_1252_text_saves_one_byte_per_character() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("out.txt");
+        save_text(&path, Encoding::Windows1252, ["caf", "é \u{201C}q\u{201D}\n"]).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"caf\xE9 \x93q\x94\n");
+    }
+
+    #[test]
+    fn a_character_the_encoding_cannot_hold_refuses_the_save_and_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("out.txt");
+        std::fs::write(&path, b"before\n").unwrap();
+        // `ł` sits on line 3, in the third chunk.
+        let error = save_text(&path, Encoding::Windows1252, ["a\n", "b\n", "Zdzisław\n"])
+            .expect_err("Windows-1252 has no byte for `ł`");
+        assert!(
+            matches!(&error, SessionError::Encode { path: p, source }
+            if *p == path
+                && *source
+                    == EncodeError {
+                        encoding: Encoding::Windows1252,
+                        character: 'ł',
+                        line: 3,
+                    }),
+            "{error:?}"
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), b"before\n");
     }
 
     #[test]
@@ -403,7 +445,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let output = tmp.path().join("out");
         assert_eq!(
-            EncodedOutput::new(&doc, OutputEnding::Keep).write(&output).expect("written"),
+            EncodedOutput::new(&doc, OutputEnding::Keep).unwrap().write(&output).expect("written"),
             ExitCode::Conflicts
         );
         assert_eq!(
@@ -418,7 +460,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let output = tmp.path().join("out");
         assert_eq!(
-            EncodedOutput::new(&doc, OutputEnding::CrLf).write(&output).expect("written"),
+            EncodedOutput::new(&doc, OutputEnding::CrLf).unwrap().write(&output).expect("written"),
             ExitCode::Conflicts
         );
         assert_eq!(
@@ -433,20 +475,22 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let output = tmp.path().join("out");
         assert_eq!(
-            EncodedOutput::new(&doc, OutputEnding::Keep).write(&output).expect("written"),
+            EncodedOutput::new(&doc, OutputEnding::Keep).unwrap().write(&output).expect("written"),
             ExitCode::Resolved
         );
         assert_eq!(std::fs::read(&output).expect("output"), b"A\nb\nC\n");
         let missing = tmp.path().join("no-such-dir").join("out");
-        let error =
-            EncodedOutput::new(&doc, OutputEnding::Keep).write(&missing).expect_err("no directory");
+        let error = EncodedOutput::new(&doc, OutputEnding::Keep)
+            .unwrap()
+            .write(&missing)
+            .expect_err("no directory");
         assert!(matches!(&error, WriteError { path, .. } if *path == missing), "{error:?}");
     }
 
     #[test]
     fn an_encoded_output_outlives_its_document_and_writes_as_save_does() {
         let doc = fixture_doc("conflict-bare-markers");
-        let encoded = EncodedOutput::new(&doc, OutputEnding::CrLf);
+        let encoded = EncodedOutput::new(&doc, OutputEnding::CrLf).unwrap();
         drop(doc);
         let tmp = tempfile::tempdir().expect("tempdir");
         let output = tmp.path().join("out");
@@ -465,7 +509,7 @@ mod tests {
         let doc = fixture_doc("clean-merge");
         let tmp = tempfile::tempdir().expect("tempdir");
         let output = tmp.path().join("out");
-        let encoded = EncodedOutput::new(&doc, OutputEnding::Keep);
+        let encoded = EncodedOutput::new(&doc, OutputEnding::Keep).unwrap();
         assert_eq!(encoded.write(&output).expect("written"), ExitCode::Resolved);
         assert_eq!(std::fs::read(&output).expect("output"), b"A\nb\nC\n");
     }

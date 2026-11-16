@@ -99,6 +99,7 @@ fn measure(lines: usize, (semantics, mode): (Semantics, &'static str)) -> [Peak;
         merge_session::load(&files, options, Labels::none(), None).expect("generated inputs load");
     let load = peak_since(live, before, "load");
     merge_session::EncodedOutput::new(&doc, OutputEnding::Keep)
+        .expect("UTF-8 holds every character")
         .write(&dir.path().join("out.txt"))
         .expect("the output writes");
     // The peak of the whole session: save's own, or load's when save stays below it.

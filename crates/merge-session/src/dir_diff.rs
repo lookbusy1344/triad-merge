@@ -569,9 +569,16 @@ mod tests {
     fn a_rename_takes_the_greater_content_of_its_sides() {
         let dirs = Dirs::new(&[("a.bin", b"\0x\n")], &[("b.bin", b"\0x\n")]);
         assert_eq!(dirs.changed(), [entry("b.bin", renamed("a.bin"), Content::Binary)]);
-        // Latin-1 bytes that keep 6 of 8: the old side is undecodable.
-        let dirs = Dirs::new(&[("a", b"1\n2\n3\n\xe9\n")], &[("b", b"1\n2\n3\n4\n")]);
+        // A UTF-8 mark over a Latin-1 byte: the old side is undecodable. The new side keeps
+        // 10 of its 17 bytes.
+        let dirs = Dirs::new(
+            &[("a", b"\xEF\xBB\xBF1\n2\n3\n4\n5\n6\n\xe9\n")],
+            &[("b", b"0\n2\n3\n4\n5\n6\n7\n")],
+        );
         assert_eq!(dirs.changed(), [entry("b", renamed("a"), Content::Undecodable)]);
+        // Latin-1 without a mark is text: Windows-1252 decodes it.
+        let dirs = Dirs::new(&[("a", b"1\n2\n3\n\xe9\n")], &[("b", b"1\n2\n3\n4\n")]);
+        assert_eq!(dirs.changed(), [entry("b", renamed("a"), Content::Text)]);
     }
 
     #[test]
@@ -670,7 +677,8 @@ mod tests {
                 ("both.bin", b"\x00b"),
                 ("m.txt", b"\x00bin"),
                 ("u.txt", b"\xFF\xFE\xFF"),
-                ("n", b"\xC3"),
+                ("n", b"\xEF\xBB\xBF\xC3"),
+                ("w.txt", b"caf\xE9\n"),
             ],
         );
         assert_eq!(
@@ -680,6 +688,7 @@ mod tests {
                 entry("m.txt", Change::Modified, Content::Binary),
                 entry("n", Change::Added, Content::Undecodable),
                 entry("u.txt", Change::Modified, Content::Undecodable),
+                entry("w.txt", Change::Added, Content::Text),
             ]
         );
     }

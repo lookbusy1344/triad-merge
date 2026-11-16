@@ -69,6 +69,40 @@ fn save_when_resolved_writes_and_exits_0(cx: &mut TestAppContext) {
     assert_eq!(finished.codes(), [ExitCode::Resolved]);
 }
 
+/// A clean merge of Windows-1252 inputs, `café` throughout, with `ł` typed at the start of
+/// the result: Windows-1252 has no byte for it.
+fn unencodable() -> MergeDocument {
+    use merge_core::document::{Command, Labels, MergeOptions};
+    use merge_core::edit::{EditBatch, TextPatch};
+    use merge_core::merge3::Inputs;
+    use merge_core::text::Text;
+    let text = || Text::decode(b"caf\xe9\n".to_vec()).expect("Windows-1252 decodes");
+    let inputs = Inputs::three_way(text(), text(), text());
+    let mut doc =
+        MergeDocument::new(inputs, MergeOptions::default(), Labels::none()).expect("no labels fit");
+    let typed = TextPatch { range: 0..0, text: "ł".to_owned() };
+    doc.apply(Command::Edit(EditBatch(vec![typed]))).expect("the edit applies");
+    doc
+}
+
+#[gpui_kit::test]
+fn save_of_a_character_the_encoding_cannot_hold_alerts_writes_nothing_and_stays_open(
+    cx: &mut TestAppContext,
+) {
+    let (dir, window, finished) = setup(cx, unencodable());
+    press(cx, window, "secondary-s");
+    let (message, detail) = cx.pending_prompt().expect("an alert");
+    assert_eq!(message, CANNOT_WRITE);
+    assert_eq!(detail, "Windows-1252 cannot hold 'ł' (U+0142) on line 1");
+    cx.simulate_prompt_answer("OK");
+    cx.run_until_parked();
+    assert_eq!(written(&dir), None);
+    assert_eq!(finished.codes(), []);
+    // The window stays: a second save meets the same refusal.
+    press(cx, window, "secondary-s");
+    assert_eq!(alert(cx), CANNOT_WRITE);
+}
+
 #[gpui_kit::test]
 fn save_with_unresolved_conflicts_asks_then_writes_markers_and_exits_1(cx: &mut TestAppContext) {
     let (dir, window, finished) = setup(cx, conflict());

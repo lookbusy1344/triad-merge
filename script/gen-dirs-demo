@@ -4,8 +4,9 @@ for trying triad's directory diff by hand (spec section 6.1).
 
 The directories hold a small Python project. Between them one file moves and changes, one is
 renamed unchanged, one is edited and copied, one is replaced by a file that keeps too little
-of it to count as a rename, one is deleted and three are added; two hold binary bytes and one
-Latin-1 bytes. fixtures/demo/README.md lists what triad shows for each. This script names the binary
+of it to count as a rename, one is deleted and four are added; two hold binary bytes, one
+Latin-1 bytes, which decode as Windows-1252, and one Latin-1 bytes after a UTF-8 mark, which
+do not decode. fixtures/demo/README.md lists what triad shows for each. This script names the binary
 and Latin-1 bytes by escape, so its own source holds none of them.
 
 Usage: script/gen-dirs-demo
@@ -167,8 +168,10 @@ RIGHT = {
     "invoice/cli.py": CLI,
     "assets/logo.png": PNG + b"right",
     "assets/icon.png": PNG + b"icon",
-    # "Zoë" and "Renée" in Latin-1: neither UTF-8 nor UTF-16, so undecodable.
+    # "Zoë" and "Renée" in Latin-1: not UTF-8, so they decode as Windows-1252.
     "names-latin1.txt": "Zoë\nRenée\n".encode("latin-1"),
+    # The same after a UTF-8 mark: the mark says UTF-8, and the bytes are not, so undecodable.
+    "names-bad-mark.txt": b"\xef\xbb\xbf" + "Zoë\nRenée\n".encode("latin-1"),
 }
 
 

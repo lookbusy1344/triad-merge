@@ -99,7 +99,7 @@ Send f12 to `A` anyway and Apply: `A` and its descendants then hold a conflict, 
 ○  base  the demo's left directory  fixtures/demo/dirs/left
 ```
 
-The working copy holds eleven changes, two of them renames and one a copy; `fixtures/demo/README.md` lists each. `jj diff --summary` names the same renames and copy as triad. Try:
+The working copy holds twelve changes, two of them renames and one a copy; `fixtures/demo/README.md` lists each. `jj diff --summary` names the same renames and copy as triad. Try:
 
 - `triad-merge diff`: the directory window, against `@-`. Open `invoice/io/parser.py`: `invoice/parser.py` at `@-` on the left, read-only. Copy a line across, save and close: the list comes back, read again after a snapshot.
 - `jj diff --tool triad`: jj's dir mode passes two directories of the changed files; the same list opens.

@@ -242,8 +242,9 @@ renamed text invoice/parser.py => invoice/io/parser.py
 copied text invoice/totals.py => invoice/summary.py
 modified text invoice/totals.py
 deleted text legacy.txt
-added undecodable names-latin1.txt
-files: 11"
+added undecodable names-bad-mark.txt
+added text names-latin1.txt
+files: 12"
   triad diff --inspect
   same "diff --inspect exit" "$EXIT_CONFLICTS" "$code"
   same "diff --inspect" "$want" "$out"
