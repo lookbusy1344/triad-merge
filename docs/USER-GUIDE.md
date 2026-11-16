@@ -322,6 +322,7 @@ triad-merge --headless BASE LEFT RIGHT -o OUTPUT                   # the automat
 triad-merge --headless BASE LEFT RIGHT -o OUTPUT --commands FILE   # then FILE's picks and edits
 triad-merge inspect --json BASE LEFT RIGHT                         # the merge's regions
 triad-merge diff --inspect --json LEFT RIGHT                       # the diff's regions
+triad-merge diff --inspect --json LEFT_DIR RIGHT_DIR               # the files that differ between two directories
 triad-merge resolve PATH -r REV --headless --commands FILE --dry-run   # jj: picks applied in a commit, reported, not written
 triad-merge stack --list
 triad-merge stack --json

@@ -4,6 +4,7 @@
 //! The settings and key bindings it applies live in `merge-config`.
 
 pub mod diff_tool;
+pub mod dir_diff;
 pub mod ending;
 pub mod env;
 pub mod install;

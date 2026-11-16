@@ -320,6 +320,7 @@ triad-merge diff LEFT RIGHT [--diff-algorithm A] [--ignore-whitespace W] [--titl
 triad-merge diff PATH [--rev REV]                        # working copy against its parent revision
 triad-merge diff PATH --op OP                             # working copy against itself at a jj operation (§7.5.2)
 triad-merge diff --inspect LEFT RIGHT [--diff-algorithm A] [--ignore-whitespace W] [--json]   # print two-way regions; no window
+triad-merge diff --inspect LEFT_DIR RIGHT_DIR [--json]   # print the files that differ between two directories; no window
 triad-merge resolve [PATH] [--headless [--commands FILE]] # resolve in the working copy (§7.4)
 triad-merge resolve PATH -r REV [--headless [--commands FILE] [--dry-run]]   # resolve in a jj commit (§7.5.1)
 triad-merge stack [REVSET] [--list | --json]              # jj's conflicted commits, parents first, in a window or printed (§7.5.1)
@@ -345,6 +346,15 @@ Two-way diff:
 - Regions are recomputed off the UI thread once edits pause for 100 ms (`DIFF_DEBOUNCE`). The status bar shows the repository (§5), the number of differences and the whitespace mode, or `line endings ignored` under `none` with `diff-ignore-line-endings` (§4.2), then `case ignored` under `ignore-case`, `patterns ignored` with any `ignore-pattern` and `blank lines ignored` under `diff-ignore-blank-lines`.
 - If a file changes on disk while it's open, the pane reloads it, unless the pane has unsaved edits. Then the pane asks whether to keep its own version (Keep Mine, the first answer) or reload, once for any number of changes while it asks; Reload reads the file as it is then. A reload clears that side's undo history and takes the file's encoding. A file that cannot be read, or reads as the pane's own text in the same encoding, or as a text the window is saving there or last saved there, until the pane next reloads, changes nothing; a save counts from the moment it starts, since its write can reach the watcher before its result. The window watches each file's directory, since editors save by renaming a new file over the old one. It waits 100 ms (`DISK_SETTLE`) after a change for the events that follow it, then reads each changed file once, off the UI thread.
 - Exit codes: the window exits with 0. `diff --inspect` follows `diff(1)`: 0 if the inputs are equal under the comparison settings (§4.2), ignored changes included, 1 if they differ. Errors exit with 3, as in merge mode.
+
+Two directories (`triad-merge diff LEFT_DIR RIGHT_DIR`):
+
+- `diff` takes two files or two directories. One of each exits with 3 and names both.
+- The files that differ are listed by path, component by component, so `a/c` comes before `a-b`. A file only in the right directory is added, one only in the left deleted, and one in both with other bytes modified. Files with the same bytes are left out. A rename is a delete and an add. Directories only hold files: an empty one lists nothing, and a file on one side with a directory of the same name on the other is a delete and an add.
+- Each listed file holds text, when every side present decodes (§4.1); binary, when a side holds a NUL byte in its first 8000 bytes; undecodable, when a side is neither binary nor UTF-8 or UTF-16; or special, when a side is no regular file. Only text opens in the diff window.
+- A symlink to a regular file at an absolute path counts as that file: git's dir diff links each working-tree file into the right directory so. Any other symlink is special, compares by its target, and is not followed; a link to a directory is never walked.
+- `diff --inspect` prints one line per file, `modified text src/a.rs`, then `files: N`, and exits with 0 when no file differs and 1 when one does. `docs/json-schema.md` defines `--json`.
+- An entry that cannot be read exits with 3 and names it.
 
 Native mode (`triad-merge diff PATH`):
 

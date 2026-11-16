@@ -246,6 +246,12 @@ What sets these figures:
 - **Colours.** `gpui_base::input::char_mark_colours` gives both the editors and the top panes the muted text colour and that colour at 25 % opacity, which shows on white, on dark and on the change bands.
 - **Not marked.** Lookalike letters need a confusables table and a rule for text in other scripts; spec §5 leaves them out.
 
+#### A6.9 Directory diff
+
+- `merge_session::dir_diff::changed_files` walks each directory into a `BTreeMap` keyed by relative path, so the listing comes out in `Path`'s component order, then joins the two maps. A walk reads each entry's own type: a directory is walked, a regular file kept, and a symlink read with `read_link`. A link with an absolute target that resolves, from the link, to a regular file counts as a file, which covers git's dir diff; any other link keeps its target and compares by it. A link to a directory is never walked, so a cycle cannot form.
+- Files in both directories compare by bytes. Each file is read once and decoded with `Text::decode` to name its content: the comparison settings play no part, so a listed file can show no difference in the diff window under them.
+- `dir_diff::pair` tells two directories from two files before either is read.
+
 ### A7 Tool integration and the macOS release
 
 #### A7.1 `vcs` crate and native diff mode

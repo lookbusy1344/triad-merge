@@ -384,3 +384,41 @@ fn inspect_keeps_syntax_boundaries_as_the_settings_file_says() {
          conflicts: 1\n"
     );
 }
+
+#[test]
+fn diff_inspect_of_two_directories_lists_the_changed_files() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let (left, right) = (root.path().join("l"), root.path().join("r"));
+    for dir in [&left, &right] {
+        std::fs::create_dir(dir).expect("dir");
+    }
+    std::fs::write(left.join("a.txt"), "1\n").expect("written");
+    std::fs::write(right.join("a.txt"), "1\n").expect("written");
+    let same = triad(&["diff".as_ref(), "--inspect".as_ref(), left.as_os_str(), right.as_os_str()]);
+    assert_eq!(String::from_utf8_lossy(&same.stdout), "files: 0\n");
+    assert_eq!(same.status.code(), Some(0));
+    std::fs::write(right.join("a.txt"), "2\n").expect("written");
+    let differ =
+        triad(&["diff".as_ref(), "--inspect".as_ref(), left.as_os_str(), right.as_os_str()]);
+    assert_eq!(String::from_utf8_lossy(&differ.stdout), "modified text a.txt\nfiles: 1\n");
+    assert_eq!(differ.status.code(), Some(1));
+}
+
+#[test]
+fn diff_inspect_of_a_directory_and_a_file_exits_3() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let file = root.path().join("f");
+    std::fs::write(&file, "x\n").expect("written");
+    let mixed =
+        triad(&["diff".as_ref(), "--inspect".as_ref(), root.path().as_os_str(), file.as_os_str()]);
+    assert_eq!(mixed.status.code(), Some(ERROR_EXIT));
+    assert_eq!(
+        String::from_utf8_lossy(&mixed.stderr),
+        format!(
+            "triad-merge: diff takes two files or two directories: {} is a directory, {} is not\n",
+            root.path().display(),
+            file.display()
+        )
+    );
+    assert_eq!(mixed.stdout, b"");
+}

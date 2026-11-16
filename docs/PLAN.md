@@ -4,7 +4,7 @@ Where the project stands and what comes next. [SPEC.md](SPEC.md) sets the behavi
 
 ## 1. Status
 
-As of 2026-11-15.
+As of 2026-11-16.
 
 | Milestone | State | Part |
 |---|---|---|
@@ -19,7 +19,7 @@ As of 2026-11-15.
 | M6 native resolution | Done: git stages a resolved save; jj snapshots before the read and after each save | D |
 | M7 syntax highlighting | Done: Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS | F |
 | p4merge parity | Done | E |
-| Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; invisible characters drawn as code points and odd spaces shaded in every pane, and escaped in terminal output (§A6.8); the rest open | G |
+| Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; for §G6, the files that differ between two directories, printed by `diff --inspect LEFT_DIR RIGHT_DIR`; invisible characters drawn as code points and odd spaces shaded in every pane, and escaped in terminal output (§A6.8); the rest open | G |
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
 | jj-native features | Done: conflicts across a stack (`stack`, `resolve -r`), operation-log history (`history`, `diff --op`) and absorb by hunk (`absorb`); the stack window, with a preview of a save's effect on the descendants and a confirmation before a save changes them; the history window; the absorb window, by hunk; the three windows' lists follow `docs/STYLE.md` and work from the keys; the conflict badge names the sides a conflict keeps; absorb, `resolve -r` and the default revset aliases checked against jj's CLI (§I5); `stack`, `resolve -r`, `history`, `absorb` and a three-sided save checked through the built binary in scenario repositories (`script/test-jj-repos`) | I |
 
@@ -67,7 +67,8 @@ In order. Each is one or more commits.
 | Merge window folds: the untouched lines of an unchanged region whose result is edited | A line diff of the region | §G2 |
 | Ruler marks with folds: the marks keep their place in the whole file while the thumb follows display rows | A choice between the two | §G2 |
 | A key that opens the fold next to the caret | — | §G2 |
-| Review and diff features: blank lines in a merge (§G4), §G6–§G14 | Owner's choices on §G15's open points for §G4, §G6 and §G8 | G |
+| Review and diff features: blank lines in a merge (§G4), §G6–§G14 | Owner's choices on §G15's open points for §G4 and §G8 | G |
+| Directory diff: renames and moves detected, by copy tracking or content | — | §G6 |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
 | The absorb oracle's generator builds text files only: no renames, executable bits, symlinks, conflicted inputs or immutable commits | — | §I5 |
 | jj-cli's config defaults other than the revset aliases: none checked for whether triad depends on one | — | §I5 |
@@ -128,10 +129,12 @@ Done: the matcher, `diff2::moves` (spec §4.6, `DESIGN.md` §A4.7), recomputed a
 
 `jj diff --tool` runs `file-by-file`, one window per file in turn.
 
-- `triad-merge diff LEFT_DIR RIGHT_DIR`: one window with a list of changed files (added, deleted, modified; binary files listed and not opened). Selecting a file shows its diff; edits save per file.
+- Done: `merge_session::dir_diff` lists the files that differ (added, deleted, modified; text, binary, undecodable or special) and `diff --inspect LEFT_DIR RIGHT_DIR` prints them (spec §6.1, `docs/json-schema.md`).
+- `triad-merge diff LEFT_DIR RIGHT_DIR`: a list window, as the history and stack windows are. A text file opens in the diff window, one at a time; closing it lists the files again. Binary, undecodable and special files are listed and not opened. Edits save per file.
 - jj: `diff-invocation-mode = "dir"`; git: `difftool --dir-diff`. `install` writes the dir-mode entries.
 - Native mode: `triad-merge diff` with no path lists the working copy's changes against its parent. `vcs` gains `Repository::changed_paths(from, to)`, in the conformance suite.
-- Open: renames as delete and add, or by jj's and git's copy tracking.
+- Renames show as a delete and an add.
+- Later: detect renames and moves, by jj's and git's copy tracking in native mode or by content.
 - Folder merges stay out (spec §1.1).
 
 ### G7 Alignment points
@@ -178,9 +181,11 @@ The merge window watches its inputs as the diff window does (spec §6.1). A chan
 
 - **G4 case:** full Unicode case folding (`CaseFolding.txt` C and F), not ASCII only. Search folds ASCII only; it may follow later.
 - **G4 blank lines:** two-way diff only, under the key `diff-ignore-blank-lines`, named as `diff-ignore-line-endings` is. Blank lines in a merge change which regions conflict and wait for their own design.
+- **G6 renames:** a delete and an add in every mode. jj's dir mode and git's dir diff pass two plain directories with no copy information. Detecting moves comes later.
+- **G6 layout:** a list window that opens the diff window, as the history and stack windows do. An in-window list needs the diff window to swap files in place, and can follow.
 - **G5 minimum:** Carry Edit's rule, so the two matchers agree: a block with at least one non-blank line, found at exactly one place. `MOVE_MIN_LINES` is 1.
 
-Open: G4's blank lines in a merge, G6's renames, G8's resolution model.
+Open: G4's blank lines in a merge, G8's resolution model.
 
 ## J. Screen-reader support
 

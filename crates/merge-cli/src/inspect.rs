@@ -11,6 +11,7 @@ use merge_core::merge3::{Kind, LEFT, RIGHT, word_merge};
 use merge_core::text::{Encoding, output_encoding};
 use serde::Serialize;
 
+use merge_session::dir_diff::{self, Change, Content};
 use merge_session::invocation::MergeFiles;
 use merge_session::semantics::Mode;
 use merge_session::{load, read_text};
@@ -72,6 +73,21 @@ struct DiffMove {
     to: usize,
     left: [usize; 2],
     right: [usize; 2],
+}
+
+#[derive(Serialize)]
+struct DirsReport {
+    schema: u32,
+    command: &'static str,
+    changes: usize,
+    files: Vec<DirFile>,
+}
+
+#[derive(Serialize)]
+struct DirFile {
+    path: String,
+    change: &'static str,
+    content: &'static str,
 }
 
 #[derive(Serialize)]
@@ -155,6 +171,41 @@ pub fn inspect(
             )
         });
         to_text(&report.warnings, lines, &format!("conflicts: {}", report.conflicts))
+    };
+    Ok((text, code))
+}
+
+/// The files that differ between two directories, and the exit code: 0 if none does, 1 if
+/// any does.
+///
+/// # Errors
+///
+/// [`CliError`] when a side is not a directory or an entry cannot be read.
+pub fn dirs_inspect(left: &Path, right: &Path, json: bool) -> Result<(String, ExitCode), CliError> {
+    let files: Vec<DirFile> = dir_diff::changed_files(left, right)?
+        .iter()
+        .map(|file| DirFile {
+            path: file.display_path(),
+            change: match file.change {
+                Change::Added => "added",
+                Change::Deleted => "deleted",
+                Change::Modified => "modified",
+            },
+            content: match file.content {
+                Content::Text => "text",
+                Content::Undecodable => "undecodable",
+                Content::Binary => "binary",
+                Content::Special => "special",
+            },
+        })
+        .collect();
+    let report = DirsReport { schema: SCHEMA, command: "diff-dirs", changes: files.len(), files };
+    let code = exit_code(report.changes);
+    let text = if json {
+        to_json(&report)?
+    } else {
+        let lines = report.files.iter().map(|f| format!("{} {} {}", f.change, f.content, f.path));
+        to_text(&[], lines, &format!("files: {}", report.changes))
     };
     Ok((text, code))
 }
@@ -650,5 +701,85 @@ mod tests {
         let value = json_of(&out);
         assert_eq!(value["encodings"], json!({ "left": "utf-8", "right": "utf-16le" }));
         assert_eq!(value["warnings"], json!(["encoding-mismatch"]));
+    }
+
+    /// `left/` and `right/` below one temporary directory.
+    fn dirs(left: &[(&str, &[u8])], right: &[(&str, &[u8])]) -> Files {
+        let files = Files::new(&[]);
+        for (side, entries) in [("left", left), ("right", right)] {
+            for (name, bytes) in entries {
+                let path = files.path(side).join(name);
+                fs::create_dir_all(path.parent().expect("parent")).expect("dir");
+                fs::write(path, bytes).expect("input");
+            }
+            fs::create_dir_all(files.path(side)).expect("dir");
+        }
+        files
+    }
+
+    fn changed_dirs() -> Files {
+        dirs(
+            &[("same", b"s\n"), ("src/a.rs", b"1\n"), ("gone", b"g\n")],
+            &[("same", b"s\n"), ("src/a.rs", b"2\n"), ("img.png", b"\x00png")],
+        )
+    }
+
+    #[test]
+    fn dirs_json_lists_each_changed_file() {
+        let files = changed_dirs();
+        let (out, code) =
+            dirs_inspect(&files.path("left"), &files.path("right"), true).expect("ok");
+        assert_eq!(code, ExitCode::Conflicts);
+        assert_eq!(
+            json_of(&out),
+            json!({
+                "schema": 1,
+                "command": "diff-dirs",
+                "changes": 3,
+                "files": [
+                    { "path": "gone", "change": "deleted", "content": "text" },
+                    { "path": "img.png", "change": "added", "content": "binary" },
+                    { "path": "src/a.rs", "change": "modified", "content": "text" }
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn dirs_text_prints_one_line_per_file_with_the_path_last() {
+        let files =
+            dirs(&[("a b.txt", b"1\n"), ("u", b"ok\n")], &[("a b.txt", b"2\n"), ("u", b"\xC3")]);
+        let (out, code) =
+            dirs_inspect(&files.path("left"), &files.path("right"), false).expect("ok");
+        assert_eq!(code, ExitCode::Conflicts);
+        assert_eq!(out, "modified text a b.txt\nmodified undecodable u\nfiles: 2\n");
+    }
+
+    #[test]
+    fn equal_dirs_exit_0() {
+        let files = dirs(&[("x", b"1\n")], &[("x", b"1\n")]);
+        let (out, code) =
+            dirs_inspect(&files.path("left"), &files.path("right"), false).expect("ok");
+        assert_eq!(code, ExitCode::Resolved);
+        assert_eq!(out, "files: 0\n");
+        let (out, _) = dirs_inspect(&files.path("left"), &files.path("right"), true).expect("ok");
+        assert_eq!(json_of(&out)["files"], json!([]));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dirs_name_a_special_file() {
+        let files = dirs(&[], &[]);
+        std::os::unix::fs::symlink("elsewhere", files.path("right").join("link")).expect("link");
+        let (out, _) = dirs_inspect(&files.path("left"), &files.path("right"), false).expect("ok");
+        assert_eq!(out, "added special link\nfiles: 1\n");
+    }
+
+    #[test]
+    fn dirs_inspect_reports_a_side_that_is_not_a_directory() {
+        let files = dirs(&[("f", b"x")], &[]);
+        let file = files.path("left").join("f");
+        let error = dirs_inspect(&file, &files.path("right"), false).unwrap_err();
+        assert_eq!(error.to_string(), format!("{} is not a directory", file.display()));
     }
 }

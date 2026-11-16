@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 
 use merge_config::settings::{self, Settings};
 use merge_core::document::OutputEnding;
+use merge_session::dir_diff::{self, Pair};
 use merge_session::env::Env;
 use merge_session::invocation::{Absorb, History, Merge, Resolve, SemanticsFlags, Stack, Window};
 use merge_session::repository::RunRepository;
@@ -52,6 +53,8 @@ pub enum CliError {
     Session(#[from] SessionError),
     #[error("cannot write the report as JSON: {0}")]
     Json(#[from] serde_json::Error),
+    #[error(transparent)]
+    DirDiff(#[from] dir_diff::DirDiffError),
     #[error(transparent)]
     Install(#[from] install::InstallError),
     #[error(transparent)]
@@ -300,7 +303,10 @@ fn batch_form(
             Ok(report(stdout, &text, code))
         }
         Batch::DiffInspect { left, right, diff, json } => {
-            let (text, code) = inspect::diff_inspect(&left, &right, &diff, json)?;
+            let (text, code) = match dir_diff::pair(&left, &right)? {
+                Pair::Directories => inspect::dirs_inspect(&left, &right, json)?,
+                Pair::Files => inspect::diff_inspect(&left, &right, &diff, json)?,
+            };
             Ok(report(stdout, &text, code))
         }
         Batch::Install { vcs, config } => {
