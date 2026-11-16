@@ -23,6 +23,8 @@ pub struct Status {
     pub word_merged: usize,
     /// Conflicts still showing their markers.
     pub unresolved: usize,
+    /// Blocks the result holds twice without a conflict (`PLAN.md` §G16).
+    pub duplicated: usize,
     /// The encoding the result is written in (spec §4.1).
     pub encoding: Encoding,
     /// The inputs do not all share one encoding.
@@ -105,6 +107,7 @@ pub fn status(doc: &MergeDocument, ending: OutputEnding) -> Status {
         conflicts: count(&|r| doc.regions()[r].kind == Kind::Conflict),
         word_merged: count(&|r| doc.regions()[r].kind == Kind::WordMerged),
         unresolved: doc.unresolved(),
+        duplicated: doc.held_duplicates().count(),
         encoding: output_encoding(base, left),
         encoding_mismatch: encodings.any(|e| Some(e) != first),
         line_ending: doc.typed_ending(),
@@ -252,6 +255,19 @@ mod tests {
     /// The status of `doc` saved with each line's own ending.
     fn status(doc: &MergeDocument) -> Status {
         super::status(doc, OutputEnding::Keep)
+    }
+
+    #[test]
+    fn duplicated_counts_the_blocks_the_result_still_holds_twice() {
+        let mut d = merge_core::testing::doc(
+            "m1\nm2\na\nb\nc\nd\ne\n",
+            "a\nb\nc\nd\ne\nm1\nm2\n",
+            "a\nb\nc\nm1\nm2\nd\ne\n",
+        );
+        assert_eq!(status(&d).duplicated, 1);
+        d.apply(Command::Pick { region: RegionIx::new(4), sources: vec![] }).expect("picks");
+        assert_eq!(status(&d).duplicated, 0, "left's copy cleared");
+        assert_eq!(status(&merge_core::testing::doc("a\n", "b\n", "a\n")).duplicated, 0);
     }
 
     #[test]

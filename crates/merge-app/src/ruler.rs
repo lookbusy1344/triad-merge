@@ -30,6 +30,8 @@ const THUMB_OPACITY: f32 = 0.18;
 const DRAGGED_THUMB_OPACITY: f32 = 0.3;
 /// A resolved conflict paints the conflict tone over this share of the width.
 const RESOLVED_SHARE: f32 = 0.5;
+/// The conflict-tone outline round a duplicate's mark, on each side (`PLAN.md` §G16).
+const DUPLICATE_OUTLINE: Pixels = px(2.);
 
 /// What a click on the strip asks for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -210,6 +212,20 @@ fn paint(
                 let split = width * RESOLVED_SHARE;
                 window.paint_quad(fill(band(from, to, px(0.), split), tones.mark(Tone::Conflict)));
                 window.paint_quad(fill(band(from, to, split, width - split), tones.mark(tone)));
+            }
+            Style::Duplicate(tone) => {
+                window.paint_quad(fill(band(from, to, px(0.), width), tones.mark(Tone::Conflict)));
+                // A mark too short for an outline above and below shows the outline alone.
+                let inset = f32::from(DUPLICATE_OUTLINE);
+                if to - from > inset + inset {
+                    let inner = band(
+                        from + inset,
+                        to - inset,
+                        DUPLICATE_OUTLINE,
+                        width - DUPLICATE_OUTLINE - DUPLICATE_OUTLINE,
+                    );
+                    window.paint_quad(fill(inner, tones.mark(tone)));
+                }
             }
         }
     }

@@ -7,7 +7,7 @@ use std::ops::Range;
 
 use merge_core::diff2::{DiffDocument, Side};
 use merge_core::document::MergeDocument;
-use merge_core::index::RegionIx;
+use merge_core::index::{Line, RegionIx};
 use merge_core::merge3::Kind;
 
 use crate::diff::pieces;
@@ -22,6 +22,9 @@ pub enum Style {
     Unresolved,
     /// A resolved conflict: half the width in the conflict tone, half in the resolution's.
     Resolved(Tone),
+    /// One copy of a block the result holds twice: the copy's tone, outlined in the conflict
+    /// tone (`PLAN.md` §G16).
+    Duplicate(Tone),
 }
 
 /// One region's mark: the lines it covers in the text the ruler stands beside.
@@ -32,8 +35,17 @@ pub struct RulerMark {
     pub style: Style,
 }
 
-/// The marks beside the result pane, in region order.
+/// The marks beside the result pane: each region's, in region order, then both copies of each
+/// block the result holds twice, left's then right's, which paint over them.
 pub fn marks(doc: &MergeDocument) -> impl Iterator<Item = RulerMark> + '_ {
+    region_marks(doc).chain(doc.held_duplicates().flatten().filter_map(|lines| {
+        let region = doc.region_at_byte(doc.byte_of_line(Line::new(lines.start)));
+        let tone = mark(doc, region)?.tone;
+        Some(RulerMark { region, lines, style: Style::Duplicate(tone) })
+    }))
+}
+
+fn region_marks(doc: &MergeDocument) -> impl Iterator<Item = RulerMark> + '_ {
     doc.region_ixs().filter_map(move |region| {
         let shown = mark(doc, region)?;
         let style = match shown.tone {
@@ -318,6 +330,29 @@ mod tests {
             ]
         );
         assert_eq!(total(&d), 10);
+    }
+
+    #[test]
+    fn both_copies_of_a_duplicate_mark_after_the_regions() {
+        // Result: `a b c` (0–2), right's `m1 m2` (3–4, region 2), `d e` (5–6), left's
+        // `m1 m2` (7–8, region 4). Region 0, deleted by both, holds no line.
+        let mut d =
+            doc("m1\nm2\na\nb\nc\nd\ne\n", "a\nb\nc\nd\ne\nm1\nm2\n", "a\nb\nc\nm1\nm2\nd\ne\n");
+        assert_eq!(
+            all(&d),
+            [
+                mark(RegionIx::new(0), 0..0, Style::Plain(Tone::Both)),
+                mark(RegionIx::new(2), 3..5, Style::Plain(Tone::Right)),
+                mark(RegionIx::new(4), 7..9, Style::Plain(Tone::Left)),
+                mark(RegionIx::new(4), 7..9, Style::Duplicate(Tone::Left)),
+                mark(RegionIx::new(2), 3..5, Style::Duplicate(Tone::Right)),
+            ]
+        );
+        d.apply(Command::Pick { region: RegionIx::new(2), sources: vec![Source::Base(0)] })
+            .expect("picks");
+        let duplicates: Vec<RulerMark> =
+            all(&d).into_iter().filter(|m| matches!(m.style, Style::Duplicate(_))).collect();
+        assert_eq!(duplicates, [], "base drops right's copy");
     }
 
     #[test]

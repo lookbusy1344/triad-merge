@@ -692,7 +692,7 @@ Spec §6.4 lists the keys. The default colours are `tones.rs`'s hues as `#rrggbb
 
 ### E4 Overview ruler
 
-A strip at the right edge of the result pane and the diff window's right pane marks every region not `Unchanged` (spec §5). `merge_view::ruler` places marks by result lines, since the strip stands beside the result; `painted` merges them per pixel (§A6.7). Under soft wrap the marks are approximate. The strip is the pane's vertical scrollbar: the thumb is the view's share of the content, at least 16 px. The drag state lives in the window, since the strip is rebuilt each frame, and mouse handlers are window-wide so a drag goes on past it.
+A strip at the right edge of the result pane and the diff window's right pane marks every region not `Unchanged` (spec §5). `merge_view::ruler` places marks by result lines, since the strip stands beside the result; `painted` merges them per pixel (§A6.7). Both copies of each held duplicate come after the regions' marks as `Style::Duplicate`, so they paint over them; the strip draws one as a conflict-tone fill with the copy's tone inset 2 px. Under soft wrap the marks are approximate. The strip is the pane's vertical scrollbar: the thumb is the view's share of the content, at least 16 px. The drag state lives in the window, since the strip is rebuilt each frame, and mouse handlers are window-wide so a drag goes on past it.
 
 #### E4.4 Scrollbars
 

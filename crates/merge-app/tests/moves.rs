@@ -6,7 +6,7 @@ use common::{act, bounds, doc, label, open, open_with, set_caret};
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{Action as _, TestAppContext, px};
 use merge_app::window::{cell_id, move_pill_id};
-use merge_app::{GoToMoveEnd, WindowSettings};
+use merge_app::{GoToMoveEnd, TakeBase, WindowSettings};
 use merge_core::index::RegionIx;
 use merge_view::rows::RowIx;
 
@@ -135,4 +135,17 @@ fn a_merge_without_moves_shows_no_pills(cx: &mut TestAppContext) {
     for (pane, row) in [(0, 0), (0, 1), (1, 1)] {
         assert_eq!(pill(cx, window, pane, row), None);
     }
+}
+
+#[gpui_kit::test]
+fn the_status_bar_counts_blocks_the_result_holds_twice_until_one_goes(cx: &mut TestAppContext) {
+    // Right's copy is region 2, result bytes 6–12 (`m1 m2` after `a b c`).
+    let [base, left, right] = TWICE;
+    let (window, view) = open(cx, doc(base, left, right));
+    let status = |cx: &mut TestAppContext| cx.read(|cx| view.read(cx).status_text().to_string());
+    assert!(status(cx).contains(" · 1 duplicated block · "), "{}", status(cx));
+    set_caret(cx, &view, 8);
+    act(cx, window, |window, cx| window.dispatch_action(TakeBase.boxed_clone(), cx));
+    cx.run_until_parked();
+    assert!(!status(cx).contains("duplicated"), "{}", status(cx));
 }

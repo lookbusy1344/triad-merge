@@ -838,13 +838,18 @@ pub(crate) fn status(kind: Option<RepoKind>, status: &Status) -> String {
     } else {
         String::new()
     };
+    let duplicated = if status.duplicated > 0 {
+        format!(" · {}", count(status.duplicated, "duplicated block", "duplicated blocks"))
+    } else {
+        String::new()
+    };
     let divergences = status.divergences().fold(String::new(), |mut all, d| {
         all.push_str(" · ");
         all.push_str(divergence(d, status.semantics));
         all
     });
     format!(
-        "{} · {}{divergences} · {} · {}{word_merged} · {} unresolved · {}{mismatch} · {} · {}",
+        "{} · {}{divergences} · {} · {}{word_merged}{duplicated} · {} unresolved · {}{mismatch} · {} · {}",
         repo(kind),
         mode(status),
         count(status.differences, "difference", "differences"),
@@ -1340,6 +1345,7 @@ mod tests {
             case: CaseRule::Compare,
             patterns: 0,
             word_merged: 0,
+            duplicated: 0,
             semantics: Semantics::Git,
             same_change: SameChange::Accept,
             hunk_level: HunkLevel::Line,
@@ -1398,6 +1404,23 @@ mod tests {
         );
         let three = Status { word_merged: 3, ..with(3, 0, 0) };
         assert!(status(None, &three).contains(" · 3 word-merged · "), "{}", status(None, &three));
+    }
+
+    #[test]
+    fn duplicated_blocks_show_only_when_there_are_some() {
+        let one = Status { duplicated: 1, ..with(3, 0, 0) };
+        assert_eq!(
+            status(None, &one),
+            "no repo · git merge · 3 differences · 0 conflicts · 1 duplicated block · 0 unresolved · \
+             UTF-8 · LF · whitespace significant"
+        );
+        let two = Status { duplicated: 2, word_merged: 1, ..with(3, 1, 0) };
+        assert!(
+            status(None, &two).contains(" · 1 word-merged · 2 duplicated blocks · 0 unresolved"),
+            "{}",
+            status(None, &two)
+        );
+        assert!(!status(None, &with(3, 0, 0)).contains("duplicated"));
     }
 
     fn conflict_badge_at(number: Option<usize>, status: &Status) -> Option<String> {
