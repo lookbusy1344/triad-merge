@@ -381,6 +381,41 @@ fn an_entry_at_an_unknown_revision_or_outside_is_refused(fixture: &Fixture) {
     }
 }
 
+fn a_tree_reads_its_revision_as_it_was_when_taken(fixture: &Fixture) {
+    fixture.commit("one", &[("a.txt", b"1\n"), ("dir/b.txt", b"b\n")]);
+    let repo = fixture.open();
+    let tree = repo.tree(&fixture.rev(0)).expect("the tree is taken");
+    // The revision moves on after the tree was taken.
+    fixture.commit("two", &[("a.txt", b"2\n")]);
+    let at = |path: &str| tree.entry(Utf8Path::new(path)).expect("the read succeeds");
+    assert_eq!(at("a.txt"), file(b"1\n"));
+    assert_eq!(at("dir/b.txt"), file(b"b\n"));
+    assert_eq!(at("dir"), TermContent::Other(vcs::EntryKind::Directory));
+    assert_eq!(at("missing"), TermContent::Absent);
+    match tree.entry(Utf8Path::new("../a.txt")) {
+        Err(VcsError::OutsideRepository(path)) => assert_eq!(path, "../a.txt"),
+        other => panic!("expected OutsideRepository, got {other:?}"),
+    }
+}
+
+fn a_tree_at_an_unknown_revision_is_refused(fixture: &Fixture) {
+    fixture.commit("one", &[("a.txt", b"a\n")]);
+    match fixture.open().tree(&RevSpec::Expr("nope".to_owned())).err() {
+        Some(VcsError::UnknownRevision(rev)) => assert_eq!(rev, "nope"),
+        other => panic!("expected UnknownRevision, got {other:?}"),
+    }
+}
+
+fn the_empty_tree_holds_nothing_and_every_file_differs_from_it(fixture: &Fixture) {
+    let files: &[(&str, &[u8])] = &[("a.txt", b"1\n"), ("sub/b.txt", b"b\n")];
+    fixture.change_on_disk(files, &[], files);
+    let repo = fixture.open();
+    let tree = repo.tree(&RevSpec::Empty).expect("the empty tree");
+    assert_eq!(tree.entry(Utf8Path::new("a.txt")).expect("read"), TermContent::Absent);
+    assert_eq!(read(repo.as_ref(), "a.txt", &RevSpec::Empty), None);
+    assert_eq!(changed(repo.as_ref(), &RevSpec::Empty), ["a.txt", "sub/b.txt"]);
+}
+
 fn read(repo: &dyn Repository, path: &str, rev: &RevSpec) -> Option<Vec<u8>> {
     repo.file_at(Utf8Path::new(path), rev).expect("the read succeeds")
 }
@@ -965,6 +1000,9 @@ macro_rules! suite {
                 an_untracked_file_is_listed_only_where_the_vcs_tracks_it,
                 changed_paths_name_an_unknown_revision,
                 changed_paths_against_the_index_leave_out_staged_changes,
+                a_tree_reads_its_revision_as_it_was_when_taken,
+                a_tree_at_an_unknown_revision_is_refused,
+                the_empty_tree_holds_nothing_and_every_file_differs_from_it,
             ]);
         )*
     };

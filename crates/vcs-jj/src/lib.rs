@@ -505,18 +505,17 @@ impl JjRepository {
         Ok(<[_; 1]>::try_from(bases).ok().map(|[base]| base))
     }
 
-    /// The tree of `rev`, the merge of its commits' trees when it names several, and the
-    /// revision as an error names it.
-    fn tree_at<'r>(&self, rev: &'r RevSpec) -> Result<(MergedTree, &'r str), VcsError> {
-        let (commits, named) = match rev {
+    /// The tree of `rev`, the merge of its commits' trees when it names several.
+    fn tree_at(&self, rev: &RevSpec) -> Result<MergedTree, VcsError> {
+        let commits = match rev {
             RevSpec::Index => return Err(VcsError::NoIndex(JJ)),
-            RevSpec::Expr(expr) => (self.resolve(expr)?, expr.as_str()),
-            RevSpec::Commit(id) => (vec![self.commit_by_id(id)?], id.as_str()),
+            RevSpec::Expr(expr) => self.resolve(expr)?,
+            RevSpec::Commit(id) => vec![self.commit_by_id(id)?],
+            RevSpec::Empty => return Ok(self.repo.store().empty_merged_tree()),
         };
-        let tree = jj_lib::rewrite::merge_commit_trees(self.repo.as_ref(), &commits)
+        jj_lib::rewrite::merge_commit_trees(self.repo.as_ref(), &commits)
             .block_on()
-            .map_err(backend("merging a revision's trees"))?;
-        Ok((tree, named))
+            .map_err(backend("merging a revision's trees"))
     }
 
     /// What one term of a conflict holds; `Absent` without a value.
@@ -653,23 +652,16 @@ impl Repository for JjRepository {
     fn file_at(&self, path: &Utf8Path, rev: &RevSpec) -> Result<Option<Vec<u8>>, VcsError> {
         let repo_path = RepoPathBuf::from_relative_path(path)
             .map_err(|_| VcsError::OutsideRepository(path.to_owned()))?;
-        let (tree, named) = self.tree_at(rev)?;
-        let Some(id) = file_id(&tree, &repo_path, path, named)? else {
+        let tree = self.tree_at(rev)?;
+        let Some(id) = file_id(&tree, &repo_path, path, &rev.to_string())? else {
             return Ok(None);
         };
         self.read_file(&repo_path, &id).map(Some)
     }
 
-    fn entry_at(&self, path: &Utf8Path, rev: &RevSpec) -> Result<TermContent, VcsError> {
-        let repo_path = RepoPathBuf::from_relative_path(path)
-            .map_err(|_| VcsError::OutsideRepository(path.to_owned()))?;
-        let (tree, named) = self.tree_at(rev)?;
-        let value =
-            tree.path_value(&repo_path).block_on().map_err(backend("finding a path in a tree"))?;
-        match value.into_resolved() {
-            Ok(value) => self.term_content(&repo_path, value.as_ref()),
-            Err(_) => Err(VcsError::Conflicted { path: path.to_owned(), rev: named.to_owned() }),
-        }
+    fn tree(&self, rev: &RevSpec) -> Result<Box<dyn vcs::Tree + '_>, VcsError> {
+        let tree = self.tree_at(rev)?;
+        Ok(Box::new(JjTree { repo: self, tree, named: rev.to_string() }))
     }
 
     /// `@-`, titled by its change ID and summary; untitled when the working copy is a merge.
@@ -816,14 +808,7 @@ impl Repository for JjRepository {
     /// `rev`'s tree, the merge of its commits' trees when it names several, against the
     /// working-copy commit's.
     fn changed_paths(&self, rev: &RevSpec) -> Result<Vec<Utf8PathBuf>, VcsError> {
-        let commits = match rev {
-            RevSpec::Index => return Err(VcsError::NoIndex(JJ)),
-            RevSpec::Expr(expr) => self.resolve(expr)?,
-            RevSpec::Commit(id) => vec![self.commit_by_id(id)?],
-        };
-        let from = jj_lib::rewrite::merge_commit_trees(self.repo.as_ref(), &commits)
-            .block_on()
-            .map_err(backend("merging a revision's trees"))?;
+        let from = self.tree_at(rev)?;
         let to = self.working_copy_commit()?.tree();
         let mut paths = Vec::new();
         let mut stream = from.diff(&to, &EverythingMatcher);
@@ -971,6 +956,29 @@ fn git_import_options(settings: &UserSettings) -> Result<GitImportOptions, VcsEr
 /// # Errors
 ///
 /// [`VcsError::Conflicted`] when the path is conflicted in `tree`, which `expr` named.
+/// A revision's tree, from [`Repository::tree`], with the revision as an error names it.
+struct JjTree<'r> {
+    repo: &'r JjRepository,
+    tree: MergedTree,
+    named: String,
+}
+
+impl vcs::Tree for JjTree<'_> {
+    fn entry(&self, path: &Utf8Path) -> Result<TermContent, VcsError> {
+        let repo_path = RepoPathBuf::from_relative_path(path)
+            .map_err(|_| VcsError::OutsideRepository(path.to_owned()))?;
+        let value = self
+            .tree
+            .path_value(&repo_path)
+            .block_on()
+            .map_err(backend("finding a path in a tree"))?;
+        match value.into_resolved() {
+            Ok(value) => self.repo.term_content(&repo_path, value.as_ref()),
+            Err(_) => Err(VcsError::Conflicted { path: path.to_owned(), rev: self.named.clone() }),
+        }
+    }
+}
+
 fn file_id(
     tree: &MergedTree,
     repo_path: &RepoPath,

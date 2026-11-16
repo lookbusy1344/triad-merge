@@ -38,7 +38,7 @@ use jj_lib::settings::UserSettings;
 use jj_lib::workspace::{DefaultWorkspaceLoaderFactory, Workspace, WorkspaceLoaderFactory as _};
 use pollster::FutureExt as _;
 use tempfile::TempDir;
-use vcs::testing::{Entry, SUBMODULE_COMMIT};
+use vcs::testing::Entry;
 
 use crate::JjRepository;
 
@@ -361,9 +361,10 @@ fn tree_of(repo: &ReadonlyRepo, entries: &[(&str, Entry)]) -> jj_lib::merged_tre
             Entry::Symlink(target) => TreeValue::Symlink(
                 store.write_symlink(&path, target).block_on().expect("a symlink"),
             ),
-            Entry::Submodule => TreeValue::GitSubmodule(
-                CommitId::try_from_hex(SUBMODULE_COMMIT).expect("a commit ID in hex"),
-            ),
+            Entry::Submodule | Entry::SubmoduleMoved => {
+                let hex = entry.submodule_commit().expect("a submodule");
+                TreeValue::GitSubmodule(CommitId::try_from_hex(hex).expect("a commit ID in hex"))
+            }
         };
         builder.set_or_remove(path, Some(value));
     }

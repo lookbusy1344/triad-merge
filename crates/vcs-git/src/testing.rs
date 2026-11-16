@@ -12,7 +12,7 @@ use gix::object::tree::EntryKind;
 use gix::refs::Target;
 use gix::refs::transaction::{Change, LogChange, PreviousValue, RefEdit};
 use tempfile::TempDir;
-use vcs::testing::{Entry, SUBMODULE_COMMIT};
+use vcs::testing::Entry;
 
 use crate::GitRepository;
 
@@ -105,11 +105,11 @@ impl Fixture {
                 (EntryKind::BlobExecutable, Mode::FILE_EXECUTABLE, blob(bytes))
             }
             Entry::Symlink(target) => (EntryKind::Link, Mode::SYMLINK, blob(target.as_bytes())),
-            Entry::Submodule => (
-                EntryKind::Commit,
-                Mode::COMMIT,
-                gix::ObjectId::from_hex(SUBMODULE_COMMIT.as_bytes()).expect("a commit ID in hex"),
-            ),
+            Entry::Submodule | Entry::SubmoduleMoved => {
+                let hex = entry.submodule_commit().expect("a submodule");
+                let id = gix::ObjectId::from_hex(hex.as_bytes()).expect("a commit ID in hex");
+                (EntryKind::Commit, Mode::COMMIT, id)
+            }
         }
     }
 

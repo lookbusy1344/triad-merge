@@ -176,6 +176,62 @@ fn a_symlink_deleted_retargeted_or_made_a_file_is_listed_as_special() {
 }
 
 #[test]
+fn a_submodule_moved_added_or_removed_is_listed_as_special() {
+    use vcs::testing::Entry;
+    let fixture = Fixture::new();
+    let plain = Entry::File(b"f\n");
+    fixture.commit_entries(
+        "one",
+        &[("f.txt", plain), ("gone", Entry::Submodule), ("moved", Entry::Submodule)],
+    );
+    // `git submodule update` after a move, `git submodule add`, `git rm`.
+    fixture.stage_entries(&[
+        ("added", Entry::Submodule),
+        ("f.txt", plain),
+        ("moved", Entry::SubmoduleMoved),
+    ]);
+    fixture.write("f.txt", b"f\n");
+    fixture.write("added/inner.txt", b"i\n");
+    fixture.write("moved/inner.txt", b"i\n");
+    assert_eq!(
+        listed(fixture.root(), None).1,
+        [
+            file("added", Change::Added, Content::Special),
+            file("gone", Change::Deleted, Content::Special),
+            file("moved", Change::Modified, Content::Special),
+        ]
+    );
+}
+
+#[test]
+fn a_repository_without_commits_lists_its_files_as_added() {
+    let fixture = Fixture::new();
+    fixture.stage(&[("a.txt", b"1\n"), ("b.txt", b"b\n")]);
+    fixture.write("a.txt", b"2\n");
+    fixture.write("b.txt", b"b\n");
+    fixture.write("untracked.txt", b"u\n");
+    assert_eq!(
+        listed(fixture.root(), None),
+        (
+            "HEAD".to_owned(),
+            vec![
+                file("a.txt", Change::Added, Content::Text),
+                file("b.txt", Change::Added, Content::Text),
+            ]
+        )
+    );
+    let listing = try_list(fixture.root(), None).expect("listed");
+    let diff = load_from(&listing, "a.txt", "a.txt");
+    assert_eq!((diff.left.content(), diff.left_title.as_str()), ("", "HEAD (no file)"));
+    // A revision given by name must exist.
+    let error = try_list(fixture.root(), Some("HEAD")).expect_err("no commit");
+    assert!(
+        matches!(&error, NativeError::Vcs(VcsError::UnknownRevision(rev)) if rev == "HEAD"),
+        "{error:?}"
+    );
+}
+
+#[test]
 fn a_listed_file_loads_against_the_listing_s_revision() {
     let fixture = Fixture::new();
     fixture.commit("one", &[("sub/a.txt", b"one\n"), ("gone.txt", b"g\n")]);
@@ -646,6 +702,24 @@ mod jj {
                 file("moved", Change::Modified, Content::Special),
                 file("now-file", Change::Modified, Content::Special),
             ]
+        );
+    }
+
+    #[test]
+    fn a_submodule_moved_in_the_working_copy_is_listed_as_special() {
+        use vcs::testing::Entry;
+        let fixture = Fixture::new();
+        let plain = Entry::File(b"f\n");
+        fixture.commit_entries("one", &[("f.txt", plain), ("sub", Entry::Submodule)]);
+        // jj leaves a submodule's directory alone; its commit moves in `@`.
+        fixture.amend_entries(
+            &fixture.working_copy_commit(),
+            &[("f.txt", plain), ("sub", Entry::SubmoduleMoved)],
+        );
+        fixture.check_out_to_disk();
+        assert_eq!(
+            listed(fixture.root(), None).1,
+            [file("sub", Change::Modified, Content::Special)]
         );
     }
 

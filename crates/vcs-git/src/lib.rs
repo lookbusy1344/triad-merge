@@ -142,13 +142,11 @@ impl GitRepository {
     }
 
     /// The tree of the commit, tag or tree `revision`.
-    fn tree_id(&self, revision: gix::ObjectId) -> Result<gix::ObjectId, VcsError> {
-        let tree = self
-            .repo
+    fn tree_of(&self, revision: gix::ObjectId) -> Result<gix::Tree<'_>, VcsError> {
+        self.repo
             .find_object(revision)
             .and_then(gix::Object::peel_to_tree)
-            .map_err(backend("reading a revision's tree"))?;
-        Ok(tree.id)
+            .map_err(backend("reading a revision's tree"))
     }
 
     /// The blob `path` has in `revision`'s tree, if it is a file there.
@@ -408,6 +406,49 @@ fn git_path(path: &Utf8Path) -> BString {
     path.components().map(|component| component.as_str()).collect::<Vec<_>>().join("/").into()
 }
 
+/// What a [`GitTree`] reads.
+enum Source<'r> {
+    Tree(gix::Tree<'r>),
+    Index(gix::worktree::Index),
+    Empty,
+}
+
+/// A revision's tree, the index or the empty tree, from [`Repository::tree`].
+struct GitTree<'r> {
+    repo: &'r GitRepository,
+    source: Source<'r>,
+}
+
+impl vcs::Tree for GitTree<'_> {
+    fn entry(&self, path: &Utf8Path) -> Result<TermContent, VcsError> {
+        use gix::object::tree::EntryKind as Kind;
+        check_inside(path)?;
+        let tree = match &self.source {
+            Source::Index(index) => {
+                return self.repo.term_content(index.entry_by_path(git_path(path).as_ref()));
+            }
+            Source::Empty => return Ok(TermContent::Absent),
+            Source::Tree(tree) => tree,
+        };
+        let Some(entry) = tree
+            .lookup_entry_by_path(path.as_std_path())
+            .map_err(backend("finding a path in a tree"))?
+        else {
+            return Ok(TermContent::Absent);
+        };
+        let file = |executable| {
+            self.repo.blob(entry.object_id()).map(|bytes| TermContent::File { bytes, executable })
+        };
+        match entry.mode().kind() {
+            Kind::Blob => file(false),
+            Kind::BlobExecutable => file(true),
+            Kind::Link => Ok(TermContent::Other(EntryKind::Symlink)),
+            Kind::Commit => Ok(TermContent::Other(EntryKind::Submodule)),
+            Kind::Tree => Ok(TermContent::Other(EntryKind::Directory)),
+        }
+    }
+}
+
 /// git's ID of a blob, as git and jj's git backend name a file's bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlobId(gix::ObjectId);
@@ -448,40 +489,20 @@ impl Repository for GitRepository {
             RevSpec::Index => self.staged(path),
             RevSpec::Expr(expr) => self.committed(path, self.revision(expr)?),
             RevSpec::Commit(id) => self.committed(path, self.commit_by_id(id)?),
+            RevSpec::Empty => Ok(None),
         }
     }
 
-    fn entry_at(&self, path: &Utf8Path, rev: &RevSpec) -> Result<TermContent, VcsError> {
-        check_inside(path)?;
-        let revision = match rev {
+    fn tree(&self, rev: &RevSpec) -> Result<Box<dyn vcs::Tree + '_>, VcsError> {
+        let source = match rev {
             RevSpec::Index => {
-                let index = self.repo.index_or_empty().map_err(backend("reading the index"))?;
-                return self.term_content(index.entry_by_path(git_path(path).as_ref()));
+                Source::Index(self.repo.index_or_empty().map_err(backend("reading the index"))?)
             }
-            RevSpec::Expr(expr) => self.revision(expr)?,
-            RevSpec::Commit(id) => self.commit_by_id(id)?,
+            RevSpec::Expr(expr) => Source::Tree(self.tree_of(self.revision(expr)?)?),
+            RevSpec::Commit(id) => Source::Tree(self.tree_of(self.commit_by_id(id)?)?),
+            RevSpec::Empty => Source::Empty,
         };
-        let tree = self
-            .repo
-            .find_object(revision)
-            .and_then(gix::Object::peel_to_tree)
-            .map_err(backend("reading a revision's tree"))?;
-        let Some(entry) = tree
-            .lookup_entry_by_path(path.as_std_path())
-            .map_err(backend("finding a path in a tree"))?
-        else {
-            return Ok(TermContent::Absent);
-        };
-        let file = |executable| {
-            self.blob(entry.object_id()).map(|bytes| TermContent::File { bytes, executable })
-        };
-        match entry.mode().kind() {
-            gix::object::tree::EntryKind::Blob => file(false),
-            gix::object::tree::EntryKind::BlobExecutable => file(true),
-            gix::object::tree::EntryKind::Link => Ok(TermContent::Other(EntryKind::Symlink)),
-            gix::object::tree::EntryKind::Commit => Ok(TermContent::Other(EntryKind::Submodule)),
-            gix::object::tree::EntryKind::Tree => Ok(TermContent::Other(EntryKind::Directory)),
-        }
+        Ok(Box::new(GitTree { repo: self, source }))
     }
 
     /// The index when `path` has staged changes or there is no commit yet; otherwise `HEAD`.
@@ -620,8 +641,9 @@ impl Repository for GitRepository {
     fn changed_paths(&self, rev: &RevSpec) -> Result<Vec<Utf8PathBuf>, VcsError> {
         let tree = match rev {
             RevSpec::Index => None,
-            RevSpec::Expr(expr) => Some(self.tree_id(self.revision(expr)?)?),
-            RevSpec::Commit(id) => Some(self.tree_id(self.commit_by_id(id)?)?),
+            RevSpec::Expr(expr) => Some(self.tree_of(self.revision(expr)?)?.id),
+            RevSpec::Commit(id) => Some(self.tree_of(self.commit_by_id(id)?)?.id),
+            RevSpec::Empty => Some(gix::ObjectId::empty_tree(gix::hash::Kind::Sha1)),
         };
         let status = self
             .repo

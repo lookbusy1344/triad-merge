@@ -216,7 +216,7 @@ fn load_changed(
         }
     };
     let kind = repo.kind();
-    let rev = Some(against.pinned().to_owned());
+    let rev = against.pinned().map(str::to_owned);
     let origins = DiffLookup::Native { path, rev, repo: Handoff::new(repo) };
     Ok(ToolDiff { left, right, origins, kind, title: Some(shown) })
 }
@@ -304,11 +304,13 @@ impl DirWindow {
         }
         match listed {
             Ok((files, against)) => {
-                let len = files.len();
+                // The selection follows its file by path; it goes when the file drops out.
+                let selected = self.selected.and_then(|ix| self.files().get(ix));
+                self.selected =
+                    selected.and_then(|old| files.iter().position(|file| file.path == old.path));
                 self.files = Some(files);
                 self.against = against;
                 self.note = None;
-                self.selected = self.selected.filter(|&ix| ix < len);
             }
             Err(error) => self.note = Some(error.into()),
         }
@@ -330,7 +332,6 @@ impl DirWindow {
         if self.loading {
             return;
         }
-        self.loading = true;
         let loaded = match (self.source_owned(), self.against.clone()) {
             (Source::Dirs { left, right, readonly }, _) => {
                 let cwd = self.start.cwd.clone();
@@ -343,6 +344,7 @@ impl DirWindow {
             }
             (Source::Changes { .. }, None) => return,
         };
+        self.loading = true;
         cx.spawn(async move |this, cx| {
             let loaded = loaded.await;
             ignore_closed_view(this.update(cx, |this, cx| this.arrived_file(loaded, cx)));

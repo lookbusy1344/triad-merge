@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use camino::{Utf8Path, Utf8PathBuf};
 use merge_core::text::{DecodeError, Text};
-use vcs::{CommitId, EntryKind, RepoKind, Repository, RevSpec, TermContent, VcsError};
+use vcs::{CommitId, EntryKind, RepoKind, Repository, RevSpec, TermContent, Tree, VcsError};
 use vcs_git::GitRepository;
 use vcs_jj::JjRepository;
 use vcs_jj::config::ConfigEnv;
@@ -232,26 +232,33 @@ pub struct Against {
     pub root: PathBuf,
     /// The revision as given, or the parent revision's name, which titles show.
     pub rev: String,
-    /// The full IDs of the commits `rev` named at the listing, as a revision expression: a
-    /// listed file loads from them though `rev` names others since.
-    pinned: String,
+    /// The commits `rev` named at the listing, by full ID: a listed file loads from them
+    /// though `rev` names others since. The empty tree before git's first commit.
+    pinned: RevSpec,
 }
 
 impl Against {
-    /// The commits the listing compared with, as a revision expression of their full IDs.
+    /// The commits the listing compared with, as a revision expression of their full IDs;
+    /// `None` for the empty tree.
     #[must_use]
-    pub fn pinned(&self) -> &str {
-        &self.pinned
+    pub fn pinned(&self) -> Option<&str> {
+        match &self.pinned {
+            RevSpec::Expr(expr) => Some(expr),
+            RevSpec::Commit(id) => Some(id.as_str()),
+            RevSpec::Index | RevSpec::Empty => None,
+        }
     }
 }
 
 /// The files that differ between `rev`, or the parent revision without one, and the working
 /// copy, from the run's repository. jj snapshots the working copy first, as its commands do;
 /// git compares the files on disk, staged or not, and leaves untracked files out. The parent
-/// is jj's `@-` and git's `HEAD`: a staged change counts, so the index is no parent here. Each
-/// candidate the VCS lists is compared by bytes, so a change to the executable bit alone, or a
-/// staged change undone on disk, is left out. A path that holds a directory at the revision
-/// holds no file there; a symlink, a submodule or a conflict there is [`Content::Special`].
+/// is jj's `@-` and git's `HEAD`, or the empty tree before git's first commit: a staged change
+/// counts, so the index is no parent here. Each candidate the VCS lists is compared by bytes,
+/// so a change to the executable bit alone, or a staged change undone on disk, is left out. A
+/// path that holds a directory holds no file there, unless the working copy holds a submodule
+/// at it: git's index, jj's working-copy commit. A symlink, a submodule or a conflict is
+/// [`Content::Special`]. The revision is resolved once, so the listing reads one tree.
 ///
 /// # Errors
 ///
@@ -260,30 +267,30 @@ impl Against {
 pub fn changed_files(repo: &mut RunRepository, rev: Option<&str>) -> Result<Listing, NativeError> {
     let repo = repo.require_mut()?;
     repo.snapshot()?;
-    let rev = rev.map_or_else(
-        || {
-            match repo.kind() {
-                RepoKind::Jj => JJ_PARENT,
-                RepoKind::Git => GIT_PARENT,
-            }
-            .to_owned()
-        },
-        str::to_owned,
-    );
-    let pinned = repo.commits(&rev)?.iter().map(CommitId::as_str).collect::<Vec<_>>().join(UNION);
-    let spec = RevSpec::Expr(pinned.clone());
+    let repo: &dyn Repository = repo;
+    let (rev, commits) = match (rev, repo.kind()) {
+        (Some(rev), _) => (rev, repo.commits(rev)?),
+        (None, RepoKind::Jj) => (JJ_PARENT, repo.commits(JJ_PARENT)?),
+        (None, RepoKind::Git) => (GIT_PARENT, repo.index_base()?.into_iter().collect()),
+    };
+    let pinned = pinned(&commits);
     let root = repo.root().as_std_path().to_owned();
+    let before = repo.tree(&pinned)?;
+    let working = working_tree(repo)?;
     let mut listed = Vec::new();
-    for path in repo.changed_paths(&spec)? {
-        let before = match repo.entry_at(&path, &spec) {
+    for path in repo.changed_paths(&pinned)? {
+        let at = match before.entry(&path) {
             Ok(TermContent::File { bytes, .. }) => Side::File(bytes),
             Ok(TermContent::Absent | TermContent::Other(EntryKind::Directory)) => Side::Absent,
             Ok(TermContent::Other(EntryKind::Symlink | EntryKind::Submodule))
             | Err(VcsError::Conflicted { .. }) => Side::Special,
             Err(error) => return Err(error.into()),
         };
-        let after = on_disk(&root.join(&path))?;
-        if let Some((change, content, blob)) = compared(before, after)? {
+        let now = match on_disk(&root.join(&path))? {
+            Side::Absent if holds_submodule(working.as_deref(), &path)? => Side::Special,
+            side => side,
+        };
+        if let Some((change, content, blob)) = compared(at, now)? {
             listed.push((ChangedFile { path: path.into_std_path_buf(), change, content }, blob));
         }
     }
@@ -294,10 +301,48 @@ pub fn changed_files(repo: &mut RunRepository, rev: Option<&str>) -> Result<List
         }
         let relative =
             Utf8Path::from_path(&file.path).ok_or_else(|| VcsError::NotUtf8(file.path.clone()))?;
-        repo.file_at(relative, &spec)?
-            .ok_or_else(|| NativeError::Find { path, source: io::ErrorKind::NotFound.into() })
+        match before.entry(relative)? {
+            TermContent::File { bytes, .. } => Ok(bytes),
+            TermContent::Absent | TermContent::Other(_) => {
+                Err(NativeError::Find { path, source: io::ErrorKind::NotFound.into() })
+            }
+        }
     })?;
-    Ok(Listing { against: Against { root, rev, pinned }, files })
+    Ok(Listing { against: Against { root, rev: rev.to_owned(), pinned }, files })
+}
+
+/// The revision of `commits`: the empty tree for none, else their full IDs.
+fn pinned(commits: &[CommitId]) -> RevSpec {
+    match commits {
+        [] => RevSpec::Empty,
+        [commit] => RevSpec::Commit(commit.clone()),
+        _ => RevSpec::Expr(commits.iter().map(CommitId::as_str).collect::<Vec<_>>().join(UNION)),
+    }
+}
+
+/// The working copy's own tree, which says where a submodule sits: git's index, jj's
+/// working-copy commit. None for a jj workspace without a working-copy commit.
+fn working_tree(repo: &dyn Repository) -> Result<Option<Box<dyn Tree + '_>>, VcsError> {
+    let rev = match repo.kind() {
+        RepoKind::Git => RevSpec::Index,
+        RepoKind::Jj => match repo.working_copy_id()? {
+            Some(id) => RevSpec::Commit(id),
+            None => return Ok(None),
+        },
+    };
+    repo.tree(&rev).map(Some)
+}
+
+/// Whether `working` holds a submodule at `path`. A conflict there holds none.
+fn holds_submodule(working: Option<&dyn Tree>, path: &Utf8Path) -> Result<bool, VcsError> {
+    let Some(working) = working else {
+        return Ok(false);
+    };
+    match working.entry(path) {
+        Ok(entry) => Ok(entry == TermContent::Other(EntryKind::Submodule)),
+        Err(VcsError::Conflicted { .. }) => Ok(false),
+        Err(error) => Err(error),
+    }
 }
 
 /// Load a file [`changed_files`] listed: `left` from the commits `against` pinned, against
@@ -315,8 +360,7 @@ pub fn load_listed(
     right: &Path,
 ) -> Result<NativeDiff, NativeError> {
     let path = Utf8Path::from_path(left).ok_or_else(|| VcsError::NotUtf8(left.to_owned()))?;
-    let spec = RevSpec::Expr(against.pinned.clone());
-    read_left(repo.require()?, path, &spec, &against.rev, &against.root.join(right))
+    read_left(repo.require()?, path, &against.pinned, &against.rev, &against.root.join(right))
 }
 
 /// The parent revisions [`changed_files`] compares with by default.

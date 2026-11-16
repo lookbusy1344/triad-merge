@@ -343,6 +343,27 @@ fn refresh_lists_again(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn the_selection_follows_its_file_when_the_list_changes(cx: &mut TestAppContext) {
+    let dirs = mixed();
+    let started = open(cx, dirs.start());
+    press(cx, started.window, "up");
+    assert!(is_selected(cx, started.window, file_id(A_RS)));
+    // `same.txt` now differs and lists before `src/a.rs`.
+    std::fs::write(dirs.side("right").join("same.txt"), b"changed\n").expect("written");
+    click(cx, started.window, REFRESH_ID.into());
+    assert!(is_selected(cx, started.window, file_id(A_RS + 1)), "src/a.rs stays selected");
+    assert!(!is_selected(cx, started.window, file_id(A_RS)));
+    // The selected file drops out: nothing is selected.
+    std::fs::write(dirs.side("right").join("src/a.rs"), b"1\n").expect("written");
+    click(cx, started.window, REFRESH_ID.into());
+    let rows = listed(cx, &started.view).len();
+    assert_eq!(rows, 4);
+    for row in 0..rows {
+        assert!(!is_selected(cx, started.window, file_id(row)), "row {row} is selected");
+    }
+}
+
+#[gpui_kit::test]
 fn a_diff_window_closed_while_a_listing_runs_lists_again_once_it_lands(cx: &mut TestAppContext) {
     let dirs = mixed();
     let started = open(cx, dirs.start());

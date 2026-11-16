@@ -119,9 +119,10 @@ pub fn display(path: &Path) -> String {
 /// The files that differ between `left` and `right`, ordered by path, component by
 /// component. Directories only hold files: an empty one lists nothing, and a file on one side
 /// with a directory of the same name on the other is a delete and an add. A file with the
-/// same bytes on both sides is left out. A symlink to a regular file at an absolute path
-/// counts as that file, since git's dir diff links each working-tree file so; any other
-/// symlink compares by its target and is [`Content::Special`].
+/// same bytes on both sides is left out. An entry named as a VCS's directory ([`VCS_DIRS`])
+/// is not walked. A symlink at `PATH` to the regular file at `TREE/PATH`, where `TREE` is a
+/// git work tree, counts as that file, since git's dir diff links each working-tree file so;
+/// any other symlink compares by its target and is [`Content::Special`].
 ///
 /// # Errors
 ///
@@ -246,9 +247,15 @@ pub(crate) fn with_renames<E>(
         .collect())
 }
 
+/// The names of the directories git and jj keep their data in, at any depth. A git
+/// submodule or linked work tree holds a `.git` file, which is left out too.
+pub const VCS_DIRS: [&str; 2] = [GIT_DIR, JJ_DIR];
+const GIT_DIR: &str = ".git";
+const JJ_DIR: &str = ".jj";
+
 /// A non-directory entry below a root.
 enum Entry {
-    /// A regular file, or a symlink to one at an absolute path: the path that reads it.
+    /// A regular file, or a symlink git's dir diff makes to one: the path that reads it.
     File(PathBuf),
     /// Anything else: a symlink's target, or none for a socket, FIFO or device.
     Special(Option<PathBuf>),
@@ -269,7 +276,11 @@ fn walk(root: &Path) -> Result<BTreeMap<PathBuf, Entry>, DirDiffError> {
         let at = root.join(&dir);
         for item in fs::read_dir(&at).map_err(read_error(&at))? {
             let item = item.map_err(read_error(&at))?;
-            let relative = dir.join(item.file_name());
+            let name = item.file_name();
+            if VCS_DIRS.iter().any(|vcs| name == *vcs) {
+                continue;
+            }
+            let relative = dir.join(name);
             let path = item.path();
             let kind = item.file_type().map_err(read_error(&path))?;
             if kind.is_dir() {
@@ -277,7 +288,8 @@ fn walk(root: &Path) -> Result<BTreeMap<PathBuf, Entry>, DirDiffError> {
             } else if kind.is_file() {
                 found.insert(relative, Entry::File(path));
             } else if kind.is_symlink() {
-                found.insert(relative, link(path)?);
+                let entry = link(path, &relative)?;
+                found.insert(relative, entry);
             } else {
                 found.insert(relative, Entry::Special(None));
             }
@@ -286,11 +298,24 @@ fn walk(root: &Path) -> Result<BTreeMap<PathBuf, Entry>, DirDiffError> {
     Ok(found)
 }
 
-/// A symlink's entry: the file it names at an absolute path, else its target.
-fn link(path: PathBuf) -> Result<Entry, DirDiffError> {
+/// The entry of the symlink `path`, at `relative` below its root: the file it names when
+/// git's dir diff made it, else its target.
+fn link(path: PathBuf, relative: &Path) -> Result<Entry, DirDiffError> {
     let target = fs::read_link(&path).map_err(read_error(&path))?;
-    let to_file = target.is_absolute() && fs::metadata(&path).is_ok_and(|meta| meta.is_file());
+    let to_file =
+        into_work_tree(&target, relative) && fs::metadata(&path).is_ok_and(|meta| meta.is_file());
     Ok(if to_file { Entry::File(path) } else { Entry::Special(Some(target)) })
+}
+
+/// Whether `target` is `TREE/relative` for an absolute `TREE` that holds `.git`: the link
+/// `git difftool --dir-diff` makes from its right directory to the work tree.
+fn into_work_tree(target: &Path, relative: &Path) -> bool {
+    target.is_absolute()
+        && target.ends_with(relative)
+        && target
+            .ancestors()
+            .nth(relative.components().count())
+            .is_some_and(|tree| tree.join(GIT_DIR).exists())
 }
 
 /// How a path differs between its two entries, and the blob of a regular file on one side
@@ -378,21 +403,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
-    #[test]
-    fn a_symlink_is_never_a_rename() {
-        let dirs = Dirs::new(&[], &[]);
-        std::os::unix::fs::symlink("t", dirs.left.join("a")).unwrap();
-        std::os::unix::fs::symlink("t", dirs.right.join("b")).unwrap();
-        assert_eq!(
-            dirs.changed(),
-            [
-                entry("a", Change::Deleted, Content::Special),
-                entry("b", Change::Added, Content::Special)
-            ]
-        );
-    }
-
     fn entry(path: &str, change: Change, content: Content) -> (String, Change, Content) {
         (path.to_owned(), change, content)
     }
@@ -425,6 +435,15 @@ mod tests {
                 entry("a-b", Change::Added, Content::Text)
             ]
         );
+    }
+
+    #[test]
+    fn vcs_directories_are_not_walked() {
+        let dirs = Dirs::new(
+            &[(".git/HEAD", b"a\n"), ("sub/.git", b"gitdir: x\n"), ("f", b"1\n")],
+            &[(".git/HEAD", b"b\n"), (".jj/repo/store", b"s\n"), ("f", b"2\n")],
+        );
+        assert_eq!(dirs.changed(), [entry("f", Change::Modified, Content::Text)]);
     }
 
     #[test]
@@ -600,16 +619,73 @@ mod tests {
         use super::*;
 
         #[test]
-        fn a_link_to_an_absolute_file_counts_as_that_file() {
+        fn a_symlink_is_never_a_rename() {
+            let dirs = Dirs::new(&[], &[]);
+            symlink("t", dirs.left.join("a")).unwrap();
+            symlink("t", dirs.right.join("b")).unwrap();
+            assert_eq!(
+                dirs.changed(),
+                [
+                    entry("a", Change::Deleted, Content::Special),
+                    entry("b", Change::Added, Content::Special)
+                ]
+            );
+        }
+
+        /// A git work tree holding `files`, as `git difftool --dir-diff` links into.
+        fn work_tree(files: &[(&str, &[u8])]) -> tempfile::TempDir {
+            let tree = tempfile::tempdir().unwrap();
+            std::fs::create_dir(tree.path().join(".git")).unwrap();
+            for (name, bytes) in files {
+                let path = tree.path().join(name);
+                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                std::fs::write(path, bytes).unwrap();
+            }
+            tree
+        }
+
+        #[test]
+        fn a_link_to_the_same_path_in_a_work_tree_counts_as_that_file() {
             // git's dir diff links each working-tree file into the right directory.
-            let dirs = Dirs::new(&[("same", b"1\n"), ("edit", b"1\n")], &[]);
-            let tree_dir = tempfile::tempdir().unwrap();
+            let dirs = Dirs::new(&[("same", b"1\n"), ("edit", b"1\n"), ("sub/f", b"1\n")], &[]);
+            let tree_dir = work_tree(&[("same", b"1\n"), ("edit", b"2\n"), ("sub/f", b"3\n")]);
             let tree = tree_dir.path();
-            std::fs::write(tree.join("same"), b"1\n").unwrap();
-            std::fs::write(tree.join("edit"), b"2\n").unwrap();
-            symlink(tree.join("same"), dirs.right.join("same")).unwrap();
-            symlink(tree.join("edit"), dirs.right.join("edit")).unwrap();
-            assert_eq!(dirs.changed(), [entry("edit", Change::Modified, Content::Text)]);
+            std::fs::create_dir(dirs.right.join("sub")).unwrap();
+            for name in ["same", "edit", "sub/f"] {
+                symlink(tree.join(name), dirs.right.join(name)).unwrap();
+            }
+            assert_eq!(
+                dirs.changed(),
+                [
+                    entry("edit", Change::Modified, Content::Text),
+                    entry("sub/f", Change::Modified, Content::Text)
+                ]
+            );
+        }
+
+        #[test]
+        fn a_link_to_an_absolute_file_outside_a_work_tree_is_special() {
+            // A link committed to a repository, to a file outside it: never read or written.
+            let dirs = Dirs::new(&[("cfg", b"secret\n")], &[]);
+            let outside = tempfile::tempdir().unwrap();
+            std::fs::write(outside.path().join("cfg"), b"secret\n").unwrap();
+            symlink(outside.path().join("cfg"), dirs.right.join("cfg")).unwrap();
+            assert_eq!(dirs.changed(), [entry("cfg", Change::Modified, Content::Special)]);
+        }
+
+        #[test]
+        fn a_link_to_another_path_in_a_work_tree_is_special() {
+            let dirs = Dirs::new(&[], &[]);
+            let tree_dir = work_tree(&[("b", b"1\n"), ("d/a", b"1\n")]);
+            symlink(tree_dir.path().join("b"), dirs.right.join("a")).unwrap();
+            symlink(tree_dir.path().join("d/a"), dirs.right.join("c")).unwrap();
+            assert_eq!(
+                dirs.changed(),
+                [
+                    entry("a", Change::Added, Content::Special),
+                    entry("c", Change::Added, Content::Special)
+                ]
+            );
         }
 
         #[test]
