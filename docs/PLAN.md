@@ -68,7 +68,6 @@ In order. Each is one or more commits.
 | Ruler marks with folds: the marks keep their place in the whole file while the thumb follows display rows | A choice between the two | §G2 |
 | A key that opens the fold next to the caret | — | §G2 |
 | Duplicate suggestion in the merge window | Owner's choice on §G15's open point for §G16 | §G16 |
-| The cost of finding moves and duplicates at load, against spec §9 | A benchmark run | §G16 |
 | Review and diff features: blank lines in a merge (§G4), §G7–§G14 | Owner's choices on §G15's open points for §G4 and §G8 | G |
 | Directory diff: copies detected, as jj finds them from modified files | — | §G6 |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
