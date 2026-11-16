@@ -9,7 +9,7 @@ use merge_core::index::RegionIx;
 use merge_core::merge3::{HunkLevel, Semantics};
 use merge_core::text::{Encoding, LineEnding};
 use merge_session::ExitCode;
-use merge_session::dir_diff::{Change, ChangedFile, Content};
+use merge_session::dir_diff::{self, Change, ChangedFile, Content};
 use merge_session::jj_native::{
     AbsorbHunk, Absorbed, CommitEffect, FileVersion, Goes, Rewrite, SHORT_OPERATION, StackCommit,
     StackPath, Stay, VersionState, stays,
@@ -253,10 +253,11 @@ pub(crate) const DIRS_EMPTY: &str = "No files differ.";
 
 /// A listed file: its path, then how it changed and, for a file that does not open, why.
 pub(crate) fn dir_file(file: &ChangedFile) -> Row {
-    let change = match file.change {
-        Change::Added => "added",
-        Change::Deleted => "deleted",
-        Change::Modified => "modified",
+    let change = match &file.change {
+        Change::Added => "added".to_owned(),
+        Change::Deleted => "deleted".to_owned(),
+        Change::Modified => "modified".to_owned(),
+        Change::Renamed { from } => format!("renamed from {}", dir_diff::display(from)),
     };
     let why = match file.content {
         Content::Text => None,
@@ -264,7 +265,10 @@ pub(crate) fn dir_file(file: &ChangedFile) -> Row {
         Content::Binary => Some("binary"),
         Content::Special => Some("special"),
     };
-    let trail = why.map_or_else(|| change.to_owned(), |why| format!("{change}, {why}"));
+    let trail = match why {
+        Some(why) => format!("{change}, {why}"),
+        None => change,
+    };
     Row { lead: None, text: file.display_path().into(), trail: Some(trail.into()) }
 }
 

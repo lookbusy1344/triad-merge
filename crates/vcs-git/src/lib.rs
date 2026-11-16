@@ -408,6 +408,27 @@ fn git_path(path: &Utf8Path) -> BString {
     path.components().map(|component| component.as_str()).collect::<Vec<_>>().join("/").into()
 }
 
+/// git's ID of a blob, as git and jj's git backend name a file's bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BlobId(gix::ObjectId);
+
+impl std::fmt::Display for BlobId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// The SHA-1 ID git gives a blob holding `bytes`, which jj's git backend uses too.
+///
+/// # Errors
+///
+/// [`VcsError::Backend`] when the hash detects a SHA-1 collision attack.
+pub fn blob_id(bytes: &[u8]) -> Result<BlobId, VcsError> {
+    gix::objs::compute_hash(gix::hash::Kind::Sha1, gix::object::Kind::Blob, bytes)
+        .map(BlobId)
+        .map_err(backend("hashing a blob"))
+}
+
 fn backend<E: Error + Send + Sync + 'static>(context: &'static str) -> impl FnOnce(E) -> VcsError {
     move |error| VcsError::Backend { context, source: Box::new(error) }
 }
@@ -562,7 +583,7 @@ impl Repository for GitRepository {
 
     /// git takes the working tree in at `git add`, never by itself.
     /// gix's status: `rev`'s tree against the index, and the index against the files on disk,
-    /// with untracked files and submodules left out. gix drops an entry whose stat alone went
+    /// with untracked files, submodules and rename tracking off, so a rename lists both paths. gix drops an entry whose stat alone went
     /// stale.
     fn changed_paths(&self, rev: &RevSpec) -> Result<Vec<Utf8PathBuf>, VcsError> {
         let tree = match rev {
@@ -575,7 +596,8 @@ impl Repository for GitRepository {
             .status(gix::progress::Discard)
             .map_err(backend("reading the status"))?
             .untracked_files(gix::status::UntrackedFiles::None)
-            .index_worktree_submodules(None);
+            .index_worktree_submodules(None)
+            .tree_index_track_renames(gix::status::tree_index::TrackRenames::Disabled);
         let mut paths = BTreeSet::new();
         let mut add = |path: &gix::bstr::BStr| -> Result<(), VcsError> {
             let path = gix::path::from_bstr(path).map_err(backend("reading a status path"))?;

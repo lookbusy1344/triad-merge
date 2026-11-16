@@ -4,7 +4,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use merge_core::rename::{self, Candidate};
 use merge_core::text::{DecodeError, Text};
+use vcs::VcsError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DirDiffError {
@@ -18,6 +20,8 @@ pub enum DirDiffError {
         #[source]
         source: std::io::Error,
     },
+    #[error(transparent)]
+    Vcs(#[from] VcsError),
 }
 
 /// What `diff LEFT RIGHT` compares.
@@ -43,7 +47,7 @@ pub fn pair(left: &Path, right: &Path) -> Result<Pair, DirDiffError> {
 }
 
 /// How a file differs between the two directories.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Change {
     /// Only in the right directory.
     Added,
@@ -51,6 +55,9 @@ pub enum Change {
     Deleted,
     /// In both, with other bytes, or another link target.
     Modified,
+    /// Only in the right directory, renamed from `from`, a file only in the left directory
+    /// whose bytes it keeps at least half of ([`rename::renames`]).
+    Renamed { from: PathBuf },
 }
 
 /// What a listed file holds, which says whether the diff window opens it. Ordered by
@@ -81,9 +88,16 @@ impl ChangedFile {
     /// A component that is not UTF-8 shows with U+FFFD in place of its bad bytes.
     #[must_use]
     pub fn display_path(&self) -> String {
-        let components: Vec<_> =
-            self.path.components().map(|c| c.as_os_str().to_string_lossy()).collect();
-        components.join("/")
+        display(&self.path)
+    }
+
+    /// A rename's old path, shown as [`ChangedFile::display_path`] shows a path.
+    #[must_use]
+    pub fn renamed_from(&self) -> Option<String> {
+        match &self.change {
+            Change::Renamed { from } => Some(display(from)),
+            Change::Added | Change::Deleted | Change::Modified => None,
+        }
     }
 
     /// Whether the diff window opens this file.
@@ -91,6 +105,14 @@ impl ChangedFile {
     pub fn opens(&self) -> bool {
         self.content == Content::Text
     }
+}
+
+/// `path` with `/` between its components on every platform, as git and jj print one;
+/// U+FFFD in place of bytes that are not UTF-8.
+#[must_use]
+pub fn display(path: &Path) -> String {
+    let components: Vec<_> = path.components().map(|c| c.as_os_str().to_string_lossy()).collect();
+    components.join("/")
 }
 
 /// The files that differ between `left` and `right`, ordered by path, component by
@@ -106,20 +128,87 @@ impl ChangedFile {
 pub fn changed_files(left: &Path, right: &Path) -> Result<Vec<ChangedFile>, DirDiffError> {
     let (left, right) = (walk(left)?, walk(right)?);
     let paths: BTreeSet<&PathBuf> = left.keys().chain(right.keys()).collect();
-    paths
+    let listed = paths
         .into_iter()
         .filter_map(|path| {
             compare(left.get(path), right.get(path))
                 .map(|found| {
-                    found.map(|(change, content)| ChangedFile {
-                        path: path.clone(),
-                        change,
-                        content,
+                    found.map(|(change, content, bytes)| {
+                        (ChangedFile { path: path.clone(), change, content }, bytes)
                     })
                 })
                 .transpose()
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(with_renames(listed)?)
+}
+
+/// A listed file, with its bytes when it is a regular file on one side only.
+pub(crate) type Listed = (ChangedFile, Option<Vec<u8>>);
+
+/// How a path differs, what it holds, and its bytes when it is a regular file on one side
+/// only.
+pub(crate) type Difference = (Change, Content, Option<Vec<u8>>);
+
+/// `listed` with each added file that renames a deleted one turned into a rename, and the
+/// deleted file dropped. Only regular files on one side, whose bytes `listed` holds, take
+/// part. The order stays: a rename is listed at its new path.
+///
+/// # Errors
+///
+/// [`VcsError::Backend`] when a file's blob ID cannot be computed.
+pub(crate) fn with_renames(listed: Vec<Listed>) -> Result<Vec<ChangedFile>, VcsError> {
+    let locations: Vec<String> = listed.iter().map(|(file, _)| file.display_path()).collect();
+    let ids = listed
+        .iter()
+        .map(|(_, bytes)| bytes.as_deref().map(vcs_git::blob_id).transpose())
+        .collect::<Result<Vec<_>, _>>()?;
+    // Each side's candidates, and the index in `listed` of each.
+    let (mut deleted, mut deleted_at, mut added, mut added_at) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    for (ix, ((file, bytes), id)) in listed.iter().zip(&ids).enumerate() {
+        let (Some(bytes), Some(id)) = (bytes, id) else {
+            continue;
+        };
+        let candidate = Candidate { id: *id, location: locations[ix].as_bytes(), bytes };
+        match file.change {
+            Change::Deleted => {
+                deleted.push(candidate);
+                deleted_at.push(ix);
+            }
+            Change::Added => {
+                added.push(candidate);
+                added_at.push(ix);
+            }
+            Change::Modified | Change::Renamed { .. } => {}
+        }
+    }
+    let found = rename::renames(&deleted, &added);
+    let mut source = vec![None; listed.len()];
+    let mut gone = vec![false; listed.len()];
+    for found in found {
+        let (from, to) = (deleted_at[found.deleted], added_at[found.added]);
+        source[to] = Some(from);
+        gone[from] = true;
+    }
+    let renamed_from: Vec<Option<(PathBuf, Content)>> = source
+        .iter()
+        .map(|from| from.map(|from| (listed[from].0.path.clone(), listed[from].0.content)))
+        .collect();
+    Ok(listed
+        .into_iter()
+        .zip(renamed_from)
+        .zip(gone)
+        .filter(|(_, gone)| !gone)
+        .map(|(((file, _), from), _)| match from {
+            Some((from, content)) => ChangedFile {
+                change: Change::Renamed { from },
+                content: file.content.max(content),
+                ..file
+            },
+            None => file,
+        })
+        .collect())
 }
 
 /// A non-directory entry below a root.
@@ -169,39 +258,49 @@ fn link(path: PathBuf) -> Result<Entry, DirDiffError> {
     Ok(if to_file { Entry::File(path) } else { Entry::Special(Some(target)) })
 }
 
-/// How a path differs between its two entries; `None` when it does not.
+/// How a path differs between its two entries, and the bytes of a regular file on one side
+/// only; `None` when it does not differ.
 fn compare(
     left: Option<&Entry>,
     right: Option<&Entry>,
-) -> Result<Option<(Change, Content)>, DirDiffError> {
+) -> Result<Option<Difference>, DirDiffError> {
     Ok(match (left, right) {
-        (Some(entry), None) => Some((Change::Deleted, content_of(entry)?)),
-        (None, Some(entry)) => Some((Change::Added, content_of(entry)?)),
+        (Some(entry), None) => {
+            let (content, bytes) = content_of(entry)?;
+            Some((Change::Deleted, content, bytes))
+        }
+        (None, Some(entry)) => {
+            let (content, bytes) = content_of(entry)?;
+            Some((Change::Added, content, bytes))
+        }
         (Some(Entry::File(left)), Some(Entry::File(right))) => {
             let left_bytes = fs::read(left).map_err(read_error(left))?;
             let right_bytes = fs::read(right).map_err(read_error(right))?;
             (left_bytes != right_bytes)
-                .then(|| (Change::Modified, decoded(left_bytes).max(decoded(right_bytes))))
+                .then(|| (Change::Modified, decoded(&left_bytes).max(decoded(&right_bytes)), None))
         }
         (Some(Entry::Special(Some(left))), Some(Entry::Special(Some(right)))) if left == right => {
             None
         }
-        (Some(_), Some(_)) => Some((Change::Modified, Content::Special)),
+        (Some(_), Some(_)) => Some((Change::Modified, Content::Special, None)),
         (None, None) => None,
     })
 }
 
-/// What `entry` holds.
-fn content_of(entry: &Entry) -> Result<Content, DirDiffError> {
+/// What `entry` holds, and a regular file's bytes.
+fn content_of(entry: &Entry) -> Result<(Content, Option<Vec<u8>>), DirDiffError> {
     match entry {
-        Entry::Special(_) => Ok(Content::Special),
-        Entry::File(path) => fs::read(path).map(decoded).map_err(read_error(path)),
+        Entry::Special(_) => Ok((Content::Special, None)),
+        Entry::File(path) => {
+            let bytes = fs::read(path).map_err(read_error(path))?;
+            Ok((decoded(&bytes), Some(bytes)))
+        }
     }
 }
 
 /// What a regular file's bytes hold, by spec §4.1's decoding.
-pub(crate) fn decoded(bytes: Vec<u8>) -> Content {
-    match Text::decode(bytes) {
+pub(crate) fn decoded(bytes: &[u8]) -> Content {
+    match Text::check(bytes) {
         Ok(_) => Content::Text,
         Err(DecodeError::Binary) => Content::Binary,
         Err(_) => Content::Undecodable,
@@ -239,9 +338,24 @@ mod tests {
             changed_files(&self.left, &self.right)
                 .unwrap()
                 .into_iter()
-                .map(|file| (file.display_path(), file.change, file.content))
+                .map(|file| (file.display_path(), file.change.clone(), file.content))
                 .collect()
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_is_never_a_rename() {
+        let dirs = Dirs::new(&[], &[]);
+        std::os::unix::fs::symlink("t", dirs.left.join("a")).unwrap();
+        std::os::unix::fs::symlink("t", dirs.right.join("b")).unwrap();
+        assert_eq!(
+            dirs.changed(),
+            [
+                entry("a", Change::Deleted, Content::Special),
+                entry("b", Change::Added, Content::Special)
+            ]
+        );
     }
 
     fn entry(path: &str, change: Change, content: Content) -> (String, Change, Content) {
@@ -303,15 +417,57 @@ mod tests {
         );
     }
 
+    fn renamed(from: &str) -> Change {
+        Change::Renamed { from: from.into() }
+    }
+
     #[test]
-    fn a_rename_is_a_delete_and_an_add() {
-        let dirs = Dirs::new(&[("old.rs", b"body\n")], &[("new.rs", b"body\n")]);
+    fn a_rename_is_listed_at_its_new_path() {
+        let dirs = Dirs::new(
+            &[("old.rs", b"body\n"), ("z.txt", b"z\n")],
+            &[("a/new.rs", b"body\n"), ("z.txt", b"z2\n")],
+        );
         assert_eq!(
             dirs.changed(),
             [
-                entry("new.rs", Change::Added, Content::Text),
-                entry("old.rs", Change::Deleted, Content::Text),
+                entry("a/new.rs", renamed("old.rs"), Content::Text),
+                entry("z.txt", Change::Modified, Content::Text),
             ]
+        );
+    }
+
+    #[test]
+    fn a_file_moved_and_edited_is_a_rename_while_it_keeps_half_its_bytes() {
+        // "4\n" goes: 6 of 8 bytes stay. Of `far`, 2 of 8 stay.
+        let dirs = Dirs::new(
+            &[("src/a.rs", b"1\n2\n3\n4\n"), ("far.rs", b"1\n2\n3\n4\n")],
+            &[("lib/a.rs", b"1\n2\n3\n5\n"), ("near.rs", b"1\n6\n7\n8\n")],
+        );
+        assert_eq!(
+            dirs.changed(),
+            [
+                entry("far.rs", Change::Deleted, Content::Text),
+                entry("lib/a.rs", renamed("src/a.rs"), Content::Text),
+                entry("near.rs", Change::Added, Content::Text),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_rename_takes_the_greater_content_of_its_sides() {
+        let dirs = Dirs::new(&[("a.bin", b"\0x\n")], &[("b.bin", b"\0x\n")]);
+        assert_eq!(dirs.changed(), [entry("b.bin", renamed("a.bin"), Content::Binary)]);
+        // Latin-1 bytes that keep 6 of 8: the old side is undecodable.
+        let dirs = Dirs::new(&[("a", b"1\n2\n3\n\xe9\n")], &[("b", b"1\n2\n3\n4\n")]);
+        assert_eq!(dirs.changed(), [entry("b", renamed("a"), Content::Undecodable)]);
+    }
+
+    #[test]
+    fn empty_files_are_never_renames() {
+        let dirs = Dirs::new(&[("a", b"")], &[("b", b"")]);
+        assert_eq!(
+            dirs.changed(),
+            [entry("a", Change::Deleted, Content::Text), entry("b", Change::Added, Content::Text)]
         );
     }
 

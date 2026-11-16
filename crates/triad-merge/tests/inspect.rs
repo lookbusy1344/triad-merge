@@ -471,3 +471,35 @@ fn diff_inspect_without_a_path_outside_a_repository_exits_3() {
     );
     assert_eq!(result.stdout, b"");
 }
+
+#[test]
+fn diff_inspect_prints_a_rename_with_both_paths() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let (left, right) = (root.path().join("l"), root.path().join("r"));
+    for dir in [&left, &right] {
+        std::fs::create_dir(dir).expect("dir");
+    }
+    std::fs::write(left.join("old.txt"), "1\n2\n3\n4\n").expect("written");
+    std::fs::create_dir(right.join("sub")).expect("dir");
+    std::fs::write(right.join("sub").join("new.txt"), "1\n2\n3\n5\n").expect("written");
+    let text = triad(&["diff".as_ref(), "--inspect".as_ref(), left.as_os_str(), right.as_os_str()]);
+    assert_eq!(
+        String::from_utf8_lossy(&text.stdout),
+        "renamed text old.txt => sub/new.txt\nfiles: 1\n"
+    );
+    assert_eq!(text.status.code(), Some(1));
+    let json = triad(&[
+        "diff".as_ref(),
+        "--inspect".as_ref(),
+        "--json".as_ref(),
+        left.as_os_str(),
+        right.as_os_str(),
+    ]);
+    let value: serde_json::Value = serde_json::from_slice(&json.stdout).expect("stdout is JSON");
+    assert_eq!(
+        value["files"],
+        serde_json::json!([
+            { "path": "sub/new.txt", "change": "renamed", "from": "old.txt", "content": "text" }
+        ])
+    );
+}

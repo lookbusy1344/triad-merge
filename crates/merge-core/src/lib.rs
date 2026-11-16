@@ -14,6 +14,7 @@ pub mod markers;
 pub mod merge3;
 pub mod pattern;
 mod region_lines;
+pub mod rename;
 pub mod suggest;
 pub mod text;
 pub mod unusual;

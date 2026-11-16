@@ -258,6 +258,13 @@ fn the_changed_paths_are_the_files_the_working_copy_changed(fixture: &Fixture) {
     assert_eq!(changed(repo.as_ref(), &fixture.parent()), ["a.txt", "gone.txt", "new.txt"]);
 }
 
+fn a_renamed_file_lists_both_paths(fixture: &Fixture) {
+    // git: staged, as `git mv` leaves it, which git's status pairs as a rename.
+    let body: &[(&str, &[u8])] = &[("new.txt", b"body\n")];
+    fixture.change_on_disk(&[("old.txt", b"body\n")], body, body);
+    assert_eq!(changed(fixture.open().as_ref(), &fixture.parent()), ["new.txt", "old.txt"]);
+}
+
 fn a_staged_change_counts_as_a_change(fixture: &Fixture) {
     // jj has no index: the change is simply in the working copy.
     let committed: &[(&str, &[u8])] = &[("a.txt", b"1\n"), ("b.txt", b"b\n")];
@@ -898,6 +905,7 @@ macro_rules! suite {
                 a_save_with_markers_leaves_its_conflict,
                 the_changed_paths_are_the_files_the_working_copy_changed,
                 a_staged_change_counts_as_a_change,
+                a_renamed_file_lists_both_paths,
                 a_clean_working_copy_has_no_changed_paths,
                 changed_paths_come_in_path_order,
                 changed_paths_compare_with_any_revision,

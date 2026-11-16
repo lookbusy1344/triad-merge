@@ -10,7 +10,7 @@ use vcs_git::GitRepository;
 use vcs_jj::JjRepository;
 use vcs_jj::config::ConfigEnv;
 
-use crate::dir_diff::{self, Change, ChangedFile, Content};
+use crate::dir_diff::{self, Change, ChangedFile, Content, Difference};
 use crate::repository::RunRepository;
 
 /// What `diff PATH` shows: a revision of the file on the left, the working copy on the right.
@@ -255,7 +255,7 @@ pub fn changed_files(repo: &mut RunRepository, rev: Option<&str>) -> Result<List
     );
     let spec = RevSpec::Expr(rev.clone());
     let root = repo.root().as_std_path().to_owned();
-    let mut files = Vec::new();
+    let mut listed = Vec::new();
     for path in repo.changed_paths(&spec)? {
         let before = match repo.file_at(&path, &spec) {
             Ok(Some(bytes)) => Side::File(bytes),
@@ -264,31 +264,31 @@ pub fn changed_files(repo: &mut RunRepository, rev: Option<&str>) -> Result<List
             Err(error) => return Err(error.into()),
         };
         let after = on_disk(&root.join(&path))?;
-        if let Some((change, content)) = compared(before, after) {
-            files.push(ChangedFile { path: path.into_std_path_buf(), change, content });
+        if let Some((change, content, bytes)) = compared(before, after) {
+            listed.push((ChangedFile { path: path.into_std_path_buf(), change, content }, bytes));
         }
     }
-    Ok(Listing { root, rev, files })
+    Ok(Listing { root, rev, files: dir_diff::with_renames(listed)? })
 }
 
-/// Load the file at `relative`, a path [`changed_files`] listed, against the listing's
-/// revision `rev`, from the run's repository, whose root is `root`. The right side is the
-/// path on disk, which may no longer exist.
+/// Load a file [`changed_files`] listed: `left` at the listing's revision `rev` against
+/// `right` on disk, both relative to the root `root` of the run's repository. The two differ
+/// for a rename. The file on disk may no longer exist.
 ///
 /// # Errors
 ///
-/// [`NativeError::Vcs`] when the path is not UTF-8 or the revision cannot be read, and
+/// [`NativeError::Vcs`] when `left` is not UTF-8 or the revision cannot be read, and
 /// [`NativeError::Decode`] when the revision's file is not text.
 pub fn load_listed(
     repo: &mut RunRepository,
     root: &Path,
     rev: &str,
-    relative: &Path,
+    left: &Path,
+    right: &Path,
 ) -> Result<NativeDiff, NativeError> {
-    let path =
-        Utf8Path::from_path(relative).ok_or_else(|| VcsError::NotUtf8(relative.to_owned()))?;
+    let path = Utf8Path::from_path(left).ok_or_else(|| VcsError::NotUtf8(left.to_owned()))?;
     let spec = RevSpec::Expr(rev.to_owned());
-    read_left(repo.require()?, path, &spec, rev, &root.join(relative))
+    read_left(repo.require()?, path, &spec, rev, &root.join(right))
 }
 
 /// The parent revisions [`changed_files`] compares with by default.
@@ -315,17 +315,22 @@ fn on_disk(path: &Path) -> Result<Side, NativeError> {
     }
 }
 
-/// How a path changed from `before` to `after`; `None` when it did not.
-fn compared(before: Side, after: Side) -> Option<(Change, Content)> {
-    let content = |side: Side| match side {
+/// How a path changed from `before` to `after`, and the bytes of a regular file on one side
+/// only; `None` when it did not change.
+fn compared(before: Side, after: Side) -> Option<Difference> {
+    let content = |side: &Side| match side {
         Side::File(bytes) => dir_diff::decoded(bytes),
         Side::Absent | Side::Special => Content::Special,
+    };
+    let bytes = |side: Side| match side {
+        Side::File(bytes) => Some(bytes),
+        Side::Absent | Side::Special => None,
     };
     match (before, after) {
         (Side::Absent, Side::Absent) => None,
         (Side::File(a), Side::File(b)) if a == b => None,
-        (Side::Absent, side) => Some((Change::Added, content(side))),
-        (side, Side::Absent) => Some((Change::Deleted, content(side))),
-        (a, b) => Some((Change::Modified, content(a).max(content(b)))),
+        (Side::Absent, side) => Some((Change::Added, content(&side), bytes(side))),
+        (side, Side::Absent) => Some((Change::Deleted, content(&side), bytes(side))),
+        (a, b) => Some((Change::Modified, content(&a).max(content(&b)), None)),
     }
 }

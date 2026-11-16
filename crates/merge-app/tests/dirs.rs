@@ -144,7 +144,7 @@ fn listed(cx: &mut TestAppContext, view: &Entity<DirWindow>) -> Vec<(String, Cha
         view.read(cx)
             .files()
             .iter()
-            .map(|file| (file.display_path(), file.change, file.content))
+            .map(|file| (file.display_path(), file.change.clone(), file.content))
             .collect()
     })
 }
@@ -184,6 +184,37 @@ fn the_window_lists_the_files_that_differ_by_path(cx: &mut TestAppContext) {
     assert_eq!(label(cx, started.window, file_id(A_RS)), "src/a.rs modified");
     assert_eq!(diff_windows(cx).len(), 0);
     assert_eq!(note(cx, &started.view), None);
+}
+
+#[gpui_kit::test]
+fn a_renamed_file_opens_its_old_file_on_the_left(cx: &mut TestAppContext) {
+    let dirs = Dirs::new(&[("old.rs", b"1\n2\n3\n4\n")], &[("lib/new.rs", b"1\n2\n3\n5\n")]);
+    let started = open(cx, dirs.start());
+    assert_eq!(label(cx, started.window, file_id(0)), "lib/new.rs renamed from old.rs");
+    click(cx, started.window, file_id(0));
+    let [(_, view)] = &diff_windows(cx)[..] else { panic!("one diff window") };
+    let left = path_text(&dirs.side("left").join("old.rs"));
+    let right = path_text(&dirs.side("right").join("lib").join("new.rs"));
+    assert_eq!(side(cx, view, Side::Left), ("1\n2\n3\n4\n".to_owned(), left, false));
+    assert_eq!(side(cx, view, Side::Right), ("1\n2\n3\n5\n".to_owned(), right, false));
+}
+
+#[gpui_kit::test]
+fn a_renamed_file_opens_against_its_old_path_at_the_revision(cx: &mut TestAppContext) {
+    let fixture = vcs_git::testing::Fixture::new();
+    fixture.commit("one", &[("old.txt", b"1\n2\n3\n4\n")]);
+    fixture.stage(&[("new.txt", b"1\n2\n3\n4\n")]);
+    fixture.write("new.txt", b"1\n2\n3\n5\n");
+    let started = open(cx, changes_start(fixture.root(), None));
+    assert_eq!(label(cx, started.window, file_id(0)), "new.txt renamed from old.txt");
+    click(cx, started.window, file_id(0));
+    let [(_, view)] = &diff_windows(cx)[..] else { panic!("one diff window") };
+    let working = dunce::canonicalize(fixture.root()).expect("the root").join("new.txt");
+    assert_eq!(side(cx, view, Side::Left), ("1\n2\n3\n4\n".to_owned(), "HEAD".to_owned(), true));
+    assert_eq!(
+        side(cx, view, Side::Right),
+        ("1\n2\n3\n5\n".to_owned(), path_text(&working), false)
+    );
 }
 
 #[gpui_kit::test]

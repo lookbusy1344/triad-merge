@@ -141,6 +141,26 @@ impl Text {
         Ok(Text::new(encoding, content))
     }
 
+    /// What [`Text::decode`] would make of `bytes`, without building the text: the encoding,
+    /// or the same error.
+    ///
+    /// # Errors
+    ///
+    /// As [`Text::decode`].
+    pub fn check(bytes: &[u8]) -> Result<Encoding, DecodeError> {
+        if let Some(rest) = bytes.strip_prefix(&UTF8_BOM) {
+            check_utf8(rest, UTF8_BOM.len()).map(|()| Encoding::Utf8Bom)
+        } else if let Some(rest) = bytes.strip_prefix(&UTF16LE_BOM) {
+            check_utf16(rest, u16::from_le_bytes).map(|()| Encoding::Utf16Le)
+        } else if let Some(rest) = bytes.strip_prefix(&UTF16BE_BOM) {
+            check_utf16(rest, u16::from_be_bytes).map(|()| Encoding::Utf16Be)
+        } else if bytes.iter().take(BINARY_SNIFF_BYTES).any(|&byte| byte == 0) {
+            Err(DecodeError::Binary)
+        } else {
+            check_utf8(bytes, 0).map(|()| Encoding::Utf8)
+        }
+    }
+
     pub(crate) fn new(encoding: Encoding, content: String) -> Text {
         let line_starts = if content.is_empty() {
             Vec::new()
@@ -275,6 +295,27 @@ fn decode_utf16(bytes: &[u8], unit: fn([u8; 2]) -> u16) -> Result<String, Decode
             }
         })
         .map(|(text, _)| text)
+}
+
+fn check_utf8(bytes: &[u8], offset: usize) -> Result<(), DecodeError> {
+    std::str::from_utf8(bytes)
+        .map(drop)
+        .map_err(|error| DecodeError::InvalidUtf8 { offset: offset + error.valid_up_to() })
+}
+
+/// `bytes` follow a two-byte byte order mark.
+fn check_utf16(bytes: &[u8], unit: fn([u8; 2]) -> u16) -> Result<(), DecodeError> {
+    let (pairs, []) = bytes.as_chunks::<UTF16_UNIT_BYTES>() else {
+        return Err(DecodeError::OddUtf16Length);
+    };
+    char::decode_utf16(pairs.iter().copied().map(unit))
+        .try_fold(0, |units_read, decoded| match decoded {
+            Ok(c) => Ok(units_read + c.len_utf16()),
+            Err(_) => Err(DecodeError::InvalidUtf16 {
+                offset: UTF16_BOM_LEN + units_read * UTF16_UNIT_BYTES,
+            }),
+        })
+        .map(drop)
 }
 
 /// The output's encoding: base's, or left's when base is empty (spec §4.1).
@@ -554,6 +595,36 @@ mod tests {
     fn empty_input_is_empty_utf8() {
         let text = decoded(b"");
         assert_eq!((text.encoding(), text.content(), text.line_count()), (Encoding::Utf8, "", 0));
+    }
+
+    #[test]
+    fn check_agrees_with_decode() {
+        let cases: [&[u8]; 12] = [
+            b"",
+            b"plain\n",
+            b"\xEF\xBB\xBFbom\n",
+            b"\xEF\xBB\xBFa\0b",
+            b"ab\xFFcd",
+            b"\xEF\xBB\xBFab\xFF",
+            b"\xFF\xFEa\0b\0",
+            b"\xFE\xFF\0a\0b",
+            b"\xFF\xFEa\0b",
+            b"\xFF\xFEa\0\x00\xD8b\0",
+            b"\xFE\xFF\0a\xDC\x00",
+            b"a\0b",
+        ];
+        for bytes in cases {
+            let decoded = Text::decode(bytes).map(|text| text.encoding());
+            assert_eq!(Text::check(bytes), decoded, "{bytes:?}");
+        }
+        // The values decode gives, by hand: an error offset counts the byte order mark.
+        assert_eq!(Text::check(b"\xEF\xBB\xBFab\xFF"), Err(DecodeError::InvalidUtf8 { offset: 5 }));
+        assert_eq!(
+            Text::check(b"\xFF\xFEa\0\x00\xD8b\0"),
+            Err(DecodeError::InvalidUtf16 { offset: 4 })
+        );
+        assert_eq!(Text::check(b"\xFF\xFEa\0b"), Err(DecodeError::OddUtf16Length));
+        assert_eq!(Text::check(b"\xFE\xFF\0a\0b"), Ok(Encoding::Utf16Be));
     }
 
     // Binary detection

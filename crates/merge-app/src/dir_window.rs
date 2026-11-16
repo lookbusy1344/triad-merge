@@ -197,7 +197,12 @@ fn load_changed(
 ) -> Result<ToolDiff, String> {
     let shown = file.display_path();
     let mut repo = changes_repository(&root, jj_config);
-    let loaded = native::load_listed(&mut repo, &root, &rev, &file.path).map_err(to_string)?;
+    let from = match &file.change {
+        Change::Renamed { from } => from,
+        Change::Added | Change::Deleted | Change::Modified => &file.path,
+    };
+    let loaded =
+        native::load_listed(&mut repo, &root, &rev, from, &file.path).map_err(to_string)?;
     let path = loaded.right.clone();
     let (left, right) = match file.change {
         Change::Deleted => {
@@ -205,7 +210,9 @@ fn load_changed(
             let left = DiffFile::revision(loaded.left, loaded.left_title);
             (left, DiffFile::revision(empty, format!("{shown} {NO_FILE}")))
         }
-        Change::Added | Change::Modified => crate::run::native_sides(loaded).map_err(to_string)?,
+        Change::Added | Change::Modified | Change::Renamed { .. } => {
+            crate::run::native_sides(loaded).map_err(to_string)?
+        }
     };
     let kind = repo.kind();
     let origins = DiffLookup::Native { path, rev: Some(rev), repo: Handoff::new(repo) };
@@ -222,12 +229,13 @@ fn load_file(
 ) -> Result<ToolDiff, String> {
     let shown = file.display_path();
     let absent = || Some(format!("{shown} {NO_FILE}"));
-    let absent = match file.change {
-        Change::Added => [absent(), None],
-        Change::Deleted => [None, absent()],
-        Change::Modified => [None, None],
+    let (absent, from) = match &file.change {
+        Change::Added => ([absent(), None], &file.path),
+        Change::Deleted => ([None, absent()], &file.path),
+        Change::Modified => ([None, None], &file.path),
+        Change::Renamed { from } => ([None, None], from),
     };
-    let paths = [left.join(&file.path), right.join(&file.path)];
+    let paths = [left.join(from), right.join(&file.path)];
     let repo = RunRepository::of_diff_tool(Some(&cwd), &paths[1]);
     let pair = ToolPair { paths, absent, readonly, title: Some(shown) };
     crate::run::tool_diff(pair, repo, cwd).map_err(|error| error.to_string())

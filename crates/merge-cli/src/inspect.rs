@@ -87,6 +87,9 @@ struct DirsReport {
 struct DirFile {
     path: String,
     change: &'static str,
+    /// A rename's old path.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    from: Option<String>,
     content: &'static str,
 }
 
@@ -204,7 +207,9 @@ pub fn files_report(
                 Change::Added => "added",
                 Change::Deleted => "deleted",
                 Change::Modified => "modified",
+                Change::Renamed { .. } => "renamed",
             },
+            from: file.renamed_from(),
             content: match file.content {
                 Content::Text => "text",
                 Content::Undecodable => "undecodable",
@@ -218,7 +223,10 @@ pub fn files_report(
     let text = if json {
         to_json(&report)?
     } else {
-        let lines = report.files.iter().map(|f| format!("{} {} {}", f.change, f.content, f.path));
+        let lines = report.files.iter().map(|f| match &f.from {
+            Some(from) => format!("{} {} {from} => {}", f.change, f.content, f.path),
+            None => format!("{} {} {}", f.change, f.content, f.path),
+        });
         to_text(&[], lines, &format!("files: {}", report.changes))
     };
     Ok((text, code))
