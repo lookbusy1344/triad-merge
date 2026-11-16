@@ -114,6 +114,8 @@ use merge_session::session::{CannotSave, PreviewJob, Refused, SaveJob, SaveTarge
 /// One row of the side panes at the default text size: an editor line, so the rows and the
 /// result stay level. [`Typography::line_height`] gives it for other sizes.
 pub const ROW_HEIGHT: Pixels = LINE_HEIGHT;
+/// The space between two pills on one row, as on a base row holding both sides' moves of one block.
+const MOVE_PILL_GAP: Pixels = px(4.);
 const LINE_NUMBER_WIDTH: Pixels = px(52.);
 const PICK_WIDTH: Pixels = px(18.);
 /// Space between a pane's left edge and its pick target.
@@ -213,10 +215,16 @@ pub fn cell_id(pane: usize, row: RowIx) -> ElementId {
     ElementId::Name(format!("cell-{pane}-{row}").into())
 }
 
-/// The pill on `row` of `pane` over one end of a moved block (`PLAN.md` §G16).
+/// The pill on `row` of `pane` over one end of a moved block, naming a line of `other`
+/// (`PLAN.md` §G16). A base row may hold one end of each side's move, so `other` tells them
+/// apart.
 #[must_use]
-pub fn move_pill_id(pane: usize, row: RowIx) -> ElementId {
-    ElementId::Name(format!("move-{pane}-{row}").into())
+pub fn move_pill_id(pane: usize, row: RowIx, other: Source) -> ElementId {
+    let other = match other {
+        Source::Side(i) => format!("side{i}"),
+        Source::Base(i) => format!("base{i}"),
+    };
+    ElementId::Name(format!("move-{pane}-{row}-{other}").into())
 }
 
 /// The fold row that stands in for the hidden rows from `row` on (spec §5).
@@ -2161,6 +2169,21 @@ impl MergeWindow {
         }
     }
 
+    /// Go to the other end of a move, in `region`, at a line of `other`. An end at a base
+    /// line shows the base pane first, so the end has rows to land on.
+    fn go_to_move_end(
+        &mut self,
+        other: Source,
+        region: RegionIx,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if matches!(other, Source::Base(_)) && self.panes == PaneSet::LeftRight {
+            self.show_panes(PaneSet::LeftBaseRight, cx);
+        }
+        self.jump(region, window, cx);
+    }
+
     /// Go to `region` as Next and Previous do, with their blink.
     fn jump(&mut self, region: RegionIx, window: &mut Window, cx: &mut Context<Self>) {
         self.go_to(region, window, cx);
@@ -2844,6 +2867,11 @@ impl MergeWindow {
             PaneSet::LeftBaseRight => PaneSet::LeftRight,
             PaneSet::Sides(_) => return,
         };
+        self.show_panes(panes, cx);
+    }
+
+    /// Lay the top panes out as `panes`.
+    fn show_panes(&mut self, panes: PaneSet, cx: &mut Context<Self>) {
         let rows = match RowMap::new(self.session.document(), panes) {
             Ok(rows) => rows,
             Err(error) => {
@@ -3108,11 +3136,13 @@ impl MergeWindow {
             .map(|(pane, ((source, line), spans))| {
                 let cell = line.map(|n| (n, inputs.text(source).line(n)));
                 let deleted = rows::deleted_lines(self.session.document().region(region), source);
-                let move_end =
-                    self.move_ends.iter().find(|e| e.pane == pane && e.rows.contains(&index));
+                let moved = self
+                    .move_ends
+                    .iter()
+                    .any(|e| e.pane == pane && e.rows.contains(&index) && e.tinted());
                 let tone = marks::input_tone(kind, source);
-                let band = move_end
-                    .map(|_| tones.band(MOVE_TONE))
+                let band = moved
+                    .then(|| tones.band(MOVE_TONE))
                     .or_else(|| tone.map(|tone| tones.band(tone)));
                 let pill = pills.next().flatten();
                 let changed = changed_colour(tones, kind, source);
@@ -3218,8 +3248,9 @@ impl MergeWindow {
 }
 
 impl MergeWindow {
-    /// Each of `panes` panes' move pill on `row`: one where a move end starts there and the
-    /// row is its first display row.
+    /// Each of `panes` panes' move pills on `row`, when it is a display row's first: one for
+    /// each move end starting there, in [`moves::move_ends`]' order, in a run against the
+    /// pane's right edge.
     fn row_pills(
         &self,
         row: RowIx,
@@ -3229,20 +3260,34 @@ impl MergeWindow {
     ) -> Vec<Option<AnyElement>> {
         (0..panes)
             .map(|pane| {
-                let end = self.move_ends.iter().find(|e| e.pane == pane && e.rows.start == row);
-                end.filter(|_| head).map(|end| self.move_pill(end, row, cx))
+                let mut ends = self
+                    .move_ends
+                    .iter()
+                    .filter(|e| head && e.pane == pane && e.rows.start == row)
+                    .peekable();
+                ends.peek()?;
+                let pills: Vec<AnyElement> = ends.map(|end| self.move_pill(end, row, cx)).collect();
+                Some(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .right(MOVE_PILL_INSET)
+                        .flex()
+                        .gap(MOVE_PILL_GAP)
+                        .children(pills)
+                        .into_any_element(),
+                )
             })
             .collect()
     }
 
-    /// The pill on `row`, the first of move end `end`, against its pane's right edge: an
-    /// arrow toward the other end and the line it starts on. A press goes there and selects
-    /// nothing in the pane.
+    /// The pill on `row`, the first of move end `end`: an arrow toward the other end and the
+    /// line it starts on. A press goes there and selects nothing in the pane.
     fn move_pill(&self, end: &MoveEnd, row: RowIx, cx: &mut Context<Self>) -> AnyElement {
         let up = end.other_is_above();
-        let to = end.other_region;
+        let (other, to) = (end.other, end.other_region);
         let pill = move_pill(
-            move_pill_id(end.pane, row),
+            move_pill_id(end.pane, row, end.other),
             strings::merge_move_pill(end.other, end.other_line, up),
             strings::merge_move_pill_label(end.other, end.other_line),
             self.typography.line_height(),
@@ -3251,9 +3296,9 @@ impl MergeWindow {
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
             cx.stop_propagation();
-            this.jump(to, window, cx);
+            this.go_to_move_end(other, to, window, cx);
         }));
-        div().absolute().top_0().right(MOVE_PILL_INSET).child(pill).into_any_element()
+        pill.into_any_element()
     }
 
     /// The row that stands in for `fold`'s hidden rows in every top pane: the count of
@@ -3929,8 +3974,8 @@ impl Render for MergeWindow {
             .on_action(cx.listener(|this, _: &GoToMoveEnd, window, cx| {
                 this.send_edits(window, cx);
                 if let Some(end) = moves::end_in(&this.move_ends, this.current_region(cx)) {
-                    let to = end.other_region;
-                    this.jump(to, window, cx);
+                    let (other, to) = (end.other, end.other_region);
+                    this.go_to_move_end(other, to, window, cx);
                 }
             }))
             .on_action(cx.listener(Self::toggle_base_pane))

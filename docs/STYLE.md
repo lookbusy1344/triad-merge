@@ -35,7 +35,7 @@ Zed's scale is 14, 12 and 10 px; triad's chrome takes 12 px. Two settings size t
 ## Controls
 
 - Every `Button` and `Input` is `.small()`.
-- A pill over one end of a moved block is a `move_pill::move_pill`, in both the diff window and the merge window's top panes: one row tall, 4 px padding, 16 px in from the pane's right edge, translucent pale blue with bold deep blue text at the chip text size.
+- A pill over one end of a moved block is a `move_pill::move_pill`; § Moved blocks gives where it goes.
 - A menu is a `menu_button::MenuButton`: 20 px rows, a 12 px icon, the label and the action's key, in the text size it is given. A row that toggles a state is a checkbox row, with a tick after its label while the state is on. gpui-component's `PopupMenu` has 26 px rows with 14 px text, which triad cannot shrink (`docs/gpui-kit-issues.md`).
 - Toolbar and header buttons are `.ghost()`. A dialog has one `.primary()` button, the one that finishes it; a tool window has at most one, the one that writes, such as absorb's Apply. A button that only shows something, such as Preview Save, stays ghost.
 - Heights: a small control 24 px, a list row 24 px, a tool window header 32 px, a menu row 20 px, a tab 22 px inside a 2 px inset.
@@ -71,6 +71,22 @@ The directory, stack, history and absorb windows are built from `tool_window` an
 ## Colour
 
 Take every colour from the theme: `foreground`, `muted_foreground`, `background`, `muted`, `border`, and the status colours `success`, `warning`, `info` and `danger`. Merge colours come from `tones.rs` and the settings, syntax colours from `syntax_colours.rs`. Removed and added lines shown outside an editor, as in the absorb window, take the editor font and size and the left and right tones' bands, as the diff window's do. A new colour literal in a view is a named constant with a comment giving the reason.
+
+## Moved blocks
+
+One look marks a moved block wherever triad shows one (spec §4.3, §4.6, §5). Build from these parts; a new view of moves uses them, never a variant.
+
+| Part | Look | Where | Source |
+|---|---|---|---|
+| Band | The move tone, `MOVE_TONE` (`Tone::Both`, teal), full-line, in place of the region's or side's tone | Both ends in the diff window; both ends in the merge window's side panes. Never base, whose lines keep their region's look, and never the result, whose bands name each line's input | `merge_view::diff::MOVE_TONE` |
+| Pill | One row tall, 4 px padding, 16 px in from the pane's right edge, translucent pale blue, bold deep blue text at the chip text size. An arrow toward the other end, then its input's initial and first line: `R5 →`, `↓ L40`, `↑ B1` | The first row of each end in the diff window and the merge window's top panes, base included; never in the result. Several pills on one row stand in move order, 4 px apart (`MOVE_PILL_GAP`) | `move_pill::move_pill` |
+| Gutter mark | `M` in the move tone | The diff window only. The merge window's top-pane gutters hold pick targets, and the result's gutter names each line's input | `merge_view::diff::MOVE_MARK` |
+| Duplicate on the ruler | The copy's tone inside a 2 px outline in the conflict tone; the conflict tone alone on a mark too short for both | The merge window's ruler, over each copy the result holds | `DUPLICATE_OUTLINE` in `ruler.rs` |
+
+- A pill's press and Go to Other End of Move (⇧⌘M) go to the other end with a jump's blink. An end named by a base line shows the base pane first.
+- Initials: `L` left, `R` right, `B` base, as the result gutter's marks.
+- The pill names the other end's input and line; the accessible name spells both out: `Moved block: go to its other end, left line 40`.
+- The status bar counts duplicates, never moves.
 
 ## Constants
 

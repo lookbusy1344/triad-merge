@@ -15,20 +15,23 @@ pub enum EndKind {
     Origin,
     /// Where the side inserted the block: the rows of its lines.
     Destination,
+    /// The block's own lines in the base pane.
+    Base,
 }
 
-/// One end of a side's move, in that side's pane.
+/// One end of a side's move: its origin and destination in that side's pane, and the block's
+/// own lines in the base pane.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MoveEnd {
-    /// The pane of the side that moved the block.
+    /// The pane of the side that moved the block, or the base pane for [`EndKind::Base`].
     pub pane: usize,
     pub kind: EndKind,
     /// The region holding this end.
     pub region: RegionIx,
     /// This end's rows in the pane, one per block line, within its region's rows.
     pub rows: Range<RowIx>,
-    /// The input and line the other end starts at: the side's line at an origin, base's line
-    /// at a destination.
+    /// The input and line the other end starts at: the side's line at an origin and in base,
+    /// base's line at a destination.
     pub other: Source,
     pub other_line: usize,
     /// The region holding the other end.
@@ -36,6 +39,13 @@ pub struct MoveEnd {
 }
 
 impl MoveEnd {
+    /// Whether the end's rows take the move tone: a side's ends do; base's lines keep their
+    /// region's look, and only the pill marks them.
+    #[must_use]
+    pub fn tinted(&self) -> bool {
+        self.kind != EndKind::Base
+    }
+
     /// Whether the other end lies above this one, in an earlier region.
     #[must_use]
     pub fn other_is_above(&self) -> bool {
@@ -43,7 +53,8 @@ impl MoveEnd {
     }
 }
 
-/// The ends of `doc`'s moves that have rows in a pane `rows` shows, ordered by pane, then row.
+/// The ends of `doc`'s moves that have rows in a pane `rows` shows, ordered by pane, then row,
+/// then move. While the base pane shows, each move has an end on its base lines there.
 /// An origin takes the rows of its region from the block's first base line, as many as the
 /// block has lines and the region has rows from there; a region with no rows from there, as
 /// a deletion by both sides has while the base pane hides, gives no origin.
@@ -78,7 +89,19 @@ pub fn move_ends(doc: &MergeDocument, rows: &RowMap) -> Vec<MoveEnd> {
                 other_line: m.lines.start,
                 other_region: region,
             });
-            Some(origin.into_iter().chain([destination]))
+            let base = rows.pane_of(Source::Base(0)).and_then(|base_pane| {
+                let first = rows.row_of_input_line(regions, Source::Base(0), m.base.start)?;
+                Some(MoveEnd {
+                    pane: base_pane,
+                    kind: EndKind::Base,
+                    region: origin_region,
+                    rows: first..first.plus(m.base.len()),
+                    other: side,
+                    other_line: m.lines.start,
+                    other_region: region,
+                })
+            });
+            Some(origin.into_iter().chain([destination]).chain(base))
         })
         .flatten()
         .collect();
@@ -168,21 +191,39 @@ mod tests {
             end(0, EndKind::Destination, 2, 5..7, Source::Base(0), 0, 0),
         ];
         assert_eq!(ends(BLOCK_FIRST, BLOCK_LAST, BLOCK_FIRST, PaneSet::LeftRight), expected);
-        assert_eq!(ends(BLOCK_FIRST, BLOCK_LAST, BLOCK_FIRST, PaneSet::LeftBaseRight), expected);
+    }
+
+    #[test]
+    fn with_base_shown_a_move_has_a_third_end_on_its_base_lines() {
+        // Base pane 1: base's `m1 m2`, rows 0–1, naming left's line 3 in region 2.
+        assert_eq!(
+            ends(BLOCK_FIRST, BLOCK_LAST, BLOCK_FIRST, PaneSet::LeftBaseRight),
+            [
+                end(0, EndKind::Origin, 0, 0..2, Source::Side(0), 3, 2),
+                end(0, EndKind::Destination, 2, 5..7, Source::Base(0), 0, 0),
+                end(1, EndKind::Base, 0, 0..2, Source::Side(0), 3, 2),
+            ]
+        );
     }
 
     #[test]
     fn a_right_move_has_its_ends_in_the_right_pane() {
         // Right moves `m1 m2` up: right inserts it (rows 0–1), `a b c` (rows 2–4), right
         // deletes it (rows 5–6). Right is pane 1 without base and pane 2 with it.
-        let expected = |pane| {
+        let side = |pane| {
             [
                 end(pane, EndKind::Destination, 0, 0..2, Source::Base(0), 3, 2),
                 end(pane, EndKind::Origin, 2, 5..7, Source::Side(1), 0, 0),
             ]
         };
-        assert_eq!(ends(BLOCK_LAST, BLOCK_LAST, BLOCK_FIRST, PaneSet::LeftRight), expected(1));
-        assert_eq!(ends(BLOCK_LAST, BLOCK_LAST, BLOCK_FIRST, PaneSet::LeftBaseRight), expected(2));
+        assert_eq!(ends(BLOCK_LAST, BLOCK_LAST, BLOCK_FIRST, PaneSet::LeftRight), side(1));
+        // Base's `m1 m2`, base lines 3–4, sit on rows 5–6 of region 2.
+        let base = end(1, EndKind::Base, 2, 5..7, Source::Side(1), 0, 0);
+        let [destination, origin] = side(2);
+        assert_eq!(
+            ends(BLOCK_LAST, BLOCK_LAST, BLOCK_FIRST, PaneSet::LeftBaseRight),
+            [base, destination, origin]
+        );
     }
 
     #[test]
@@ -202,13 +243,16 @@ mod tests {
 
     #[test]
     fn a_deletion_by_both_sides_has_an_origin_in_each_side_with_base_shown() {
-        // With base, region 0 has two rows; every later row moves down two.
+        // With base, region 0 has two rows; every later row moves down two. Base's `m1 m2`
+        // holds one end of each side's move, left's first.
         let [base, left, right] = TWICE;
         assert_eq!(
             ends(base, left, right, PaneSet::LeftBaseRight),
             [
                 end(0, EndKind::Origin, 0, 0..2, Source::Side(0), 5, 4),
                 end(0, EndKind::Destination, 4, 9..11, Source::Base(0), 0, 0),
+                end(1, EndKind::Base, 0, 0..2, Source::Side(0), 5, 4),
+                end(1, EndKind::Base, 0, 0..2, Source::Side(1), 3, 2),
                 end(2, EndKind::Origin, 0, 0..2, Source::Side(1), 3, 2),
                 end(2, EndKind::Destination, 2, 5..7, Source::Base(0), 0, 0),
             ]
@@ -272,6 +316,16 @@ mod tests {
         let found = ends(BLOCK_LAST, BLOCK_LAST, BLOCK_FIRST, PaneSet::LeftRight);
         let above: Vec<bool> = found.iter().map(MoveEnd::other_is_above).collect();
         assert_eq!(above, [false, true], "right's destination first, then its origin");
+    }
+
+    #[test]
+    fn only_the_sides_ends_take_the_move_tone() {
+        let found = ends(BLOCK_FIRST, BLOCK_LAST, BLOCK_FIRST, PaneSet::LeftBaseRight);
+        let tinted: Vec<(EndKind, bool)> = found.iter().map(|e| (e.kind, e.tinted())).collect();
+        assert_eq!(
+            tinted,
+            [(EndKind::Origin, true), (EndKind::Destination, true), (EndKind::Base, false)]
+        );
     }
 
     #[test]

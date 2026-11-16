@@ -8,7 +8,8 @@ use gpui_kit::{Action as _, TestAppContext, px};
 use merge_app::window::{cell_id, move_pill_id};
 use merge_app::{GoToMoveEnd, TakeBase, WindowSettings};
 use merge_core::index::RegionIx;
-use merge_view::rows::RowIx;
+use merge_core::merge3::Source;
+use merge_view::rows::{PaneSet, RowIx};
 
 /// `m1 m2` before `a b c`, which outweighs it in every diff.
 const BLOCK_FIRST: &str = "m1\nm2\na\nb\nc\n";
@@ -17,19 +18,35 @@ const BLOCK_LAST: &str = "a\nb\nc\nm1\nm2\n";
 const TWICE: [&str; 3] =
     ["m1\nm2\na\nb\nc\nd\ne\n", "a\nb\nc\nd\ne\nm1\nm2\n", "a\nb\nc\nm1\nm2\nd\ne\n"];
 
-/// The pill in `pane` on `row`, if the last frame drew one.
+const LEFT: Source = Source::Side(0);
+const RIGHT: Source = Source::Side(1);
+const BASE: Source = Source::Base(0);
+
+/// The pill in `pane` on `row` naming `other`, if the last frame drew one.
+fn pill_to(
+    cx: &mut TestAppContext,
+    window: gpui_kit::AnyWindowHandle,
+    pane: usize,
+    row: usize,
+    other: Source,
+) -> Option<gpui_kit::Bounds<gpui_kit::Pixels>> {
+    let mut found = None;
+    act(cx, window, |window, cx| {
+        window.render_frame(cx);
+        found =
+            window.try_find(move_pill_id(pane, RowIx::new(row), other)).map(|pill| pill.bounds());
+    });
+    found
+}
+
+/// The pill in `pane` on `row`, naming any input, if the last frame drew one.
 fn pill(
     cx: &mut TestAppContext,
     window: gpui_kit::AnyWindowHandle,
     pane: usize,
     row: usize,
 ) -> Option<gpui_kit::Bounds<gpui_kit::Pixels>> {
-    let mut found = None;
-    act(cx, window, |window, cx| {
-        window.render_frame(cx);
-        found = window.try_find(move_pill_id(pane, RowIx::new(row))).map(|pill| pill.bounds());
-    });
-    found
+    [BASE, LEFT, RIGHT].into_iter().find_map(|other| pill_to(cx, window, pane, row, other))
 }
 
 fn current(cx: &mut TestAppContext, view: &gpui_kit::Entity<merge_app::MergeWindow>) -> RegionIx {
@@ -42,11 +59,11 @@ fn each_end_of_a_left_move_shows_a_pill_naming_the_other_ends_line(cx: &mut Test
     // (rows 5–6) as its lines 3–4.
     let (window, _) = open(cx, doc(BLOCK_FIRST, BLOCK_LAST, BLOCK_FIRST));
     assert_eq!(
-        label(cx, window, move_pill_id(0, RowIx::new(0))),
+        label(cx, window, move_pill_id(0, RowIx::new(0), LEFT)),
         "Moved block: go to its other end, left line 4"
     );
     assert_eq!(
-        label(cx, window, move_pill_id(0, RowIx::new(5))),
+        label(cx, window, move_pill_id(0, RowIx::new(5), BASE)),
         "Moved block: go to its other end, base line 1"
     );
     assert_eq!(pill(cx, window, 1, 0), None, "right moved nothing");
@@ -69,10 +86,10 @@ fn a_pill_sits_on_its_row_against_the_panes_right_edge(cx: &mut TestAppContext) 
 fn a_click_on_a_pill_goes_to_the_other_end(cx: &mut TestAppContext) {
     let (window, view) = open(cx, doc(BLOCK_FIRST, BLOCK_LAST, BLOCK_FIRST));
     set_caret(cx, &view, 0);
-    act(cx, window, |window, cx| window.click(move_pill_id(0, RowIx::new(0)), cx));
+    act(cx, window, |window, cx| window.click(move_pill_id(0, RowIx::new(0), LEFT), cx));
     assert_eq!(current(cx, &view), RegionIx::new(2));
     assert!(cx.read(|cx| view.read(cx).flashing()), "the jump blinks");
-    act(cx, window, |window, cx| window.click(move_pill_id(0, RowIx::new(5)), cx));
+    act(cx, window, |window, cx| window.click(move_pill_id(0, RowIx::new(5), BASE), cx));
     assert_eq!(current(cx, &view), RegionIx::new(0));
 }
 
@@ -105,7 +122,7 @@ fn a_block_both_sides_move_has_pills_in_both_panes(cx: &mut TestAppContext) {
     assert!(shown(cx, 1, 3));
     assert!(!shown(cx, 0, 0) && !shown(cx, 1, 0));
     assert_eq!(
-        label(cx, window, move_pill_id(1, RowIx::new(3))),
+        label(cx, window, move_pill_id(1, RowIx::new(3), BASE)),
         "Moved block: go to its other end, base line 1"
     );
 }
@@ -117,16 +134,52 @@ fn with_base_shown_a_block_both_sides_move_has_an_origin_in_each_side(cx: &mut T
     let settings = WindowSettings { base_pane: true, ..WindowSettings::default() };
     let (window, _, _) = open_with(cx, doc(base, left, right), &settings);
     assert_eq!(
-        label(cx, window, move_pill_id(0, RowIx::new(0))),
+        label(cx, window, move_pill_id(0, RowIx::new(0), LEFT)),
         "Moved block: go to its other end, left line 6"
     );
     assert_eq!(
-        label(cx, window, move_pill_id(2, RowIx::new(0))),
+        label(cx, window, move_pill_id(2, RowIx::new(0), RIGHT)),
         "Moved block: go to its other end, right line 4"
     );
     assert!(pill(cx, window, 0, 9).is_some());
     assert!(pill(cx, window, 2, 5).is_some());
-    assert_eq!(pill(cx, window, 1, 0), None, "base moves nothing");
+}
+
+#[gpui_kit::test]
+fn base_shows_one_pill_per_move_of_its_lines_left_first(cx: &mut TestAppContext) {
+    // Base pane 1, rows 0–1: base's `m1 m2`, which left moves to its line 6 and right to its
+    // line 4.
+    let [base, left, right] = TWICE;
+    let settings = WindowSettings { base_pane: true, ..WindowSettings::default() };
+    let (window, _, _) = open_with(cx, doc(base, left, right), &settings);
+    assert_eq!(
+        label(cx, window, move_pill_id(1, RowIx::new(0), LEFT)),
+        "Moved block: go to its other end, left line 6"
+    );
+    assert_eq!(
+        label(cx, window, move_pill_id(1, RowIx::new(0), RIGHT)),
+        "Moved block: go to its other end, right line 4"
+    );
+    let to_left = pill_to(cx, window, 1, 0, LEFT).expect("left's pill");
+    let to_right = pill_to(cx, window, 1, 0, RIGHT).expect("right's pill");
+    let cell = bounds(cx, window, cell_id(1, RowIx::new(0)));
+    assert_eq!(to_right.right(), cell.right() - px(16.));
+    assert_eq!(to_left.right(), to_right.left() - px(4.), "left's pill first, 4 px apart");
+    assert_eq!(to_left.top(), cell.top());
+    assert_eq!(pill(cx, window, 1, 1), None, "pills on an end's first row only");
+}
+
+#[gpui_kit::test]
+fn a_click_on_a_base_pill_goes_to_that_sides_copy(cx: &mut TestAppContext) {
+    // Right's copy is region 2, left's region 4.
+    let [base, left, right] = TWICE;
+    let settings = WindowSettings { base_pane: true, ..WindowSettings::default() };
+    let (window, view, _) = open_with(cx, doc(base, left, right), &settings);
+    act(cx, window, |window, cx| window.click(move_pill_id(1, RowIx::new(0), RIGHT), cx));
+    assert_eq!(current(cx, &view), RegionIx::new(2));
+    act(cx, window, |window, cx| window.click(move_pill_id(1, RowIx::new(0), LEFT), cx));
+    assert_eq!(current(cx, &view), RegionIx::new(4));
+    assert_eq!(panes(cx, &view), PaneSet::LeftBaseRight);
 }
 
 #[gpui_kit::test]
@@ -148,4 +201,40 @@ fn the_status_bar_counts_blocks_the_result_holds_twice_until_one_goes(cx: &mut T
     act(cx, window, |window, cx| window.dispatch_action(TakeBase.boxed_clone(), cx));
     cx.run_until_parked();
     assert!(!status(cx).contains("duplicated"), "{}", status(cx));
+}
+
+fn panes(cx: &mut TestAppContext, view: &gpui_kit::Entity<merge_app::MergeWindow>) -> PaneSet {
+    cx.read(|cx| view.read(cx).panes())
+}
+
+#[gpui_kit::test]
+fn a_click_on_a_pill_naming_base_shows_the_base_pane(cx: &mut TestAppContext) {
+    // Base hides, so the deletion by both has no rows; right's copy is on rows 3–4 of pane 1,
+    // its pill naming base line 1.
+    let [base, left, right] = TWICE;
+    let (window, view) = open(cx, doc(base, left, right));
+    assert_eq!(panes(cx, &view), PaneSet::LeftRight);
+    act(cx, window, |window, cx| window.click(move_pill_id(1, RowIx::new(3), BASE), cx));
+    assert_eq!(panes(cx, &view), PaneSet::LeftBaseRight);
+    assert_eq!(current(cx, &view), RegionIx::new(0), "at the deletion, now on rows 0–1");
+    assert!(pill(cx, window, 2, 0).is_some(), "right's origin pill, in pane 2 now");
+}
+
+#[gpui_kit::test]
+fn a_click_on_a_pill_naming_the_side_leaves_the_panes(cx: &mut TestAppContext) {
+    let (window, view) = open(cx, doc(BLOCK_FIRST, BLOCK_LAST, BLOCK_FIRST));
+    act(cx, window, |window, cx| window.click(move_pill_id(0, RowIx::new(0), LEFT), cx));
+    assert_eq!(current(cx, &view), RegionIx::new(2));
+    assert_eq!(panes(cx, &view), PaneSet::LeftRight);
+}
+
+#[gpui_kit::test]
+fn go_to_other_end_from_a_destination_shows_the_base_pane(cx: &mut TestAppContext) {
+    // The result is left's text: `m1 m2`, left's destination, is bytes 6–12.
+    let (window, view) = open(cx, doc(BLOCK_FIRST, BLOCK_LAST, BLOCK_FIRST));
+    set_caret(cx, &view, 8);
+    act(cx, window, |window, cx| window.dispatch_action(GoToMoveEnd.boxed_clone(), cx));
+    cx.run_until_parked();
+    assert_eq!(panes(cx, &view), PaneSet::LeftBaseRight);
+    assert_eq!(current(cx, &view), RegionIx::new(0));
 }

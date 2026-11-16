@@ -68,7 +68,6 @@ In order. Each is one or more commits.
 | Ruler marks with folds: the marks keep their place in the whole file while the thumb follows display rows | A choice between the two | §G2 |
 | A key that opens the fold next to the caret | — | §G2 |
 | Duplicate suggestion in the merge window | Owner's choice on §G15's open point for §G16 | §G16 |
-| Moved and duplicated blocks in the merge window checked on screen: bands, pills, ⇧⌘M and the outlined ruler marks; their tests run headless only | The owner at the machine | §G16 |
 | The cost of finding moves and duplicates at load, against spec §9 | A benchmark run | §G16 |
 | Review and diff features: blank lines in a merge (§G4), §G7–§G14 | Owner's choices on §G15's open points for §G4 and §G8 | G |
 | Directory diff: copies detected, as jj finds them from modified files | — | §G6 |
@@ -191,7 +190,9 @@ Shows how blocks moved, from base to a side or between the sides, in the merge w
 - Each end takes the move tone on the bands, in place of its side's colour, as in the diff window. The merge ruler marks the result's regions, where a conflict's tone must stay readable, so moves leave it.
 - No `M` gutter mark: the top panes' gutter holds the pick targets.
 - Pills sit in the pane of the side that moved, at both ends: on the origin's first row, `↓ L40`, and on the destination's first row, `↑ B12`. Both ends lie in one pane, so the arrow points up or down by region order. The base pane is hidden by default, so a pill there would rarely show. A move on both sides has a pill in each side's pane. Pill size, place and colours follow spec §5's two-way mode, through the shared `move_pill`.
-- A press on a pill, or Go to Other End of Move (⇧⌘M) with the current region at one end, goes to the other end as a jump does, with its blink.
+- A press on a pill, or Go to Other End of Move (⇧⌘M) with the current region at one end, goes to the other end as a jump does, with its blink. Going to an end named by a base line shows the base pane first when it hides.
+- While the base pane shows, each move's base lines are an end there, untinted, with a pill to the side's copy; a block both sides move gets both pills on one row.
+- The result shows no move; its bands and marks name each line's input. `STYLE.md` § Moved blocks holds the look.
 - The result pane draws no move: it is an editor, and its regions follow the edits. A duplicate is the exception, since it is about the result's own text: both copies mark the ruler, their tone inside a conflict-tone outline, and the status bar counts them, `2 duplicated blocks`.
 
 **Data.** A move names its side, its base lines and its lines in the side: input lines, which never change, so edits that join the result's regions leave it. `MergeDocument` finds the moves once at load. `merge-view` places their ends by pane and row. A duplicate names the lines of both copies in their sides. `inspect` prints `moves` and `duplicates` (`docs/json-schema.md`).
