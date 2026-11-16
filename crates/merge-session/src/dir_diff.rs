@@ -314,7 +314,7 @@ mod tests {
     use super::*;
 
     struct Dirs {
-        root: tempfile::TempDir,
+        _root: tempfile::TempDir,
         left: PathBuf,
         right: PathBuf,
     }
@@ -331,7 +331,7 @@ mod tests {
                     std::fs::write(path, bytes).unwrap();
                 }
             }
-            Self { root, left: l, right: r }
+            Self { _root: root, left: l, right: r }
         }
 
         fn changed(&self) -> Vec<(String, Change, Content)> {
@@ -568,8 +568,8 @@ mod tests {
         fn a_link_to_an_absolute_file_counts_as_that_file() {
             // git's dir diff links each working-tree file into the right directory.
             let dirs = Dirs::new(&[("same", b"1\n"), ("edit", b"1\n")], &[]);
-            let tree = dirs.root.path().join("tree");
-            std::fs::create_dir(&tree).unwrap();
+            let tree_dir = tempfile::tempdir().unwrap();
+            let tree = tree_dir.path();
             std::fs::write(tree.join("same"), b"1\n").unwrap();
             std::fs::write(tree.join("edit"), b"2\n").unwrap();
             symlink(tree.join("same"), dirs.right.join("same")).unwrap();
