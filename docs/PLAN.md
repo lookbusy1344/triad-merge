@@ -35,7 +35,7 @@ In order. Each is one or more commits.
 
 1. **Close M3.** Skipped for now by the owner. The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
 2. **Screen-reader support** (part J). Skipped for now by the owner: live status, conflict regions, scrolling the row table, in the order of §J7.
-3. **Review and diff features** (part G): §G7–§G14.
+3. **Review and diff features** (part G): §G17, then §G7–§G14.
 4. **More grammars,** one commit each: C, C++, Java and Kotlin; then Markdown; then Bash, Ruby, PHP and SQL.
 5. **M4b** (§3) once the owner has the machines and the certificate.
 6. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
@@ -67,6 +67,7 @@ In order. Each is one or more commits.
 | Merge window folds: the untouched lines of an unchanged region whose result is edited | A line diff of the region | §G2 |
 | Ruler marks with folds: the marks keep their place in the whole file while the thumb follows display rows | A choice between the two | §G2 |
 | A key that opens the fold next to the caret | — | §G2 |
+| Windows-1252 as a fallback for text that is not UTF-8 | — | §G17 |
 | Review and diff features: blank lines in a merge (§G4), §G7–§G14 | Owner's choices on §G15's open points for §G4 and §G8 | G |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
 | The absorb oracle's generator builds text files only: no renames, executable bits, symlinks, conflicted inputs or immutable commits | — | §I5 |
@@ -95,9 +96,9 @@ In order. Each is one or more commits.
 
 Features other merge and diff tools have and triad lacks, from a comparison with Beyond Compare, Araxis Merge, Kaleidoscope, Meld, KDiff3, IntelliJ and VS Code. None blocks the beta.
 
-Order: G2–G6, then G16, then G7–G10, then G11–G14. Each section is one or more commits and updates the spec when it lands. Every comparison rule keeps spec §4.2's rule: it changes which lines count as equal, never the output bytes.
+Order: G2–G6, then G16, then G17, then G7–G10, then G11–G14. Each section is one or more commits and updates the spec when it lands. Every comparison rule keeps spec §4.2's rule: it changes which lines count as equal, never the output bytes.
 
-Out of scope (spec §1.3): image and binary comparison, encodings other than UTF-8 and UTF-16, printing, HTML reports.
+Out of scope (spec §1.3): image and binary comparison, encodings other than UTF-8, UTF-16 and, once §G17 lands, Windows-1252, printing, HTML reports.
 
 ### G2 Collapse unchanged regions
 
@@ -202,6 +203,21 @@ Shows how blocks moved, from base to a side or between the sides, in the merge w
 
 **Tests.** Expected moves come from hand-built triples, under both semantics: a move on the left, on the right, on both sides to the same place and to different places, a block that matches at two places (no move), a block of blank lines (no move), a move beside the other side's change, a move with an edit on the other side (move and Carry Edit both), a whitespace mode. A merge of more than two sides finds no moves: jj pairs no base with a side. `fixtures/demo/moved_*.py` holds every case for trying by hand (`fixtures/demo/README.md`), and `inspect`'s and Carry Edit's tests pin what it finds. Duplicates: a block moved to two places, new text added at two places, a copy of a block the other side moves, a block inside the other side's larger insert, and none for a move to one place, a block one side adds twice, blank lines or a block inside a conflict.
 
+### G17 Windows-1252 fallback
+
+A file that is not valid UTF-8 and has no byte order mark decodes as Windows-1252, in every mode: merge, diff, `resolve`, `stack`, `history`, `absorb` and the directory listings. Today such a file exits with 3 (spec §4.1), so `jj resolve` and `git mergetool` cannot merge it in triad, while git and jj merge its bytes. Legacy files hold it: Java `.properties` before Java 9, Windows-era source with accented comments, SQL scripts, CSV exports.
+
+**Why Windows-1252.** Files called Latin-1 are nearly always Windows-1252: their curly quotes, `€` and dashes sit at 0x80–0x9F, which Latin-1 gives to C1 controls. With its five unassigned bytes (0x81, 0x8D, 0x8F, 0x90, 0x9D) decoded as the C1 controls of the same value, as WHATWG's index and `encoding_rs` do, each of the 256 bytes maps to one character and back. Decoding never fails and loses nothing, so a byte no one edits saves as it was, and a line-level merge of the decoded text gives the bytes git and jj give. Spec §8's reason for refusing, that lossy decoding corrupts the output, does not hold for it.
+
+**Risks.** A file in another legacy encoding, such as Windows-1251 or Shift-JIS, also decodes, and shows garbled; its bytes still round-trip, and the status bar names `windows-1252`. Word-level merging and intra-line diffs on such a file can split a character's bytes; both apply to text that is not Windows-1252 only.
+
+**Steps.**
+
+1. Decoding and saving. A `Windows1252` variant of `merge_core::text::Encoding`, tried after UTF-8 fails; `Text::check` takes it, so the listings open such files. `Encoding::encode` returns a `Result`: a character Windows-1252 cannot hold refuses the save, naming the character and its line, in Save & Exit, Save Copy As, the diff window's save and headless output. A conflict marker whose label holds such a character is written without the label. The recovery journal, the own-write check (`own_writes`) and line origins (`origin`) take the fallible encode. Spec §1.3, §4.1 and §8 change with it. `encoding_rs` is in the tree already, or the 32-entry table for 0x80–0x9F is written out. About two days.
+2. A `fallback-encoding` setting, `"windows-1252"` by default or `"none"` for today's refusal, passed to every decode. Only if someone needs it off: about half a day.
+
+**Tests.** Expected bytes by hand: every byte 0x00–0xFF but NUL decodes and encodes back to itself, the five unassigned bytes included; a Latin-1 file with `ë` and a Windows-1252 file with curly quotes and `€` merge to the bytes `git merge-file` writes; UTF-8 and BOM files decode as before; a file with a NUL stays binary; typing `ł` or an emoji into a Windows-1252 result refuses Save & Exit and Save Copy As and names it, with OUTPUT unchanged; a label with an emoji leaves the marker without its label; mixed inputs warn; the directory demo's `names-latin1.txt` lists as text and opens.
+
 ### G15 Decisions
 
 - **G2 default:** `collapse-unchanged` is `false`. The merge window moves by conflict, and next and previous conflict already pass the unchanged text; resolving a conflict needs the code around it. Folding in the result editor carries the most risk: edits in a fold, undo, search and scroll sync.
@@ -210,6 +226,7 @@ Shows how blocks moved, from base to a side or between the sides, in the merge w
 - **G4 case:** full Unicode case folding (`CaseFolding.txt` C and F), not ASCII only. Search folds ASCII only; it may follow later.
 - **G4 blank lines:** two-way diff only, under the key `diff-ignore-blank-lines`, named as `diff-ignore-line-endings` is. Blank lines in a merge change which regions conflict and wait for their own design.
 - **G6 renames:** one matcher in triad for every mode, following jj where jj and git differ: renames, and copies from modified files, at jj's fixed 50 %. jj's dir mode and git's dir diff pass two plain directories with no copy information, so matching by content serves all three.
+- **G17 encoding:** Windows-1252 as a fallback after UTF-8, on with no setting; no detection by guessing (`chardetng`), since a wrong guess saves in the wrong encoding, and Windows-1252's exact round trip keeps every byte whatever the file holds. A setting follows only if needed.
 - **G6 layout:** a list window that opens the diff window, as the history and stack windows do. An in-window list needs the diff window to swap files in place, and can follow.
 - **G5 minimum:** Carry Edit's rule, so the two matchers agree: a block with at least one non-blank line, found at exactly one place. `MOVE_MIN_LINES` is 1.
 
