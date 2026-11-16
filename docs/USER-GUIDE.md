@@ -7,7 +7,7 @@ Keys are macOS keys. On Linux and Windows, ⌘ is Ctrl and ⌥ is Alt.
 ## Contents
 
 1. [Set up](#1-set-up)
-2. [The two windows](#2-the-two-windows)
+2. [The windows](#2-the-windows)
 3. [jj](#3-jj)
 4. [git](#4-git)
 5. [Files outside a repository](#5-files-outside-a-repository)
@@ -28,11 +28,11 @@ triad-merge install --git    # git mergetool, git difftool
 
 triad finds the repository from the working directory. It reads and writes jj and git repositories in-process, so the commands in this guide work without `jj` or `git` installed. A directory with both `.jj` and `.git` is a jj repository.
 
-## 2. The two windows
+## 2. The windows
 
 ### The merge window
 
-Left and right sit side by side, each showing its changes from base. The editable result sits below. Changes on one side, or the same change on both, apply without you. A conflict, marked `!`, waits for you; until then the result previews both sides, and a save writes conflict markers there.
+Left and right sit side by side, each showing its changes from base. The editable result sits below. Changes on one side, or the same change on both, apply on their own. A conflict, marked `!`, waits for you; until then the result previews both sides, and a save writes conflict markers there.
 
 Resolve a conflict by picking sources, or type in the result. Each region's first row has a pick target per source: `●` picked, `◐` previewed in an unresolved conflict, `○` not picked. Several picks write in the order you click them. The toolbar's Left and Right buttons toggle the same picks in the current region and show pressed while it holds them. Its More menu holds Base, ticked while picked, both sides in either order, and None, which picks nothing.
 
@@ -51,17 +51,27 @@ Resolve a conflict by picking sources, or type in the result. Each region's firs
 | Save and exit / cancel | ⌘S / ⌘W |
 | Save a copy elsewhere, leaving the merge open | ⇧⌘S |
 
-A block a side moved from one place to another shows teal at both ends in that side's pane, with a pill on each naming the other end, such as `↓ L40` or `↑ B1`. `B` names a line of base. With the base pane shown, the block's base lines take a pill for each side that moved it. Click the pill, or press ⇧⌘M in a region that holds an end, to go to the other end; going to a base line shows the base pane. The result pane shows no moves: a moved block there is marked with the side it came from, like any other text. When both sides add the same block at different places, by moving it or as new text, the merge holds it twice and reports no conflict. The status bar then counts it, `1 duplicated block`, and the ruler outlines both copies in the conflict colour. Right-click a copy for `Suggested: Drop Duplicate of Line N`, which deletes that copy and keeps the one on line N, in one undo step. Each copy offers it, so you choose which place keeps the block.
+The toolbar can take one side for every conflict left. The ruler at the right marks each change; click a mark to go there. Closing without a save exits 2; the VCS keeps its conflict.
 
-The toolbar can take one side for every conflict left. The ruler at the right marks each change; click a mark to go there. Close without a save exits 2; the VCS keeps its conflict.
+#### Moved and duplicated blocks
+
+A block a side moved from one place to another shows teal at both ends in that side's pane, with a pill on each naming the other end, such as `↓ L40` or `↑ B1`. `B` names a line of base. With the base pane shown, the block's base lines take a pill for each side that moved it. Click the pill, or press ⇧⌘M in a region that holds an end, to go to the other end; going to a base line shows the base pane. The result pane shows no moves: a moved block there is marked with the side it came from, like any other text. When both sides add the same block at different places, by moving it or as new text, the merge holds it twice and reports no conflict. The status bar then counts it, `1 duplicated block`, and the ruler outlines both copies in the conflict colour. Right-click a copy for `Suggested: Drop Duplicate of Line N`, which deletes that copy and keeps the one on line N, in one undo step. Each copy offers it, so you choose which place keeps the block.
 
 ### The diff window
 
 Two aligned, editable panes, each with copy to the other side. A block deleted in one place and inserted once in another shows teal at both ends, with an `M` beside it and a pill naming the other end's line, such as `R5 →`; click the `M` or the pill, or press ⇧⌘M with the caret in the block, to go to the other end. ⌘S writes each edited side to its own file and keeps the window open. Each side has its own undo. A file changed on disk reloads, or asks first when the pane has unsaved edits. When one side is a past revision, that side is read-only.
 
-Given two directories, `diff` opens a list of the files that differ instead, counted in its header. An icon shows how each file changed: added, modified, deleted or renamed, as Zed's git panel shows them; a copy shows as added. The file name comes first, then its directory. Enter or a click opens a file in the diff window; closing that window lists the files again. Binary files are listed and do not open. A file renamed or moved, alone or with edits that keep half its bytes, is listed once, ends with `from old.rs`, and opens against its old file, as `jj diff` pairs renames. A new file that keeps half the bytes of a modified file ends with `copied from a.rs` and opens against that file's old side, as `jj diff` finds copies.
+### The directory list
+
+Given two directories, `diff` lists the files that differ, counted in its header. An icon shows how each file changed: added, modified, deleted or moved; a copy shows the added icon. Hover the icon to name the change. The file name comes first, then its directory. Enter or a click opens a file in the diff window; closing that window lists the files again. Binary files are listed and do not open. A file renamed or moved, alone or with edits that keep half its bytes, is listed once, ends with `from old.rs`, and opens against its old file, as `jj diff` pairs renames. A new file that keeps half the bytes of a modified file ends with `copied from a.rs` and opens against that file's old side, as `jj diff` finds copies.
+
+### Line origins
 
 Line origins (⌘I) show the commit, author and jj change that wrote each line, in both windows.
+
+### Text encodings
+
+A UTF-8, UTF-16 LE or UTF-16 BE BOM sets a file's encoding. Without one, valid UTF-8 is UTF-8 and anything else is Windows-1252, which maps every byte to a character and back, so Latin-1 files merge to the bytes git and jj give. A file in another legacy encoding, such as Shift-JIS, shows garbled, and its bytes come back unchanged where no one edits them. A save refuses a character the file's encoding cannot hold, such as `ł` in a Windows-1252 file, names it and its line, and writes nothing. A file with a NUL byte in its first 8000 bytes is binary and does not open.
 
 ### Unusual characters
 
@@ -90,16 +100,14 @@ Under `jj resolve`, a save with conflicts left exits 1. jj reads the saved marke
 
 `install --jj` sets `diff-invocation-mode = "dir"`, so jj passes two directories holding the changed files and triad lists them (§2). `jj diff --tool` passes temporary copies. When a right-side file is the working copy, triad opens the working-copy file instead, so edits there persist; every other side's edits are lost, and a banner says so. This needs `diff-do-chdir = false`, which `install --jj` writes.
 
-triad is not yet jj's diff editor: `jj split -i`, `jj squash -i` and `jj diffedit` use jj's own editor (`docs/PLAN-diff-editor.md`).
+`jj split -i`, `jj squash -i` and `jj diffedit` use jj's own diff editor (`docs/PLAN-diff-editor.md`).
 
 The `triad-merge` commands below do the same work and more, without the `jj` binary.
 
 ### Resolve conflicts in the working copy
 
 ```sh
-jj resolve                    # each conflicted file in turn, through jj
-jj resolve src/lib.rs         # one file
-triad-merge resolve           # the same, without the jj binary: the first file, then the next after each save
+triad-merge resolve           # the first conflicted file, then the next after each save
 triad-merge resolve src/lib.rs
 ```
 
@@ -114,6 +122,8 @@ jj edit xyz                   # back to the conflicted commit
 triad-merge resolve a.rs      # finish
 ```
 
+Each save in a commit with descendants rebases them, as any jj rewrite does. A descendant of a partly resolved commit can show more than two sides for a conflict: jj [rebases a conflicted file](https://docs.jj-vcs.dev/latest/technical/conflicts/) by combining whole versions of it, and triad shows each version in a pane of its own. Resolving in the ancestor clears it in every descendant.
+
 Without a window: `triad-merge resolve --headless src/lib.rs` writes the automatic merge, with markers for the conflicts.
 
 ### Diff the working copy
@@ -122,7 +132,6 @@ Without a window: `triad-merge resolve --headless src/lib.rs` writes the automat
 triad-merge diff src/lib.rs        # against @-; edits save to the working copy
 triad-merge diff                   # the changed files against @-, in a list
 triad-merge diff --rev 'trunk()'   # the changed files against trunk()
-jj diff --tool triad               # the changed files, in a list
 ```
 
 `triad-merge diff` with no file snapshots the working copy first, as jj's commands do, then lists the files that differ. Each opens against the revision; edits save to the working copy.
@@ -321,13 +330,21 @@ triad-merge diff LEFT RIGHT --readonly-left
 triad-merge diff LEFT_DIR RIGHT_DIR               # the files that differ; each opens in the diff window
 ```
 
-`fixtures/demo` holds a 980-line merge with 20 conflicts to try:
+`fixtures/demo` holds inputs to try (`fixtures/demo/README.md`):
 
 ```sh
-triad-merge fixtures/demo/{base,left,right}.txt /tmp/out.txt
+triad-merge fixtures/demo/{base,left,right}.txt /tmp/out.txt   # 980 lines, 20 conflicts
+triad-merge diff fixtures/demo/dirs/{left,right}               # the directory list
 ```
 
-Outside a repository triad merges as git does. `--merge-semantics jj` merges as jj does.
+Outside a repository triad merges as git does. `--merge-semantics jj` merges as jj does. The two can differ: this triple leaves one conflict as jj merges and none as git does.
+
+```sh
+cd "$(mktemp -d)"
+printf 'a\nb\nc\na\nb\nc\na\nb\nc\n' > b; printf 'a\nb\n a\na\nb\n c\n' > l; printf 'a \nb\nc\na\nb\n c\n' > r
+triad-merge inspect --merge-semantics jj b l r    # exit 1
+triad-merge inspect --merge-semantics git b l r   # exit 0
+```
 
 ## 6. Scripts and agents
 

@@ -10,7 +10,7 @@ Files that triad, its tools and its development scripts leave behind, and how to
 | Daily logs, `triad.YYYY-MM-DD.log` | `logs/` beside `journal/`, or `TRIAD_LOG_DIR` | The last 7 files are kept. Most are empty: the default filter is `warn`. |
 | Settings file `config.triad` (spec §6.4) | `TRIAD_CONFIG`; else `$XDG_CONFIG_HOME/triad/` or `~/.config/triad/` on macOS and Linux; `%APPDATA%\triad\` on Windows | User state, never deleted by triad. |
 | Tool registration from `triad-merge install` | `merge.tool`, `[mergetool "triad"]`, `diff.tool`, `[difftool "triad"]` in git's global config; `ui.merge-editor` and `[merge-tools.triad]` in jj's user config | Stays until removed by hand. |
-| The installed app | `/Applications/triad.app` (README § Build and install) | Stays until removed by hand. |
+| The installed app | `/Applications/triad.app` (README § Install) | Stays until removed by hand. |
 
 A journal for a merge that no longer matters can go at once. Deleting the whole cache directory also clears the logs; triad makes it again on the next run.
 

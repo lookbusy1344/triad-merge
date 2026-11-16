@@ -290,7 +290,7 @@ jj makes markers four longer than the longest marker-like line, counting `+ - % 
 
 #### A7.4 Local install on macOS
 
-Release 1 is for local use: no Developer ID signing, notarisation or Homebrew cask (owner, 2026-10-27). `script/macos-app` builds `triad.app` and signs it ad hoc; only the bundle gives the Dock its icon, since `setApplicationIconImage` is unsafe in `objc2-app-kit`. README § Build and install gives the commands.
+Release 1 is for local use: no Developer ID signing, notarisation or Homebrew cask (owner, 2026-10-27). `script/macos-app` builds `triad.app` and signs it ad hoc; only the bundle gives the Dock its icon, since `setApplicationIconImage` is unsafe in `objc2-app-kit`. README § Install gives the commands.
 
 ### A11 Decisions
 

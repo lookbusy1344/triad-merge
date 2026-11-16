@@ -57,7 +57,7 @@ Known gaps, recorded in `docs/gpui-kit-issues.md`: status changes are not announ
 
 ### Setup
 
-Install the local build (DESIGN.md §A7.4), with `triad-merge` on `PATH` as README § Build and install says, and point both VCSs at scratch configs:
+Install the local build (DESIGN.md §A7.4), with `triad-merge` on `PATH` as README § Install says, and point both VCSs at scratch configs:
 
 ```sh
 script/macos-app && rm -rf /Applications/triad.app && cp -R target/release/triad.app /Applications/
