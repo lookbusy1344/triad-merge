@@ -9,6 +9,7 @@ use merge_core::index::RegionIx;
 use merge_core::merge3::{HunkLevel, Semantics};
 use merge_core::text::{Encoding, LineEnding};
 use merge_session::ExitCode;
+use merge_session::dir_diff::{Change, ChangedFile, Content};
 use merge_session::jj_native::{
     AbsorbHunk, Absorbed, CommitEffect, FileVersion, Goes, Rewrite, SHORT_OPERATION, StackCommit,
     StackPath, Stay, VersionState, stays,
@@ -244,6 +245,27 @@ pub(crate) fn stack_preview(rewrite: &Rewrite) -> String {
     } else {
         format!("{outcome}\n{}", descendant_effects(&rewrite.rewritten))
     }
+}
+
+/// The directory window's title without `--title` (spec §6.1).
+pub(crate) const DIRS_TITLE: &str = "Changed files";
+pub(crate) const DIRS_EMPTY: &str = "No files differ.";
+
+/// A listed file: its path, then how it changed and, for a file that does not open, why.
+pub(crate) fn dir_file(file: &ChangedFile) -> Row {
+    let change = match file.change {
+        Change::Added => "added",
+        Change::Deleted => "deleted",
+        Change::Modified => "modified",
+    };
+    let why = match file.content {
+        Content::Text => None,
+        Content::Undecodable => Some("undecodable"),
+        Content::Binary => Some("binary"),
+        Content::Special => Some("special"),
+    };
+    let trail = why.map_or_else(|| change.to_owned(), |why| format!("{change}, {why}"));
+    Row { lead: None, text: file.display_path().into(), trail: Some(trail.into()) }
 }
 
 /// The history window's title (spec §7.5.2).

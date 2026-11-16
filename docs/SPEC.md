@@ -316,7 +316,7 @@ triad-merge --headless BASE LEFT RIGHT -o OUTPUT --commands FILE   # auto-merge,
 triad-merge inspect BASE LEFT RIGHT [--diff-algorithm A] [--ignore-whitespace W] [--merge-semantics S] [--same-change C] [--hunk-level H] [--json]
                                                          # print regions and kinds; no output file
 triad-merge diff LEFT RIGHT [--diff-algorithm A] [--ignore-whitespace W] [--title T]
-                [--readonly-left] [--readonly-right]    # two-way diff window
+                [--readonly-left] [--readonly-right]    # two-way diff window; two directories open the directory window
 triad-merge diff PATH [--rev REV]                        # working copy against its parent revision
 triad-merge diff PATH --op OP                             # working copy against itself at a jj operation (§7.5.2)
 triad-merge diff --inspect LEFT RIGHT [--diff-algorithm A] [--ignore-whitespace W] [--json]   # print two-way regions; no window
@@ -355,6 +355,9 @@ Two directories (`triad-merge diff LEFT_DIR RIGHT_DIR`):
 - A symlink to a regular file at an absolute path counts as that file: git's dir diff links each working-tree file into the right directory so. Any other symlink is special, compares by its target, and is not followed; a link to a directory is never walked.
 - `diff --inspect` prints one line per file, `modified text src/a.rs`, then `files: N`, and exits with 0 when no file differs and 1 when one does. `docs/json-schema.md` defines `--json`.
 - An entry that cannot be read exits with 3 and names it.
+- The directory window lists the files, each row its path and how it changed: `src/a.rs modified`; a file that does not open is greyed and says why: `img.png added, binary`. ↑ and ↓ move the selection; Enter or a click opens a text file in the diff window, as `diff LEFT RIGHT` opens the pair, with the comparison flags, `--readonly-left` and `--readonly-right`, titled by its path. A file on one side only opens against an empty, read-only side titled `PATH (no file)`. A right file that copies jj's working copy opens the working-copy file in its place, as in §7.1.
+- One diff window opens at a time; opening a second file brings it forward. Closing it lists the files again, as Refresh does. A listing that fails shows why in the window.
+- The window's title is `--title` when given and not empty, else "Changed files". Closing it ends the run with 0; while a diff window is open, that window comes forward instead.
 
 Native mode (`triad-merge diff PATH`):
 

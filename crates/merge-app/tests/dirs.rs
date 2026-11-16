@@ -1,0 +1,409 @@
+//! Headless tests of the directory window (spec §6.1): the files that differ between two
+//! directories, each text file opening in the diff window, a refresh after the diff window
+//! closes, and the exit code.
+
+use std::cell::RefCell;
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+
+use crate::common::tool_window::{EDGE, LIST_TOP, ROW_GAP, ROW_HEIGHT};
+use crate::common::{act, bounds, is_selected, viewport_width};
+use gpui_kit::base::Root;
+use gpui_kit::test::TestWindowExt;
+use gpui_kit::{AnyWindowHandle, App, Entity, TestAppContext, VisualTestContext};
+use merge_app::diff_window::{DiffWindow, copy_id};
+use merge_app::dir_window::{self, DirStart, DirWindow, EMPTY_ID, NOTE_ID, REFRESH_ID, file_id};
+use merge_app::{ExitCode, WindowSettings};
+use merge_core::diff::DiffOptions;
+use merge_core::diff2::Side;
+use merge_core::index::RegionIx;
+use merge_session::dir_diff::{Change, Content};
+
+/// `left/` and `right/` below one temporary directory.
+struct Dirs {
+    root: tempfile::TempDir,
+}
+
+impl Dirs {
+    fn new(left: &[(&str, &[u8])], right: &[(&str, &[u8])]) -> Self {
+        let root = tempfile::tempdir().expect("tempdir");
+        for (side, files) in [("left", left), ("right", right)] {
+            let dir = root.path().join(side);
+            std::fs::create_dir(&dir).expect("dir");
+            for (name, bytes) in files {
+                let path = dir.join(name);
+                std::fs::create_dir_all(path.parent().expect("parent")).expect("dirs");
+                std::fs::write(path, bytes).expect("written");
+            }
+        }
+        Self { root }
+    }
+
+    fn side(&self, side: &str) -> PathBuf {
+        self.root.path().join(side)
+    }
+
+    fn start(&self) -> DirStart {
+        DirStart {
+            cwd: self.root.path().to_owned(),
+            left: self.side("left"),
+            right: self.side("right"),
+            title: None,
+            readonly_left: false,
+            readonly_right: false,
+            diff: DiffOptions::default(),
+            settings: WindowSettings::default(),
+            watch: false,
+        }
+    }
+}
+
+/// A modified text file, an added text file, a deleted text file and an added binary file.
+fn mixed() -> Dirs {
+    Dirs::new(
+        &[("same.txt", b"s\n"), ("src/a.rs", b"1\n"), ("gone.txt", b"g\n")],
+        &[("same.txt", b"s\n"), ("src/a.rs", b"2\n"), ("new.md", b"n\n"), ("img.png", b"\x00p")],
+    )
+}
+
+/// The rows of [`mixed`], by path.
+const GONE: usize = 0;
+const IMG: usize = 1;
+const NEW: usize = 2;
+const A_RS: usize = 3;
+
+struct Started {
+    window: AnyWindowHandle,
+    view: Entity<DirWindow>,
+    exits: Rc<RefCell<Vec<ExitCode>>>,
+}
+
+/// The directory window on `start`, recording the codes it exits with, once its list has
+/// landed.
+fn open(cx: &mut TestAppContext, start: DirStart) -> Started {
+    let exits = Rc::new(RefCell::new(Vec::new()));
+    let record = Rc::clone(&exits);
+    let (window, view) = cx.update(|cx| {
+        gpui_kit::init(cx);
+        merge_app::init(cx);
+        dir_window::start(start, move |code, _: &mut App| record.borrow_mut().push(code), cx)
+            .expect("the window opens")
+    });
+    cx.run_until_parked();
+    Started { window, view, exits }
+}
+
+fn click(cx: &mut TestAppContext, window: AnyWindowHandle, id: gpui_kit::ElementId) {
+    act(cx, window, TestWindowExt::render_frame);
+    act(cx, window, |window, cx| window.click(id, cx));
+    cx.run_until_parked();
+}
+
+fn press(cx: &mut TestAppContext, window: AnyWindowHandle, key: &str) {
+    act(cx, window, |window, cx| window.press(key, cx));
+    cx.run_until_parked();
+}
+
+/// Each open diff window.
+fn diff_windows(cx: &mut TestAppContext) -> Vec<(AnyWindowHandle, Entity<DiffWindow>)> {
+    cx.update(|cx| {
+        cx.windows()
+            .into_iter()
+            .filter_map(|w| {
+                let root = w.downcast::<Root>()?.read(cx).ok()?;
+                let view = root.view().clone().downcast::<DiffWindow>().ok()?;
+                Some((w, view))
+            })
+            .collect()
+    })
+}
+
+/// `side`'s text, title and read-only flag in `view`.
+fn side(cx: &mut TestAppContext, view: &Entity<DiffWindow>, side: Side) -> (String, String, bool) {
+    cx.read(|cx| {
+        let view = view.read(cx);
+        let read_only = view.editor(side).read(cx).presentation().is_readonly();
+        (view.document().text(side).to_string(), view.title(side).to_string(), read_only)
+    })
+}
+
+fn listed(cx: &mut TestAppContext, view: &Entity<DirWindow>) -> Vec<(String, Change, Content)> {
+    cx.read(|cx| {
+        view.read(cx)
+            .files()
+            .iter()
+            .map(|file| (file.display_path(), file.change, file.content))
+            .collect()
+    })
+}
+
+fn note(cx: &mut TestAppContext, view: &Entity<DirWindow>) -> Option<String> {
+    cx.read(|cx| view.read(cx).note().map(str::to_owned))
+}
+
+fn label(cx: &mut TestAppContext, window: AnyWindowHandle, id: gpui_kit::ElementId) -> String {
+    let mut found = String::new();
+    act(cx, window, |window, cx| {
+        window.render_frame(cx);
+        found = window.find(id).label().map_or_else(String::new, str::to_owned);
+    });
+    found
+}
+
+fn path_text(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
+}
+
+#[gpui_kit::test]
+fn the_window_lists_the_files_that_differ_by_path(cx: &mut TestAppContext) {
+    let dirs = mixed();
+    let started = open(cx, dirs.start());
+    assert_eq!(
+        listed(cx, &started.view),
+        [
+            ("gone.txt".to_owned(), Change::Deleted, Content::Text),
+            ("img.png".to_owned(), Change::Added, Content::Binary),
+            ("new.md".to_owned(), Change::Added, Content::Text),
+            ("src/a.rs".to_owned(), Change::Modified, Content::Text),
+        ]
+    );
+    assert_eq!(label(cx, started.window, file_id(GONE)), "gone.txt deleted");
+    assert_eq!(label(cx, started.window, file_id(IMG)), "img.png added, binary");
+    assert_eq!(label(cx, started.window, file_id(A_RS)), "src/a.rs modified");
+    assert_eq!(diff_windows(cx).len(), 0);
+    assert_eq!(note(cx, &started.view), None);
+}
+
+#[gpui_kit::test]
+fn a_modified_file_opens_with_both_sides_editable(cx: &mut TestAppContext) {
+    let dirs = mixed();
+    let started = open(cx, dirs.start());
+    click(cx, started.window, file_id(A_RS));
+    let [(_, view)] = &diff_windows(cx)[..] else { panic!("one diff window") };
+    let [left, right] = ["left", "right"].map(|s| path_text(&dirs.side(s).join("src/a.rs")));
+    assert_eq!(side(cx, view, Side::Left), ("1\n".to_owned(), left, false));
+    assert_eq!(side(cx, view, Side::Right), ("2\n".to_owned(), right, false));
+}
+
+#[gpui_kit::test]
+fn an_added_file_opens_with_an_empty_read_only_left_side(cx: &mut TestAppContext) {
+    let dirs = mixed();
+    let started = open(cx, dirs.start());
+    click(cx, started.window, file_id(NEW));
+    let [(_, view)] = &diff_windows(cx)[..] else { panic!("one diff window") };
+    assert_eq!(side(cx, view, Side::Left), (String::new(), "new.md (no file)".to_owned(), true));
+    let right = path_text(&dirs.side("right").join("new.md"));
+    assert_eq!(side(cx, view, Side::Right), ("n\n".to_owned(), right, false));
+}
+
+#[gpui_kit::test]
+fn a_deleted_file_opens_with_an_empty_read_only_right_side(cx: &mut TestAppContext) {
+    let dirs = mixed();
+    let started = open(cx, dirs.start());
+    click(cx, started.window, file_id(GONE));
+    let [(_, view)] = &diff_windows(cx)[..] else { panic!("one diff window") };
+    let left = path_text(&dirs.side("left").join("gone.txt"));
+    assert_eq!(side(cx, view, Side::Left), ("g\n".to_owned(), left, false));
+    assert_eq!(side(cx, view, Side::Right), (String::new(), "gone.txt (no file)".to_owned(), true));
+}
+
+#[gpui_kit::test]
+fn the_readonly_flags_hold_for_every_file(cx: &mut TestAppContext) {
+    let dirs = mixed();
+    let started = open(cx, DirStart { readonly_left: true, ..dirs.start() });
+    click(cx, started.window, file_id(A_RS));
+    let [(_, view)] = &diff_windows(cx)[..] else { panic!("one diff window") };
+    assert!(side(cx, view, Side::Left).2);
+    assert!(!side(cx, view, Side::Right).2);
+}
+
+#[gpui_kit::test]
+fn a_binary_file_opens_nothing(cx: &mut TestAppContext) {
+    let dirs = mixed();
+    let started = open(cx, dirs.start());
+    click(cx, started.window, file_id(IMG));
+    assert_eq!(diff_windows(cx).len(), 0);
+    press(cx, started.window, "down");
+    press(cx, started.window, "down");
+    assert!(is_selected(cx, started.window, file_id(IMG)));
+    press(cx, started.window, "enter");
+    assert_eq!(diff_windows(cx).len(), 0);
+    // Nothing was read: a read would fail to decode and say so.
+    assert_eq!(note(cx, &started.view), None);
+}
+
+#[gpui_kit::test]
+fn a_file_copied_across_and_saved_drops_out_of_the_list(cx: &mut TestAppContext) {
+    let dirs = mixed();
+    let started = open(cx, dirs.start());
+    click(cx, started.window, file_id(A_RS));
+    let [(diff, _)] = diff_windows(cx)[..] else { panic!("one diff window") };
+    click(cx, diff, copy_id(RegionIx::new(0), Side::Right));
+    press(cx, diff, "secondary-s");
+    press(cx, diff, "secondary-w");
+    assert_eq!(diff_windows(cx).len(), 0);
+    let on_disk = std::fs::read(dirs.side("right").join("src/a.rs")).expect("a.rs reads");
+    assert_eq!(on_disk, b"1\n");
+    let paths: Vec<_> = listed(cx, &started.view).into_iter().map(|(path, ..)| path).collect();
+    assert_eq!(paths, ["gone.txt", "img.png", "new.md"]);
+    assert_eq!(started.exits.borrow().as_slice(), [], "the run goes on");
+}
+
+#[gpui_kit::test]
+fn a_second_file_while_a_diff_window_is_open_opens_nothing(cx: &mut TestAppContext) {
+    let dirs = mixed();
+    let started = open(cx, dirs.start());
+    click(cx, started.window, file_id(A_RS));
+    let open_now: Vec<_> = diff_windows(cx).into_iter().map(|(w, _)| w).collect();
+    assert_eq!(open_now.len(), 1);
+    click(cx, started.window, file_id(NEW));
+    let now: Vec<_> = diff_windows(cx).into_iter().map(|(w, _)| w).collect();
+    assert_eq!(now, open_now);
+}
+
+#[gpui_kit::test]
+fn a_file_gone_from_disk_says_why_and_opens_nothing(cx: &mut TestAppContext) {
+    let dirs = mixed();
+    let started = open(cx, dirs.start());
+    let file = dirs.side("right").join("new.md");
+    std::fs::remove_file(&file).expect("new.md is removed");
+    click(cx, started.window, file_id(NEW));
+    assert_eq!(diff_windows(cx).len(), 0);
+    let said = note(cx, &started.view).expect("a note");
+    assert!(said.starts_with(&format!("cannot read {}: ", file.display())), "{said}");
+    // The window is free to open another file.
+    click(cx, started.window, file_id(A_RS));
+    assert_eq!(diff_windows(cx).len(), 1);
+    assert_eq!(note(cx, &started.view), None);
+}
+
+#[gpui_kit::test]
+fn a_directory_that_cannot_be_read_says_why(cx: &mut TestAppContext) {
+    let dirs = mixed();
+    let missing = dirs.side("missing");
+    let started = open(cx, DirStart { left: missing.clone(), ..dirs.start() });
+    assert_eq!(listed(cx, &started.view), []);
+    assert_eq!(note(cx, &started.view), Some(format!("cannot read {}", missing.display())));
+    assert_eq!(bounds(cx, started.window, NOTE_ID).top(), LIST_TOP);
+}
+
+#[gpui_kit::test]
+fn refresh_lists_again(cx: &mut TestAppContext) {
+    let dirs = mixed();
+    let started = open(cx, dirs.start());
+    std::fs::write(dirs.side("right").join("same.txt"), b"changed\n").expect("written");
+    click(cx, started.window, REFRESH_ID.into());
+    let paths: Vec<_> = listed(cx, &started.view).into_iter().map(|(path, ..)| path).collect();
+    assert_eq!(paths, ["gone.txt", "img.png", "new.md", "same.txt", "src/a.rs"]);
+}
+
+#[gpui_kit::test]
+fn closing_the_window_ends_the_run_with_0(cx: &mut TestAppContext) {
+    let dirs = mixed();
+    let started = open(cx, dirs.start());
+    assert!(VisualTestContext::from_window(started.window, cx).simulate_close());
+    cx.run_until_parked();
+    assert_eq!(started.exits.borrow().as_slice(), [ExitCode::Resolved]);
+}
+
+#[gpui_kit::test]
+fn closing_while_a_refresh_runs_waits_for_it_then_ends_the_run(cx: &mut TestAppContext) {
+    let dirs = mixed();
+    let started = open(cx, dirs.start());
+    act(cx, started.window, TestWindowExt::render_frame);
+    act(cx, started.window, |window, cx| window.click(REFRESH_ID, cx));
+    assert!(!VisualTestContext::from_window(started.window, cx).simulate_close());
+    assert_eq!(started.exits.borrow().as_slice(), []);
+    cx.run_until_parked();
+    assert_eq!(started.exits.borrow().as_slice(), [ExitCode::Resolved]);
+}
+
+#[gpui_kit::test]
+fn the_window_stays_open_while_its_diff_window_is(cx: &mut TestAppContext) {
+    let dirs = mixed();
+    let started = open(cx, dirs.start());
+    click(cx, started.window, file_id(A_RS));
+    assert!(!VisualTestContext::from_window(started.window, cx).simulate_close());
+    cx.run_until_parked();
+    assert_eq!(started.exits.borrow().as_slice(), []);
+    assert_eq!(diff_windows(cx).len(), 1);
+}
+
+#[gpui_kit::test]
+fn the_window_keeps_the_tool_window_edge_and_rows(cx: &mut TestAppContext) {
+    let dirs = mixed();
+    let started = open(cx, dirs.start());
+    let refresh = bounds(cx, started.window, REFRESH_ID);
+    assert_eq!((refresh.left(), refresh.top()), (EDGE, EDGE));
+    let width = viewport_width(cx, started.window) - EDGE - EDGE;
+    let [first, second] = [0, 1].map(|ix| bounds(cx, started.window, file_id(ix)));
+    assert_eq!(first.top(), refresh.bottom() + ROW_GAP);
+    assert_eq!((first.size.width, first.size.height), (width, ROW_HEIGHT));
+    assert_eq!(second.top(), first.bottom());
+}
+
+#[gpui_kit::test]
+fn up_and_enter_open_the_selected_file(cx: &mut TestAppContext) {
+    let dirs = mixed();
+    let started = open(cx, dirs.start());
+    press(cx, started.window, "up");
+    assert!(is_selected(cx, started.window, file_id(A_RS)));
+    press(cx, started.window, "enter");
+    let [(_, view)] = &diff_windows(cx)[..] else { panic!("one diff window") };
+    assert_eq!(side(cx, view, Side::Left).0, "1\n");
+}
+
+#[gpui_kit::test]
+fn equal_directories_say_so_where_the_list_starts(cx: &mut TestAppContext) {
+    let dirs = Dirs::new(&[("a", b"1\n")], &[("a", b"1\n")]);
+    let started = open(cx, dirs.start());
+    assert_eq!(listed(cx, &started.view), []);
+    assert_eq!(bounds(cx, started.window, EMPTY_ID).top(), LIST_TOP);
+}
+
+mod jj {
+    use super::*;
+    use vcs_jj::testing::Fixture;
+
+    /// A working copy on disk whose `a.txt` holds `2\n`, snapshotted.
+    fn working_copy() -> Fixture {
+        let fixture = Fixture::new();
+        fixture.check_out_to_disk();
+        std::fs::write(fixture.root().join("a.txt"), b"2\n").expect("a.txt is written");
+        let mut repo = vcs_jj::JjRepository::discover(fixture.root()).expect("the repository");
+        vcs::Repository::snapshot(&mut repo).expect("the snapshot");
+        fixture
+    }
+
+    #[gpui_kit::test]
+    fn a_right_copy_of_the_working_copy_saves_to_the_working_copy_file(cx: &mut TestAppContext) {
+        let fixture = working_copy();
+        let tool = tempfile::Builder::new().prefix("jj-diff-").tempdir().expect("tempdir");
+        let [left, right] = ["left", "right"].map(|s| tool.path().join(s));
+        for (dir, bytes) in [(&left, b"1\n"), (&right, b"2\n")] {
+            std::fs::create_dir(dir).expect("dir");
+            std::fs::write(dir.join("a.txt"), bytes).expect("written");
+        }
+        let start = DirStart {
+            cwd: fixture.root().as_std_path().to_owned(),
+            left,
+            right: right.clone(),
+            title: None,
+            readonly_left: false,
+            readonly_right: false,
+            diff: DiffOptions::default(),
+            settings: WindowSettings::default(),
+            watch: false,
+        };
+        let started = open(cx, start);
+        click(cx, started.window, file_id(0));
+        let [(diff, view)] = &diff_windows(cx)[..] else { panic!("one diff window") };
+        let working = dunce::canonicalize(fixture.root()).expect("the root").join("a.txt");
+        assert!(side(cx, view, Side::Left).2, "the left copy turns read-only");
+        assert_eq!(side(cx, view, Side::Right).1, path_text(&working));
+        click(cx, *diff, copy_id(RegionIx::new(0), Side::Right));
+        press(cx, *diff, "secondary-s");
+        assert_eq!(std::fs::read(&working).expect("a.txt reads"), b"1\n");
+        assert_eq!(std::fs::read(right.join("a.txt")).expect("the copy reads"), b"2\n");
+    }
+}

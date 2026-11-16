@@ -251,6 +251,7 @@ What sets these figures:
 - `merge_session::dir_diff::changed_files` walks each directory into a `BTreeMap` keyed by relative path, so the listing comes out in `Path`'s component order, then joins the two maps. A walk reads each entry's own type: a directory is walked, a regular file kept, and a symlink read with `read_link`. A link with an absolute target that resolves, from the link, to a regular file counts as a file, which covers git's dir diff; any other link keeps its target and compares by it. A link to a directory is never walked, so a cycle cannot form.
 - Files in both directories compare by bytes. Each file is read once and decoded with `Text::decode` to name its content: the comparison settings play no part, so a listed file can show no difference in the diff window under them.
 - `dir_diff::pair` tells two directories from two files before either is read.
+- `merge_app::dir_window` follows the history window: a list window that opens one diff window at a time, takes over the app's `Finish` so the diff window's close comes back to it, and lists again. A file loads off the UI thread through `run::tool_diff`, the loader of `diff LEFT RIGHT`, so each file gets the same jj working-copy check and line-origin lookup; a side without the file is an empty `Origin::Revision`. The CLI turns `Window::Diff` into `Window::DiffDirs` when `pair` finds two directories, and opens no repository: each file finds its own as it loads.
 
 ### A7 Tool integration and the macOS release
 

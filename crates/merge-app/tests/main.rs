@@ -12,6 +12,7 @@ mod choices;
 mod collapse;
 mod common;
 mod diff;
+mod dirs;
 mod history;
 mod in_commit;
 mod input_find;

@@ -6,6 +6,7 @@ mod assets;
 mod blink;
 mod choice;
 pub mod diff_window;
+pub mod dir_window;
 mod editor_sync;
 mod editor_syntax;
 mod go_to_line;

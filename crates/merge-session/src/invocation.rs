@@ -20,6 +20,8 @@ pub enum Window {
     Merge(Merge),
     /// The two-way diff window.
     Diff(Diff),
+    /// `diff LEFT_DIR RIGHT_DIR`: the files that differ, each opening in the diff window.
+    DiffDirs(Diff),
     /// A working-copy file against its parent revision, or `rev`.
     /// `op`: the jj operation whose working-copy commit is the left side, in place of `rev`.
     DiffNative {

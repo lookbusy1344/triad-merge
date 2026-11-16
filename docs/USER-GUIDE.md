@@ -56,6 +56,8 @@ The toolbar can take one side for every conflict left. The ruler at the right ma
 
 Two aligned, editable panes, each with copy to the other side. A block deleted in one place and inserted once in another shows teal at both ends, with an `M` beside it and a pill naming the other end's line, such as `R5 →`; click the `M` or the pill, or press ⇧⌘M with the caret in the block, to go to the other end. ⌘S writes each edited side to its own file and keeps the window open. Each side has its own undo. A file changed on disk reloads, or asks first when the pane has unsaved edits. When one side is a past revision, that side is read-only.
 
+Given two directories, `diff` opens a list of the files that differ instead. Enter or a click opens a file in the diff window; closing that window lists the files again. Binary files are listed and do not open.
+
 Line origins (⌘I) show the commit, author and jj change that wrote each line, in both windows.
 
 ### Unusual characters
@@ -303,6 +305,7 @@ triad-merge BASE LEFT RIGHT -o OUTPUT             # the merge window
 triad-merge BASE LEFT RIGHT OUTPUT                # the same, as git passes it
 triad-merge diff LEFT RIGHT                       # the diff window; each side saves to its own file
 triad-merge diff LEFT RIGHT --readonly-left
+triad-merge diff LEFT_DIR RIGHT_DIR               # the files that differ; each opens in the diff window
 ```
 
 `fixtures/demo` holds a 980-line merge with 20 conflicts to try:
