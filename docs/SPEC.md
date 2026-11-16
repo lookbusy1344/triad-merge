@@ -359,6 +359,16 @@ Two directories (`triad-merge diff LEFT_DIR RIGHT_DIR`):
 - One diff window opens at a time; opening a second file brings it forward. Closing it lists the files again, as Refresh does. A listing that fails shows why in the window.
 - The window's title is `--title` when given and not empty, else "Changed files". Closing it ends the run with 0; while a diff window is open, that window comes forward instead.
 
+The working copy's changes (`triad-merge diff`, `triad-merge diff --rev REV`):
+
+- With no file, `diff` lists the files that differ between a revision and the working copy, in the repository holding the working directory, found as native mode finds it. A run outside any repository exits with 3 and names the directory.
+- The revision is jj's `@-` and git's `HEAD`, or `--rev`, read as native mode reads it. For git a change counts whether staged or not: the index is no parent here. git leaves untracked files out, as `git diff` does.
+- jj snapshots the working copy first, as its own commands do, so a new file on disk is listed as added. This is the one form of `diff` that writes to a jj repository.
+- The listing follows the directory listing: by path, with the same changes and kinds of content. Each path is compared by its bytes at the revision and on disk: a change to the executable bit alone is left out, as is a staged change undone on disk. A path that is no regular file at the revision reads as absent there; a jj file conflicted there is special. Paths are relative to the repository's root.
+- `diff --inspect` prints the listing as the directory form does, and `--json` names the command `diff-changes`.
+- The window is the directory window, titled the same. A text file opens against the revision as `diff PATH --rev REV` opens it: the revision on the left, read-only, titled by the revision, and the working-copy file on the right, which saves. A file new since the revision opens against an empty left side titled `REV (no file)`; a file deleted on disk opens against an empty, read-only right side titled `PATH (no file)`. Each listing snapshots again.
+- `--readonly-left` and `--readonly-right` need a file; `--op` needs `diff PATH`. Either without one exits with 3.
+
 Native mode (`triad-merge diff PATH`):
 
 - Finds the repository by the rule of `--merge-semantics auto` (§6.4): the nearest directory above the file holding a `.jj` directory or a `.git` directory or file, jj when it holds both. Only that directory's backend opens, at that directory: a `.git` that git cannot open names no repository, and the search does not go further up.

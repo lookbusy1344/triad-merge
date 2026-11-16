@@ -193,6 +193,136 @@ impl Fixture {
     }
 }
 
+impl Fixture {
+    /// Commit `committed` as the whole tree, then leave the working copy on disk holding
+    /// `disk`: committed files missing from it are deleted. git stages `staged` over the
+    /// commit; jj snapshots, so every file on disk is tracked.
+    fn change_on_disk(
+        &self,
+        committed: &[(&str, &[u8])],
+        staged: &[(&str, &[u8])],
+        disk: &[(&str, &[u8])],
+    ) {
+        self.commit("one", committed);
+        match self {
+            Self::Git(fixture) => {
+                let index: Vec<_> = committed
+                    .iter()
+                    .filter(|(path, _)| !staged.iter().any(|(s, _)| s == path))
+                    .chain(staged)
+                    .copied()
+                    .collect();
+                fixture.stage(&index);
+            }
+            Self::Jj(fixture) => fixture.check_out_to_disk(),
+        }
+        for (path, _) in committed {
+            let file = self.root().join(path);
+            if file.exists() {
+                std::fs::remove_file(file).expect("the file is removed");
+            }
+        }
+        for (path, bytes) in disk {
+            self.write(path, bytes);
+        }
+        let mut run = self.open_run();
+        run.require_mut().expect("the repository opens").snapshot().expect("the snapshot");
+    }
+
+    /// The parent revision of the working copy: git's `HEAD`, jj's `@-`.
+    fn parent(&self) -> RevSpec {
+        RevSpec::Expr(
+            match self {
+                Self::Git(_) => "HEAD",
+                Self::Jj(_) => "@-",
+            }
+            .to_owned(),
+        )
+    }
+}
+
+fn changed(repo: &dyn Repository, rev: &RevSpec) -> Vec<String> {
+    let paths = repo.changed_paths(rev).expect("the paths are listed");
+    paths.into_iter().map(Utf8PathBuf::into_string).collect()
+}
+
+fn the_changed_paths_are_the_files_the_working_copy_changed(fixture: &Fixture) {
+    let committed: &[(&str, &[u8])] =
+        &[("a.txt", b"1\n"), ("gone.txt", b"g\n"), ("same.txt", b"s\n"), ("sub/s.txt", b"s\n")];
+    // git: the new file is staged; the edit and the delete are not.
+    let staged: &[(&str, &[u8])] = &[("new.txt", b"n\n")];
+    let disk: &[(&str, &[u8])] =
+        &[("a.txt", b"2\n"), ("same.txt", b"s\n"), ("sub/s.txt", b"s\n"), ("new.txt", b"n\n")];
+    fixture.change_on_disk(committed, staged, disk);
+    let repo = fixture.open();
+    assert_eq!(changed(repo.as_ref(), &fixture.parent()), ["a.txt", "gone.txt", "new.txt"]);
+}
+
+fn a_staged_change_counts_as_a_change(fixture: &Fixture) {
+    // jj has no index: the change is simply in the working copy.
+    let committed: &[(&str, &[u8])] = &[("a.txt", b"1\n"), ("b.txt", b"b\n")];
+    fixture.change_on_disk(
+        committed,
+        &[("a.txt", b"2\n")],
+        &[("a.txt", b"2\n"), ("b.txt", b"b\n")],
+    );
+    assert_eq!(changed(fixture.open().as_ref(), &fixture.parent()), ["a.txt"]);
+}
+
+fn a_clean_working_copy_has_no_changed_paths(fixture: &Fixture) {
+    let files: &[(&str, &[u8])] = &[("a.txt", b"1\n"), ("sub/b.txt", b"b\n")];
+    fixture.change_on_disk(files, &[], files);
+    assert_eq!(changed(fixture.open().as_ref(), &fixture.parent()), Vec::<String>::new());
+}
+
+fn changed_paths_come_in_path_order(fixture: &Fixture) {
+    let committed: &[(&str, &[u8])] = &[("a-b", b"1\n"), ("a/c", b"1\n"), ("z", b"1\n")];
+    let disk: &[(&str, &[u8])] = &[("a-b", b"2\n"), ("a/c", b"2\n"), ("z", b"2\n")];
+    fixture.change_on_disk(committed, &[], disk);
+    assert_eq!(changed(fixture.open().as_ref(), &fixture.parent()), ["a/c", "a-b", "z"]);
+}
+
+fn changed_paths_compare_with_any_revision(fixture: &Fixture) {
+    fixture.commit("old", &[("a.txt", b"1\n")]);
+    let files: &[(&str, &[u8])] = &[("a.txt", b"2\n"), ("b.txt", b"b\n")];
+    fixture.change_on_disk(files, &[], files);
+    let repo = fixture.open();
+    assert_eq!(changed(repo.as_ref(), &fixture.rev(1)), ["a.txt", "b.txt"]);
+    assert_eq!(changed(repo.as_ref(), &fixture.rev(0)), Vec::<String>::new());
+}
+
+fn an_untracked_file_is_listed_only_where_the_vcs_tracks_it(fixture: &Fixture) {
+    let files: &[(&str, &[u8])] = &[("a.txt", b"1\n")];
+    fixture.change_on_disk(files, &[], &[("a.txt", b"1\n"), ("untracked.txt", b"u\n")]);
+    let expected: &[&str] = match fixture {
+        // git leaves an untracked file out, as `git diff` does.
+        Fixture::Git(_) => &[],
+        // jj's snapshot tracks every file it does not ignore.
+        Fixture::Jj(_) => &["untracked.txt"],
+    };
+    assert_eq!(changed(fixture.open().as_ref(), &fixture.parent()), expected);
+}
+
+fn changed_paths_against_the_index_leave_out_staged_changes(fixture: &Fixture) {
+    let committed: &[(&str, &[u8])] = &[("a.txt", b"1\n"), ("b.txt", b"1\n")];
+    let disk: &[(&str, &[u8])] = &[("a.txt", b"2\n"), ("b.txt", b"2\n")];
+    fixture.change_on_disk(committed, &[("a.txt", b"2\n")], disk);
+    let listed = fixture.open().changed_paths(&RevSpec::Index);
+    match (fixture, listed) {
+        (Fixture::Git(_), Ok(paths)) => assert_eq!(paths, [Utf8PathBuf::from("b.txt")]),
+        (Fixture::Jj(_), Err(VcsError::NoIndex("jj"))) => {}
+        (_, other) => panic!("unexpected {other:?}"),
+    }
+}
+
+fn changed_paths_name_an_unknown_revision(fixture: &Fixture) {
+    fixture.commit("one", &[("a.txt", b"a\n")]);
+    match fixture.open().changed_paths(&RevSpec::Expr("nope".to_owned())) {
+        Err(VcsError::UnknownRevision(rev)) => assert_eq!(rev, "nope"),
+        other => panic!("expected UnknownRevision, got {other:?}"),
+    }
+}
+
 fn read(repo: &dyn Repository, path: &str, rev: &RevSpec) -> Option<Vec<u8>> {
     repo.file_at(Utf8Path::new(path), rev).expect("the read succeeds")
 }
@@ -766,6 +896,14 @@ macro_rules! suite {
                 a_clean_or_missing_path_is_no_conflict,
                 a_resolved_save_clears_its_conflict_and_leaves_the_others,
                 a_save_with_markers_leaves_its_conflict,
+                the_changed_paths_are_the_files_the_working_copy_changed,
+                a_staged_change_counts_as_a_change,
+                a_clean_working_copy_has_no_changed_paths,
+                changed_paths_come_in_path_order,
+                changed_paths_compare_with_any_revision,
+                an_untracked_file_is_listed_only_where_the_vcs_tracks_it,
+                changed_paths_name_an_unknown_revision,
+                changed_paths_against_the_index_leave_out_staged_changes,
             ]);
         )*
     };

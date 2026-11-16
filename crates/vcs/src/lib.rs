@@ -419,6 +419,25 @@ pub trait Repository: Send {
     /// [`VcsError::BadConfig`] for a value the VCS does not know.
     fn conflict_style(&self) -> Result<Option<ConflictStyle>, VcsError>;
 
+    /// The paths that may differ between the revision `rev` and the working copy, in path
+    /// order, component by component. Every path that differs is among them: a file whose
+    /// bytes differ, a file on one side only, an entry that changed kind. A path may be listed
+    /// whose bytes match, as after a change to the executable bit alone, so the caller
+    /// compares. git: the paths in `rev`'s tree or the index, against the files on disk, so
+    /// a change counts whether staged or not, and an untracked file does not count;
+    /// [`RevSpec::Index`] compares the index with the files on disk. jj: `rev`'s tree against
+    /// the working-copy commit's, as of the last snapshot; [`Repository::snapshot`] first takes
+    /// in the files on disk.
+    ///
+    /// # Errors
+    ///
+    /// [`VcsError::UnknownRevision`] when `rev` does not resolve,
+    /// [`VcsError::AmbiguousRevision`] when a prefix or name in it is ambiguous,
+    /// [`VcsError::NoIndex`] for [`RevSpec::Index`] on jj, [`VcsError::NotUtf8`] for a path
+    /// that is not UTF-8, and [`VcsError::Backend`] when the trees, the index or the files on
+    /// disk cannot be read.
+    fn changed_paths(&self, rev: &RevSpec) -> Result<Vec<Utf8PathBuf>, VcsError>;
+
     /// Take in the working tree as the VCS's next command would, before a conflict is read.
     /// jj snapshots the working copy with the user's jj config, in an operation of its own
     /// when anything changed, and reads at that operation afterwards. In a colocated

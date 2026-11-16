@@ -422,3 +422,52 @@ fn diff_inspect_of_a_directory_and_a_file_exits_3() {
     );
     assert_eq!(mixed.stdout, b"");
 }
+
+#[test]
+fn diff_inspect_without_a_path_lists_the_working_copy_s_changes() {
+    let fixture = vcs_git::testing::Fixture::new();
+    fixture.commit("one", &[("a.txt", b"1\n"), ("sub/b.txt", b"b\n")]);
+    fixture.stage(&[("a.txt", b"1\n"), ("sub/b.txt", b"b\n")]);
+    fixture.write("a.txt", b"1\n");
+    fixture.write("sub/b.txt", b"b\n");
+    let inspect = |args: &[&str]| {
+        command()
+            .arg("diff")
+            .arg("--inspect")
+            .args(args)
+            .current_dir(fixture.root().join("sub"))
+            .output()
+            .expect("binary runs")
+    };
+    let clean = inspect(&[]);
+    assert_eq!(String::from_utf8_lossy(&clean.stderr), "");
+    assert_eq!(String::from_utf8_lossy(&clean.stdout), "files: 0\n");
+    assert_eq!(clean.status.code(), Some(0));
+    fixture.write("sub/b.txt", b"changed\n");
+    let changed = inspect(&[]);
+    // Paths are relative to the repository's root, wherever the run starts.
+    assert_eq!(String::from_utf8_lossy(&changed.stdout), "modified text sub/b.txt\nfiles: 1\n");
+    assert_eq!(changed.status.code(), Some(1));
+    let json = inspect(&["--json"]);
+    let value: serde_json::Value = serde_json::from_slice(&json.stdout).expect("stdout is JSON");
+    assert_eq!(value["command"], "diff-changes");
+    assert_eq!(value["changes"], 1);
+    assert_eq!(value["files"][0]["path"], "sub/b.txt");
+    let unknown = inspect(&["--rev", "nope"]);
+    assert_eq!(String::from_utf8_lossy(&unknown.stderr), "triad-merge: unknown revision nope\n");
+    assert_eq!(unknown.status.code(), Some(ERROR_EXIT));
+}
+
+#[test]
+fn diff_inspect_without_a_path_outside_a_repository_exits_3() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = dunce::canonicalize(dir.path()).expect("canonical");
+    let result =
+        command().args(["diff", "--inspect"]).current_dir(&dir).output().expect("binary runs");
+    assert_eq!(result.status.code(), Some(ERROR_EXIT));
+    assert_eq!(
+        String::from_utf8_lossy(&result.stderr),
+        format!("triad-merge: {} is not inside a git or jj repository\n", dir.display())
+    );
+    assert_eq!(result.stdout, b"");
+}

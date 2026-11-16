@@ -21,7 +21,7 @@ use vcs::RepoKind;
 use crate::absorb_window::{self, AbsorbStart};
 use crate::assets::AppAssets;
 use crate::diff_window::{self, DiffFile, DiffLookup, DiffSettings, Origin};
-use crate::dir_window::{self, DirStart};
+use crate::dir_window::{self, DirStart, Source};
 use crate::history_window::{self, HistoryStart};
 use crate::measure::{self, Measure};
 use crate::resolve_queue::{self, Queue};
@@ -96,21 +96,32 @@ pub fn run(form: WindowForm) -> ExitCode {
             launch_diff(left, right, settings, errors, bindings)
         }
         Window::DiffDirs(diff) => {
-            let start = DirStart {
-                cwd: working_dir(dir),
+            let source = Source::Dirs {
                 left: diff.left,
                 right: diff.right,
+                readonly: [diff.readonly_left, diff.readonly_right],
+            };
+            let start = DirStart {
+                cwd: working_dir(dir),
+                source,
                 title: diff.title,
-                readonly_left: diff.readonly_left,
-                readonly_right: diff.readonly_right,
                 diff: diff.diff,
                 settings: base,
                 watch: WATCH_FILES,
             };
-            launch(bindings, move |cx| {
-                dir_window::start(start, |code, _| exit(code), cx).map(drop)?;
-                Ok(())
-            })
+            launch_dirs(start, bindings)
+        }
+        Window::DiffChanges { rev, diff, title } => {
+            let source = Source::Changes { rev, jj_config: repo.jj_config().cloned() };
+            let start = DirStart {
+                cwd: working_dir(dir),
+                source,
+                title,
+                diff,
+                settings: base,
+                watch: WATCH_FILES,
+            };
+            launch_dirs(start, bindings)
         }
         Window::DiffNative { path, rev, op, diff, title } => {
             let window = NativeDiff { path, rev, op, diff, title };
@@ -120,6 +131,14 @@ pub fn run(form: WindowForm) -> ExitCode {
         Window::Stack(stack) => run_stack(stack, &repo, base, bindings),
         Window::Absorb(absorb) => run_absorb(absorb, &repo, working_dir(dir), base, bindings),
     }
+}
+
+/// Open the directory window on `start`.
+fn launch_dirs(start: DirStart, bindings: KeyBindings) -> ExitCode {
+    launch(bindings, move |cx| {
+        dir_window::start(start, |code, _| exit(code), cx).map(drop)?;
+        Ok(())
+    })
 }
 
 /// The history window on `history`'s file, whose diff windows watch their files.

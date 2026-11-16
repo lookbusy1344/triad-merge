@@ -1,10 +1,11 @@
-//! The directory diff window (spec §6.1): the files that differ between two directories,
-//! by path. A text file opens in the diff window as `diff LEFT RIGHT` opens it, one at a
-//! time; closing that window lists the files again. Binary, undecodable and special files
-//! are listed and do not open. Closing the window ends the run with 0.
+//! The directory diff window (spec §6.1): the files that differ between two directories, or
+//! between a revision and the working copy, by path. A text file opens in the diff window,
+//! one at a time: as `diff LEFT RIGHT` opens it, or against the revision as `diff PATH
+//! --rev REV` does. Closing that window lists the files again. Binary, undecodable and
+//! special files are listed and do not open. Closing the window ends the run with 0.
 
 use std::cell::RefCell;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use gpui_kit::component::button::Button;
@@ -16,11 +17,13 @@ use gpui_kit::{
     WindowBounds, WindowOptions, div,
 };
 use merge_core::diff::DiffOptions;
-use merge_session::dir_diff::{self, Change, ChangedFile, DirDiffError};
-use merge_session::native::NO_FILE;
-use merge_session::repository::RunRepository;
+use merge_core::text::Text;
+use merge_session::dir_diff::{self, Change, ChangedFile};
+use merge_session::jj_config::ConfigEnv;
+use merge_session::native::{self, Listing, NO_FILE};
+use merge_session::repository::{Handoff, RunRepository};
 
-use crate::diff_window::{self, DiffSettings};
+use crate::diff_window::{self, DiffFile, DiffLookup, DiffSettings};
 use crate::pick_list::{self, Activate, SelectNext, SelectPrevious, State};
 use crate::run::{ToolDiff, ToolPair};
 use crate::window::WindowSettings;
@@ -45,16 +48,21 @@ const WINDOW_HEIGHT: f32 = 560.;
 /// How the run ends: the process exits, or a test records the code.
 type ExitFn = dyn Fn(ExitCode, &mut App);
 
-/// What the directory window opens with: the two directories and the flags of
-/// `diff LEFT_DIR RIGHT_DIR`, and what its diff windows take.
+/// What the directory window lists.
+pub enum Source {
+    /// `diff LEFT_DIR RIGHT_DIR`: two directories, and whether each side is read-only.
+    Dirs { left: PathBuf, right: PathBuf, readonly: [bool; 2] },
+    /// `diff [--rev REV]`: the working copy's changes against `rev`, or its parent revision,
+    /// in the repository holding the working directory. jj's snapshots read `jj_config`.
+    Changes { rev: Option<String>, jj_config: Option<ConfigEnv> },
+}
+
+/// What the directory window opens with: what it lists, and what its diff windows take.
 pub struct DirStart {
     pub cwd: PathBuf,
-    pub left: PathBuf,
-    pub right: PathBuf,
+    pub source: Source,
     /// The window's title; a generic one without it.
     pub title: Option<String>,
-    pub readonly_left: bool,
-    pub readonly_right: bool,
     /// The comparison options each diff window takes.
     pub diff: DiffOptions,
     pub settings: WindowSettings,
@@ -67,6 +75,8 @@ pub struct DirWindow {
     exit: Rc<ExitFn>,
     /// The files listed; none before a listing lands.
     files: Option<Vec<ChangedFile>>,
+    /// For [`Source::Changes`]: the repository's root and the revision of the last listing.
+    against: Option<Against>,
     /// The list is loading.
     listing: bool,
     /// The diff window open on a file.
@@ -113,6 +123,7 @@ pub fn start(
             start,
             exit,
             files: None,
+            against: None,
             listing: false,
             open: None,
             loading: false,
@@ -136,6 +147,69 @@ pub fn start(
     }));
     view.update(cx, DirWindow::refresh);
     Ok((window, view))
+}
+
+/// The repository's root and the revision a [`Source::Changes`] listing compared with.
+#[derive(Clone)]
+struct Against {
+    root: PathBuf,
+    rev: String,
+}
+
+/// A listing: its files, and for [`Source::Changes`] what they were compared with.
+type Listed = Result<(Vec<ChangedFile>, Option<Against>), String>;
+
+/// List `source`'s files from the working directory `cwd`.
+fn list(source: &Source, cwd: &Path) -> Listed {
+    match source {
+        Source::Dirs { left, right, .. } => {
+            dir_diff::changed_files(left, right).map(|files| (files, None)).map_err(to_string)
+        }
+        Source::Changes { rev, jj_config } => {
+            let mut repo = changes_repository(cwd, jj_config.as_ref());
+            let Listing { root, rev, files } =
+                native::changed_files(&mut repo, rev.as_deref()).map_err(to_string)?;
+            Ok((files, Some(Against { root, rev })))
+        }
+    }
+}
+
+fn to_string(error: impl std::fmt::Display) -> String {
+    error.to_string()
+}
+
+/// The repository holding `dir`, whose jj snapshots read `jj_config`.
+fn changes_repository(dir: &Path, jj_config: Option<&ConfigEnv>) -> RunRepository {
+    let repo = RunRepository::find([dir]);
+    match jj_config {
+        Some(config) => repo.with_jj_config(config.clone()),
+        None => repo,
+    }
+}
+
+/// The diff window's sides for `file` of a [`Source::Changes`] listing: the file at the
+/// listing's revision on the left, read-only, and the working-copy file on the right. A file
+/// deleted on disk opens an empty, read-only right side.
+fn load_changed(
+    file: &ChangedFile,
+    Against { root, rev }: Against,
+    jj_config: Option<&ConfigEnv>,
+) -> Result<ToolDiff, String> {
+    let shown = file.display_path();
+    let mut repo = changes_repository(&root, jj_config);
+    let loaded = native::load_listed(&mut repo, &root, &rev, &file.path).map_err(to_string)?;
+    let path = loaded.right.clone();
+    let (left, right) = match file.change {
+        Change::Deleted => {
+            let empty = Text::decode(Vec::new()).map_err(to_string)?;
+            let left = DiffFile::revision(loaded.left, loaded.left_title);
+            (left, DiffFile::revision(empty, format!("{shown} {NO_FILE}")))
+        }
+        Change::Added | Change::Modified => crate::run::native_sides(loaded).map_err(to_string)?,
+    };
+    let kind = repo.kind();
+    let origins = DiffLookup::Native { path, rev: Some(rev), repo: Handoff::new(repo) };
+    Ok(ToolDiff { left, right, origins, kind, title: Some(shown) })
 }
 
 /// The diff window's sides for `file`, below `start`'s directories. A side without the file
@@ -183,8 +257,8 @@ impl DirWindow {
             return;
         }
         self.listing = true;
-        let (left, right) = (self.start.left.clone(), self.start.right.clone());
-        let listed = cx.background_spawn(async move { dir_diff::changed_files(&left, &right) });
+        let (source, cwd) = (self.source_owned(), self.start.cwd.clone());
+        let listed = cx.background_spawn(async move { list(&source, &cwd) });
         cx.spawn(async move |this, cx| {
             let listed = listed.await;
             ignore_closed_view(this.update(cx, |this, cx| this.arrived_list(listed, cx)));
@@ -193,11 +267,19 @@ impl DirWindow {
         cx.notify();
     }
 
-    fn arrived_list(
-        &mut self,
-        listed: Result<Vec<ChangedFile>, DirDiffError>,
-        cx: &mut Context<Self>,
-    ) {
+    /// A copy of the source for a job off the UI thread.
+    fn source_owned(&self) -> Source {
+        match &self.start.source {
+            Source::Dirs { left, right, readonly } => {
+                Source::Dirs { left: left.clone(), right: right.clone(), readonly: *readonly }
+            }
+            Source::Changes { rev, jj_config } => {
+                Source::Changes { rev: rev.clone(), jj_config: jj_config.clone() }
+            }
+        }
+    }
+
+    fn arrived_list(&mut self, listed: Listed, cx: &mut Context<Self>) {
         self.listing = false;
         if self.end_if_closing(cx) {
             if let Err(error) = &listed {
@@ -206,13 +288,14 @@ impl DirWindow {
             return;
         }
         match listed {
-            Ok(files) => {
+            Ok((files, against)) => {
                 let len = files.len();
                 self.files = Some(files);
+                self.against = against;
                 self.note = None;
                 self.selected = self.selected.filter(|&ix| ix < len);
             }
-            Err(error) => self.note = Some(error.to_string().into()),
+            Err(error) => self.note = Some(error.into()),
         }
         cx.notify();
     }
@@ -233,10 +316,18 @@ impl DirWindow {
             return;
         }
         self.loading = true;
-        let DirStart { cwd, left, right, readonly_left, readonly_right, .. } = &self.start;
-        let dirs = [left.clone(), right.clone()];
-        let (readonly, cwd) = ([*readonly_left, *readonly_right], cwd.clone());
-        let loaded = cx.background_spawn(async move { load_file(&listed, dirs, readonly, cwd) });
+        let loaded = match (self.source_owned(), self.against.clone()) {
+            (Source::Dirs { left, right, readonly }, _) => {
+                let cwd = self.start.cwd.clone();
+                cx.background_spawn(async move { load_file(&listed, [left, right], readonly, cwd) })
+            }
+            (Source::Changes { jj_config, .. }, Some(against)) => {
+                cx.background_spawn(
+                    async move { load_changed(&listed, against, jj_config.as_ref()) },
+                )
+            }
+            (Source::Changes { .. }, None) => return,
+        };
         cx.spawn(async move |this, cx| {
             let loaded = loaded.await;
             ignore_closed_view(this.update(cx, |this, cx| this.arrived_file(loaded, cx)));

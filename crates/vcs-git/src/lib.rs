@@ -4,6 +4,7 @@
 pub mod testing;
 pub mod tool_config;
 
+use std::collections::BTreeSet;
 use std::error::Error;
 
 use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
@@ -138,6 +139,16 @@ impl GitRepository {
             Ok(commit) => Ok(commit.id),
             Err(_) => Err(VcsError::UnknownRevision(expr.to_owned())),
         }
+    }
+
+    /// The tree of the commit, tag or tree `revision`.
+    fn tree_id(&self, revision: gix::ObjectId) -> Result<gix::ObjectId, VcsError> {
+        let tree = self
+            .repo
+            .find_object(revision)
+            .and_then(gix::Object::peel_to_tree)
+            .map_err(backend("reading a revision's tree"))?;
+        Ok(tree.id)
     }
 
     /// The blob `path` has in `revision`'s tree, if it is a file there.
@@ -550,6 +561,46 @@ impl Repository for GitRepository {
     }
 
     /// git takes the working tree in at `git add`, never by itself.
+    /// gix's status: `rev`'s tree against the index, and the index against the files on disk,
+    /// with untracked files and submodules left out. gix drops an entry whose stat alone went
+    /// stale.
+    fn changed_paths(&self, rev: &RevSpec) -> Result<Vec<Utf8PathBuf>, VcsError> {
+        let tree = match rev {
+            RevSpec::Index => None,
+            RevSpec::Expr(expr) => Some(self.tree_id(self.revision(expr)?)?),
+            RevSpec::Commit(id) => Some(self.tree_id(self.commit_by_id(id)?)?),
+        };
+        let status = self
+            .repo
+            .status(gix::progress::Discard)
+            .map_err(backend("reading the status"))?
+            .untracked_files(gix::status::UntrackedFiles::None)
+            .index_worktree_submodules(None);
+        let mut paths = BTreeSet::new();
+        let mut add = |path: &gix::bstr::BStr| -> Result<(), VcsError> {
+            let path = gix::path::from_bstr(path).map_err(backend("reading a status path"))?;
+            paths.insert(Utf8PathBuf::from_path_buf(path.into_owned()).map_err(VcsError::NotUtf8)?);
+            Ok(())
+        };
+        if let Some(tree) = tree {
+            let items =
+                status.head_tree(tree).into_iter(None).map_err(backend("reading the status"))?;
+            for item in items {
+                match item.map_err(backend("reading the status"))? {
+                    gix::status::Item::TreeIndex(change) => add(change.location())?,
+                    gix::status::Item::IndexWorktree(item) => add(item.rela_path())?,
+                }
+            }
+        } else {
+            let items =
+                status.into_index_worktree_iter(None).map_err(backend("reading the status"))?;
+            for item in items {
+                add(item.map_err(backend("reading the status"))?.rela_path())?;
+            }
+        }
+        Ok(paths.into_iter().collect())
+    }
+
     fn snapshot(&mut self) -> Result<(), VcsError> {
         Ok(())
     }

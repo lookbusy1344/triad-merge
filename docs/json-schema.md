@@ -11,12 +11,12 @@ Every object carries `"schema": 1`. A change that removes or renames a field, or
 | Field | Type | Meaning |
 |---|---|---|
 | `schema` | integer | Schema version, `1`. |
-| `command` | string | `"inspect"`, `"diff"` or `"diff-dirs"`. |
+| `command` | string | `"inspect"`, `"diff"`, `"diff-dirs"` or `"diff-changes"`. |
 | `encodings` | object | Each input's encoding, keyed by input name. |
 | `warnings` | array of strings | Warning codes, in the order below. Empty when there are none. |
 | `regions` | array of objects | The regions in file order. Together they cover every line of every input. |
 
-`"diff-dirs"` carries `schema` and `command` alone of these; its section lists its fields.
+`"diff-dirs"` and `"diff-changes"` carry `schema` and `command` alone of these; their section lists their fields.
 
 Encodings: `"utf-8"`, `"utf-8-bom"`, `"utf-16le"`, `"utf-16be"`. The UTF-16 encodings always have a byte order mark.
 
@@ -96,14 +96,16 @@ Exit code, as `diff(1)`: 0 if the inputs are equal under the whitespace mode, `d
 }
 ```
 
-## `diff --inspect` on two directories
+## `diff --inspect` on two directories, or with no file
+
+`"diff-dirs"` lists two directories; `"diff-changes"`, with no file, lists the working copy's changes against a revision (spec §6.1). Both take these fields.
 
 | Field | Type | Meaning |
 |---|---|---|
 | `changes` | integer | The number of entries in `files`. |
 | `files` | array of objects | The files that differ, by path, component by component (spec §6.1). |
 
-Each file has `path`, relative to both directories with `/` between components on every platform; `change`, `"added"` (right only), `"deleted"` (left only) or `"modified"`; and `content`, `"text"`, `"binary"`, `"undecodable"` or `"special"` (spec §6.1). A path component that is not UTF-8 shows with U+FFFD in place of its bad bytes.
+Each file has `path`, relative to both directories, or to the repository's root, with `/` between components on every platform; `change`, `"added"` (right only, or new since the revision), `"deleted"` (left only, or gone from disk) or `"modified"`; and `content`, `"text"`, `"binary"`, `"undecodable"` or `"special"` (spec §6.1). A path component that is not UTF-8 shows with U+FFFD in place of its bad bytes.
 
 Exit code: 0 if no file differs, 1 if one does, 3 on error.
 

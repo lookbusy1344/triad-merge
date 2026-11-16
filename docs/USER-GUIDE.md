@@ -117,8 +117,12 @@ Without a window: `triad-merge resolve --headless src/lib.rs` writes the automat
 
 ```sh
 triad-merge diff src/lib.rs        # against @-; edits save to the working copy
+triad-merge diff                   # the changed files against @-, in a list
+triad-merge diff --rev 'trunk()'   # the changed files against trunk()
 jj diff --tool triad               # the changed files, in a list
 ```
+
+`triad-merge diff` with no file snapshots the working copy first, as jj's commands do, then lists the files that differ. Each opens against the revision; edits save to the working copy.
 
 When `@` is a merge, the left side is the file in the merge of the parents' trees, as `jj diff` shows it.
 
@@ -281,7 +285,11 @@ triad reads git's `merge.conflictStyle` for the markers it writes.
 
 ```sh
 triad-merge diff src/lib.rs   # against the index when the file has staged changes, else HEAD
+triad-merge diff               # the changed files against HEAD, staged or not, in a list
+triad-merge diff --rev main    # the changed files against main
 ```
+
+The list leaves untracked files out, as `git diff` does. Each file opens against the revision; edits save to the working tree.
 
 ### Diff against older revisions
 
@@ -328,6 +336,7 @@ triad-merge --headless BASE LEFT RIGHT -o OUTPUT --commands FILE   # then FILE's
 triad-merge inspect --json BASE LEFT RIGHT                         # the merge's regions
 triad-merge diff --inspect --json LEFT RIGHT                       # the diff's regions
 triad-merge diff --inspect --json LEFT_DIR RIGHT_DIR               # the files that differ between two directories
+triad-merge diff --inspect --json [--rev REV]                      # the working copy's changed files
 triad-merge resolve PATH -r REV --headless --commands FILE --dry-run   # jj: picks applied in a commit, reported, not written
 triad-merge stack --list
 triad-merge stack --json

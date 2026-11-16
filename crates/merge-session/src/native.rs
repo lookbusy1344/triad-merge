@@ -10,6 +10,7 @@ use vcs_git::GitRepository;
 use vcs_jj::JjRepository;
 use vcs_jj::config::ConfigEnv;
 
+use crate::dir_diff::{self, Change, ChangedFile, Content};
 use crate::repository::RunRepository;
 
 /// What `diff PATH` shows: a revision of the file on the left, the working copy on the right.
@@ -215,4 +216,116 @@ fn read_left(
         source,
     })?;
     Ok(NativeDiff { left, left_title, right: path.to_owned() })
+}
+
+/// The working copy's changed files, as `diff` with no path lists them (spec §6.1).
+#[derive(Debug)]
+pub struct Listing {
+    /// The repository's root, which the paths are relative to.
+    pub root: PathBuf,
+    /// The revision the files are compared with, as the VCS reads it.
+    pub rev: String,
+    pub files: Vec<ChangedFile>,
+}
+
+/// The files that differ between `rev`, or the parent revision without one, and the working
+/// copy, from the run's repository. jj snapshots the working copy first, as its commands do;
+/// git compares the files on disk, staged or not, and leaves untracked files out. The parent
+/// is jj's `@-` and git's `HEAD`: a staged change counts, so the index is no parent here. Each
+/// candidate the VCS lists is compared by bytes, so a change to the executable bit alone, or a
+/// staged change undone on disk, is left out. A path that is no regular file at the revision
+/// reads as absent there, and one conflicted there is [`Content::Special`].
+///
+/// # Errors
+///
+/// [`NativeError::Vcs`] when no repository is found, the snapshot fails, or the revision or
+/// a file cannot be read; [`NativeError::Find`] when a file on disk cannot be read.
+pub fn changed_files(repo: &mut RunRepository, rev: Option<&str>) -> Result<Listing, NativeError> {
+    let repo = repo.require_mut()?;
+    repo.snapshot()?;
+    let rev = rev.map_or_else(
+        || {
+            match repo.kind() {
+                RepoKind::Jj => JJ_PARENT,
+                RepoKind::Git => GIT_PARENT,
+            }
+            .to_owned()
+        },
+        str::to_owned,
+    );
+    let spec = RevSpec::Expr(rev.clone());
+    let root = repo.root().as_std_path().to_owned();
+    let mut files = Vec::new();
+    for path in repo.changed_paths(&spec)? {
+        let before = match repo.file_at(&path, &spec) {
+            Ok(Some(bytes)) => Side::File(bytes),
+            Ok(None) => Side::Absent,
+            Err(VcsError::Conflicted { .. }) => Side::Special,
+            Err(error) => return Err(error.into()),
+        };
+        let after = on_disk(&root.join(&path))?;
+        if let Some((change, content)) = compared(before, after) {
+            files.push(ChangedFile { path: path.into_std_path_buf(), change, content });
+        }
+    }
+    Ok(Listing { root, rev, files })
+}
+
+/// Load the file at `relative`, a path [`changed_files`] listed, against the listing's
+/// revision `rev`, from the run's repository, whose root is `root`. The right side is the
+/// path on disk, which may no longer exist.
+///
+/// # Errors
+///
+/// [`NativeError::Vcs`] when the path is not UTF-8 or the revision cannot be read, and
+/// [`NativeError::Decode`] when the revision's file is not text.
+pub fn load_listed(
+    repo: &mut RunRepository,
+    root: &Path,
+    rev: &str,
+    relative: &Path,
+) -> Result<NativeDiff, NativeError> {
+    let path =
+        Utf8Path::from_path(relative).ok_or_else(|| VcsError::NotUtf8(relative.to_owned()))?;
+    let spec = RevSpec::Expr(rev.to_owned());
+    read_left(repo.require()?, path, &spec, rev, &root.join(relative))
+}
+
+/// The parent revisions [`changed_files`] compares with by default.
+const JJ_PARENT: &str = "@-";
+const GIT_PARENT: &str = "HEAD";
+
+/// What a path holds on one side of a listing.
+enum Side {
+    Absent,
+    File(Vec<u8>),
+    /// No regular file: a symlink, a conflict, a device.
+    Special,
+}
+
+/// What `path` holds on disk. A directory holds no file at its path.
+fn on_disk(path: &Path) -> Result<Side, NativeError> {
+    let find = |source| NativeError::Find { path: path.to_owned(), source };
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.is_file() => std::fs::read(path).map(Side::File).map_err(find),
+        Ok(meta) if meta.is_dir() => Ok(Side::Absent),
+        Ok(_) => Ok(Side::Special),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Side::Absent),
+        Err(error) => Err(find(error)),
+    }
+}
+
+/// How a path changed from `before` to `after`; `None` when it did not.
+fn compared(before: Side, after: Side) -> Option<(Change, Content)> {
+    let content = |side: Side| match side {
+        Side::File(bytes) => dir_diff::decoded(bytes),
+        Side::Absent | Side::Special => Content::Special,
+    };
+    match (before, after) {
+        (Side::Absent, Side::Absent) => None,
+        (Side::File(a), Side::File(b)) if a == b => None,
+        (Side::Absent, side) => Some((Change::Added, content(side))),
+        (side, Side::Absent) => Some((Change::Deleted, content(side))),
+        (a, b) => Some((Change::Modified, content(a).max(content(b)))),
+    }
 }

@@ -41,6 +41,9 @@ pub enum Batch {
     Inspect { files: MergeFiles, options: MergeOptions, semantics: SemanticsFlags, json: bool },
     /// Print the two-way regions; no window.
     DiffInspect { left: PathBuf, right: PathBuf, diff: DiffOptions, json: bool },
+    /// `diff --inspect [--rev REV]`: list the files that differ between `rev`, or the parent
+    /// revision, and the working copy.
+    ChangesInspect { rev: Option<String>, json: bool },
     /// Write the merge and diff tool entries to `vcs`'s user config, or to `config`.
     Install { vcs: RepoKind, config: Option<PathBuf> },
     /// A jj-native form (spec §7.5).
@@ -78,12 +81,14 @@ pub enum UsageError {
     NoOutput,
     #[error("--headless needs BASE LEFT RIGHT and an output")]
     HeadlessWithoutFiles,
-    #[error("diff takes LEFT RIGHT, or one PATH, got {0} files")]
+    #[error("diff takes LEFT RIGHT, one PATH, or no file, got {0} files")]
     DiffFiles(usize),
-    #[error("--rev applies only to diff PATH")]
+    #[error("--rev does not apply to diff LEFT RIGHT")]
     RevWithTwoFiles,
     #[error("--op applies only to diff PATH")]
     OpWithTwoFiles,
+    #[error("--readonly-left and --readonly-right need a file")]
+    ReadonlyWithoutTwoFiles,
     #[error("--inspect needs LEFT RIGHT")]
     InspectNative,
     #[error("--commands applies to one file: give resolve a PATH")]
@@ -555,6 +560,18 @@ impl DiffCli {
         let mut files = self.files.into_iter();
         let paths = (files.next(), files.next(), files.next());
         match (paths, self.rev, self.inspect) {
+            ((None, None, None), _, _) if self.readonly_left || self.readonly_right => {
+                Err(UsageError::ReadonlyWithoutTwoFiles)
+            }
+            ((None, None, None), _, _) if self.op.is_some() => Err(UsageError::OpWithTwoFiles),
+            ((None, None, None), rev, true) => {
+                Ok(Invocation::Batch(Batch::ChangesInspect { rev, json: self.json }))
+            }
+            ((None, None, None), rev, false) => Ok(Invocation::Window(Window::DiffChanges {
+                rev,
+                diff: self.diff.over(&settings.two_way()),
+                title: self.title,
+            })),
             ((Some(_), None, None), _, true) => Err(UsageError::InspectNative),
             ((Some(path), None, None), rev, false) => Ok(Invocation::Window(Window::DiffNative {
                 path,
@@ -949,7 +966,40 @@ mod tests {
             clap_kind(&["diff", "--inspect", "a", "b", "--readonly-left"]),
             ErrorKind::ArgumentConflict
         );
-        assert_eq!(usage(&["diff"]), UsageError::DiffFiles(0));
+        assert_eq!(usage(&["diff", "--op", "x"]), UsageError::OpWithTwoFiles);
+    }
+
+    #[test]
+    fn diff_without_a_path_lists_the_working_copy_s_changes() {
+        assert_eq!(
+            ok(&["diff"]),
+            Invocation::Window(Window::DiffChanges {
+                rev: None,
+                diff: Settings::default().two_way(),
+                title: None,
+            })
+        );
+        assert_eq!(
+            ok(&["diff", "--rev", "main", "--title", "T", "--ignore-whitespace", "all"]),
+            Invocation::Window(Window::DiffChanges {
+                rev: Some("main".to_owned()),
+                diff: DiffOptions {
+                    whitespace: diff::Whitespace::All,
+                    ..Settings::default().two_way()
+                },
+                title: Some("T".to_owned()),
+            })
+        );
+        assert_eq!(
+            ok(&["diff", "--inspect", "--rev", "main", "--json"]),
+            Invocation::Batch(Batch::ChangesInspect { rev: Some("main".to_owned()), json: true })
+        );
+        assert_eq!(
+            ok(&["diff", "--inspect"]),
+            Invocation::Batch(Batch::ChangesInspect { rev: None, json: false })
+        );
+        assert_eq!(usage(&["diff", "--readonly-left"]), UsageError::ReadonlyWithoutTwoFiles);
+        assert_eq!(usage(&["diff", "--readonly-right"]), UsageError::ReadonlyWithoutTwoFiles);
     }
 
     #[test]

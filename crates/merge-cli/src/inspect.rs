@@ -11,7 +11,7 @@ use merge_core::merge3::{Kind, LEFT, RIGHT, word_merge};
 use merge_core::text::{Encoding, output_encoding};
 use serde::Serialize;
 
-use merge_session::dir_diff::{self, Change, Content};
+use merge_session::dir_diff::{self, Change, ChangedFile, Content};
 use merge_session::invocation::MergeFiles;
 use merge_session::semantics::Mode;
 use merge_session::{load, read_text};
@@ -182,7 +182,21 @@ pub fn inspect(
 ///
 /// [`CliError`] when a side is not a directory or an entry cannot be read.
 pub fn dirs_inspect(left: &Path, right: &Path, json: bool) -> Result<(String, ExitCode), CliError> {
-    let files: Vec<DirFile> = dir_diff::changed_files(left, right)?
+    files_report("diff-dirs", &dir_diff::changed_files(left, right)?, json)
+}
+
+/// The report of `command` on `files`, which differ, and the exit code: 0 if there are none,
+/// 1 if there are any.
+///
+/// # Errors
+///
+/// [`CliError::Json`] when the JSON report cannot be written.
+pub fn files_report(
+    command: &'static str,
+    files: &[ChangedFile],
+    json: bool,
+) -> Result<(String, ExitCode), CliError> {
+    let files: Vec<DirFile> = files
         .iter()
         .map(|file| DirFile {
             path: file.display_path(),
@@ -199,7 +213,7 @@ pub fn dirs_inspect(left: &Path, right: &Path, json: bool) -> Result<(String, Ex
             },
         })
         .collect();
-    let report = DirsReport { schema: SCHEMA, command: "diff-dirs", changes: files.len(), files };
+    let report = DirsReport { schema: SCHEMA, command, changes: files.len(), files };
     let code = exit_code(report.changes);
     let text = if json {
         to_json(&report)?

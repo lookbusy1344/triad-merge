@@ -1,6 +1,7 @@
 //! `diff PATH` inputs from git and jj repositories built through gix and jj-lib (spec §6.1,
 //! DESIGN.md §A7.1).
 
+use merge_session::dir_diff::{Change, Content};
 use merge_session::native::{self, NativeDiff, NativeError};
 use merge_session::repository::RunRepository;
 use vcs::VcsError;
@@ -13,6 +14,149 @@ fn load(path: &camino::Utf8Path, rev: Option<&str>) -> NativeDiff {
 /// [`native::load`] in the repository holding `path`, as `diff PATH` finds it.
 fn try_load(path: &std::path::Path, rev: Option<&str>) -> Result<NativeDiff, NativeError> {
     native::load(&mut RunRepository::of_file(path), path, rev)
+}
+
+/// [`native::changed_files`] from the working directory `dir`, as path, change and content.
+fn listed(dir: &camino::Utf8Path, rev: Option<&str>) -> (String, Vec<(String, Change, Content)>) {
+    let listing = try_list(dir, rev).expect("the files are listed");
+    let files =
+        listing.files.iter().map(|file| (file.display_path(), file.change, file.content)).collect();
+    (listing.rev, files)
+}
+
+fn try_list(dir: &camino::Utf8Path, rev: Option<&str>) -> Result<native::Listing, NativeError> {
+    let mut repo = RunRepository::find([dir.as_std_path()]);
+    native::changed_files(&mut repo, rev)
+}
+
+fn file(path: &str, change: Change, content: Content) -> (String, Change, Content) {
+    (path.to_owned(), change, content)
+}
+
+#[test]
+fn the_working_tree_lists_its_staged_and_unstaged_changes_against_head() {
+    let fixture = Fixture::new();
+    let committed: &[(&str, &[u8])] = &[
+        ("a.txt", b"1\n"),
+        ("gone.txt", b"g\n"),
+        ("same.txt", b"s\n"),
+        ("undone.txt", b"u\n"),
+        ("img.bin", b"\x00a"),
+    ];
+    fixture.commit("one", committed);
+    // A staged change undone on disk, and a staged new file.
+    fixture.stage(&[
+        ("a.txt", b"1\n"),
+        ("gone.txt", b"g\n"),
+        ("same.txt", b"s\n"),
+        ("undone.txt", b"staged\n"),
+        ("img.bin", b"\x00a"),
+        ("new.txt", b"n\n"),
+    ]);
+    for (path, bytes) in [
+        ("a.txt", &b"2\n"[..]),
+        ("same.txt", b"s\n"),
+        ("undone.txt", b"u\n"),
+        ("img.bin", b"\x00b"),
+        ("new.txt", b"n\n"),
+        ("untracked.txt", b"x\n"),
+    ] {
+        fixture.write(path, bytes);
+    }
+    assert_eq!(
+        listed(fixture.root(), None),
+        (
+            "HEAD".to_owned(),
+            vec![
+                file("a.txt", Change::Modified, Content::Text),
+                file("gone.txt", Change::Deleted, Content::Text),
+                file("img.bin", Change::Modified, Content::Binary),
+                file("new.txt", Change::Added, Content::Text),
+            ]
+        )
+    );
+}
+
+#[test]
+fn rev_lists_the_changes_against_that_revision() {
+    let fixture = Fixture::new();
+    fixture.commit("one", &[("a.txt", b"1\n")]);
+    fixture.commit("two", &[("a.txt", b"2\n"), ("b.txt", b"b\n")]);
+    fixture.stage(&[("a.txt", b"2\n"), ("b.txt", b"b\n")]);
+    fixture.write("a.txt", b"2\n");
+    fixture.write("b.txt", b"b\n");
+    assert_eq!(listed(fixture.root(), Some("HEAD")), ("HEAD".to_owned(), vec![]));
+    assert_eq!(
+        listed(fixture.root(), Some("HEAD~1")),
+        (
+            "HEAD~1".to_owned(),
+            vec![
+                file("a.txt", Change::Modified, Content::Text),
+                file("b.txt", Change::Added, Content::Text),
+            ]
+        )
+    );
+}
+
+#[test]
+fn a_listing_names_an_unknown_revision() {
+    let fixture = Fixture::new();
+    fixture.commit("one", &[("a.txt", b"1\n")]);
+    let error = try_list(fixture.root(), Some("nope")).expect_err("no such revision");
+    assert!(
+        matches!(&error, NativeError::Vcs(VcsError::UnknownRevision(rev)) if rev == "nope"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn a_listing_outside_any_repository_is_refused() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = camino::Utf8Path::from_path(dir.path()).expect("UTF-8");
+    let error = try_list(dir, None).expect_err("no repository");
+    assert!(matches!(&error, NativeError::Vcs(VcsError::NotARepository(_))), "{error:?}");
+}
+
+#[test]
+fn a_listed_file_loads_against_the_listing_s_revision() {
+    let fixture = Fixture::new();
+    fixture.commit("one", &[("sub/a.txt", b"one\n"), ("gone.txt", b"g\n")]);
+    fixture.commit("two", &[("sub/a.txt", b"two\n"), ("gone.txt", b"g\n")]);
+    fixture.write("sub/a.txt", b"three\n");
+    let listing = try_list(fixture.root(), Some("HEAD~1")).expect("listed");
+    let mut repo = RunRepository::find([fixture.root().as_std_path()]);
+    let diff = native::load_listed(
+        &mut repo,
+        &listing.root,
+        &listing.rev,
+        std::path::Path::new("sub/a.txt"),
+    )
+    .expect("loaded");
+    assert_eq!(diff.left.content(), "one\n");
+    assert_eq!(diff.left_title, "HEAD~1");
+    // The repository's root is canonical.
+    let root = dunce::canonicalize(fixture.root()).expect("canonical");
+    assert_eq!(listing.root, root);
+    assert_eq!(diff.right, root.join("sub").join("a.txt"));
+    // A file deleted on disk still loads its revision. The fixture commits without
+    // writing files, so `gone.txt` is absent on disk.
+    assert!(!root.join("gone.txt").exists());
+    let diff = native::load_listed(
+        &mut repo,
+        &listing.root,
+        &listing.rev,
+        std::path::Path::new("gone.txt"),
+    )
+    .expect("loaded");
+    assert_eq!(diff.left.content(), "g\n");
+    assert_eq!(diff.left_title, "HEAD~1");
+    let added = native::load_listed(
+        &mut repo,
+        &listing.root,
+        &listing.rev,
+        std::path::Path::new("new.txt"),
+    );
+    assert_eq!(added.expect("loaded").left_title, "HEAD~1 (no file)");
 }
 
 #[test]
@@ -156,7 +300,7 @@ fn a_binary_parent_is_refused_with_its_revision() {
 }
 
 mod jj {
-    use super::load;
+    use super::{Change, Content, file, listed, load};
     use merge_session::native;
     use merge_session::repository::RunRepository;
     use vcs::RepoKind;
@@ -324,6 +468,42 @@ mod jj {
         assert_eq!(
             native::discover(outer_git.root()).expect("the outer one").kind(),
             RepoKind::Git
+        );
+    }
+
+    #[test]
+    fn a_listing_snapshots_the_working_copy_first() {
+        let fixture = Fixture::new();
+        fixture.commit("one", &[("a.txt", b"1\n"), ("gone.txt", b"g\n")]);
+        fixture.check_out_to_disk();
+        fixture.write("a.txt", b"2\n");
+        fixture.write("new.txt", b"n\n");
+        std::fs::remove_file(fixture.root().join("gone.txt")).expect("removed");
+        let before = fixture.operation_count();
+        assert_eq!(
+            listed(fixture.root(), None),
+            (
+                "@-".to_owned(),
+                vec![
+                    file("a.txt", Change::Modified, Content::Text),
+                    file("gone.txt", Change::Deleted, Content::Text),
+                    file("new.txt", Change::Added, Content::Text),
+                ]
+            )
+        );
+        assert_eq!(fixture.operation_count(), before + 1, "one snapshot operation");
+    }
+
+    #[test]
+    fn a_file_conflicted_at_the_revision_is_special() {
+        let fixture = Fixture::new();
+        fixture.three_way("a.txt", [b"base\n", b"left\n", b"right\n"]);
+        fixture.check_out_to_disk();
+        // Resolved on disk; conflicted in the merge of `@-`'s trees.
+        fixture.write("a.txt", b"resolved\n");
+        assert_eq!(
+            listed(fixture.root(), None).1,
+            [file("a.txt", Change::Modified, Content::Special)]
         );
     }
 }

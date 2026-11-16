@@ -63,7 +63,8 @@ pub enum Content {
     Undecodable,
     /// A side holds a NUL byte within git's sniff length.
     Binary,
-    /// A side is no regular file: a symlink triad does not follow, a socket, a device.
+    /// A side is no regular file: a symlink triad does not follow, a socket, a device, or a
+    /// conflict in a jj revision.
     Special,
 }
 
@@ -199,7 +200,7 @@ fn content_of(entry: &Entry) -> Result<Content, DirDiffError> {
 }
 
 /// What a regular file's bytes hold, by spec §4.1's decoding.
-fn decoded(bytes: Vec<u8>) -> Content {
+pub(crate) fn decoded(bytes: Vec<u8>) -> Content {
     match Text::decode(bytes) {
         Ok(_) => Content::Text,
         Err(DecodeError::Binary) => Content::Binary,

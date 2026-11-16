@@ -12,7 +12,9 @@ use gpui_kit::base::Root;
 use gpui_kit::test::TestWindowExt;
 use gpui_kit::{AnyWindowHandle, App, Entity, TestAppContext, VisualTestContext};
 use merge_app::diff_window::{DiffWindow, copy_id};
-use merge_app::dir_window::{self, DirStart, DirWindow, EMPTY_ID, NOTE_ID, REFRESH_ID, file_id};
+use merge_app::dir_window::{
+    self, DirStart, DirWindow, EMPTY_ID, NOTE_ID, REFRESH_ID, Source, file_id,
+};
 use merge_app::{ExitCode, WindowSettings};
 use merge_core::diff::DiffOptions;
 use merge_core::diff2::Side;
@@ -44,17 +46,27 @@ impl Dirs {
     }
 
     fn start(&self) -> DirStart {
-        DirStart {
-            cwd: self.root.path().to_owned(),
-            left: self.side("left"),
-            right: self.side("right"),
-            title: None,
-            readonly_left: false,
-            readonly_right: false,
-            diff: DiffOptions::default(),
-            settings: WindowSettings::default(),
-            watch: false,
-        }
+        self.start_with(self.side("left"), [false; 2])
+    }
+
+    fn start_with(&self, left: PathBuf, readonly: [bool; 2]) -> DirStart {
+        dirs_start(self.root.path(), left, self.side("right"), readonly)
+    }
+}
+
+/// The window on directories `left` and `right`, from the working directory `cwd`.
+fn dirs_start(cwd: &Path, left: PathBuf, right: PathBuf, readonly: [bool; 2]) -> DirStart {
+    start_on(cwd, Source::Dirs { left, right, readonly })
+}
+
+fn start_on(cwd: &Path, source: Source) -> DirStart {
+    DirStart {
+        cwd: cwd.to_owned(),
+        source,
+        title: None,
+        diff: DiffOptions::default(),
+        settings: WindowSettings::default(),
+        watch: false,
     }
 }
 
@@ -210,7 +222,7 @@ fn a_deleted_file_opens_with_an_empty_read_only_right_side(cx: &mut TestAppConte
 #[gpui_kit::test]
 fn the_readonly_flags_hold_for_every_file(cx: &mut TestAppContext) {
     let dirs = mixed();
-    let started = open(cx, DirStart { readonly_left: true, ..dirs.start() });
+    let started = open(cx, dirs.start_with(dirs.side("left"), [true, false]));
     click(cx, started.window, file_id(A_RS));
     let [(_, view)] = &diff_windows(cx)[..] else { panic!("one diff window") };
     assert!(side(cx, view, Side::Left).2);
@@ -281,7 +293,7 @@ fn a_file_gone_from_disk_says_why_and_opens_nothing(cx: &mut TestAppContext) {
 fn a_directory_that_cannot_be_read_says_why(cx: &mut TestAppContext) {
     let dirs = mixed();
     let missing = dirs.side("missing");
-    let started = open(cx, DirStart { left: missing.clone(), ..dirs.start() });
+    let started = open(cx, dirs.start_with(missing.clone(), [false; 2]));
     assert_eq!(listed(cx, &started.view), []);
     assert_eq!(note(cx, &started.view), Some(format!("cannot read {}", missing.display())));
     assert_eq!(bounds(cx, started.window, NOTE_ID).top(), LIST_TOP);
@@ -361,6 +373,96 @@ fn equal_directories_say_so_where_the_list_starts(cx: &mut TestAppContext) {
     assert_eq!(bounds(cx, started.window, EMPTY_ID).top(), LIST_TOP);
 }
 
+/// The window on the working copy's changes in the repository at `root`, against `rev`.
+fn changes_start(root: impl AsRef<Path>, rev: Option<&str>) -> DirStart {
+    start_on(root.as_ref(), Source::Changes { rev: rev.map(str::to_owned), jj_config: None })
+}
+
+/// A git repository whose `HEAD` holds `a.txt` and `gone.txt`; on disk `a.txt` is edited,
+/// `gone.txt` is absent, and `new.txt` is staged.
+fn git_changes() -> vcs_git::testing::Fixture {
+    let fixture = vcs_git::testing::Fixture::new();
+    fixture.commit("one", &[("a.txt", b"1\n"), ("gone.txt", b"g\n")]);
+    fixture.stage(&[("a.txt", b"1\n"), ("gone.txt", b"g\n"), ("new.txt", b"n\n")]);
+    fixture.write("a.txt", b"2\n");
+    fixture.write("new.txt", b"n\n");
+    fixture
+}
+
+/// The rows of [`git_changes`], by path.
+const CHANGED_A: usize = 0;
+const CHANGED_GONE: usize = 1;
+const CHANGED_NEW: usize = 2;
+
+#[gpui_kit::test]
+fn the_working_copy_s_changes_are_listed(cx: &mut TestAppContext) {
+    let fixture = git_changes();
+    let started = open(cx, changes_start(fixture.root(), None));
+    assert_eq!(
+        listed(cx, &started.view),
+        [
+            ("a.txt".to_owned(), Change::Modified, Content::Text),
+            ("gone.txt".to_owned(), Change::Deleted, Content::Text),
+            ("new.txt".to_owned(), Change::Added, Content::Text),
+        ]
+    );
+    assert_eq!(note(cx, &started.view), None);
+}
+
+#[gpui_kit::test]
+fn a_changed_file_opens_against_the_revision_and_saves_to_the_working_copy(
+    cx: &mut TestAppContext,
+) {
+    let fixture = git_changes();
+    let started = open(cx, changes_start(fixture.root(), None));
+    click(cx, started.window, file_id(CHANGED_A));
+    let [(diff, view)] = &diff_windows(cx)[..] else { panic!("one diff window") };
+    let working = dunce::canonicalize(fixture.root()).expect("the root").join("a.txt");
+    assert_eq!(side(cx, view, Side::Left), ("1\n".to_owned(), "HEAD".to_owned(), true));
+    assert_eq!(side(cx, view, Side::Right), ("2\n".to_owned(), path_text(&working), false));
+    click(cx, *diff, copy_id(RegionIx::new(0), Side::Right));
+    press(cx, *diff, "secondary-s");
+    assert_eq!(std::fs::read(&working).expect("a.txt reads"), b"1\n");
+    // Closing the diff window lists again: `a.txt` no longer differs.
+    press(cx, *diff, "secondary-w");
+    assert_eq!(diff_windows(cx).len(), 0);
+    assert_eq!(
+        listed(cx, &started.view),
+        [
+            ("gone.txt".to_owned(), Change::Deleted, Content::Text),
+            ("new.txt".to_owned(), Change::Added, Content::Text),
+        ]
+    );
+}
+
+#[gpui_kit::test]
+fn a_file_deleted_on_disk_opens_against_an_empty_read_only_right_side(cx: &mut TestAppContext) {
+    let fixture = git_changes();
+    let started = open(cx, changes_start(fixture.root(), Some("HEAD")));
+    click(cx, started.window, file_id(CHANGED_GONE));
+    let [(_, view)] = &diff_windows(cx)[..] else { panic!("one diff window") };
+    assert_eq!(side(cx, view, Side::Left), ("g\n".to_owned(), "HEAD".to_owned(), true));
+    assert_eq!(side(cx, view, Side::Right), (String::new(), "gone.txt (no file)".to_owned(), true));
+}
+
+#[gpui_kit::test]
+fn a_file_new_since_the_revision_opens_against_an_empty_left_side(cx: &mut TestAppContext) {
+    let fixture = git_changes();
+    let started = open(cx, changes_start(fixture.root(), None));
+    click(cx, started.window, file_id(CHANGED_NEW));
+    let [(_, view)] = &diff_windows(cx)[..] else { panic!("one diff window") };
+    assert_eq!(side(cx, view, Side::Left), (String::new(), "HEAD (no file)".to_owned(), true));
+    assert_eq!(side(cx, view, Side::Right).0, "n\n");
+}
+
+#[gpui_kit::test]
+fn an_unknown_revision_says_why(cx: &mut TestAppContext) {
+    let fixture = git_changes();
+    let started = open(cx, changes_start(fixture.root(), Some("nope")));
+    assert_eq!(listed(cx, &started.view), []);
+    assert_eq!(note(cx, &started.view), Some("unknown revision nope".to_owned()));
+}
+
 mod jj {
     use super::*;
     use vcs_jj::testing::Fixture;
@@ -384,17 +486,7 @@ mod jj {
             std::fs::create_dir(dir).expect("dir");
             std::fs::write(dir.join("a.txt"), bytes).expect("written");
         }
-        let start = DirStart {
-            cwd: fixture.root().as_std_path().to_owned(),
-            left,
-            right: right.clone(),
-            title: None,
-            readonly_left: false,
-            readonly_right: false,
-            diff: DiffOptions::default(),
-            settings: WindowSettings::default(),
-            watch: false,
-        };
+        let start = dirs_start(fixture.root().as_std_path(), left, right.clone(), [false; 2]);
         let started = open(cx, start);
         click(cx, started.window, file_id(0));
         let [(diff, view)] = &diff_windows(cx)[..] else { panic!("one diff window") };
@@ -405,5 +497,23 @@ mod jj {
         press(cx, *diff, "secondary-s");
         assert_eq!(std::fs::read(&working).expect("a.txt reads"), b"1\n");
         assert_eq!(std::fs::read(right.join("a.txt")).expect("the copy reads"), b"2\n");
+    }
+
+    #[gpui_kit::test]
+    fn the_listing_snapshots_and_opens_against_at_minus(cx: &mut TestAppContext) {
+        let fixture = Fixture::new();
+        fixture.commit("one", &[("a.txt", b"1\n")]);
+        fixture.check_out_to_disk();
+        fixture.write("a.txt", b"2\n");
+        let started = open(cx, changes_start(fixture.root(), None));
+        assert_eq!(
+            listed(cx, &started.view),
+            [("a.txt".to_owned(), Change::Modified, Content::Text)]
+        );
+        click(cx, started.window, file_id(0));
+        let [(_, view)] = &diff_windows(cx)[..] else { panic!("one diff window") };
+        let working = dunce::canonicalize(fixture.root()).expect("the root").join("a.txt");
+        assert_eq!(side(cx, view, Side::Left), ("1\n".to_owned(), "@-".to_owned(), true));
+        assert_eq!(side(cx, view, Side::Right), ("2\n".to_owned(), path_text(&working), false));
     }
 }
