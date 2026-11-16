@@ -35,6 +35,7 @@ Zed's scale is 14, 12 and 10 px; triad's chrome takes 12 px. Two settings size t
 ## Controls
 
 - Every `Button` and `Input` is `.small()`.
+- A pill over one end of a moved block is a `move_pill::move_pill`, in both the diff window and the merge window's top panes: one row tall, 4 px padding, 16 px in from the pane's right edge, translucent pale blue with bold deep blue text at the chip text size.
 - A menu is a `menu_button::MenuButton`: 20 px rows, a 12 px icon, the label and the action's key, in the text size it is given. A row that toggles a state is a checkbox row, with a tick after its label while the state is on. gpui-component's `PopupMenu` has 26 px rows with 14 px text, which triad cannot shrink (`docs/gpui-kit-issues.md`).
 - Toolbar and header buttons are `.ghost()`. A dialog has one `.primary()` button, the one that finishes it; a tool window has at most one, the one that writes, such as absorb's Apply. A button that only shows something, such as Preview Save, stays ghost.
 - Heights: a small control 24 px, a list row 24 px, a tool window header 32 px, a menu row 20 px, a tab 22 px inside a 2 px inset.

@@ -6,7 +6,7 @@ use merge_core::diff::{
 };
 use merge_core::diff2::Side;
 use merge_core::index::RegionIx;
-use merge_core::merge3::{HunkLevel, Semantics};
+use merge_core::merge3::{HunkLevel, Semantics, Source};
 use merge_core::text::{Encoding, LineEnding};
 use merge_session::ExitCode;
 use merge_session::dir_diff::{Change, ChangedFile, Content};
@@ -734,6 +734,28 @@ pub(crate) fn move_pill(side: Side, other_line: usize) -> String {
     }
 }
 
+/// The pill over one end of a moved block in a merge window's top pane: an arrow toward the
+/// other end's row, up or down, then the other end's input initial and 1-based line.
+pub(crate) fn merge_move_pill(other: Source, other_line: usize, up: bool) -> String {
+    let arrow = if up { "↑" } else { "↓" };
+    let initial = match other {
+        Source::Base(_) => "B",
+        Source::Side(0) => "L",
+        Source::Side(_) => "R",
+    };
+    format!("{arrow} {initial}{}", other_line + 1)
+}
+
+/// The accessible label of the pill [`merge_move_pill`] writes.
+pub(crate) fn merge_move_pill_label(other: Source, other_line: usize) -> String {
+    let input = match other {
+        Source::Base(_) => "base",
+        Source::Side(0) => "left",
+        Source::Side(_) => "right",
+    };
+    format!("Moved block: go to its other end, {input} line {}", other_line + 1)
+}
+
 /// The accessible label of the pill [`move_pill`] writes.
 pub(crate) fn move_pill_label(side: Side, other_line: usize) -> String {
     let other = match side.other() {
@@ -883,6 +905,25 @@ pub(crate) mod edit_menu {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_merge_move_pill_points_up_or_down_at_the_other_ends_line() {
+        assert_eq!(merge_move_pill(Source::Base(0), 0, true), "↑ B1");
+        assert_eq!(merge_move_pill(Source::Side(0), 39, false), "↓ L40");
+        assert_eq!(merge_move_pill(Source::Side(1), 4, true), "↑ R5");
+        assert_eq!(
+            merge_move_pill_label(Source::Base(0), 11),
+            "Moved block: go to its other end, base line 12"
+        );
+        assert_eq!(
+            merge_move_pill_label(Source::Side(0), 39),
+            "Moved block: go to its other end, left line 40"
+        );
+        assert_eq!(
+            merge_move_pill_label(Source::Side(1), 0),
+            "Moved block: go to its other end, right line 1"
+        );
+    }
 
     #[test]
     fn a_move_pill_names_the_other_panes_line_and_points_at_it() {

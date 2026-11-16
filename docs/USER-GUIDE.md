@@ -40,6 +40,7 @@ Resolve a conflict by picking sources, or type in the result. Each region's firs
 |---|---|
 | Next / previous conflict | ⌘] / ⌘[ |
 | Next / previous difference | ⌘↓ / ⌘↑ |
+| Go to the other end of a moved block | ⇧⌘M |
 | Toggle left / base / right in the current region | ⌘1 / ⌘2 / ⌘3 |
 | Take left then right / right then left | ⌘4 / ⌘5 |
 | Clear the pick | ⌘0 |
@@ -49,6 +50,8 @@ Resolve a conflict by picking sources, or type in the result. Each region's firs
 | Find / go to line | ⌘F / ⌘L |
 | Save and exit / cancel | ⌘S / ⌘W |
 | Save a copy elsewhere, leaving the merge open | ⇧⌘S |
+
+A block a side moved from one place to another shows teal at both ends in that side's pane, with a pill on each naming the other end, such as `↓ L40` or `↑ B1`. Click the pill, or press ⇧⌘M in a region that holds an end, to go to the other end. When both sides move one block to different places, the merge holds it twice and reports no conflict; the pills in both panes show it.
 
 The toolbar can take one side for every conflict left. The ruler at the right marks each change; click a mark to go there. Close without a save exits 2; the VCS keeps its conflict.
 

@@ -22,6 +22,7 @@ mod keybind;
 mod line_ending;
 mod measure;
 mod menu_bar;
+mod moves;
 mod open_dialog;
 mod origins;
 mod placeholders;

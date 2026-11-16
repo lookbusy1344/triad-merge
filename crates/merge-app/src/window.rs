@@ -54,10 +54,12 @@ use merge_syntax::boundaries::SyntaxBoundaries;
 use merge_syntax::language::Language;
 use merge_view::blink::AtRest;
 use merge_view::chunks::Limits;
+use merge_view::diff::MOVE_TONE;
 use merge_view::heights::Heights;
 use merge_view::highlight::{CellSpans, Highlights};
 use merge_view::marks::{self, Band, Tone};
 use merge_view::merge_fold::{self, MergeFold, MergeOpened};
+use merge_view::moves::{self, MoveEnd};
 use merge_view::nav::{self, Pin, Sides, Target};
 use merge_view::origin::hover_text;
 use merge_view::placeholder;
@@ -80,6 +82,7 @@ use crate::input_select::{
     self, AUTOSCROLL_MAX_ROWS, AUTOSCROLL_TICK, CellHit, INPUT_PANES_CONTEXT, InputSelect,
 };
 use crate::measure::{self, Measure, Measurement, Mode, Report, Run};
+use crate::move_pill::{MOVE_PILL_INSET, move_pill};
 use crate::origin_column::{
     Annotated, Described, HeadingText, ORIGIN_WIDTH, OriginCell, OriginColumn, Visibility,
 };
@@ -97,11 +100,11 @@ use crate::tones::{Palette, Tones};
 use crate::toolbar::{self, Badge, GROUPS, Labels, PICKS, Tool};
 use crate::wrap::Wrap;
 use crate::{
-    Cancel, CarryMovedEdit, ClearChoice, CopyInput, ExitCode, Find, GoToLine, LINE_HEIGHT,
-    NextConflict, NextDifference, PreviousConflict, PreviousDifference, Redo, SaveAndExit,
-    SaveCopyAs, SelectAllInput, TakeBase, TakeLeft, TakeLeftAllUnresolved, TakeLeftThenRight,
-    TakeRight, TakeRightAllUnresolved, TakeRightThenLeft, TakeSortedUnion, TakeWholeLeft,
-    TakeWholeRight, ToggleBase, ToggleBasePane, ToggleCollapseUnchanged, ToggleLeft,
+    Cancel, CarryMovedEdit, ClearChoice, CopyInput, ExitCode, Find, GoToLine, GoToMoveEnd,
+    LINE_HEIGHT, NextConflict, NextDifference, PreviousConflict, PreviousDifference, Redo,
+    SaveAndExit, SaveCopyAs, SelectAllInput, TakeBase, TakeLeft, TakeLeftAllUnresolved,
+    TakeLeftThenRight, TakeRight, TakeRightAllUnresolved, TakeRightThenLeft, TakeSortedUnion,
+    TakeWholeLeft, TakeWholeRight, ToggleBase, ToggleBasePane, ToggleCollapseUnchanged, ToggleLeft,
     ToggleOriginColumn, ToggleRight, ToggleScrollSync, ToggleSoftWrap, ToggleSyntax, Typography,
     Undo, finish, go_to_line, ignore_closed_view, strings,
 };
@@ -208,6 +211,12 @@ pub fn pick_id(pane: usize, row: RowIx) -> ElementId {
 #[must_use]
 pub fn cell_id(pane: usize, row: RowIx) -> ElementId {
     ElementId::Name(format!("cell-{pane}-{row}").into())
+}
+
+/// The pill on `row` of `pane` over one end of a moved block (`PLAN.md` §G16).
+#[must_use]
+pub fn move_pill_id(pane: usize, row: RowIx) -> ElementId {
+    ElementId::Name(format!("move-{pane}-{row}").into())
 }
 
 /// The fold row that stands in for the hidden rows from `row` on (spec §5).
@@ -434,6 +443,8 @@ pub struct MergeWindow {
     palette: Palette,
     panes: PaneSet,
     rows: RowMap,
+    /// The ends of each side's moved blocks in `rows`, found again when the rows change.
+    move_ends: Vec<MoveEnd>,
     highlights: Highlights,
     /// The inputs' syntax spans, as their parses land.
     syntax: InputSyntax,
@@ -692,6 +703,8 @@ impl MergeWindow {
             unresolved_save: settings.unresolved_save,
         };
         let mut this = Self {
+            // Before `doc` and `rows` move into the window.
+            move_ends: moves::move_ends(&doc, &rows),
             menu_bar: crate::menu_bar::WindowMenu::new(cx),
             status: strings::status(settings.repo, &counts).into(),
             repo: settings.repo,
@@ -1903,6 +1916,7 @@ impl MergeWindow {
     /// Show the session's restored document, laid out in `rows`.
     fn show_restored(&mut self, rows: RowMap, window: &mut Window, cx: &mut Context<Self>) {
         self.rows = rows;
+        self.move_ends = moves::move_ends(self.session.document(), &self.rows);
         self.scroll.rows_changed(self.rows.row_count());
         self.highlights = Highlights::new(self.panes);
         self.pinned = None;
@@ -1914,6 +1928,7 @@ impl MergeWindow {
         self.rows.update(self.session.document(), applied);
         self.highlights.update(applied);
         if applied.regions_changed {
+            self.move_ends = moves::move_ends(self.session.document(), &self.rows);
             self.scroll.rows_changed(self.rows.row_count());
             self.search_inputs_again(cx);
         }
@@ -2146,6 +2161,12 @@ impl MergeWindow {
         }
     }
 
+    /// Go to `region` as Next and Previous do, with their blink.
+    fn jump(&mut self, region: RegionIx, window: &mut Window, cx: &mut Context<Self>) {
+        self.go_to(region, window, cx);
+        self.start_flash(cx);
+    }
+
     fn navigate(
         &mut self,
         step: fn(&MergeDocument, RegionIx, Target) -> Option<RegionIx>,
@@ -2155,8 +2176,7 @@ impl MergeWindow {
     ) {
         self.send_edits(window, cx);
         if let Some(region) = step(self.session.document(), self.current_region(cx), target) {
-            self.go_to(region, window, cx);
-            self.start_flash(cx);
+            self.jump(region, window, cx);
         }
     }
 
@@ -2834,6 +2854,7 @@ impl MergeWindow {
         self.panes = panes;
         self.input_select.keep_shown(&panes.sources());
         self.rows = rows;
+        self.move_ends = moves::move_ends(self.session.document(), &self.rows);
         self.scroll.rows_changed(self.rows.row_count());
         self.highlights = Highlights::new(panes);
         self.headings = headings(self.session.document(), panes, &self.file_names);
@@ -3059,6 +3080,7 @@ impl MergeWindow {
             head && first && self.session.document().region(region).kind != Kind::Unchanged;
         // Before the spans, which borrow the highlight cache.
         let mut origins = self.row_origins(&row.cells);
+        let mut pills = self.row_pills(index, head, row.cells.len(), cx).into_iter();
         let matches = self.row_matches(index, row.cells.len());
         let paints = self.cell_paints(row.cells.len(), cx);
         let spans = self.highlights.row(self.session.document(), &self.rows, index);
@@ -3086,8 +3108,13 @@ impl MergeWindow {
             .map(|(pane, ((source, line), spans))| {
                 let cell = line.map(|n| (n, inputs.text(source).line(n)));
                 let deleted = rows::deleted_lines(self.session.document().region(region), source);
+                let move_end =
+                    self.move_ends.iter().find(|e| e.pane == pane && e.rows.contains(&index));
                 let tone = marks::input_tone(kind, source);
-                let band = tone.map(|tone| tones.band(tone));
+                let band = move_end
+                    .map(|_| tones.band(MOVE_TONE))
+                    .or_else(|| tone.map(|tone| tones.band(tone)));
+                let pill = pills.next().flatten();
                 let changed = changed_colour(tones, kind, source);
                 let syntax = line.map_or_else(Vec::new, |n| {
                     colouring.line(&self.syntax, source, n, &highlight_theme)
@@ -3164,6 +3191,7 @@ impl MergeWindow {
                     .when(pane > 0, |d| d.border_l(PANE_DIVIDER).border_color(border))
                     .when_some(band, gpui_kit::Styled::bg)
                     .when(cell.is_none() && deleted.is_none(), |d| d.bg(filler))
+                    .relative()
                     .child(pick_slot(target, current.then_some(strip)))
                     .child(input_mark_cell(input_mark))
                     .when_some(origin, |d, origin| {
@@ -3177,6 +3205,7 @@ impl MergeWindow {
                         left,
                         probed.then(|| self.scroll.sideways().probe(pane)),
                     ))
+                    .children(pill)
             })
             .collect::<Vec<_>>();
         h_flex()
@@ -3189,6 +3218,44 @@ impl MergeWindow {
 }
 
 impl MergeWindow {
+    /// Each of `panes` panes' move pill on `row`: one where a move end starts there and the
+    /// row is its first display row.
+    fn row_pills(
+        &self,
+        row: RowIx,
+        head: bool,
+        panes: usize,
+        cx: &mut Context<Self>,
+    ) -> Vec<Option<AnyElement>> {
+        (0..panes)
+            .map(|pane| {
+                let end = self.move_ends.iter().find(|e| e.pane == pane && e.rows.start == row);
+                end.filter(|_| head).map(|end| self.move_pill(end, row, cx))
+            })
+            .collect()
+    }
+
+    /// The pill on `row`, the first of move end `end`, against its pane's right edge: an
+    /// arrow toward the other end and the line it starts on. A press goes there and selects
+    /// nothing in the pane.
+    fn move_pill(&self, end: &MoveEnd, row: RowIx, cx: &mut Context<Self>) -> AnyElement {
+        let up = end.other_is_above();
+        let to = end.other_region;
+        let pill = move_pill(
+            move_pill_id(end.pane, row),
+            strings::merge_move_pill(end.other, end.other_line, up),
+            strings::merge_move_pill_label(end.other, end.other_line),
+            self.typography.line_height(),
+            self.typography.size * CHIP_TEXT_SCALE,
+        )
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+            cx.stop_propagation();
+            this.jump(to, window, cx);
+        }));
+        div().absolute().top_0().right(MOVE_PILL_INSET).child(pill).into_any_element()
+    }
+
     /// The row that stands in for `fold`'s hidden rows in every top pane: the count of
     /// lines it hides. A click opens the region in every pane (spec §5).
     fn render_fold_row(
@@ -3858,6 +3925,13 @@ impl Render for MergeWindow {
             }))
             .on_action(cx.listener(|this, _: &PreviousConflict, window, cx| {
                 this.navigate(nav::previous, Target::Unresolved, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &GoToMoveEnd, window, cx| {
+                this.send_edits(window, cx);
+                if let Some(end) = moves::end_in(&this.move_ends, this.current_region(cx)) {
+                    let to = end.other_region;
+                    this.jump(to, window, cx);
+                }
             }))
             .on_action(cx.listener(Self::toggle_base_pane))
             .on_action(cx.listener(Self::toggle_syntax))

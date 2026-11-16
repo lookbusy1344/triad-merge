@@ -18,6 +18,7 @@ mod logo;
 pub mod measure;
 mod menu_bar;
 mod menu_button;
+mod move_pill;
 pub mod open_dialog;
 pub mod origin_column;
 mod own_writes;

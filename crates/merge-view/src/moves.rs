@@ -33,8 +33,14 @@ pub struct MoveEnd {
     pub other_line: usize,
     /// The region holding the other end.
     pub other_region: RegionIx,
-    /// The row the other end starts on in this pane; none when its region has no rows.
-    pub other_row: Option<RowIx>,
+}
+
+impl MoveEnd {
+    /// Whether the other end lies above this one, in an earlier region.
+    #[must_use]
+    pub fn other_is_above(&self) -> bool {
+        self.other_region < self.region
+    }
 }
 
 /// The ends of `doc`'s moves that have rows in a pane `rows` shows, ordered by pane, then row.
@@ -62,7 +68,6 @@ pub fn move_ends(doc: &MergeDocument, rows: &RowMap) -> Vec<MoveEnd> {
                 other: Source::Base(0),
                 other_line: m.base.start,
                 other_region: origin_region,
-                other_row: origin_rows.as_ref().map(|r| r.start),
             };
             let origin = origin_rows.map(|rows| MoveEnd {
                 pane,
@@ -72,7 +77,6 @@ pub fn move_ends(doc: &MergeDocument, rows: &RowMap) -> Vec<MoveEnd> {
                 other: side,
                 other_line: m.lines.start,
                 other_region: region,
-                other_row: Some(first),
             });
             Some(origin.into_iter().chain([destination]))
         })
@@ -135,7 +139,6 @@ mod tests {
         RowIx::new(r.start)..RowIx::new(r.end)
     }
 
-    #[expect(clippy::too_many_arguments, reason = "one argument per field")]
     fn end(
         pane: usize,
         kind: EndKind,
@@ -144,7 +147,6 @@ mod tests {
         other: Source,
         other_line: usize,
         other_region: usize,
-        other_row: Option<usize>,
     ) -> MoveEnd {
         MoveEnd {
             pane,
@@ -154,7 +156,6 @@ mod tests {
             other,
             other_line,
             other_region: RegionIx::new(other_region),
-            other_row: other_row.map(RowIx::new),
         }
     }
 
@@ -163,8 +164,8 @@ mod tests {
         // Regions: left deletes `m1 m2` (rows 0–1, facing right's lines), `a b c` (rows
         // 2–4), left inserts `m1 m2` (rows 5–6).
         let expected = [
-            end(0, EndKind::Origin, 0, 0..2, Source::Side(0), 3, 2, Some(5)),
-            end(0, EndKind::Destination, 2, 5..7, Source::Base(0), 0, 0, Some(0)),
+            end(0, EndKind::Origin, 0, 0..2, Source::Side(0), 3, 2),
+            end(0, EndKind::Destination, 2, 5..7, Source::Base(0), 0, 0),
         ];
         assert_eq!(ends(BLOCK_FIRST, BLOCK_LAST, BLOCK_FIRST, PaneSet::LeftRight), expected);
         assert_eq!(ends(BLOCK_FIRST, BLOCK_LAST, BLOCK_FIRST, PaneSet::LeftBaseRight), expected);
@@ -176,8 +177,8 @@ mod tests {
         // deletes it (rows 5–6). Right is pane 1 without base and pane 2 with it.
         let expected = |pane| {
             [
-                end(pane, EndKind::Destination, 0, 0..2, Source::Base(0), 3, 2, Some(5)),
-                end(pane, EndKind::Origin, 2, 5..7, Source::Side(1), 0, 0, Some(0)),
+                end(pane, EndKind::Destination, 0, 0..2, Source::Base(0), 3, 2),
+                end(pane, EndKind::Origin, 2, 5..7, Source::Side(1), 0, 0),
             ]
         };
         assert_eq!(ends(BLOCK_LAST, BLOCK_LAST, BLOCK_FIRST, PaneSet::LeftRight), expected(1));
@@ -193,8 +194,8 @@ mod tests {
         assert_eq!(
             ends(base, left, right, PaneSet::LeftRight),
             [
-                end(0, EndKind::Destination, 4, 7..9, Source::Base(0), 0, 0, None),
-                end(1, EndKind::Destination, 2, 3..5, Source::Base(0), 0, 0, None),
+                end(0, EndKind::Destination, 4, 7..9, Source::Base(0), 0, 0),
+                end(1, EndKind::Destination, 2, 3..5, Source::Base(0), 0, 0),
             ]
         );
     }
@@ -206,10 +207,10 @@ mod tests {
         assert_eq!(
             ends(base, left, right, PaneSet::LeftBaseRight),
             [
-                end(0, EndKind::Origin, 0, 0..2, Source::Side(0), 5, 4, Some(9)),
-                end(0, EndKind::Destination, 4, 9..11, Source::Base(0), 0, 0, Some(0)),
-                end(2, EndKind::Origin, 0, 0..2, Source::Side(1), 3, 2, Some(5)),
-                end(2, EndKind::Destination, 2, 5..7, Source::Base(0), 0, 0, Some(0)),
+                end(0, EndKind::Origin, 0, 0..2, Source::Side(0), 5, 4),
+                end(0, EndKind::Destination, 4, 9..11, Source::Base(0), 0, 0),
+                end(2, EndKind::Origin, 0, 0..2, Source::Side(1), 3, 2),
+                end(2, EndKind::Destination, 2, 5..7, Source::Base(0), 0, 0),
             ]
         );
     }
@@ -226,8 +227,8 @@ mod tests {
                 PaneSet::LeftRight
             ),
             [
-                end(0, EndKind::Origin, 0, 0..2, Source::Side(0), 4, 2, Some(6)),
-                end(0, EndKind::Destination, 2, 6..8, Source::Base(0), 0, 0, Some(0)),
+                end(0, EndKind::Origin, 0, 0..2, Source::Side(0), 4, 2),
+                end(0, EndKind::Destination, 2, 6..8, Source::Base(0), 0, 0),
             ]
         );
     }
@@ -244,8 +245,8 @@ mod tests {
                 PaneSet::LeftRight
             ),
             [
-                end(0, EndKind::Origin, 0, 1..3, Source::Side(0), 4, 2, Some(6)),
-                end(0, EndKind::Destination, 2, 6..8, Source::Base(0), 1, 0, Some(1)),
+                end(0, EndKind::Origin, 0, 1..3, Source::Side(0), 4, 2),
+                end(0, EndKind::Destination, 2, 6..8, Source::Base(0), 1, 0),
             ]
         );
     }
@@ -257,10 +258,20 @@ mod tests {
         assert_eq!(
             ends(BLOCK_FIRST, "X\na\nb\nc\nm1\nm2\n", "Y\na\nb\nc\n", PaneSet::LeftRight),
             [
-                end(0, EndKind::Origin, 0, 0..1, Source::Side(0), 4, 2, Some(4)),
-                end(0, EndKind::Destination, 2, 4..6, Source::Base(0), 0, 0, Some(0)),
+                end(0, EndKind::Origin, 0, 0..1, Source::Side(0), 4, 2),
+                end(0, EndKind::Destination, 2, 4..6, Source::Base(0), 0, 0),
             ]
         );
+    }
+
+    #[test]
+    fn an_origin_above_its_destination_points_down_and_the_destination_up() {
+        let found = ends(BLOCK_FIRST, BLOCK_LAST, BLOCK_FIRST, PaneSet::LeftRight);
+        let above: Vec<bool> = found.iter().map(MoveEnd::other_is_above).collect();
+        assert_eq!(above, [false, true]);
+        let found = ends(BLOCK_LAST, BLOCK_LAST, BLOCK_FIRST, PaneSet::LeftRight);
+        let above: Vec<bool> = found.iter().map(MoveEnd::other_is_above).collect();
+        assert_eq!(above, [false, true], "right's destination first, then its origin");
     }
 
     #[test]
