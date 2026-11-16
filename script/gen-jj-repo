@@ -62,6 +62,12 @@ dest=$(cd "$dest" && pwd)
 # An isolated jj config: no user settings, signing or hooks leak in.
 config=$(mktemp "${TMPDIR:-/tmp}/triad-jj-config.XXXXXX")
 trap 'rm -f "$config"' EXIT
+# Exiting from a signal trap runs the EXIT trap; dying from the signal does not.
+readonly SIGNAL_EXIT_BASE=128
+readonly SIGHUP_NUMBER=1 SIGINT_NUMBER=2 SIGTERM_NUMBER=15
+trap 'exit $((SIGNAL_EXIT_BASE + SIGHUP_NUMBER))' HUP
+trap 'exit $((SIGNAL_EXIT_BASE + SIGINT_NUMBER))' INT
+trap 'exit $((SIGNAL_EXIT_BASE + SIGTERM_NUMBER))' TERM
 cat >"$config" <<'EOF'
 [user]
 name = "triad Fixture"
