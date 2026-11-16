@@ -218,6 +218,30 @@ mod tests {
     const NONE: Vec<Suggestion> = Vec::new();
 
     #[test]
+    fn the_moved_demos_conflict_suggests_carrying_rights_edit() {
+        // Left moves `tax_rate` after `write_report`, followed by its new `clamp`; right
+        // changes its default to 0.25 where it was.
+        let inputs = three(
+            include_str!("../../../fixtures/demo/moved_base.py"),
+            include_str!("../../../fixtures/demo/moved_left.py"),
+            include_str!("../../../fixtures/demo/moved_right.py"),
+        );
+        let regions = align(&inputs, &MergeOptions::default().alignment());
+        let conflicts: Vec<usize> =
+            (0..regions.len()).filter(|&r| regions[r].kind == Kind::Conflict).collect();
+        let [conflict] = conflicts[..] else { panic!("one conflict, got {conflicts:?}") };
+        let carried = suggestions(&inputs, &regions, RegionIx::new(conflict)).into_iter().find_map(
+            |s| match s {
+                Suggestion::CarryEdit { side, text, .. } => Some((side, text)),
+                _ => None,
+            },
+        );
+        let edited = "def tax_rate(region):\n    \"\"\"The tax rate for a region.\"\"\"\n    return RATES.get(region, 0.25)\n\n";
+        let clamp = "def clamp(value, low, high):\n    \"\"\"Keep a value within bounds.\"\"\"\n    return max(low, min(value, high))\n\n";
+        assert_eq!(carried, Some((1, format!("{edited}{clamp}"))));
+    }
+
+    #[test]
     fn two_inserts_at_one_place_suggest_every_side() {
         assert_eq!(
             suggested("a\nb\n", "a\nx\nb\n", "a\ny\nz\nb\n"),

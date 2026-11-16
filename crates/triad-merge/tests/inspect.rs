@@ -527,3 +527,46 @@ fn the_directory_demo_lists_what_its_readme_says() {
     );
     assert_eq!(result.status.code(), Some(1));
 }
+
+#[test]
+fn the_moved_demo_finds_what_its_readme_says() {
+    // Expected lines from `script/gen-moved-demo --layout`: two header lines, then blocks of
+    // four lines each.
+    let demo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/demo");
+    let [base, left, right] = ["base", "left", "right"].map(|n| demo.join(format!("moved_{n}.py")));
+    let dir = tempfile::tempdir().unwrap();
+    let result = command()
+        .current_dir(dir.path())
+        .args([
+            "inspect".as_ref(),
+            "--json".as_ref(),
+            base.as_os_str(),
+            left.as_os_str(),
+            right.as_os_str(),
+        ])
+        .output()
+        .expect("binary runs");
+    assert_eq!(String::from_utf8_lossy(&result.stderr), "");
+    assert_eq!(result.status.code(), Some(1), "tax_rate conflicts");
+    let value: serde_json::Value = serde_json::from_slice(&result.stdout).expect("stdout is JSON");
+    assert_eq!(value["conflicts"], 1);
+    assert_eq!(
+        value["moves"],
+        serde_json::json!([
+            { "side": "left", "base": [6, 10], "lines": [58, 62] },
+            { "side": "left", "base": [14, 18], "lines": [30, 34] },
+            { "side": "left", "base": [22, 26], "lines": [42, 46] },
+            { "side": "left", "base": [30, 34], "lines": [50, 54] },
+            { "side": "right", "base": [22, 26], "lines": [42, 46] },
+            { "side": "right", "base": [30, 34], "lines": [58, 62] },
+            { "side": "right", "base": [38, 42], "lines": [2, 6] }
+        ])
+    );
+    assert_eq!(
+        value["duplicates"],
+        serde_json::json!([
+            { "left": [34, 38], "right": [66, 70] },
+            { "left": [50, 54], "right": [58, 62] }
+        ])
+    );
+}
