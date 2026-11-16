@@ -4,7 +4,9 @@
 //! repeat another file's bytes, are empty or are binary, and some move to a directory with a
 //! file of the same name, so ties fall to jj's order. The tie cases, from a second stream,
 //! delete two files of the same bytes and add one edited copy that takes the name of one of
-//! them: the scores tie, and the name decides.
+//! them: the scores tie, and the name decides. The copy cases, from a third stream, modify
+//! most files and add files drawn from a modified file's old or new bytes, or an unchanged
+//! file's, so jj's copies from modified files show against files that are no source.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -25,6 +27,15 @@ const TIE_SEED: u64 = 500_135_715_176;
 const TIE_CASES: usize = 16;
 /// The lines of a tie case's file: enough that one replaced line keeps more than half.
 const TIE_LINES: RangeInclusive<usize> = 4..=8;
+/// The seed of the copy cases' stream.
+const COPY_SEED: u64 = 500_135_715_177;
+const COPY_CASES: usize = 48;
+/// The files new in a copy case's `right`.
+const COPY_NEW: RangeInclusive<usize> = 1..=3;
+/// A copy case's odds that a file is modified, else deleted, else moved, else kept.
+const P_COPY_MODIFY: f64 = 0.6;
+const P_COPY_DELETE: f64 = 0.1;
+const P_COPY_MOVE: f64 = 0.1;
 /// The files of a `left` tree.
 const LEFT_FILES: RangeInclusive<usize> = 2..=6;
 /// The lines of a new file.
@@ -140,6 +151,49 @@ impl Generator {
         (left, right)
     }
 
+    /// Files modified, deleted, moved or kept, then new files drawn from a modified file's new
+    /// bytes, its old bytes or a kept file's, edited or not, or fresh.
+    fn copy_case(&mut self) -> (Tree, Tree) {
+        let mut left = Tree::new();
+        for _ in 0..self.rng.random_range(LEFT_FILES) {
+            let Some(path) = self.free_path(&left, &Tree::new()) else { break };
+            let text = self.file();
+            left.insert(path, text);
+        }
+        let mut right = Tree::new();
+        // The bytes a new file can start from: the new and old sides of each modified file,
+        // and each kept file.
+        let mut sources = Vec::new();
+        for (path, text) in &left {
+            let roll: f64 = self.rng.random();
+            if roll < P_COPY_MODIFY {
+                let edited = self.edit(text);
+                sources.push(edited.clone());
+                sources.push(text.clone());
+                right.insert(path.clone(), edited);
+            } else if roll < P_COPY_MODIFY + P_COPY_DELETE {
+            } else if roll < P_COPY_MODIFY + P_COPY_DELETE + P_COPY_MOVE
+                && let Some(to) = self.free_path(&left, &right)
+            {
+                right.insert(to, text.clone());
+            } else {
+                sources.push(text.clone());
+                right.insert(path.clone(), text.clone());
+            }
+        }
+        for _ in 0..self.rng.random_range(COPY_NEW) {
+            let Some(path) = self.free_path(&left, &right) else { break };
+            let text = match sources.choose(&mut self.rng) {
+                Some(text) if !self.rng.random_bool(P_EMPTY) => {
+                    if self.rng.random_bool(P_NEW_EDIT) { self.edit(text) } else { text.clone() }
+                }
+                _ => self.file(),
+            };
+            right.insert(path, text);
+        }
+        (left, right)
+    }
+
     /// A path in neither tree, if one is left.
     fn free_path(&mut self, left: &Tree, right: &Tree) -> Option<String> {
         let free: Vec<String> = DIRS
@@ -233,9 +287,11 @@ pub fn corpus(scratch: &Path, config: &Path, version: &str) -> String {
     let root = scratch.join("renames");
     fs::create_dir(&root).expect("the corpus directory is made");
     let mut ties = Generator { rng: ChaCha20Rng::seed_from_u64(TIE_SEED), unique: 0 };
+    let mut copies = Generator { rng: ChaCha20Rng::seed_from_u64(COPY_SEED), unique: 0 };
     let inputs = (0..CASES)
         .map(|index| (format!("rename-{index}"), generator.case()))
-        .chain((0..TIE_CASES).map(|index| (format!("tie-{index}"), ties.tie_case())));
+        .chain((0..TIE_CASES).map(|index| (format!("tie-{index}"), ties.tie_case())))
+        .chain((0..COPY_CASES).map(|index| (format!("copy-{index}"), copies.copy_case())));
     let cases =
         inputs.map(|(id, (left, right))| run(&root.join(&id), config, id, left, right)).collect();
     let corpus = Corpus { jj: version, seed: SEED, cases };

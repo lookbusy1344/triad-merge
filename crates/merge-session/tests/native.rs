@@ -275,6 +275,28 @@ fn a_staged_rename_is_listed_at_its_new_path() {
 }
 
 #[test]
+fn a_staged_copy_of_a_modified_file_is_listed_as_a_copy() {
+    let fixture = Fixture::new();
+    fixture.commit("one", &[("a.txt", b"1\n2\n3\n4\n")]);
+    fixture.stage(&[("a.txt", b"1\n2\n3\n5\n"), ("sub/c.txt", b"1\n2\n3\n5\n")]);
+    fixture.write("a.txt", b"1\n2\n3\n5\n");
+    fixture.write("sub/c.txt", b"1\n2\n3\n5\n");
+    let (_, files) = listed(fixture.root(), None);
+    assert_eq!(
+        files,
+        [
+            file("a.txt", Change::Modified, Content::Text),
+            file("sub/c.txt", Change::Copied { from: "a.txt".into() }, Content::Text),
+        ]
+    );
+    // A copy reads its source at the revision and its own path on disk.
+    let listing = try_list(fixture.root(), None).expect("listed");
+    let diff = load_from(&listing, "a.txt", "sub/c.txt");
+    assert_eq!(diff.left.content(), "1\n2\n3\n4\n");
+    assert_eq!(diff.right, listing.against.root.join("sub").join("c.txt"));
+}
+
+#[test]
 fn an_untracked_copy_of_a_deleted_file_is_no_rename_in_git() {
     let fixture = Fixture::new();
     fixture.commit("one", &[("old.txt", b"body\n")]);
@@ -720,6 +742,22 @@ mod jj {
         assert_eq!(
             listed(fixture.root(), None).1,
             [file("sub", Change::Modified, Content::Special)]
+        );
+    }
+
+    #[test]
+    fn a_copy_of_a_file_edited_on_disk_is_a_copy_after_the_snapshot() {
+        let fixture = Fixture::new();
+        fixture.commit("one", &[("src/a.rs", b"fn a() {}\n")]);
+        fixture.check_out_to_disk();
+        fixture.write("src/a.rs", b"fn a() {}\nfn b() {}\n");
+        fixture.write("lib/c.rs", b"fn a() {}\nfn b() {}\n");
+        assert_eq!(
+            listed(fixture.root(), None).1,
+            [
+                file("lib/c.rs", Change::Copied { from: "src/a.rs".into() }, Content::Text),
+                file("src/a.rs", Change::Modified, Content::Text),
+            ]
         );
     }
 

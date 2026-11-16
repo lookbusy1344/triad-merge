@@ -505,6 +505,39 @@ fn diff_inspect_prints_a_rename_with_both_paths() {
 }
 
 #[test]
+fn diff_inspect_prints_a_copy_with_its_source() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let (left, right) = (root.path().join("l"), root.path().join("r"));
+    for dir in [&left, &right] {
+        std::fs::create_dir(dir).expect("dir");
+    }
+    std::fs::write(left.join("a.txt"), "1\n2\n3\n4\n").expect("written");
+    std::fs::write(right.join("a.txt"), "1\n2\n3\n5\n").expect("written");
+    std::fs::write(right.join("b.txt"), "1\n2\n3\n6\n").expect("written");
+    let text = triad(&["diff".as_ref(), "--inspect".as_ref(), left.as_os_str(), right.as_os_str()]);
+    assert_eq!(
+        String::from_utf8_lossy(&text.stdout),
+        "modified text a.txt\ncopied text a.txt => b.txt\nfiles: 2\n"
+    );
+    assert_eq!(text.status.code(), Some(1));
+    let json = triad(&[
+        "diff".as_ref(),
+        "--inspect".as_ref(),
+        "--json".as_ref(),
+        left.as_os_str(),
+        right.as_os_str(),
+    ]);
+    let value: serde_json::Value = serde_json::from_slice(&json.stdout).expect("stdout is JSON");
+    assert_eq!(
+        value["files"],
+        serde_json::json!([
+            { "path": "a.txt", "change": "modified", "content": "text" },
+            { "path": "b.txt", "change": "copied", "from": "a.txt", "content": "text" }
+        ])
+    );
+}
+
+#[test]
 fn the_directory_demo_lists_what_its_readme_says() {
     let demo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/demo/dirs");
     let (left, right) = (demo.join("left"), demo.join("right"));
@@ -520,10 +553,11 @@ fn the_directory_demo_lists_what_its_readme_says() {
          added text invoice/cli.py\n\
          renamed text invoice/util.py => invoice/helpers.py\n\
          renamed text invoice/parser.py => invoice/io/parser.py\n\
+         copied text invoice/totals.py => invoice/summary.py\n\
          modified text invoice/totals.py\n\
          deleted text legacy.txt\n\
          added undecodable names-latin1.txt\n\
-         files: 10\n"
+         files: 11\n"
     );
     assert_eq!(result.status.code(), Some(1));
 }

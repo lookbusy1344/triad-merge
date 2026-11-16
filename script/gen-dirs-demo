@@ -3,9 +3,9 @@
 for trying triad's directory diff by hand (spec section 6.1).
 
 The directories hold a small Python project. Between them one file moves and changes, one is
-renamed unchanged, one is edited, one is replaced by a file that keeps too little of it to
-count as a rename, one is deleted and three are added; two hold binary bytes and one Latin-1
-bytes. fixtures/demo/README.md lists what triad shows for each. This script names the binary
+renamed unchanged, one is edited and copied, one is replaced by a file that keeps too little
+of it to count as a rename, one is deleted and three are added; two hold binary bytes and one
+Latin-1 bytes. fixtures/demo/README.md lists what triad shows for each. This script names the binary
 and Latin-1 bytes by escape, so its own source holds none of them.
 
 Usage: script/gen-dirs-demo
@@ -96,6 +96,25 @@ def report(path):
     print(f"largest {max(invoice['amount'] for invoice in invoices):.2f}")
 """
 
+# A copy of the edited totals.py, with its report renamed and one line gone.
+SUMMARY = """from invoice.io.parser import parse
+
+TAX_RATE = 0.2
+
+
+def total(invoices):
+    return sum(invoice["amount"] for invoice in invoices)
+
+
+def with_tax(amount, rate=TAX_RATE):
+    return amount * (1 + rate)
+
+
+def summary(path):
+    invoices = parse(path)
+    print(f"{len(invoices)} invoices, total {with_tax(total(invoices)):.2f}")
+"""
+
 NOTES = """# Notes
 
 - Amounts are in pounds.
@@ -143,6 +162,7 @@ RIGHT = {
     "invoice/io/parser.py": PARSER_MOVED,
     "invoice/helpers.py": UTIL,
     "invoice/totals.py": TOTALS_RIGHT,
+    "invoice/summary.py": SUMMARY,
     "docs/design.md": DESIGN,
     "invoice/cli.py": CLI,
     "assets/logo.png": PNG + b"right",

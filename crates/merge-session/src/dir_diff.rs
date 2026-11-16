@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use merge_core::rename::{self, Candidate, Group};
+use merge_core::rename::{self, Candidate};
 use merge_core::text::{DecodeError, Text};
 use vcs::VcsError;
 use vcs_git::BlobId;
@@ -59,6 +59,9 @@ pub enum Change {
     /// Only in the right directory, renamed from `from`, a file only in the left directory
     /// whose bytes it keeps at least half of ([`rename::renames`]).
     Renamed { from: PathBuf },
+    /// Only in the right directory, copied from `from`, a modified file whose right bytes it
+    /// keeps at least half of ([`rename::copies`]). No rename took it.
+    Copied { from: PathBuf },
 }
 
 /// What a listed file holds, which says whether the diff window opens it. Ordered by
@@ -92,11 +95,12 @@ impl ChangedFile {
         display(&self.path)
     }
 
-    /// A rename's old path, shown as [`ChangedFile::display_path`] shows a path.
+    /// A rename's old path or a copy's source, shown as [`ChangedFile::display_path`] shows a
+    /// path.
     #[must_use]
-    pub fn renamed_from(&self) -> Option<String> {
+    pub fn from(&self) -> Option<String> {
         match &self.change {
-            Change::Renamed { from } => Some(display(from)),
+            Change::Renamed { from } | Change::Copied { from } => Some(display(from)),
             Change::Added | Change::Deleted | Change::Modified => None,
         }
     }
@@ -142,15 +146,15 @@ pub fn changed_files(left: &Path, right: &Path) -> Result<Vec<ChangedFile>, DirD
                 .transpose()
         })
         .collect::<Result<Vec<_>, _>>()?;
-    with_renames(listed, |file| {
+    with_rewrites(listed, |file| {
         let root = if file.change == Change::Deleted { left } else { right };
         let path = root.join(&file.path);
         fs::read(&path).map_err(read_error(&path))
     })
 }
 
-/// What the rename search needs of a regular file on one side only. Its bytes are read
-/// again only for a similarity pass.
+/// What the rename and copy search needs of a regular file: on one side only, or the right
+/// side of a modified path. Its bytes are read again only for a similarity pass.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Blob {
     id: BlobId,
@@ -173,78 +177,124 @@ impl Blob {
     }
 }
 
-/// A listed file, with its blob when it is a regular file on one side only.
+/// A listed file, with the blob of its regular file on one side only, or on the right side
+/// of a modified path.
 pub(crate) type Listed = (ChangedFile, Option<Blob>);
 
-/// How a path differs, what it holds, and its blob when it is a regular file on one side
-/// only.
+/// How a path differs, what it holds, and the blob of its regular file on one side only, or
+/// on the right side of a modified path.
 pub(crate) type Difference = (Change, Content, Option<Blob>);
 
 /// `listed` with each added file that renames a deleted one turned into a rename, and the
-/// deleted file dropped. Only regular files on one side, for which `listed` holds a blob,
-/// take part. `load` reads a listed file's bytes on its one side, for a similarity pass.
-/// The order stays: a rename is listed at its new path.
+/// deleted file dropped; then each added file left that copies a modified one turned into a
+/// copy. Only listed files with a blob take part. `load` reads a listed file's bytes on its
+/// one side, or on the right side of a modified path, for a similarity pass. The order stays:
+/// a rename is listed at its new path.
 ///
 /// # Errors
 ///
 /// The first error `load` returns.
-pub(crate) fn with_renames<E>(
+pub(crate) fn with_rewrites<E>(
     listed: Vec<Listed>,
     mut load: impl FnMut(&ChangedFile) -> Result<Vec<u8>, E>,
 ) -> Result<Vec<ChangedFile>, E> {
     let locations: Vec<String> = listed.iter().map(|(file, _)| file.display_path()).collect();
-    // Each side's candidates, and the index in `listed` of each.
-    let (mut deleted, mut deleted_at, mut added, mut added_at) =
-        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    // Each kind's candidates, and the index in `listed` of each.
+    let (mut deleted, mut modified, mut added) =
+        (Candidates::new(), Candidates::new(), Candidates::new());
     for (ix, (file, blob)) in listed.iter().enumerate() {
         let Some(Blob { id, len, binary }) = *blob else {
             continue;
         };
         let candidate = Candidate { id, location: locations[ix].as_bytes(), len, binary };
-        match file.change {
-            Change::Deleted => {
-                deleted.push(candidate);
-                deleted_at.push(ix);
-            }
-            Change::Added => {
-                added.push(candidate);
-                added_at.push(ix);
-            }
-            Change::Modified | Change::Renamed { .. } => {}
+        let group = match file.change {
+            Change::Deleted => &mut deleted,
+            Change::Modified => &mut modified,
+            Change::Added => &mut added,
+            Change::Renamed { .. } | Change::Copied { .. } => continue,
+        };
+        group.push(candidate, ix);
+    }
+    let mut load_at = |ix: usize| load(&listed[ix].0);
+    let found_renames = rename::renames(&deleted.candidates, &added.candidates, |group, ix| {
+        load_at(match group {
+            rename::Group::Deleted => deleted.at[ix],
+            rename::Group::Modified => modified.at[ix],
+            rename::Group::Added => added.at[ix],
+        })
+    })?;
+    let mut source: Vec<Option<(usize, Rewrite)>> = vec![None; listed.len()];
+    let mut gone = vec![false; listed.len()];
+    let mut renamed = vec![false; added.at.len()];
+    for found in found_renames {
+        let (from, to) = (deleted.at[found.deleted], added.at[found.added]);
+        source[to] = Some((from, Rewrite::Rename));
+        gone[from] = true;
+        renamed[found.added] = true;
+    }
+    let mut open = Candidates::new();
+    for ((candidate, &at), renamed) in added.candidates.iter().zip(&added.at).zip(renamed) {
+        if !renamed {
+            open.push(*candidate, at);
         }
     }
-    let found = rename::renames(&deleted, &added, |group, ix| {
-        let at = match group {
-            Group::Deleted => deleted_at[ix],
-            Group::Added => added_at[ix],
-        };
-        load(&listed[at].0)
+    let found_copies = rename::copies(&modified.candidates, &open.candidates, |group, ix| {
+        load_at(match group {
+            rename::Group::Deleted => deleted.at[ix],
+            rename::Group::Modified => modified.at[ix],
+            rename::Group::Added => open.at[ix],
+        })
     })?;
-    let mut source = vec![None; listed.len()];
-    let mut gone = vec![false; listed.len()];
-    for found in found {
-        let (from, to) = (deleted_at[found.deleted], added_at[found.added]);
-        source[to] = Some(from);
-        gone[from] = true;
+    for found in found_copies {
+        source[open.at[found.added]] = Some((modified.at[found.modified], Rewrite::Copy));
     }
-    let renamed_from: Vec<Option<(PathBuf, Content)>> = source
+    let from: Vec<Option<(PathBuf, Content, Rewrite)>> = source
         .iter()
-        .map(|from| from.map(|from| (listed[from].0.path.clone(), listed[from].0.content)))
+        .map(|from| {
+            from.map(|(from, kind)| (listed[from].0.path.clone(), listed[from].0.content, kind))
+        })
         .collect();
     Ok(listed
         .into_iter()
-        .zip(renamed_from)
+        .zip(from)
         .zip(gone)
         .filter(|(_, gone)| !gone)
         .map(|(((file, _), from), _)| match from {
-            Some((from, content)) => ChangedFile {
-                change: Change::Renamed { from },
+            Some((from, content, kind)) => ChangedFile {
+                change: match kind {
+                    Rewrite::Rename => Change::Renamed { from },
+                    Rewrite::Copy => Change::Copied { from },
+                },
                 content: file.content.max(content),
                 ..file
             },
             None => file,
         })
         .collect())
+}
+
+/// How an added file came from another listed file.
+#[derive(Debug, Clone, Copy)]
+enum Rewrite {
+    Rename,
+    Copy,
+}
+
+/// The candidates of one kind of change, and the index in the listing of each.
+struct Candidates<'a> {
+    candidates: Vec<Candidate<'a, BlobId>>,
+    at: Vec<usize>,
+}
+
+impl<'a> Candidates<'a> {
+    fn new() -> Self {
+        Self { candidates: Vec::new(), at: Vec::new() }
+    }
+
+    fn push(&mut self, candidate: Candidate<'a, BlobId>, at: usize) {
+        self.candidates.push(candidate);
+        self.at.push(at);
+    }
 }
 
 /// The names of the directories git and jj keep their data in, at any depth. A git
@@ -336,11 +386,19 @@ fn compare(
         (Some(Entry::File(left)), Some(Entry::File(right))) => {
             let left_bytes = fs::read(left).map_err(read_error(left))?;
             let right_bytes = fs::read(right).map_err(read_error(right))?;
-            (left_bytes != right_bytes)
-                .then(|| (Change::Modified, decoded(&left_bytes).max(decoded(&right_bytes)), None))
+            if left_bytes == right_bytes {
+                None
+            } else {
+                let content = decoded(&left_bytes).max(decoded(&right_bytes));
+                Some((Change::Modified, content, Some(Blob::of(&right_bytes)?)))
+            }
         }
         (Some(Entry::Special(Some(left))), Some(Entry::Special(Some(right)))) if left == right => {
             None
+        }
+        (Some(Entry::Special(_)), Some(right @ Entry::File(_))) => {
+            let (_, blob) = content_of(right)?;
+            Some((Change::Modified, Content::Special, blob))
         }
         (Some(_), Some(_)) => Some((Change::Modified, Content::Special, None)),
         (None, None) => None,
@@ -525,6 +583,85 @@ mod tests {
         );
     }
 
+    fn copied(from: &str) -> Change {
+        Change::Copied { from: from.into() }
+    }
+
+    #[test]
+    fn a_new_file_like_a_modified_file_is_a_copy() {
+        // `y` keeps 6 of the 8 bytes of `x`'s new side.
+        let dirs = Dirs::new(
+            &[("x", b"1\n2\n3\n4\n")],
+            &[("x", b"1\n2\n3\n5\n"), ("sub/y", b"1\n2\n3\n6\n"), ("z", b"1\n2\n3\n5\n")],
+        );
+        assert_eq!(
+            dirs.changed(),
+            [
+                entry("sub/y", copied("x"), Content::Text),
+                entry("x", Change::Modified, Content::Text),
+                entry("z", copied("x"), Content::Text),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_copy_compares_with_the_modified_files_new_bytes() {
+        // `y` holds `x`'s old bytes; `x`'s new bytes share none of them.
+        let dirs =
+            Dirs::new(&[("x", b"1\n2\n3\n4\n")], &[("x", b"a\nb\nc\nd\n"), ("y", b"1\n2\n3\n4\n")]);
+        assert_eq!(
+            dirs.changed(),
+            [entry("x", Change::Modified, Content::Text), entry("y", Change::Added, Content::Text)]
+        );
+    }
+
+    #[test]
+    fn an_unchanged_or_deleted_file_is_no_copy_source() {
+        // `c` holds the bytes of the unchanged `u`.
+        let dirs = Dirs::new(&[("u", b"1\n2\n")], &[("u", b"1\n2\n"), ("c", b"1\n2\n")]);
+        assert_eq!(dirs.changed(), [entry("c", Change::Added, Content::Text)]);
+        // Two new files hold the deleted `d`'s bytes: the first renames it, the second is new.
+        let dirs = Dirs::new(&[("d", b"p\nq\n")], &[("r1", b"p\nq\n"), ("r2", b"p\nq\n")]);
+        assert_eq!(
+            dirs.changed(),
+            [entry("r1", renamed("d"), Content::Text), entry("r2", Change::Added, Content::Text)]
+        );
+    }
+
+    #[test]
+    fn renames_come_before_copies() {
+        // `n` holds the bytes of both the deleted `d` and the modified `m`'s new side.
+        let dirs = Dirs::new(
+            &[("d", b"1\n2\n3\n4\n"), ("m", b"1\n2\n3\n9\n")],
+            &[("m", b"1\n2\n3\n4\n"), ("n", b"1\n2\n3\n4\n")],
+        );
+        assert_eq!(
+            dirs.changed(),
+            [entry("m", Change::Modified, Content::Text), entry("n", renamed("d"), Content::Text)]
+        );
+    }
+
+    #[test]
+    fn a_copy_takes_the_greater_content_of_its_source() {
+        let dirs = Dirs::new(&[("m", b"\0x\n")], &[("m", b"\0y\n"), ("c", b"\0y\n")]);
+        assert_eq!(
+            dirs.changed(),
+            [
+                entry("c", copied("m"), Content::Binary),
+                entry("m", Change::Modified, Content::Binary)
+            ]
+        );
+    }
+
+    #[test]
+    fn an_empty_file_is_never_a_copy() {
+        let dirs = Dirs::new(&[("m", b"x\n")], &[("m", b""), ("c", b"")]);
+        assert_eq!(
+            dirs.changed(),
+            [entry("c", Change::Added, Content::Text), entry("m", Change::Modified, Content::Text)]
+        );
+    }
+
     #[test]
     fn content_names_binary_and_undecodable_sides() {
         let dirs = Dirs::new(
@@ -628,6 +765,22 @@ mod tests {
                 [
                     entry("a", Change::Deleted, Content::Special),
                     entry("b", Change::Added, Content::Special)
+                ]
+            );
+        }
+
+        #[test]
+        fn a_link_that_becomes_a_file_is_a_copy_source_and_a_file_that_becomes_a_link_is_not() {
+            // jj counts a modified path by its new entry: a file is a source, a link not.
+            let dirs = Dirs::new(&[("b", b"1\n2\n")], &[("a", b"1\n2\n"), ("c", b"1\n2\n")]);
+            symlink("t", dirs.left.join("a")).unwrap();
+            symlink("t", dirs.right.join("b")).unwrap();
+            assert_eq!(
+                dirs.changed(),
+                [
+                    entry("a", Change::Modified, Content::Special),
+                    entry("b", Change::Modified, Content::Special),
+                    entry("c", copied("a"), Content::Special),
                 ]
             );
         }

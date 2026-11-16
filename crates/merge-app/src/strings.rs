@@ -261,12 +261,18 @@ pub(crate) const DIRS_EMPTY: &str = "No files differ.";
 /// A listed file: how it changed as an icon, its path, and in the trail a rename's old path
 /// and, for a file that does not open, why. Its accessible name says the change in words.
 pub(crate) fn dir_file(file: &ChangedFile) -> Row {
-    let from = file.renamed_from().map(|from| format!("from {from}"));
+    let from = file.from().map(|from| format!("from {from}"));
     let (status, word) = match &file.change {
         Change::Added => (pick_list::Status::Added, "added"),
         Change::Deleted => (pick_list::Status::Deleted, "deleted"),
         Change::Modified => (pick_list::Status::Modified, "modified"),
         Change::Renamed { .. } => (pick_list::Status::Renamed, "renamed"),
+        Change::Copied { .. } => (pick_list::Status::Added, "copied"),
+    };
+    // A copy shows the added icon, so its trail names the copy.
+    let shown_from = match &file.change {
+        Change::Copied { .. } => from.as_deref().map(|from| format!("{word} {from}")),
+        _ => from.clone(),
     };
     let why = match file.content {
         Content::Text => None,
@@ -280,7 +286,7 @@ pub(crate) fn dir_file(file: &ChangedFile) -> Row {
         Some(why) => format!("{path} {change}, {why}"),
         None => format!("{path} {change}"),
     };
-    let trail = [from.as_deref(), why].into_iter().flatten().collect::<Vec<_>>().join(", ");
+    let trail = [shown_from.as_deref(), why].into_iter().flatten().collect::<Vec<_>>().join(", ");
     let shown = if file.change == Change::Deleted { Shown::Deleted } else { Shown::Path };
     Row {
         status: Some(status),
@@ -1557,6 +1563,19 @@ mod tests {
         let row = dir_file(&changed("b.bin", renamed, Content::Undecodable));
         assert_eq!(row.trail, Some("from invoice/util.py, undecodable".into()));
         assert_eq!(row.label(), "b.bin renamed from invoice/util.py, undecodable");
+    }
+
+    #[test]
+    fn a_copied_file_shows_the_added_icon_and_names_its_source_in_the_trail() {
+        let copied = Change::Copied { from: "invoice/totals.py".into() };
+        let row = dir_file(&changed("invoice/tax.py", copied.clone(), Content::Text));
+        assert_eq!(row.status, Some(pick_list::Status::Added));
+        assert_eq!(row.shown, Shown::Path);
+        assert_eq!(row.trail, Some("copied from invoice/totals.py".into()));
+        assert_eq!(row.label(), "invoice/tax.py copied from invoice/totals.py");
+        let row = dir_file(&changed("b.bin", copied, Content::Binary));
+        assert_eq!(row.trail, Some("copied from invoice/totals.py, binary".into()));
+        assert_eq!(row.label(), "b.bin copied from invoice/totals.py, binary");
     }
 
     #[test]

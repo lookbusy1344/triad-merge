@@ -1,10 +1,10 @@
-//! Rename detection between deleted and added files, by content, as jj's git backend finds
-//! renames (spec §6.1).
+//! Rename and copy detection by content, as jj's git backend finds them (spec §6.1): an added
+//! file renames a deleted one, or copies a modified one.
 
 use std::cmp::Ordering;
 
-/// A deleted or added file. It holds no bytes: [`renames`] loads them only for a similarity
-/// pass, and only for files whose sizes allow a match.
+/// A deleted, modified or added file. It holds no bytes: [`renames`] and [`copies`] load them
+/// only for a similarity pass, and only for files whose sizes allow a match.
 #[derive(Debug, Clone, Copy)]
 pub struct Candidate<'a, K> {
     /// The file's identity, which orders the search: git's blob ID in triad.
@@ -25,10 +25,11 @@ impl<'a, K> Candidate<'a, K> {
     }
 }
 
-/// Which slice given to [`renames`] a file to load is in.
+/// Which slice given to [`renames`] or [`copies`] a file to load is in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Group {
     Deleted,
+    Modified,
     Added,
 }
 
@@ -40,10 +41,18 @@ pub struct Rename {
     pub added: usize,
 }
 
-/// The share of a deleted file's bytes an added file must keep to count as its rename.
+/// The added file `added` copied from the modified file `modified`, as indices into the slices
+/// given to [`copies`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Copied {
+    pub modified: usize,
+    pub added: usize,
+}
+
+/// The share of a source file's bytes an added file must keep to count as its rename or copy.
 pub const SIMILARITY: f32 = 0.5;
 
-/// Above this many deleted files times this many added files, squared, the search keeps to
+/// Above this many source files times this many added files, squared, the search keeps to
 /// exact matches.
 pub const LIMIT: usize = 1000;
 
@@ -67,11 +76,74 @@ fn renames_within<K: Ord, E>(
     deleted: &[Candidate<'_, K>],
     added: &[Candidate<'_, K>],
     limit: usize,
-    mut load: impl FnMut(Group, usize) -> Result<Vec<u8>, E>,
+    load: impl FnMut(Group, usize) -> Result<Vec<u8>, E>,
 ) -> Result<Vec<Rename>, E> {
-    let sources = by_id_and_location(deleted);
+    let found = search(deleted, added, Source::Deleted, limit, load)?;
+    Ok(found.into_iter().map(|(deleted, added)| Rename { deleted, added }).collect())
+}
+
+/// The copies among `modified`, each holding its new bytes, and `added`, the added files no
+/// rename took. One modified file can be the source of many copies. `load` reads the bytes
+/// of a file, by its group and its index there. Each file loads at most once.
+///
+/// # Errors
+///
+/// The first error `load` returns.
+pub fn copies<K: Ord, E>(
+    modified: &[Candidate<'_, K>],
+    added: &[Candidate<'_, K>],
+    load: impl FnMut(Group, usize) -> Result<Vec<u8>, E>,
+) -> Result<Vec<Copied>, E> {
+    copies_within(modified, added, LIMIT, load)
+}
+
+/// [`copies`] under the limit `limit`.
+fn copies_within<K: Ord, E>(
+    modified: &[Candidate<'_, K>],
+    added: &[Candidate<'_, K>],
+    limit: usize,
+    load: impl FnMut(Group, usize) -> Result<Vec<u8>, E>,
+) -> Result<Vec<Copied>, E> {
+    let found = search(modified, added, Source::Modified, limit, load)?;
+    Ok(found.into_iter().map(|(modified, added)| Copied { modified, added }).collect())
+}
+
+/// The files a search draws its sources from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Source {
+    /// Deleted files: each pairs once.
+    Deleted,
+    /// Modified files: each can be the source of many added files.
+    Modified,
+}
+
+impl Source {
+    fn group(self) -> Group {
+        match self {
+            Self::Deleted => Group::Deleted,
+            Self::Modified => Group::Modified,
+        }
+    }
+
+    /// Whether a source leaves the search once it pairs.
+    fn pairs_once(self) -> bool {
+        self == Self::Deleted
+    }
+}
+
+/// The pairs `(source, added)` gix's rewrite tracker finds between `sources` and `added`: an
+/// identity pass, then, within `limit`, a similarity pass. Each walks the added files in order
+/// of identity, then location.
+fn search<K: Ord, E>(
+    sources: &[Candidate<'_, K>],
+    added: &[Candidate<'_, K>],
+    source: Source,
+    limit: usize,
+    mut load: impl FnMut(Group, usize) -> Result<Vec<u8>, E>,
+) -> Result<Vec<(usize, usize)>, E> {
+    let order = by_id_and_location(sources);
     let destinations = by_id_and_location(added);
-    let mut taken = vec![false; deleted.len()];
+    let mut taken = vec![false; sources.len()];
     let mut matched = vec![false; added.len()];
     let mut found = Vec::new();
     for &dest in &destinations {
@@ -79,16 +151,16 @@ fn renames_within<K: Ord, E>(
         if file.len == 0 {
             continue;
         }
-        let first = sources.partition_point(|&s| deleted[s].id < file.id);
-        let same_id = sources[first..]
+        let first = order.partition_point(|&s| sources[s].id < file.id);
+        let same_id = order[first..]
             .iter()
             .copied()
-            .take_while(|&s| deleted[s].id == file.id)
+            .take_while(|&s| sources[s].id == file.id)
             .filter(|&s| !taken[s]);
-        if let Some(source) = preferring_name(same_id, deleted, file) {
-            taken[source] = true;
+        if let Some(from) = preferring_name(same_id, sources, file) {
+            taken[from] = source.pairs_once();
             matched[dest] = true;
-            found.push(Rename { deleted: source, added: dest });
+            found.push((from, dest));
         }
     }
     let open_sources = taken.iter().filter(|&&t| !t).count();
@@ -96,33 +168,33 @@ fn renames_within<K: Ord, E>(
     if exceeds(open_sources, open_destinations, limit) {
         return Ok(found);
     }
-    let mut loaded: Vec<Option<Vec<u8>>> = vec![None; deleted.len()];
+    let mut loaded: Vec<Option<Vec<u8>>> = vec![None; sources.len()];
     for &dest in &destinations {
         let file = &added[dest];
         if matched[dest] || file.len == 0 || file.binary {
             continue;
         }
-        let open: Vec<usize> = sources
+        let open: Vec<usize> = order
             .iter()
             .copied()
-            .filter(|&s| !taken[s] && !deleted[s].binary && sizes_allow(deleted[s].len, file.len))
+            .filter(|&s| !taken[s] && !sources[s].binary && sizes_allow(sources[s].len, file.len))
             .collect();
         if open.is_empty() {
             continue;
         }
         let new = load(Group::Added, dest)?;
         let mut best: Option<(usize, f32, bool)> = None;
-        for source in open {
-            let old = match loaded[source].take() {
+        for from in open {
+            let old = match loaded[from].take() {
                 Some(bytes) => bytes,
-                None => load(Group::Deleted, source)?,
+                None => load(source.group(), from)?,
             };
             let score = similarity(&old, &new);
-            loaded[source] = Some(old);
+            loaded[from] = Some(old);
             if score < SIMILARITY {
                 continue;
             }
-            let same_name = file_name(deleted[source].location) == file_name(file.location);
+            let same_name = file_name(sources[from].location) == file_name(file.location);
             let better = best.is_none_or(|(_, best_score, best_same_name)| {
                 match score.total_cmp(&best_score) {
                     Ordering::Greater => true,
@@ -131,13 +203,15 @@ fn renames_within<K: Ord, E>(
                 }
             });
             if better {
-                best = Some((source, score, same_name));
+                best = Some((from, score, same_name));
             }
         }
-        if let Some((source, ..)) = best {
-            taken[source] = true;
-            loaded[source] = None;
-            found.push(Rename { deleted: source, added: dest });
+        if let Some((from, ..)) = best {
+            if source.pairs_once() {
+                taken[from] = true;
+                loaded[from] = None;
+            }
+            found.push((from, dest));
         }
     }
     Ok(found)
@@ -152,18 +226,18 @@ fn by_id_and_location<K: Ord>(files: &[Candidate<'_, K>]) -> Vec<usize> {
     order
 }
 
-/// The first of `sources` whose file name is `dest`'s, else the first.
+/// The first of `matches`, indices into `sources`, whose file name is `dest`'s, else the first.
 fn preferring_name<K>(
-    mut sources: impl Iterator<Item = usize>,
-    deleted: &[Candidate<'_, K>],
+    mut matches: impl Iterator<Item = usize>,
+    sources: &[Candidate<'_, K>],
     dest: &Candidate<'_, K>,
 ) -> Option<usize> {
-    let first = sources.next()?;
+    let first = matches.next()?;
     let name = file_name(dest.location);
-    if file_name(deleted[first].location) == name {
+    if file_name(sources[first].location) == name {
         return Some(first);
     }
-    Some(sources.find(|&s| file_name(deleted[s].location) == name).unwrap_or(first))
+    Some(matches.find(|&s| file_name(sources[s].location) == name).unwrap_or(first))
 }
 
 fn exceeds(sources: usize, destinations: usize, limit: usize) -> bool {
@@ -250,6 +324,7 @@ mod tests {
             let files = match group {
                 Group::Deleted => deleted,
                 Group::Added => added,
+                Group::Modified => panic!("a rename search loads no modified file"),
             };
             Ok(files[ix].bytes.as_bytes().to_vec())
         };
@@ -420,6 +495,127 @@ mod tests {
             loads,
             [(Group::Added, 0), (Group::Deleted, 0), (Group::Deleted, 1), (Group::Added, 1),]
         );
+    }
+
+    /// The copies under `limit`, as sorted `(modified, added)` pairs, and each load in order.
+    fn run_copies(modified: &[File<'_>], added: &[File<'_>], limit: usize) -> Run {
+        let loads = RefCell::new(Vec::new());
+        let load = |group, ix: usize| -> Result<Vec<u8>, ()> {
+            loads.borrow_mut().push((group, ix));
+            let files = match group {
+                Group::Modified => modified,
+                Group::Added => added,
+                Group::Deleted => panic!("a copy search loads no deleted file"),
+            };
+            Ok(files[ix].bytes.as_bytes().to_vec())
+        };
+        let found = copies_within(&candidates(modified), &candidates(added), limit, load)
+            .expect("the loads succeed");
+        let mut pairs: Vec<_> = found.into_iter().map(|c| (c.modified, c.added)).collect();
+        pairs.sort_unstable();
+        (pairs, loads.into_inner())
+    }
+
+    fn copy_pairs(modified: &[File<'_>], added: &[File<'_>]) -> Vec<(usize, usize)> {
+        run_copies(modified, added, LIMIT).0
+    }
+
+    #[test]
+    fn identical_bytes_to_a_modified_file_are_a_copy() {
+        assert_eq!(copy_pairs(&[file(1, "a.txt", "x\n")], &[file(1, "b/c.txt", "x\n")]), [(0, 0)]);
+    }
+
+    #[test]
+    fn one_modified_file_is_the_source_of_many_copies() {
+        // Two identical copies and one similar one: 6 of 8 bytes stay.
+        let added = [
+            file(1, "b", "1\n2\n3\n4\n"),
+            file(1, "c", "1\n2\n3\n4\n"),
+            file(2, "d", "1\n2\n3\n5\n"),
+        ];
+        assert_eq!(copy_pairs(&[file(1, "a", "1\n2\n3\n4\n")], &added), [(0, 0), (0, 1), (0, 2)]);
+    }
+
+    #[test]
+    fn a_copy_keeps_at_least_half_the_bytes() {
+        // 3 of 6 bytes stay, exactly the threshold.
+        assert_eq!(copy_pairs(&[file(1, "a", "ab\ncd\n")], &[file(2, "b", "ab\nxy\n")]), [(0, 0)]);
+        // 2 of 8 bytes stay.
+        assert_eq!(
+            copy_pairs(&[file(1, "a", "1\n2\n3\n4\n")], &[file(2, "b", "1\n5\n6\n7\n")]),
+            []
+        );
+    }
+
+    #[test]
+    fn a_copy_takes_the_most_similar_modified_file_then_its_name_then_the_order() {
+        // `s2` keeps 6 of 8 bytes, `s1` 4.
+        let modified = [file(1, "s1", "1\n2\n8\n9\n"), file(2, "s2", "1\n2\n3\n9\n")];
+        assert_eq!(copy_pairs(&modified, &[file(3, "d", "1\n2\n3\n4\n")]), [(1, 0)]);
+        // A tie: both keep 6 of 8; `a/x.rs` has the added file's name.
+        let modified = [file(1, "b.rs", "1\n2\n3\n9\n"), file(2, "a/x.rs", "1\n2\n3\n8\n")];
+        assert_eq!(copy_pairs(&modified, &[file(3, "dir/x.rs", "1\n2\n3\n4\n")]), [(1, 0)]);
+        // A tie without the name goes to the lower identity.
+        let modified = [file(2, "a", "1\n2\n3\n9\n"), file(1, "z", "1\n2\n3\n8\n")];
+        assert_eq!(copy_pairs(&modified, &[file(3, "d", "1\n2\n3\n4\n")]), [(1, 0)]);
+        // Identical bytes: the same name first, else the first location.
+        let modified = [file(1, "a/y.rs", "x\n"), file(1, "b/x.rs", "x\n")];
+        assert_eq!(copy_pairs(&modified, &[file(1, "c/x.rs", "x\n")]), [(1, 0)]);
+        let modified = [file(1, "z", "x\n"), file(1, "m", "x\n")];
+        assert_eq!(copy_pairs(&modified, &[file(1, "d", "x\n")]), [(1, 0)]);
+    }
+
+    #[test]
+    fn an_empty_added_file_is_never_a_copy_and_binary_files_copy_only_when_identical() {
+        assert_eq!(copy_pairs(&[file(1, "a", "")], &[file(1, "b", "")]), []);
+        assert_eq!(copy_pairs(&[file(1, "a", "\0x\n")], &[file(1, "b", "\0x\n")]), [(0, 0)]);
+        assert_eq!(
+            copy_pairs(&[file(1, "a", "\0\n2\n3\n4\n")], &[file(2, "b", "\0\n2\n3\n5\n")]),
+            []
+        );
+        assert_eq!(
+            copy_pairs(&[file(1, "a", "\0\n2\n3\n4\n")], &[file(2, "b", "1\n2\n3\n4\n")]),
+            []
+        );
+    }
+
+    #[test]
+    fn past_the_limit_only_exact_copies_count() {
+        let modified = [file(1, "a", "1\n2\n3\n4\n"), file(9, "z", "q\n")];
+        let added = [file(2, "b", "1\n2\n3\n5\n"), file(8, "y", "r\n")];
+        // 2 × 2 is the limit squared: the search runs.
+        assert_eq!(run_copies(&modified, &added, 2).0, [(0, 0)]);
+        // 2 × 3 is past it, and nothing loads.
+        let more = [added[0], added[1], file(7, "x", "s\n")];
+        assert_eq!(run_copies(&modified, &more, 2), (vec![], vec![]));
+        // A source copied exactly stays a source. After the exact copy, 3 modified files
+        // times 1 added file is within the limit; times 2 is past it.
+        let modified = [modified[0], modified[1], file(8, "w", "r\n")];
+        assert_eq!(run_copies(&modified, &added, 2).0, [(0, 0), (2, 1)]);
+        let added = [added[0], added[1], file(7, "x", "s\n")];
+        assert_eq!(run_copies(&modified, &added, 2).0, [(2, 1)]);
+    }
+
+    #[test]
+    fn a_modified_file_loads_once_for_every_added_file() {
+        let modified = [file(1, "s", "1\n2\n3\n4\n")];
+        let added = [file(2, "d1", "1\n2\n3\n9\n"), file(3, "d2", "1\n2\n3\n8\n")];
+        let (pairs, loads) = run_copies(&modified, &added, LIMIT);
+        assert_eq!(pairs, [(0, 0), (0, 1)]);
+        assert_eq!(loads, [(Group::Added, 0), (Group::Modified, 0), (Group::Added, 1)]);
+    }
+
+    #[test]
+    fn an_exact_copy_loads_nothing() {
+        assert_eq!(run_copies(&[file(1, "a", "x\n")], &[file(1, "b", "x\n")], LIMIT).1, []);
+    }
+
+    #[test]
+    fn a_failed_copy_load_is_returned() {
+        let modified = candidates(&[file(1, "a", "1\n2\n3\n4\n")]);
+        let added = candidates(&[file(2, "b", "1\n2\n3\n5\n")]);
+        let found = copies(&modified, &added, |group, ix| Err((group, ix)));
+        assert_eq!(found, Err((Group::Added, 0)));
     }
 
     #[test]

@@ -294,7 +294,7 @@ pub fn changed_files(repo: &mut RunRepository, rev: Option<&str>) -> Result<List
             listed.push((ChangedFile { path: path.into_std_path_buf(), change, content }, blob));
         }
     }
-    let files = dir_diff::with_renames(listed, |file| {
+    let files = dir_diff::with_rewrites(listed, |file| {
         let path = root.join(&file.path);
         if file.change != Change::Deleted {
             return std::fs::read(&path).map_err(|source| NativeError::Find { path, source });
@@ -392,7 +392,7 @@ fn on_disk(path: &Path) -> Result<Side, NativeError> {
 }
 
 /// How a path changed from `before` to `after`, and the blob of a regular file on one side
-/// only; `None` when it did not change.
+/// only, or of a modified path's regular file after; `None` when it did not change.
 ///
 /// # Errors
 ///
@@ -411,6 +411,6 @@ fn compared(before: Side, after: Side) -> Result<Option<Difference>, VcsError> {
         (Side::File(a), Side::File(b)) if a == b => None,
         (Side::Absent, side) => Some((Change::Added, content(&side), blob(&side)?)),
         (side, Side::Absent) => Some((Change::Deleted, content(&side), blob(&side)?)),
-        (a, b) => Some((Change::Modified, content(&a).max(content(&b)), None)),
+        (a, b) => Some((Change::Modified, content(&a).max(content(&b)), blob(&b)?)),
     })
 }

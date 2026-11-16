@@ -230,7 +230,8 @@ absorbed 3 hunks into 2 commits
 
 test_dirs() {
   build dirs
-  # The demo's design (fixtures/demo/README.md), with renames paired as jj pairs them.
+  # The demo's design (fixtures/demo/README.md), with renames and copies paired as jj pairs
+  # them.
   local want="added binary assets/icon.png
 modified binary assets/logo.png
 added text docs/design.md
@@ -238,17 +239,19 @@ deleted text docs/notes.md
 added text invoice/cli.py
 renamed text invoice/util.py => invoice/helpers.py
 renamed text invoice/parser.py => invoice/io/parser.py
+copied text invoice/totals.py => invoice/summary.py
 modified text invoice/totals.py
 deleted text legacy.txt
 added undecodable names-latin1.txt
-files: 10"
+files: 11"
   triad diff --inspect
   same "diff --inspect exit" "$EXIT_CONFLICTS" "$code"
   same "diff --inspect" "$want" "$out"
   triad diff --inspect --rev base
   same "diff --inspect --rev base" "$want" "$out"
-  same "renames jj names" "R invoice/{util.py => helpers.py},R invoice/{ => io}/parser.py" \
-    "$(jjr diff --summary | grep '^R' | paste -sd, -)"
+  same "renames and copies jj names" \
+    "R invoice/{util.py => helpers.py},R invoice/{ => io}/parser.py,C invoice/{totals.py => summary.py}" \
+    "$(jjr diff --summary | grep '^[RC]' | paste -sd, -)"
   # jj's dir mode: two directories of the changed files, as `install --jj` sets it up.
   local got
   got=$(jjr diff --tool triad \

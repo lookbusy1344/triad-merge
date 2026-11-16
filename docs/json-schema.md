@@ -111,7 +111,7 @@ Exit code, as `diff(1)`: 0 if the inputs are equal under the whitespace mode, `d
 | `changes` | integer | The number of entries in `files`. |
 | `files` | array of objects | The files that differ, by path, component by component (spec §6.1). |
 
-Each file has `path`, relative to both directories, or to the repository's root, with `/` between components on every platform; `change`, `"added"` (right only, or new since the revision), `"deleted"` (left only, or gone from disk), `"modified"` or `"renamed"`; for a rename, `from`, its old path, written as `path` is; and `content`, `"text"`, `"binary"`, `"undecodable"` or `"special"` (spec §6.1). A path component that is not UTF-8 shows with U+FFFD in place of its bad bytes.
+Each file has `path`, relative to both directories, or to the repository's root, with `/` between components on every platform; `change`, `"added"` (right only, or new since the revision), `"deleted"` (left only, or gone from disk), `"modified"`, `"renamed"` or `"copied"`; for a rename, `from`, its old path, and for a copy, `from`, its source's path, written as `path` is; and `content`, `"text"`, `"binary"`, `"undecodable"` or `"special"` (spec §6.1). A path component that is not UTF-8 shows with U+FFFD in place of its bad bytes.
 
 Exit code: 0 if no file differs, 1 if one does, 3 on error.
 

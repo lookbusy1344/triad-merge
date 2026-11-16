@@ -200,7 +200,7 @@ fn load_changed(
     let shown = file.display_path();
     let mut repo = changes_repository(&against.root, jj_config);
     let from = match &file.change {
-        Change::Renamed { from } => from,
+        Change::Renamed { from } | Change::Copied { from } => from,
         Change::Added | Change::Deleted | Change::Modified => &file.path,
     };
     let loaded = native::load_listed(&mut repo, against, from, &file.path).map_err(to_string)?;
@@ -211,7 +211,7 @@ fn load_changed(
             let left = DiffFile::revision(loaded.left, loaded.left_title);
             (left, DiffFile::revision(empty, format!("{shown} {NO_FILE}")))
         }
-        Change::Added | Change::Modified | Change::Renamed { .. } => {
+        Change::Added | Change::Modified | Change::Renamed { .. } | Change::Copied { .. } => {
             crate::run::native_sides(loaded).map_err(to_string)?
         }
     };
@@ -235,7 +235,7 @@ fn load_file(
         Change::Added => ([absent(), None], &file.path),
         Change::Deleted => ([None, absent()], &file.path),
         Change::Modified => ([None, None], &file.path),
-        Change::Renamed { from } => ([None, None], from),
+        Change::Renamed { from } | Change::Copied { from } => ([None, None], from),
     };
     let paths = [left.join(from), right.join(&file.path)];
     let repo = RunRepository::of_diff_tool(Some(&cwd), &paths[1]);

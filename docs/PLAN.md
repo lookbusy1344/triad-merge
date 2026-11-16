@@ -19,7 +19,7 @@ As of 2026-11-16.
 | M6 native resolution | Done: git stages a resolved save; jj snapshots before the read and after each save | D |
 | M7 syntax highlighting | Done: Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS | F |
 | p4merge parity | Done | E |
-| Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; §G6 done: the files that differ between two directories, or between a revision and the working copy (`diff`, `diff --rev`), in the directory window and printed by `diff --inspect`, and from `jj diff --tool` and `git difftool -d`, with renames paired as jj pairs them; invisible characters drawn as code points and odd spaces shaded in every pane, and escaped in terminal output (§A6.8); moved and duplicated blocks in the merge window and `inspect`, with a suggestion to drop a duplicate (§G16), done; the rest open | G |
+| Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; §G6 done: the files that differ between two directories, or between a revision and the working copy (`diff`, `diff --rev`), in the directory window and printed by `diff --inspect`, and from `jj diff --tool` and `git difftool -d`, with renames and copies paired as jj pairs them; invisible characters drawn as code points and odd spaces shaded in every pane, and escaped in terminal output (§A6.8); moved and duplicated blocks in the merge window and `inspect`, with a suggestion to drop a duplicate (§G16), done; the rest open | G |
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
 | jj-native features | Done: conflicts across a stack (`stack`, `resolve -r`), operation-log history (`history`, `diff --op`) and absorb by hunk (`absorb`); the stack window, with a preview of a save's effect on the descendants and a confirmation before a save changes them; the history window; the absorb window, by hunk; these windows and the directory window share one frame after Zed's panels (`docs/STYLE.md`): a header with a count and the buttons, status icons and file-name-first paths, keys for the lists, and Escape and Cancel to close; the conflict badge names the sides a conflict keeps; absorb, `resolve -r` and the default revset aliases checked against jj's CLI (§I5); `stack`, `resolve -r`, `history`, `absorb` and a three-sided save checked through the built binary in scenario repositories (`script/test-jj-repos`) | I |
 
@@ -68,7 +68,6 @@ In order. Each is one or more commits.
 | Ruler marks with folds: the marks keep their place in the whole file while the thumb follows display rows | A choice between the two | §G2 |
 | A key that opens the fold next to the caret | — | §G2 |
 | Review and diff features: blank lines in a merge (§G4), §G7–§G14 | Owner's choices on §G15's open points for §G4 and §G8 | G |
-| Directory diff: copies detected, as jj finds them from modified files | — | §G6 |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
 | The absorb oracle's generator builds text files only: no renames, executable bits, symlinks, conflicted inputs or immutable commits | — | §I5 |
 | jj-cli's config defaults other than the revset aliases: none checked for whether triad depends on one | — | §I5 |
@@ -133,7 +132,7 @@ Done: the matcher, `diff2::moves` (spec §4.6, `DESIGN.md` §A4.7), recomputed a
 - Done: `install --jj` writes `diff-invocation-mode = "dir"`, so `jj diff --tool triad` opens the directory window. `git difftool -d` runs git's existing `cmd` with two directories and an empty `$MERGED`, and its right directory links the working-tree files at absolute paths; checked with jj 0.47.1 and git through `diff --inspect` as the tool (spec §7.1).
 - Done: `triad-merge diff [--rev REV]` lists the working copy's changes against `@-`, `HEAD` or REV in the directory window, and `diff --inspect` prints them. jj snapshots first; git counts staged and unstaged changes to tracked files. `Repository::changed_paths` gives the candidates, in the conformance suite; the session compares bytes (spec §6.1, `DESIGN.md` §A6.9).
 - Done: renames and moves, in every mode, by `merge_core::rename`: jj's rule through gix, ordered by git's blob ID, so the listing matches `jj diff --summary`; checked against jj 0.47.1 on ties, the 50 % boundary, empty and binary files (spec §6.1, `DESIGN.md` §A6.9).
-- Later: copies, which jj finds from modified files.
+- Done: copies from modified files, as jj finds them, in every mode, by `merge_core::rename::copies`; checked against jj 0.47.1 on 55 copies (spec §6.1, `DESIGN.md` §A6.9).
 - Folder merges stay out (spec §1.1).
 
 ### G7 Alignment points
@@ -210,7 +209,7 @@ Shows how blocks moved, from base to a side or between the sides, in the merge w
 
 - **G4 case:** full Unicode case folding (`CaseFolding.txt` C and F), not ASCII only. Search folds ASCII only; it may follow later.
 - **G4 blank lines:** two-way diff only, under the key `diff-ignore-blank-lines`, named as `diff-ignore-line-endings` is. Blank lines in a merge change which regions conflict and wait for their own design.
-- **G6 renames:** one matcher in triad for every mode, following jj where jj and git differ; renames only, at jj's fixed 50 %. jj's dir mode and git's dir diff pass two plain directories with no copy information, so matching by content serves all three.
+- **G6 renames:** one matcher in triad for every mode, following jj where jj and git differ: renames, and copies from modified files, at jj's fixed 50 %. jj's dir mode and git's dir diff pass two plain directories with no copy information, so matching by content serves all three.
 - **G6 layout:** a list window that opens the diff window, as the history and stack windows do. An in-window list needs the diff window to swap files in place, and can follow.
 - **G5 minimum:** Carry Edit's rule, so the two matchers agree: a block with at least one non-blank line, found at exactly one place. `MOVE_MIN_LINES` is 1.
 

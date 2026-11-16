@@ -1,4 +1,4 @@
-//! The directory listing's renames against `jj diff`'s, from `fixtures/oracle/jj-cli-renames.json`
+//! The directory listing's renames and copies against `jj diff`'s, from `fixtures/oracle/jj-cli-renames.json`
 //! (spec §6.1, `DESIGN.md` §I5): each case's `left` and `right` trees, written as two
 //! directories, list the changes jj names between the same trees committed in a repository.
 
@@ -12,8 +12,8 @@ use serde_json::Value;
 
 const RENAMES: &str =
     concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/oracle/jj-cli-renames.json");
-/// The cases the generator writes: 160 random, 16 that tie.
-const CASES: usize = 176;
+/// The cases the generator writes: 160 random, 16 that tie, 48 that copy.
+const CASES: usize = 224;
 
 /// One change as status, source path and target path, in `jj diff`'s template terms.
 type Entry = (String, String, String);
@@ -22,7 +22,7 @@ fn entry(status: &str, source: &str, target: &str) -> Entry {
     (status.to_owned(), source.to_owned(), target.to_owned())
 }
 
-/// jj's changes in the listing's terms. triad finds no copies, so a copy is an added file.
+/// jj's changes in the listing's terms.
 fn expected(changes: &Value) -> Vec<Entry> {
     let mut entries: Vec<Entry> = changes
         .as_array()
@@ -32,10 +32,9 @@ fn expected(changes: &Value) -> Vec<Entry> {
             let field = |at: usize| change[at].as_str().expect("a string");
             let (status, source, target) = (field(0), field(1), field(2));
             match status {
-                "renamed" => entry(status, source, target),
-                "copied" | "added" => entry("added", target, target),
+                "renamed" | "copied" => entry(status, source, target),
+                "added" | "modified" => entry(status, target, target),
                 "removed" => entry(status, source, source),
-                "modified" => entry(status, target, target),
                 other => panic!("an unknown status {other}"),
             }
         })
@@ -65,6 +64,7 @@ fn listed(case: &Value) -> Vec<Entry> {
             let path = file.display_path();
             match &file.change {
                 Change::Renamed { from } => entry("renamed", &dir_diff::display(from), &path),
+                Change::Copied { from } => entry("copied", &dir_diff::display(from), &path),
                 Change::Added => entry("added", &path, &path),
                 Change::Deleted => entry("removed", &path, &path),
                 Change::Modified => entry("modified", &path, &path),
@@ -76,7 +76,7 @@ fn listed(case: &Value) -> Vec<Entry> {
 }
 
 #[test]
-fn the_listing_names_the_changes_and_renames_jj_names() {
+fn the_listing_names_the_changes_renames_and_copies_jj_names() {
     let corpus: Value =
         serde_json::from_str(&fs::read_to_string(RENAMES).expect("the corpus reads"))
             .expect("the corpus is JSON");

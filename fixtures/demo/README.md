@@ -57,6 +57,7 @@ target/debug/triad-merge diff fixtures/demo/moved_{base,left}.py                
 | `invoice/io/parser.py` | renamed from `invoice/parser.py` | Moved, with two lines changed: it keeps most of its bytes |
 | `invoice/helpers.py` | renamed from `invoice/util.py` | The same bytes under a new name |
 | `invoice/totals.py` | modified | |
+| `invoice/summary.py` | copied from `invoice/totals.py` | Keeps most of the edited `totals.py`'s bytes; opens against `totals.py` in `left` |
 | `docs/design.md`, and `docs/notes.md` | added, and deleted | It keeps two of the notes' eight lines, under half their bytes |
 | `legacy.txt` | deleted | Only in `left` |
 | `invoice/cli.py` | added | Only in `right` |
@@ -66,7 +67,7 @@ target/debug/triad-merge diff fixtures/demo/moved_{base,left}.py                
 
 ```sh
 cargo build --workspace
-target/debug/triad-merge diff --inspect fixtures/demo/dirs/{left,right}   # exit 1: 10 files
+target/debug/triad-merge diff --inspect fixtures/demo/dirs/{left,right}   # exit 1: 11 files
 target/debug/triad-merge diff fixtures/demo/dirs/{left,right}             # the directory window
 ```
 

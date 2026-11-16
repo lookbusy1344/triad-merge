@@ -249,8 +249,9 @@ pub fn files_report(
                 Change::Deleted => "deleted",
                 Change::Modified => "modified",
                 Change::Renamed { .. } => "renamed",
+                Change::Copied { .. } => "copied",
             },
-            from: file.renamed_from(),
+            from: file.from(),
             content: match file.content {
                 Content::Text => "text",
                 Content::Undecodable => "undecodable",

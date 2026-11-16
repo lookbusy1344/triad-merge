@@ -99,7 +99,7 @@ Send f12 to `A` anyway and Apply: `A` and its descendants then hold a conflict, 
 ○  base  the demo's left directory  fixtures/demo/dirs/left
 ```
 
-The working copy holds ten changes, two of them renames; `fixtures/demo/README.md` lists each. `jj diff --summary` names the same renames as triad. Try:
+The working copy holds eleven changes, two of them renames and one a copy; `fixtures/demo/README.md` lists each. `jj diff --summary` names the same renames and copy as triad. Try:
 
 - `triad-merge diff`: the directory window, against `@-`. Open `invoice/io/parser.py`: `invoice/parser.py` at `@-` on the left, read-only. Copy a line across, save and close: the list comes back, read again after a snapshot.
 - `jj diff --tool triad`: jj's dir mode passes two directories of the changed files; the same list opens.
@@ -114,6 +114,6 @@ Expected output comes from each scenario's design, written by hand; change and c
 | sides | A headless save exits 1 and writes jj's snapshot-style markers, sides and bases in turn (spec §4.4); jj reads them back as the same conflict, so `@` keeps its commit and no operation is written (spec §7.4) |
 | history | `history --list` gives nine versions in order with their marks; jj, at each listed operation, shows the text the list implies |
 | absorb | `absorb --list` text, and `--apply`: the report, the text of `A` and `B`, what `@` keeps, no conflicted commit, one operation, `absorb in triad` |
-| dirs | `diff --inspect` text and exit 1, with and without `--rev base`; the renames `jj diff --summary` names; `jj diff --tool` in dir mode with triad's `diff --inspect` as the tool prints the same list |
+| dirs | `diff --inspect` text and exit 1, with and without `--rev base`; the renames and copy `jj diff --summary` names; `jj diff --tool` in dir mode with triad's `diff --inspect` as the tool prints the same list |
 
 The Rust tests cover the same features through jj-lib, case by case (`DESIGN.md` part I). These scripts add the built binary, its argument parsing and report text, and jj's own CLI reading the result.
