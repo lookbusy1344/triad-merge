@@ -78,8 +78,7 @@ pub struct DirWindow {
     files: Option<Vec<ChangedFile>>,
     /// For [`Source::Changes`]: the repository's root and the revision of the last listing.
     against: Option<Against>,
-    /// The list is loading.
-    listing: bool,
+    listing: ListJob,
     /// The diff window open on a file.
     open: Option<AnyWindowHandle>,
     /// A file is loading for its diff window.
@@ -125,7 +124,7 @@ pub fn start(
             exit,
             files: None,
             against: None,
-            listing: false,
+            listing: ListJob::Idle,
             open: None,
             loading: false,
             closing: false,
@@ -148,6 +147,15 @@ pub fn start(
     }));
     view.update(cx, DirWindow::refresh);
     Ok((window, view))
+}
+
+/// Whether a listing runs off the UI thread.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ListJob {
+    Idle,
+    Running,
+    /// A refresh came while it ran: its result may predate that, so it lists again.
+    Stale,
 }
 
 /// A listing: its files, and for [`Source::Changes`] what they were compared with.
@@ -253,12 +261,13 @@ impl DirWindow {
         self.note.as_deref()
     }
 
-    /// List the files again, off the UI thread.
+    /// List the files again, off the UI thread; once the running listing lands if one runs.
     fn refresh(&mut self, cx: &mut Context<Self>) {
-        if self.listing {
+        if self.listing != ListJob::Idle {
+            self.listing = ListJob::Stale;
             return;
         }
-        self.listing = true;
+        self.listing = ListJob::Running;
         let (source, cwd) = (self.source_owned(), self.start.cwd.clone());
         let listed = cx.background_spawn(async move { list(&source, &cwd) });
         cx.spawn(async move |this, cx| {
@@ -282,12 +291,16 @@ impl DirWindow {
     }
 
     fn arrived_list(&mut self, listed: Listed, cx: &mut Context<Self>) {
-        self.listing = false;
+        let stale = self.listing == ListJob::Stale;
+        self.listing = ListJob::Idle;
         if self.end_if_closing(cx) {
             if let Err(error) = &listed {
                 tracing::warn!(%error, "listing failed as the window closed; the run ends anyway");
             }
             return;
+        }
+        if stale {
+            return self.refresh(cx);
         }
         match listed {
             Ok((files, against)) => {
@@ -387,7 +400,7 @@ impl DirWindow {
             });
             return false;
         }
-        if self.listing || self.loading {
+        if self.listing != ListJob::Idle || self.loading {
             self.closing = true;
             return false;
         }
@@ -398,7 +411,7 @@ impl DirWindow {
 
     /// End the run when a close waits and no job runs: a loaded file opens no window.
     fn end_if_closing(&mut self, cx: &mut Context<Self>) -> bool {
-        if !self.closing || self.listing || self.loading {
+        if !self.closing || self.listing != ListJob::Idle || self.loading {
             return false;
         }
         let exit = Rc::clone(&self.exit);
@@ -452,9 +465,10 @@ impl Render for DirWindow {
             let against = self.against.as_ref().map(|against| against.rev.as_str());
             strings::dirs_summary(files.len(), against).into()
         });
-        let empty = (self.files.as_ref().is_some_and(Vec::is_empty) && !self.listing)
+        let empty = (self.files.as_ref().is_some_and(Vec::is_empty)
+            && self.listing == ListJob::Idle)
             .then(|| pick_list::note(EMPTY_ID, strings::DIRS_EMPTY, muted));
-        let refresh = tool_window::refresh_button(REFRESH_ID, self.listing)
+        let refresh = tool_window::refresh_button(REFRESH_ID, self.listing != ListJob::Idle)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.refresh(cx)));
         let this = cx.entity().downgrade();
         tool_window::frame(cx, move |_, cx| {

@@ -342,6 +342,23 @@ fn refresh_lists_again(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn a_diff_window_closed_while_a_listing_runs_lists_again_once_it_lands(cx: &mut TestAppContext) {
+    let dirs = mixed();
+    let started = open(cx, dirs.start());
+    click(cx, started.window, file_id(A_RS));
+    let [(diff, _)] = diff_windows(cx)[..] else { panic!("one diff window") };
+    act(cx, started.window, TestWindowExt::render_frame);
+    act(cx, started.window, |window, cx| window.click(REFRESH_ID, cx));
+    // The listing reads the directories; its result has not reached the window.
+    while cx.dispatcher.tick(true) {}
+    std::fs::write(dirs.side("right").join("same.txt"), b"changed\n").expect("written");
+    press(cx, diff, "secondary-w");
+    assert_eq!(diff_windows(cx).len(), 0);
+    let paths: Vec<_> = listed(cx, &started.view).into_iter().map(|(path, ..)| path).collect();
+    assert_eq!(paths, ["gone.txt", "img.png", "new.md", "same.txt", "src/a.rs"]);
+}
+
+#[gpui_kit::test]
 fn closing_the_window_ends_the_run_with_0(cx: &mut TestAppContext) {
     let dirs = mixed();
     let started = open(cx, dirs.start());
