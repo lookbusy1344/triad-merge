@@ -254,6 +254,18 @@ pub(crate) fn stack_preview(rewrite: &Rewrite) -> String {
     }
 }
 
+/// A status icon's tooltip: the state in one word.
+pub(crate) const fn status_tooltip(status: pick_list::Status) -> &'static str {
+    match status {
+        pick_list::Status::Added => "Added",
+        pick_list::Status::Modified => "Modified",
+        pick_list::Status::Deleted => "Deleted",
+        pick_list::Status::Renamed => "Moved",
+        pick_list::Status::Copied => "Copied",
+        pick_list::Status::Conflict => "Conflicted",
+    }
+}
+
 /// The directory window's title without `--title` (spec §6.1).
 pub(crate) const DIRS_TITLE: &str = "Changed files";
 pub(crate) const DIRS_EMPTY: &str = "No files differ.";
@@ -267,7 +279,7 @@ pub(crate) fn dir_file(file: &ChangedFile) -> Row {
         Change::Deleted => (pick_list::Status::Deleted, "deleted"),
         Change::Modified => (pick_list::Status::Modified, "modified"),
         Change::Renamed { .. } => (pick_list::Status::Renamed, "renamed"),
-        Change::Copied { .. } => (pick_list::Status::Added, "copied"),
+        Change::Copied { .. } => (pick_list::Status::Copied, "copied"),
     };
     // A copy shows the added icon, so its trail names the copy.
     let shown_from = match &file.change {
@@ -1570,13 +1582,28 @@ mod tests {
     fn a_copied_file_shows_the_added_icon_and_names_its_source_in_the_trail() {
         let copied = Change::Copied { from: "invoice/totals.py".into() };
         let row = dir_file(&changed("invoice/tax.py", copied.clone(), Content::Text));
-        assert_eq!(row.status, Some(pick_list::Status::Added));
+        assert_eq!(row.status, Some(pick_list::Status::Copied));
         assert_eq!(row.shown, Shown::Path);
         assert_eq!(row.trail, Some("copied from invoice/totals.py".into()));
         assert_eq!(row.label(), "invoice/tax.py copied from invoice/totals.py");
         let row = dir_file(&changed("b.bin", copied, Content::Binary));
         assert_eq!(row.trail, Some("copied from invoice/totals.py, binary".into()));
         assert_eq!(row.label(), "b.bin copied from invoice/totals.py, binary");
+    }
+
+    #[test]
+    fn each_status_icon_has_a_tooltip_that_says_what_it_means() {
+        use pick_list::Status;
+        let tips = [
+            Status::Added,
+            Status::Modified,
+            Status::Deleted,
+            Status::Renamed,
+            Status::Copied,
+            Status::Conflict,
+        ]
+        .map(status_tooltip);
+        assert_eq!(tips, ["Added", "Modified", "Deleted", "Moved", "Copied", "Conflicted",]);
     }
 
     #[test]

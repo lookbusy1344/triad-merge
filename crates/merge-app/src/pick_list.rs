@@ -4,9 +4,11 @@
 //! its muted directory, text that ends in an ellipsis, IDs and states muted, and a selection
 //! that ↑ and ↓ move and Enter opens.
 
+use crate::strings;
 use gpui_kit::assets::IconName;
 use gpui_kit::base::ObservedElement;
 use gpui_kit::component::list::ListItem;
+use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, Theme};
 use gpui_kit::{
     App, Div, ElementId, FocusHandle, FontWeight, Hsla, InteractiveElement as _, KeyBinding,
@@ -26,6 +28,8 @@ const ROW_PADDING: Pixels = px(8.);
 const INDENT: Pixels = px(12.);
 /// The space between the list's edge and its rows, so a selected row's corners show.
 pub(crate) const LIST_INSET: Pixels = px(4.);
+/// The element ID of a row's status icon, unique within its row.
+const STATUS_ID: &str = "status";
 /// The separator of the paths a row shows: `dir_diff::display` and jj's repository paths.
 const SEPARATOR: char = '/';
 
@@ -54,20 +58,22 @@ pub(crate) fn previous(selected: Option<usize>, len: usize) -> Option<usize> {
 }
 
 /// A file's state, shown as Zed's git panel shows it: a square icon in the theme's colour
-/// for the state.
+/// for the state, with a tooltip that says what it means.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Status {
     Added,
     Modified,
     Deleted,
     Renamed,
+    /// An added file that resembles a modified one; it shows the added icon (spec §6.1).
+    Copied,
     Conflict,
 }
 
 impl Status {
     const fn icon(self) -> IconName {
         match self {
-            Self::Added => IconName::SquarePlus,
+            Self::Added | Self::Copied => IconName::SquarePlus,
             Self::Modified => IconName::SquareDot,
             Self::Deleted => IconName::SquareMinus,
             Self::Renamed => IconName::SquareArrowRight,
@@ -78,7 +84,7 @@ impl Status {
     /// Zed's version-control colours, from the theme's status colours.
     fn colour(self, theme: &Theme) -> Hsla {
         match self {
-            Self::Added => theme.success,
+            Self::Added | Self::Copied => theme.success,
             Self::Modified => theme.warning,
             Self::Renamed => theme.info,
             Self::Deleted | Self::Conflict => theme.danger,
@@ -151,7 +157,13 @@ pub(crate) fn row(id: impl Into<ElementId>, content: &Row, state: State, cx: &Ap
     let part = |text: &SharedString| div().flex_none().text_color(muted).child(text.clone());
     let left = if state.indented { ROW_PADDING + INDENT } else { ROW_PADDING };
     let icon = content.status.map(|status| {
-        Icon::new(status.icon()).xsmall().flex_none().text_color(status.colour(theme))
+        div()
+            .id(STATUS_ID)
+            .flex_none()
+            .child(Icon::new(status.icon()).xsmall().text_color(status.colour(theme)))
+            .tooltip(move |window, cx| {
+                Tooltip::new(strings::status_tooltip(status)).build(window, cx)
+            })
     });
     ListItem::new(id)
         .role(Role::ListBoxOption)
