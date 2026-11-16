@@ -92,17 +92,49 @@ impl Finished {
     }
 }
 
-/// Sizes of a tool window, from `docs/STYLE.md`: the edge, the gap between rows, a small
-/// control and a list row.
+/// Sizes of a tool window, from `docs/STYLE.md`: a 32 px header across the top over a 1 px
+/// border, its text and buttons 12 px in from the sides, and the list under it, inset 4 px,
+/// with 24 px rows whose text starts 8 px further in.
 pub mod tool_window {
-    use gpui_kit::{Pixels, px};
+    use gpui_kit::{AnyWindowHandle, ElementId, Pixels, TestAppContext, px};
 
-    pub const EDGE: Pixels = px(12.);
-    pub const ROW_GAP: Pixels = px(8.);
+    use super::{bounds, viewport_width};
+
+    pub const HEADER_HEIGHT: Pixels = px(32.);
+    /// Where the header's border ends and what follows it starts.
+    pub const UNDER_HEADER: Pixels = px(32. + 1.);
+    pub const SIDE: Pixels = px(12.);
+    pub const LIST_INSET: Pixels = px(4.);
     pub const CONTROL_HEIGHT: Pixels = px(24.);
     pub const ROW_HEIGHT: Pixels = px(24.);
-    /// Where a tool window's list starts: under the edge, its row of buttons and a gap.
-    pub const LIST_TOP: Pixels = px(12. + 24. + 8.);
+    /// Where a tool window's list starts: under the header, its border and the list's inset.
+    pub const LIST_TOP: Pixels = px(32. + 1. + 4.);
+
+    /// Check the frame of a tool window: `summary` at the header's left, `last_button` at its
+    /// right, both centred in the header, and `first_row` across the list at its top.
+    pub fn assert_frame(
+        cx: &mut TestAppContext,
+        window: AnyWindowHandle,
+        summary: impl Into<ElementId>,
+        last_button: impl Into<ElementId>,
+        first_row: impl Into<ElementId>,
+    ) {
+        let width = viewport_width(cx, window);
+        let middle = HEADER_HEIGHT / 2.;
+        let summary = bounds(cx, window, summary);
+        assert_eq!(summary.left(), SIDE, "summary at the header's left");
+        assert_eq!(summary.center().y, middle, "summary centred in the header");
+        let button = bounds(cx, window, last_button);
+        assert_eq!(button.right(), width - SIDE, "last button at the header's right");
+        assert_eq!(button.size.height, CONTROL_HEIGHT);
+        assert_eq!(button.center().y, middle, "button centred in the header");
+        let row = bounds(cx, window, first_row);
+        assert_eq!((row.left(), row.top()), (LIST_INSET, LIST_TOP), "first row's corner");
+        assert_eq!(
+            (row.size.width, row.size.height),
+            (width - LIST_INSET - LIST_INSET, ROW_HEIGHT)
+        );
+    }
 }
 
 /// The bounds of `id` in `window`'s last frame.
@@ -116,6 +148,21 @@ pub fn bounds(
     act(cx, window, |window, cx| {
         window.render_frame(cx);
         found = window.find(id).bounds();
+    });
+    found
+}
+
+/// The accessible name of `id` in `window`'s last frame; empty without one.
+pub fn label(
+    cx: &mut TestAppContext,
+    window: AnyWindowHandle,
+    id: impl Into<gpui_kit::ElementId>,
+) -> String {
+    let id = id.into();
+    let mut found = String::new();
+    act(cx, window, |window, cx| {
+        window.render_frame(cx);
+        found = window.find(id).label().map_or_else(String::new, str::to_owned);
     });
     found
 }

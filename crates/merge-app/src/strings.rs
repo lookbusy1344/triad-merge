@@ -9,7 +9,7 @@ use merge_core::index::RegionIx;
 use merge_core::merge3::{HunkLevel, Semantics};
 use merge_core::text::{Encoding, LineEnding};
 use merge_session::ExitCode;
-use merge_session::dir_diff::{self, Change, ChangedFile, Content};
+use merge_session::dir_diff::{Change, ChangedFile, Content};
 use merge_session::jj_native::{
     AbsorbHunk, Absorbed, CommitEffect, FileVersion, Goes, Rewrite, SHORT_OPERATION, StackCommit,
     StackPath, Stay, VersionState, stays,
@@ -20,7 +20,7 @@ use vcs::{ChangeInfo, IdKind, RepoKind};
 
 use crate::choice::{Choice, MenuAction};
 use crate::open_dialog::{Mode, Slot};
-use crate::pick_list::Row;
+use crate::pick_list::{self, Row, Shown};
 use crate::toolbar::Tool;
 
 pub(crate) const APP_NAME: &str = "triad";
@@ -207,17 +207,24 @@ pub(crate) fn stack_commit(commit: &StackCommit) -> Row {
     Row {
         lead: Some(change_ids(&commit.change)),
         text: commit.change.summary.clone().unwrap_or_default().into(),
-        trail: None,
+        ..Row::default()
     }
 }
 
-/// A listed path, marked when a parent holds a conflict there too.
+/// A listed path, conflicted, marked when a parent holds a conflict there too.
 pub(crate) fn stack_path(path: &StackPath) -> Row {
     Row {
-        lead: None,
+        status: Some(pick_list::Status::Conflict),
         text: path.path.to_string().into(),
+        shown: Shown::Path,
         trail: path.inherited.then_some(SharedString::new_static("(inherited)")),
+        ..Row::default()
     }
+}
+
+/// The stack window's summary: the conflicted commits listed.
+pub(crate) fn stack_summary(commits: usize) -> String {
+    count(commits, "commit", "commits")
 }
 
 /// What the stack window says after the merge window on `path` in `change` finished with
@@ -251,13 +258,15 @@ pub(crate) fn stack_preview(rewrite: &Rewrite) -> String {
 pub(crate) const DIRS_TITLE: &str = "Changed files";
 pub(crate) const DIRS_EMPTY: &str = "No files differ.";
 
-/// A listed file: its path, then how it changed and, for a file that does not open, why.
+/// A listed file: how it changed as an icon, its path, and in the trail a rename's old path
+/// and, for a file that does not open, why. Its accessible name says the change in words.
 pub(crate) fn dir_file(file: &ChangedFile) -> Row {
-    let change = match &file.change {
-        Change::Added => "added".to_owned(),
-        Change::Deleted => "deleted".to_owned(),
-        Change::Modified => "modified".to_owned(),
-        Change::Renamed { from } => format!("renamed from {}", dir_diff::display(from)),
+    let from = file.renamed_from().map(|from| format!("from {from}"));
+    let (status, word) = match &file.change {
+        Change::Added => (pick_list::Status::Added, "added"),
+        Change::Deleted => (pick_list::Status::Deleted, "deleted"),
+        Change::Modified => (pick_list::Status::Modified, "modified"),
+        Change::Renamed { .. } => (pick_list::Status::Renamed, "renamed"),
     };
     let why = match file.content {
         Content::Text => None,
@@ -265,11 +274,32 @@ pub(crate) fn dir_file(file: &ChangedFile) -> Row {
         Content::Binary => Some("binary"),
         Content::Special => Some("special"),
     };
-    let trail = match why {
-        Some(why) => format!("{change}, {why}"),
-        None => change,
+    let path = file.display_path();
+    let change = [Some(word), from.as_deref()].into_iter().flatten().collect::<Vec<_>>().join(" ");
+    let label = match why {
+        Some(why) => format!("{path} {change}, {why}"),
+        None => format!("{path} {change}"),
     };
-    Row { lead: None, text: file.display_path().into(), trail: Some(trail.into()) }
+    let trail = [from.as_deref(), why].into_iter().flatten().collect::<Vec<_>>().join(", ");
+    let shown = if file.change == Change::Deleted { Shown::Deleted } else { Shown::Path };
+    Row {
+        status: Some(status),
+        text: path.into(),
+        shown,
+        trail: (!trail.is_empty()).then(|| trail.into()),
+        label: Some(label.into()),
+        ..Row::default()
+    }
+}
+
+/// The directory window's summary: the files listed and, for a repository's changes, the
+/// revision they are compared with.
+pub(crate) fn dirs_summary(files: usize, against: Option<&str>) -> String {
+    let files = count(files, "file", "files");
+    match against {
+        Some(rev) => format!("{files} against {rev}"),
+        None => files,
+    }
 }
 
 /// The history window's title (spec §7.5.2).
@@ -291,7 +321,13 @@ pub(crate) fn history_version(version: &FileVersion) -> Row {
         lead: Some(format!("{short} {}", version.time).into()),
         text: version.description.clone().into(),
         trail: mark.map(SharedString::new_static),
+        ..Row::default()
     }
+}
+
+/// The history window's summary: the versions listed.
+pub(crate) fn history_summary(versions: usize) -> String {
+    count(versions, "version", "versions")
 }
 
 /// The absorb window's title (spec §7.5.3).
@@ -314,6 +350,7 @@ pub(crate) fn absorb_hunk(hunk: &AbsorbHunk, target: Option<&ChangeInfo>) -> Row
     Row {
         lead: Some(hunk.number.to_string().into()),
         text: hunk.path.to_string().into(),
+        shown: Shown::Path,
         trail: Some(
             format!(
                 "left {}..{} right {}..{} {goes}",
@@ -321,7 +358,13 @@ pub(crate) fn absorb_hunk(hunk: &AbsorbHunk, target: Option<&ChangeInfo>) -> Row
             )
             .into(),
         ),
+        ..Row::default()
     }
+}
+
+/// The absorb window's summary: the hunks listed.
+pub(crate) fn absorb_summary(hunks: usize) -> String {
+    count(hunks, "hunk", "hunks")
 }
 
 /// A hunk's lines, each with the side it is on: those it replaces, each after `- `, on the
@@ -342,12 +385,13 @@ pub(crate) fn absorb_destination(change: &ChangeInfo, hunks: usize) -> Row {
         lead: Some(change_ids(change)),
         text: change.summary.clone().unwrap_or_default().into(),
         trail: with_hunks(hunks),
+        ..Row::default()
     }
 }
 
 /// The working copy as a choice, with the number of hunks kept when any.
 pub(crate) fn absorb_keep(hunks: usize) -> Row {
-    Row { lead: None, text: ABSORB_KEEP.into(), trail: with_hunks(hunks) }
+    Row { text: ABSORB_KEEP.into(), trail: with_hunks(hunks), ..Row::default() }
 }
 
 fn with_hunks(hunks: usize) -> Option<SharedString> {
@@ -889,7 +933,9 @@ mod tests {
             Row {
                 lead: Some("1".into()),
                 text: "a.txt".into(),
-                trail: Some("left 2..3 right 2..4 stays: would conflict in mmmm".into())
+                shown: Shown::Path,
+                trail: Some("left 2..3 right 2..4 stays: would conflict in mmmm".into()),
+                ..Row::default()
             }
         );
         let target = change("kkkk", None);
@@ -920,7 +966,8 @@ mod tests {
             Row {
                 lead: Some("kkkk c-kkkk".into()),
                 text: "fix the parser".into(),
-                trail: Some("· 1 hunk".into())
+                trail: Some("· 1 hunk".into()),
+                ..Row::default()
             }
         );
         assert_eq!(absorb_skipped("b.bin", "not a file"), "Skipped b.bin: not a file");
@@ -1055,7 +1102,8 @@ mod tests {
             Row {
                 lead: Some("0123456789ab 2026-11-13T10:00:00+01:00".into()),
                 text: "snapshot working copy".into(),
-                trail: Some("(absent)".into())
+                trail: Some("(absent)".into()),
+                ..Row::default()
             }
         );
         assert_eq!(history_title("src/a.txt"), "History of src/a.txt");
@@ -1399,6 +1447,59 @@ mod tests {
         assert_eq!(stack_path(&path(false)).label(), "src/a.rs");
         assert_eq!(stack_path(&path(true)).label(), "src/a.rs (inherited)");
         assert_eq!(stack_path(&path(true)).text, "src/a.rs");
+        assert_eq!(stack_path(&path(false)).status, Some(pick_list::Status::Conflict));
+        assert_eq!(stack_path(&path(false)).shown, Shown::Path);
+    }
+
+    fn changed(path: &str, change: Change, content: Content) -> ChangedFile {
+        ChangedFile { path: path.into(), change, content }
+    }
+
+    #[test]
+    fn a_listed_file_shows_its_change_as_an_icon_and_says_it_in_its_label() {
+        let modified = dir_file(&changed("src/a.rs", Change::Modified, Content::Text));
+        assert_eq!(
+            modified,
+            Row {
+                status: Some(pick_list::Status::Modified),
+                text: "src/a.rs".into(),
+                shown: Shown::Path,
+                label: Some("src/a.rs modified".into()),
+                ..Row::default()
+            }
+        );
+        let deleted = dir_file(&changed("gone.txt", Change::Deleted, Content::Text));
+        assert_eq!(
+            (deleted.status, deleted.shown, deleted.label()),
+            (Some(pick_list::Status::Deleted), Shown::Deleted, "gone.txt deleted".into())
+        );
+        let binary = dir_file(&changed("img.png", Change::Added, Content::Binary));
+        assert_eq!(
+            (binary.status, binary.trail.clone(), binary.label()),
+            (Some(pick_list::Status::Added), Some("binary".into()), "img.png added, binary".into())
+        );
+    }
+
+    #[test]
+    fn a_renamed_file_names_its_old_path_in_the_trail() {
+        let renamed = Change::Renamed { from: "invoice/util.py".into() };
+        let row = dir_file(&changed("invoice/helpers.py", renamed.clone(), Content::Text));
+        assert_eq!(row.status, Some(pick_list::Status::Renamed));
+        assert_eq!(row.trail, Some("from invoice/util.py".into()));
+        assert_eq!(row.label(), "invoice/helpers.py renamed from invoice/util.py");
+        let row = dir_file(&changed("b.bin", renamed, Content::Undecodable));
+        assert_eq!(row.trail, Some("from invoice/util.py, undecodable".into()));
+        assert_eq!(row.label(), "b.bin renamed from invoice/util.py, undecodable");
+    }
+
+    #[test]
+    fn the_summaries_count_what_each_window_lists() {
+        assert_eq!(dirs_summary(1, None), "1 file");
+        assert_eq!(dirs_summary(10, Some("@-")), "10 files against @-");
+        assert_eq!(dirs_summary(0, None), "0 files");
+        assert_eq!(history_summary(9), "9 versions");
+        assert_eq!(stack_summary(1), "1 commit");
+        assert_eq!(absorb_summary(2), "2 hunks");
     }
 
     #[test]

@@ -56,7 +56,7 @@ The toolbar can take one side for every conflict left. The ruler at the right ma
 
 Two aligned, editable panes, each with copy to the other side. A block deleted in one place and inserted once in another shows teal at both ends, with an `M` beside it and a pill naming the other end's line, such as `R5 →`; click the `M` or the pill, or press ⇧⌘M with the caret in the block, to go to the other end. ⌘S writes each edited side to its own file and keeps the window open. Each side has its own undo. A file changed on disk reloads, or asks first when the pane has unsaved edits. When one side is a past revision, that side is read-only.
 
-Given two directories, `diff` opens a list of the files that differ instead. Enter or a click opens a file in the diff window; closing that window lists the files again. Binary files are listed and do not open. A file renamed or moved, alone or with edits that keep half its bytes, is listed once as `new.rs renamed from old.rs` and opens against its old file, as `jj diff` pairs renames.
+Given two directories, `diff` opens a list of the files that differ instead, counted in its header. An icon shows how each file changed: added, modified, deleted or renamed, as Zed's git panel shows them. The file name comes first, then its directory. Enter or a click opens a file in the diff window; closing that window lists the files again. Binary files are listed and do not open. A file renamed or moved, alone or with edits that keep half its bytes, is listed once, ends with `from old.rs`, and opens against its old file, as `jj diff` pairs renames.
 
 Line origins (⌘I) show the commit, author and jj change that wrote each line, in both windows.
 
@@ -151,7 +151,7 @@ triad-merge history src/lib.rs --list           # print the list instead
 triad-merge diff src/lib.rs --op f5a69619a1f9   # one version against the working copy
 ```
 
-`history` opens a window listing each version, under the operation where it first appeared. Click one, or select it with ↑ and ↓ and press Enter, to open it in the diff window against the working-copy file: the version on the left, read-only, the file on the right. Copy lines back and save to restore them. One diff window is open at a time. When it closes, the list loads again and a save shows as a new version at the top. Closing the history window exits 0.
+`history` opens a window listing each version, under the operation where it first appeared. Click one, or select it with ↑ and ↓ and press Enter, to open it in the diff window against the working-copy file: the version on the left, read-only, the file on the right. Copy lines back and save to restore them. One diff window is open at a time. When it closes, the list loads again and a save shows as a new version at the top. Closing the history window, or Escape or ⌘W, exits 0.
 
 `--list` prints the same list:
 
@@ -174,7 +174,7 @@ triad-merge stack --list              # print the list instead
 triad-merge resolve src/lib.rs -r xyz # resolve in commit xyz; @ stays where it is
 ```
 
-`stack` opens a window that lists each commit's change, commit and summary, then its conflicted paths. `(inherited)` marks a path whose parent holds a conflict there too: resolve the parent first and the child often clears with it. Click a path, or select it with ↑ and ↓ and press Enter, to open its conflict in the merge window, as `resolve -r` does. One merge window is open at a time. Each save lists the commits again and says what it did. With a merge window open, Preview Save shows what saving its result would do to each descendant's conflicts. Like any jj command it snapshots the working copy first; it changes nothing else. Closing the stack window ends the run: 0 when no conflicted commit is left, 1 otherwise. With nothing conflicted, `stack` opens no window and exits 0.
+`stack` opens a window that lists each commit's change, commit and summary, then its conflicted paths. `(inherited)` marks a path whose parent holds a conflict there too: resolve the parent first and the child often clears with it. Click a path, or select it with ↑ and ↓ and press Enter, to open its conflict in the merge window, as `resolve -r` does. One merge window is open at a time. Each save lists the commits again and says what it did. With a merge window open, Preview Save shows what saving its result would do to each descendant's conflicts. Like any jj command it snapshots the working copy first; it changes nothing else. Closing the stack window, or Escape or ⌘W, ends the run: 0 when no conflicted commit is left, 1 otherwise. With nothing conflicted, `stack` opens no window and exits 0.
 
 `stack --list` prints the same list and exits the same way.
 
@@ -206,7 +206,7 @@ triad-merge absorb src/ --into @-   # only these paths, only these commits
 triad-merge absorb --list           # print the list instead
 ```
 
-`absorb` opens a window listing each hunk, its lines and the commit it goes into or why it stays, beside the commits a hunk may go into and Working copy. Click a hunk, then a commit to send it there or Working copy to keep it; the next hunk is then selected. From the keys: ↑ and ↓ select a hunk, Enter moves to the commits, ↑ and ↓ pick one, Enter sends the hunk there and Escape comes back without a change. Each commit shows how many hunks go into it. Apply writes the choices, says how many hunks went into how many commits and names each commit whose conflicts changed, and lists what is left. Apply refuses when the repository moved on since the list: Refresh and choose again. Closing the window exits 0. With nothing to absorb, `absorb` opens no window and exits 0.
+`absorb` opens a window listing each hunk, its lines and the commit it goes into or why it stays, beside the commits a hunk may go into and Working copy. Click a hunk, then a commit to send it there or Working copy to keep it; the next hunk is then selected. From the keys: ↑ and ↓ select a hunk, Enter moves to the commits, ↑ and ↓ pick one, Enter sends the hunk there and Escape comes back without a change. Each commit shows how many hunks go into it. Apply writes the choices, says how many hunks went into how many commits and names each commit whose conflicts changed, and lists what is left. Apply refuses when the repository moved on since the list: Refresh and choose again. Closing the window, ⌘W, or Escape in the hunks exits 0. With nothing to absorb, `absorb` opens no window and exits 0.
 
 `absorb --list` prints the list; it writes only with `--apply`:
 

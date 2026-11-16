@@ -1,11 +1,13 @@
-//! The lists of the tool windows (stack, history, absorb), after Zed's `ListItem`
-//! (`crates/ui/src/components/list/list_item.rs`) and `docs/STYLE.md`: rows across the
-//! list, text that ends in an ellipsis, IDs and states muted, and a selection that ↑ and ↓
-//! move and Enter opens.
+//! The lists of the tool windows (directory, stack, history, absorb), after Zed's
+//! `ListItem` (`crates/ui/src/components/list/list_item.rs`), its git panel's entries and
+//! `docs/STYLE.md`: rows across the list, a coloured status icon, a path's file name before
+//! its muted directory, text that ends in an ellipsis, IDs and states muted, and a selection
+//! that ↑ and ↓ move and Enter opens.
 
+use gpui_kit::assets::IconName;
 use gpui_kit::base::ObservedElement;
-use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::component::list::ListItem;
+use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, Theme};
 use gpui_kit::{
     App, Div, ElementId, FocusHandle, FontWeight, Hsla, InteractiveElement as _, KeyBinding,
     ParentElement as _, Pixels, Role, ScrollHandle, SharedString, Stateful,
@@ -22,6 +24,10 @@ const ROW_HEIGHT: Pixels = px(24.);
 const ROW_PADDING: Pixels = px(8.);
 /// The extra left padding of a row under a heading, as Zed's `ListItem` indents a level.
 const INDENT: Pixels = px(12.);
+/// The space between the list's edge and its rows, so a selected row's corners show.
+pub(crate) const LIST_INSET: Pixels = px(4.);
+/// The separator of the paths a row shows: `dir_diff::display` and jj's repository paths.
+const SEPARATOR: char = '/';
 
 /// Bind a focused list's keys: ↓ and ↑ move the selection, Enter opens it, Escape leaves.
 pub(crate) fn init(cx: &mut App) {
@@ -47,18 +53,77 @@ pub(crate) fn previous(selected: Option<usize>, len: usize) -> Option<usize> {
     Some(selected.map_or(last, |ix| ix.saturating_sub(1).min(last)))
 }
 
-/// A row's text: a muted lead such as IDs, the main text, which takes the room left and
-/// ends in an ellipsis, and a muted trail such as a state or a count.
+/// A file's state, shown as Zed's git panel shows it: a square icon in the theme's colour
+/// for the state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Status {
+    Added,
+    Modified,
+    Deleted,
+    Renamed,
+    Conflict,
+}
+
+impl Status {
+    const fn icon(self) -> IconName {
+        match self {
+            Self::Added => IconName::SquarePlus,
+            Self::Modified => IconName::SquareDot,
+            Self::Deleted => IconName::SquareMinus,
+            Self::Renamed => IconName::SquareArrowRight,
+            Self::Conflict => IconName::TriangleAlert,
+        }
+    }
+
+    /// Zed's version-control colours, from the theme's status colours.
+    fn colour(self, theme: &Theme) -> Hsla {
+        match self {
+            Self::Added => theme.success,
+            Self::Modified => theme.warning,
+            Self::Renamed => theme.info,
+            Self::Deleted | Self::Conflict => theme.danger,
+        }
+    }
+}
+
+/// How a row draws its main text.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum Shown {
+    #[default]
+    Text,
+    /// A path: the file name, then its directory muted, as Zed's git panel shows one.
+    Path,
+    /// A deleted file's path: struck through and muted.
+    Deleted,
+}
+
+/// A row's text: a status icon, a muted lead such as IDs, the main text, which takes the
+/// room left and ends in an ellipsis, and a muted trail such as a state or a count.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Row {
+    pub status: Option<Status>,
     pub lead: Option<SharedString>,
     pub text: SharedString,
+    pub shown: Shown,
     pub trail: Option<SharedString>,
+    /// The accessible name, where the parts do not read as one.
+    pub label: Option<SharedString>,
+}
+
+/// `path`'s file name and the directory holding it; none at the top.
+pub(crate) fn split_path(path: &str) -> (&str, Option<&str>) {
+    match path.rsplit_once(SEPARATOR) {
+        Some((dir, name)) => (name, Some(dir)),
+        None => (path, None),
+    }
 }
 
 impl Row {
-    /// The row's accessible name: its parts, space-separated.
+    /// The row's accessible name: its label, else its parts, space-separated.
     pub(crate) fn label(&self) -> SharedString {
+        if let Some(label) = &self.label {
+            return label.clone();
+        }
         [self.lead.as_ref(), Some(&self.text), self.trail.as_ref()]
             .into_iter()
             .flatten()
@@ -85,6 +150,9 @@ pub(crate) fn row(id: impl Into<ElementId>, content: &Row, state: State, cx: &Ap
     let muted = theme.muted_foreground;
     let part = |text: &SharedString| div().flex_none().text_color(muted).child(text.clone());
     let left = if state.indented { ROW_PADDING + INDENT } else { ROW_PADDING };
+    let icon = content.status.map(|status| {
+        Icon::new(status.icon()).xsmall().flex_none().text_color(status.colour(theme))
+    });
     ListItem::new(id)
         .role(Role::ListBoxOption)
         .aria_selected(state.selected)
@@ -104,10 +172,36 @@ pub(crate) fn row(id: impl Into<ElementId>, content: &Row, state: State, cx: &Ap
                 .w_full()
                 .min_w_0()
                 .gap_2()
+                .children(icon)
                 .children(content.lead.as_ref().map(part))
-                .child(div().flex_1().min_w_0().truncate().child(content.text.clone()))
+                .child(main_text(content, muted))
                 .children(content.trail.as_ref().map(part)),
         )
+}
+
+/// A row's main text, which takes the room left: a path's file name keeps its width and its
+/// directory ends in an ellipsis, as in Zed's git panel.
+fn main_text(content: &Row, muted: Hsla) -> Div {
+    let text = div().flex_1().min_w_0();
+    match content.shown {
+        Shown::Text => text.truncate().child(content.text.clone()),
+        Shown::Path | Shown::Deleted => {
+            let (name, dir) = split_path(&content.text);
+            let deleted = content.shown == Shown::Deleted;
+            let styled = |part: Div| {
+                if deleted { part.line_through().text_color(muted) } else { part }
+            };
+            text.flex()
+                .items_center()
+                .gap_1()
+                .overflow_hidden()
+                .child(styled(div().flex_none().child(SharedString::from(name.to_owned()))))
+                .children(dir.map(|dir| {
+                    styled(div().min_w_0().truncate().text_color(muted))
+                        .child(SharedString::from(dir.to_owned()))
+                }))
+        }
+    }
 }
 
 /// A heading over a group of rows: a row's height, semibold (`docs/STYLE.md`).
@@ -159,6 +253,8 @@ pub(crate) fn list(
         .track_scroll(scroll)
         .flex()
         .flex_col()
+        .min_w_0()
+        .p(LIST_INSET)
         .overflow_y_scroll()
 }
 
@@ -209,12 +305,30 @@ mod tests {
     }
 
     #[test]
+    fn a_path_splits_into_its_file_name_and_directory() {
+        assert_eq!(split_path("a.rs"), ("a.rs", None));
+        assert_eq!(split_path("src/a.rs"), ("a.rs", Some("src")));
+        assert_eq!(split_path("invoice/io/parser.py"), ("parser.py", Some("invoice/io")));
+    }
+
+    #[test]
+    fn a_label_wins_over_the_parts() {
+        let row = Row {
+            text: "a.rs".into(),
+            trail: Some("from b.rs".into()),
+            label: Some("a.rs renamed from b.rs".into()),
+            ..Row::default()
+        };
+        assert_eq!(row.label(), "a.rs renamed from b.rs");
+    }
+
+    #[test]
     fn a_label_joins_the_parts_present() {
-        let row = Row { lead: Some("abc".into()), text: "a.txt".into(), trail: None };
+        let row = Row { lead: Some("abc".into()), text: "a.txt".into(), ..Row::default() };
         assert_eq!(row.label(), "abc a.txt");
-        let row = Row { lead: None, text: "a.txt".into(), trail: Some("(inherited)".into()) };
+        let row = Row { text: "a.txt".into(), trail: Some("(inherited)".into()), ..Row::default() };
         assert_eq!(row.label(), "a.txt (inherited)");
-        let row = Row { lead: Some("op".into()), text: "".into(), trail: Some("(absent)".into()) };
+        let row = Row { lead: Some("op".into()), trail: Some("(absent)".into()), ..Row::default() };
         assert_eq!(row.label(), "op (absent)");
     }
 }

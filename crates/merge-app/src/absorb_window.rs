@@ -4,18 +4,16 @@
 //! From the keys: ↑ and ↓ select a hunk, Enter moves to the commits, on the one the hunk
 //! goes into; there ↑ and ↓ move, Enter sends the hunk and comes back, Escape comes back.
 //! Apply writes the choices as `absorb --apply --listed-at` does and lists the hunks
-//! again. Closing the window ends the run with 0.
+//! again. Escape in the hunks, Cancel or closing the window ends the run with 0.
 
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use gpui_kit::component::button::Button;
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, v_flex};
 use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, ClickEvent, Context, ElementId, Entity, FocusHandle,
-    InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render, Role, ScrollHandle,
-    SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window,
-    WindowBounds, WindowOptions, div, px,
+    InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render, ScrollHandle,
+    SharedString, Styled as _, TestSupportExt as _, Window, WindowBounds, WindowOptions, div, px,
 };
 use merge_session::jj_config::ConfigEnv;
 use merge_session::jj_native::{AbsorbHunk, Absorbed, Destination, HunkChoice};
@@ -24,6 +22,7 @@ use merge_view::diff::tone;
 
 use crate::pick_list::{self, Activate, Leave, SelectNext, SelectPrevious, State};
 use crate::tones::Palette;
+use crate::tool_window;
 use crate::window::WindowSettings;
 use crate::{ExitCode, Typography, ignore_closed_view, strings};
 
@@ -33,6 +32,7 @@ pub const REFRESH_ID: &str = "absorb-refresh";
 pub const KEEP_ID: &str = "absorb-keep";
 pub const NOTE_ID: &str = "absorb-note";
 pub const EMPTY_ID: &str = "absorb-empty";
+pub const SUMMARY_ID: &str = "absorb-summary";
 const SKIPPED_ID: &str = "absorb-skipped";
 const HUNKS_ID: &str = "absorb-hunks";
 const COMMITS_ID: &str = "absorb-commits";
@@ -57,8 +57,8 @@ pub fn lines_id(hunk: usize) -> ElementId {
 }
 
 /// The window's size: hunks and their lines beside the commits.
-const WINDOW_WIDTH: f32 = 900.;
-const WINDOW_HEIGHT: f32 = 600.;
+const WINDOW_WIDTH: Pixels = px(900.);
+const WINDOW_HEIGHT: Pixels = px(600.);
 /// The commits' column, beside the hunks.
 const COMMITS_WIDTH: Pixels = px(300.);
 
@@ -115,7 +115,7 @@ pub fn start(
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(gpui_kit::Bounds::centered(
             None,
-            gpui_kit::size(gpui_kit::px(WINDOW_WIDTH), gpui_kit::px(WINDOW_HEIGHT)),
+            gpui_kit::size(WINDOW_WIDTH, WINDOW_HEIGHT),
             cx,
         ))),
         ..crate::menu_bar::plain_options()
@@ -454,18 +454,9 @@ impl AbsorbWindow {
 impl Render for AbsorbWindow {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
-        let (background, foreground, muted) =
-            (theme.background, theme.foreground, theme.muted_foreground);
-        let note = self.note.clone().map(|note| {
-            div()
-                .id(NOTE_ID)
-                .test_support()
-                .role(Role::Status)
-                .aria_label(note.clone())
-                .text_color(muted)
-                .whitespace_normal()
-                .child(note)
-        });
+        let (muted, border) = (theme.muted_foreground, theme.border);
+        let summary =
+            self.listed.is_some().then(|| strings::absorb_summary(self.hunks().len()).into());
         let empty = (self.hunks().is_empty() && self.listed.is_some())
             .then(|| pick_list::note(EMPTY_ID, strings::ABSORB_EMPTY, muted));
         let skipped = self.listed.iter().flat_map(|listed| &listed.skipped).enumerate().map(
@@ -474,60 +465,44 @@ impl Render for AbsorbWindow {
                 pick_list::note(id, strings::absorb_skipped(path.as_str(), reason), muted)
             },
         );
-        v_flex()
-            .size_full()
-            .p_3()
-            .gap_2()
-            .bg(background)
-            .text_color(foreground)
-            .text_xs()
-            .child(
-                h_flex()
-                    .gap_2()
-                    .child(
-                        Button::new(REFRESH_ID)
-                            .small()
-                            .label(strings::REFRESH)
-                            .disabled(self.busy)
-                            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.refresh(cx))),
-                    )
-                    .child(
-                        Button::new(APPLY_ID)
-                            .small()
-                            .label(strings::ABSORB_APPLY)
-                            .disabled(self.busy || self.hunks().is_empty())
-                            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.apply(cx))),
-                    ),
-            )
-            .children(note)
-            .child(
-                h_flex()
-                    .flex_1()
-                    .min_h_0()
-                    .items_start()
-                    .gap_4()
-                    .child(
-                        pick_list::list(HUNKS_ID, &self.hunks_focus, &self.hunks_scroll)
-                            .flex_1()
-                            .min_w_0()
-                            .h_full()
-                            .on_action(cx.listener(Self::select_next_hunk))
-                            .on_action(cx.listener(Self::select_previous_hunk))
-                            .on_action(cx.listener(Self::enter_commits))
-                            .children(self.render_hunks(cx))
-                            .children(empty)
-                            .children(skipped),
-                    )
-                    .child(
-                        pick_list::list(COMMITS_ID, &self.commits_focus, &self.commits_scroll)
-                            .w(COMMITS_WIDTH)
-                            .h_full()
-                            .on_action(cx.listener(Self::select_next_commit))
-                            .on_action(cx.listener(Self::select_previous_commit))
-                            .on_action(cx.listener(Self::choose_highlighted))
-                            .on_action(cx.listener(Self::leave_commits))
-                            .children(self.render_commits(cx)),
-                    ),
-            )
+        let refresh = tool_window::refresh_button(REFRESH_ID, self.busy)
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.refresh(cx)));
+        let apply = tool_window::write_button(
+            APPLY_ID,
+            strings::ABSORB_APPLY,
+            self.busy || self.hunks().is_empty(),
+        )
+        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.apply(cx)));
+        let this = cx.entity().downgrade();
+        tool_window::frame(cx, move |_, cx| {
+            this.update(cx, AbsorbWindow::close_requested).unwrap_or(true)
+        })
+        .child(tool_window::header(SUMMARY_ID, summary, [refresh, apply], cx))
+        .children(tool_window::status(NOTE_ID, self.note.as_ref(), cx))
+        .child(
+            tool_window::body()
+                .child(
+                    pick_list::list(HUNKS_ID, &self.hunks_focus, &self.hunks_scroll)
+                        .flex_1()
+                        .min_w_0()
+                        .on_action(cx.listener(Self::select_next_hunk))
+                        .on_action(cx.listener(Self::select_previous_hunk))
+                        .on_action(cx.listener(Self::enter_commits))
+                        .children(self.render_hunks(cx))
+                        .children(empty)
+                        .children(skipped),
+                )
+                .child(
+                    pick_list::list(COMMITS_ID, &self.commits_focus, &self.commits_scroll)
+                        .w(COMMITS_WIDTH)
+                        .border_l_1()
+                        .border_color(border)
+                        .on_action(cx.listener(Self::select_next_commit))
+                        .on_action(cx.listener(Self::select_previous_commit))
+                        .on_action(cx.listener(Self::choose_highlighted))
+                        .on_action(cx.listener(Self::leave_commits))
+                        .children(self.render_commits(cx)),
+                ),
+        )
     }
 }

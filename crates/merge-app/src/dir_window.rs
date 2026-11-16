@@ -2,19 +2,18 @@
 //! between a revision and the working copy, by path. A text file opens in the diff window,
 //! one at a time: as `diff LEFT RIGHT` opens it, or against the revision as `diff PATH
 //! --rev REV` does. Closing that window lists the files again. Binary, undecodable and
-//! special files are listed and do not open. Closing the window ends the run with 0.
+//! special files are listed and do not open. Closing the window, or Escape or Cancel,
+//! ends the run with 0.
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use gpui_kit::component::button::Button;
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, h_flex, v_flex};
+use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, ClickEvent, Context, ElementId, Entity, FocusHandle,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, ScrollHandle,
-    SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window,
-    WindowBounds, WindowOptions, div,
+    InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render, ScrollHandle,
+    SharedString, Styled as _, Window, WindowBounds, WindowOptions, px,
 };
 use merge_core::diff::DiffOptions;
 use merge_core::text::Text;
@@ -26,6 +25,7 @@ use merge_session::repository::{Handoff, RunRepository};
 use crate::diff_window::{self, DiffFile, DiffLookup, DiffSettings};
 use crate::pick_list::{self, Activate, SelectNext, SelectPrevious, State};
 use crate::run::{ToolDiff, ToolPair};
+use crate::tool_window;
 use crate::window::WindowSettings;
 use crate::{ExitCode, Finish, ignore_closed_view, strings};
 
@@ -33,6 +33,7 @@ use crate::{ExitCode, Finish, ignore_closed_view, strings};
 pub const REFRESH_ID: &str = "dirs-refresh";
 pub const NOTE_ID: &str = "dirs-note";
 pub const EMPTY_ID: &str = "dirs-empty";
+pub const SUMMARY_ID: &str = "dirs-summary";
 const LIST_ID: &str = "dirs-list";
 
 /// The id of the row of file `file`, counted from 0 in the listed order.
@@ -42,8 +43,8 @@ pub fn file_id(file: usize) -> ElementId {
 }
 
 /// The window's size: a list beside the diff window, not over it.
-const WINDOW_WIDTH: f32 = 520.;
-const WINDOW_HEIGHT: f32 = 560.;
+const WINDOW_WIDTH: Pixels = px(520.);
+const WINDOW_HEIGHT: Pixels = px(560.);
 
 /// How the run ends: the process exits, or a test records the code.
 type ExitFn = dyn Fn(ExitCode, &mut App);
@@ -108,7 +109,7 @@ pub fn start(
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(gpui_kit::Bounds::centered(
             None,
-            gpui_kit::size(gpui_kit::px(WINDOW_WIDTH), gpui_kit::px(WINDOW_HEIGHT)),
+            gpui_kit::size(WINDOW_WIDTH, WINDOW_HEIGHT),
             cx,
         ))),
         ..crate::menu_bar::plain_options()
@@ -453,39 +454,23 @@ impl DirWindow {
 
 impl Render for DirWindow {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
-        let (background, foreground, muted) =
-            (theme.background, theme.foreground, theme.muted_foreground);
-        let note = self.note.clone().map(|note| {
-            div()
-                .id(NOTE_ID)
-                .test_support()
-                .role(Role::Status)
-                .aria_label(note.clone())
-                .text_color(muted)
-                .whitespace_normal()
-                .child(note)
+        let muted = cx.theme().muted_foreground;
+        let summary = self.files.as_ref().map(|files| {
+            let against = self.against.as_ref().map(|against| against.rev.as_str());
+            strings::dirs_summary(files.len(), against).into()
         });
         let empty = (self.files.as_ref().is_some_and(Vec::is_empty) && !self.listing)
             .then(|| pick_list::note(EMPTY_ID, strings::DIRS_EMPTY, muted));
-        v_flex()
-            .size_full()
-            .p_3()
-            .gap_2()
-            .bg(background)
-            .text_color(foreground)
-            .text_xs()
-            .child(
-                h_flex().gap_2().child(
-                    Button::new(REFRESH_ID)
-                        .small()
-                        .label(strings::REFRESH)
-                        .disabled(self.listing)
-                        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.refresh(cx))),
-                ),
-            )
-            .children(note)
-            .child(
+        let refresh = tool_window::refresh_button(REFRESH_ID, self.listing)
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.refresh(cx)));
+        let this = cx.entity().downgrade();
+        tool_window::frame(cx, move |_, cx| {
+            this.update(cx, DirWindow::close_requested).unwrap_or(true)
+        })
+        .child(tool_window::header(SUMMARY_ID, summary, [refresh], cx))
+        .children(tool_window::status(NOTE_ID, self.note.as_ref(), cx))
+        .child(
+            tool_window::body().child(
                 pick_list::list(LIST_ID, &self.focus, &self.scroll)
                     .flex_1()
                     .on_action(cx.listener(Self::select_next))
@@ -493,6 +478,7 @@ impl Render for DirWindow {
                     .on_action(cx.listener(Self::activate))
                     .children(self.render_files(cx))
                     .children(empty),
-            )
+            ),
+        )
     }
 }

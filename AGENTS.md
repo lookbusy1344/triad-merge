@@ -104,7 +104,12 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
   - Never drop an error silently. Handle it, return it, or log it with `tracing` and say why going on is safe.
   - `Option` for a value that may be absent, never an error or a sentinel.
 - **Named constants.** No magic numbers.
-- **UI style.** Views follow `docs/STYLE.md`: 12 px chrome text, `.small()` controls, menus from `menu_button`, a 4 px grid, theme colours. Zed's `ui` crate is the reference. A view that departs from it says why in a comment.
+- **UI style.** Style a view right when it is first built; a later restyle costs more than reading first. Zed, checked out at `~/Documents/dev/other/zed`, is the reference.
+  - Before writing a view, read `docs/STYLE.md`, then the Zed view that does the same job; its § Working from Zed names one for each kind of view. Copy Zed's layout, heights, padding, icons and keys in triad's sizes.
+  - Build from the shared parts: `tool_window` and `pick_list` for a window that lists things, `menu_button` for a menu, `toolbar` for the toolbar. Make a new shared part when a second view needs the same thing, never a copy.
+  - 12 px chrome text, `.small()` controls, a 4 px grid, sizes as named `Pixels` constants, colours from the theme. Windows of the same kind look and behave alike: the same frame, the same keys, Escape and Cancel to close.
+  - Where STYLE.md says nothing, follow Zed and add the rule to STYLE.md in the same change. A view that departs from both says why in a comment.
+  - Test the layout against STYLE.md's figures (`tests/common/mod.rs`, `tool_window::assert_frame`), then run the app and look at it before calling the view done.
 - **Borrow before you copy.** triad holds whole files, often several copies of a large one.
   - Parameters take `&str`, `&[T]` and `&Path`. Take ownership only to store or consume the value.
   - Return borrows, slices or iterators when the data outlives the call; an owned value only when the function builds it.

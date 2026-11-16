@@ -6,14 +6,14 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use crate::common::tool_window::{EDGE, LIST_TOP, ROW_GAP, ROW_HEIGHT};
-use crate::common::{act, bounds, is_selected, viewport_width};
+use crate::common::tool_window::{LIST_TOP, UNDER_HEADER, assert_frame};
+use crate::common::{act, bounds, is_selected};
 use gpui_kit::base::Root;
 use gpui_kit::test::TestWindowExt;
 use gpui_kit::{AnyWindowHandle, App, Entity, TestAppContext, VisualTestContext};
 use merge_app::diff_window::{DiffWindow, copy_id};
 use merge_app::dir_window::{
-    self, DirStart, DirWindow, EMPTY_ID, NOTE_ID, REFRESH_ID, Source, file_id,
+    self, DirStart, DirWindow, EMPTY_ID, NOTE_ID, REFRESH_ID, SUMMARY_ID, Source, file_id,
 };
 use merge_app::{ExitCode, WindowSettings};
 use merge_core::diff::DiffOptions;
@@ -182,6 +182,7 @@ fn the_window_lists_the_files_that_differ_by_path(cx: &mut TestAppContext) {
     assert_eq!(label(cx, started.window, file_id(GONE)), "gone.txt deleted");
     assert_eq!(label(cx, started.window, file_id(IMG)), "img.png added, binary");
     assert_eq!(label(cx, started.window, file_id(A_RS)), "src/a.rs modified");
+    assert_eq!(label(cx, started.window, SUMMARY_ID.into()), "4 files");
     assert_eq!(diff_windows(cx).len(), 0);
     assert_eq!(note(cx, &started.view), None);
 }
@@ -327,7 +328,7 @@ fn a_directory_that_cannot_be_read_says_why(cx: &mut TestAppContext) {
     let started = open(cx, dirs.start_with(missing.clone(), [false; 2]));
     assert_eq!(listed(cx, &started.view), []);
     assert_eq!(note(cx, &started.view), Some(format!("cannot read {}", missing.display())));
-    assert_eq!(bounds(cx, started.window, NOTE_ID).top(), LIST_TOP);
+    assert_eq!(bounds(cx, started.window, NOTE_ID).top(), UNDER_HEADER);
 }
 
 #[gpui_kit::test]
@@ -373,16 +374,42 @@ fn the_window_stays_open_while_its_diff_window_is(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn the_window_keeps_the_tool_window_edge_and_rows(cx: &mut TestAppContext) {
+fn the_window_has_the_tool_window_frame(cx: &mut TestAppContext) {
     let dirs = mixed();
     let started = open(cx, dirs.start());
-    let refresh = bounds(cx, started.window, REFRESH_ID);
-    assert_eq!((refresh.left(), refresh.top()), (EDGE, EDGE));
-    let width = viewport_width(cx, started.window) - EDGE - EDGE;
+    assert_frame(cx, started.window, SUMMARY_ID, REFRESH_ID, file_id(0));
     let [first, second] = [0, 1].map(|ix| bounds(cx, started.window, file_id(ix)));
-    assert_eq!(first.top(), refresh.bottom() + ROW_GAP);
-    assert_eq!((first.size.width, first.size.height), (width, ROW_HEIGHT));
     assert_eq!(second.top(), first.bottom());
+}
+
+#[gpui_kit::test]
+fn escape_closes_the_window_and_ends_the_run_with_0(cx: &mut TestAppContext) {
+    let dirs = mixed();
+    let started = open(cx, dirs.start());
+    press(cx, started.window, "escape");
+    assert_eq!(started.exits.borrow().as_slice(), [ExitCode::Resolved]);
+    assert!(!cx.update(|cx| cx.windows().contains(&started.window)), "the window closed");
+}
+
+#[gpui_kit::test]
+fn cancel_closes_the_window_as_its_key_does(cx: &mut TestAppContext) {
+    let dirs = mixed();
+    let started = open(cx, dirs.start());
+    act(cx, started.window, |window, cx| window.dispatch_action(Box::new(merge_app::Cancel), cx));
+    cx.run_until_parked();
+    assert_eq!(started.exits.borrow().as_slice(), [ExitCode::Resolved]);
+    assert!(!cx.update(|cx| cx.windows().contains(&started.window)), "the window closed");
+}
+
+#[gpui_kit::test]
+fn escape_while_a_diff_window_is_open_keeps_the_window(cx: &mut TestAppContext) {
+    let dirs = mixed();
+    let started = open(cx, dirs.start());
+    click(cx, started.window, file_id(A_RS));
+    press(cx, started.window, "escape");
+    assert_eq!(started.exits.borrow().as_slice(), []);
+    assert!(cx.update(|cx| cx.windows().contains(&started.window)), "the window stays");
+    assert_eq!(diff_windows(cx).len(), 1);
 }
 
 #[gpui_kit::test]
@@ -437,6 +464,7 @@ fn the_working_copy_s_changes_are_listed(cx: &mut TestAppContext) {
             ("new.txt".to_owned(), Change::Added, Content::Text),
         ]
     );
+    assert_eq!(label(cx, started.window, SUMMARY_ID.into()), "3 files against HEAD");
     assert_eq!(note(cx, &started.view), None);
 }
 
