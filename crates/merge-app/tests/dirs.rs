@@ -224,7 +224,8 @@ fn a_modified_file_opens_with_both_sides_editable(cx: &mut TestAppContext) {
     let started = open(cx, dirs.start());
     click(cx, started.window, file_id(A_RS));
     let [(_, view)] = &diff_windows(cx)[..] else { panic!("one diff window") };
-    let [left, right] = ["left", "right"].map(|s| path_text(&dirs.side(s).join("src/a.rs")));
+    let [left, right] =
+        ["left", "right"].map(|s| path_text(&dirs.side(s).join("src").join("a.rs")));
     assert_eq!(side(cx, view, Side::Left), ("1\n".to_owned(), left, false));
     assert_eq!(side(cx, view, Side::Right), ("2\n".to_owned(), right, false));
 }
