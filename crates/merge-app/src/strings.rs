@@ -6,7 +6,7 @@ use merge_core::diff::{
 };
 use merge_core::diff2::Side;
 use merge_core::index::RegionIx;
-use merge_core::merge3::{HunkLevel, Semantics};
+use merge_core::merge3::{HunkLevel, Semantics, Source};
 use merge_core::text::{Encoding, LineEnding};
 use merge_session::ExitCode;
 use merge_session::dir_diff::{Change, ChangedFile, Content};
@@ -503,6 +503,7 @@ pub(crate) mod menu {
     pub(crate) const TAKE_WHOLE_LEFT: &str = "Take Whole Left File";
     pub(crate) const TAKE_WHOLE_RIGHT: &str = "Take Whole Right File";
     pub(crate) const CARRY_MOVED_EDIT: &str = "Carry Edit to Moved Block";
+    pub(crate) const DROP_DUPLICATE: &str = "Drop Duplicate";
     pub(crate) const NEXT_DIFFERENCE: &str = "Next Difference";
     pub(crate) const PREVIOUS_DIFFERENCE: &str = "Previous Difference";
     pub(crate) const NEXT_CONFLICT: &str = "Next Conflict";
@@ -734,6 +735,28 @@ pub(crate) fn move_pill(side: Side, other_line: usize) -> String {
     }
 }
 
+/// The pill over one end of a moved block in a merge window's top pane: an arrow toward the
+/// other end's row, up or down, then the other end's input initial and 1-based line.
+pub(crate) fn merge_move_pill(other: Source, other_line: usize, up: bool) -> String {
+    let arrow = if up { "↑" } else { "↓" };
+    let initial = match other {
+        Source::Base(_) => "B",
+        Source::Side(0) => "L",
+        Source::Side(_) => "R",
+    };
+    format!("{arrow} {initial}{}", other_line + 1)
+}
+
+/// The accessible label of the pill [`merge_move_pill`] writes.
+pub(crate) fn merge_move_pill_label(other: Source, other_line: usize) -> String {
+    let input = match other {
+        Source::Base(_) => "base",
+        Source::Side(0) => "left",
+        Source::Side(_) => "right",
+    };
+    format!("Moved block: go to its other end, {input} line {}", other_line + 1)
+}
+
 /// The accessible label of the pill [`move_pill`] writes.
 pub(crate) fn move_pill_label(side: Side, other_line: usize) -> String {
     let other = match side.other() {
@@ -816,13 +839,18 @@ pub(crate) fn status(kind: Option<RepoKind>, status: &Status) -> String {
     } else {
         String::new()
     };
+    let duplicated = if status.duplicated > 0 {
+        format!(" · {}", count(status.duplicated, "duplicated block", "duplicated blocks"))
+    } else {
+        String::new()
+    };
     let divergences = status.divergences().fold(String::new(), |mut all, d| {
         all.push_str(" · ");
         all.push_str(divergence(d, status.semantics));
         all
     });
     format!(
-        "{} · {}{divergences} · {} · {}{word_merged} · {} unresolved · {}{mismatch} · {} · {}",
+        "{} · {}{divergences} · {} · {}{word_merged}{duplicated} · {} unresolved · {}{mismatch} · {} · {}",
         repo(kind),
         mode(status),
         count(status.differences, "difference", "differences"),
@@ -856,6 +884,7 @@ pub(crate) fn menu_label(action: MenuAction) -> &'static str {
         MenuAction::Take(choice) => choice_label(choice),
         MenuAction::SortedUnion => "Sorted Union",
         MenuAction::CarryEdit { .. } => "Carry Edit to Moved Block",
+        MenuAction::DropDuplicate { .. } => "Drop Duplicate",
     }
 }
 
@@ -865,6 +894,7 @@ pub(crate) fn suggested_label(action: MenuAction) -> SharedString {
         MenuAction::CarryEdit { from, line } => {
             format!("Suggested: Carry {}'s Edit to Line {line}", choice_label(from))
         }
+        MenuAction::DropDuplicate { line } => format!("Suggested: Drop Duplicate of Line {line}"),
         MenuAction::Take(_) | MenuAction::SortedUnion => {
             format!("Suggested: {}", menu_label(action))
         }
@@ -883,6 +913,25 @@ pub(crate) mod edit_menu {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_merge_move_pill_points_up_or_down_at_the_other_ends_line() {
+        assert_eq!(merge_move_pill(Source::Base(0), 0, true), "↑ B1");
+        assert_eq!(merge_move_pill(Source::Side(0), 39, false), "↓ L40");
+        assert_eq!(merge_move_pill(Source::Side(1), 4, true), "↑ R5");
+        assert_eq!(
+            merge_move_pill_label(Source::Base(0), 11),
+            "Moved block: go to its other end, base line 12"
+        );
+        assert_eq!(
+            merge_move_pill_label(Source::Side(0), 39),
+            "Moved block: go to its other end, left line 40"
+        );
+        assert_eq!(
+            merge_move_pill_label(Source::Side(1), 0),
+            "Moved block: go to its other end, right line 1"
+        );
+    }
 
     #[test]
     fn a_move_pill_names_the_other_panes_line_and_points_at_it() {
@@ -1299,6 +1348,7 @@ mod tests {
             case: CaseRule::Compare,
             patterns: 0,
             word_merged: 0,
+            duplicated: 0,
             semantics: Semantics::Git,
             same_change: SameChange::Accept,
             hunk_level: HunkLevel::Line,
@@ -1357,6 +1407,23 @@ mod tests {
         );
         let three = Status { word_merged: 3, ..with(3, 0, 0) };
         assert!(status(None, &three).contains(" · 3 word-merged · "), "{}", status(None, &three));
+    }
+
+    #[test]
+    fn duplicated_blocks_show_only_when_there_are_some() {
+        let one = Status { duplicated: 1, ..with(3, 0, 0) };
+        assert_eq!(
+            status(None, &one),
+            "no repo · git merge · 3 differences · 0 conflicts · 1 duplicated block · 0 unresolved · \
+             UTF-8 · LF · whitespace significant"
+        );
+        let two = Status { duplicated: 2, word_merged: 1, ..with(3, 1, 0) };
+        assert!(
+            status(None, &two).contains(" · 1 word-merged · 2 duplicated blocks · 0 unresolved"),
+            "{}",
+            status(None, &two)
+        );
+        assert!(!status(None, &with(3, 0, 0)).contains("duplicated"));
     }
 
     fn conflict_badge_at(number: Option<usize>, status: &Status) -> Option<String> {
@@ -1701,6 +1768,10 @@ mod tests {
         assert_eq!(
             suggested_label(MenuAction::CarryEdit { from: Choice::Right, line: 4 }).as_ref(),
             "Suggested: Carry Right's Edit to Line 4"
+        );
+        assert_eq!(
+            suggested_label(MenuAction::DropDuplicate { line: 8 }).as_ref(),
+            "Suggested: Drop Duplicate of Line 8"
         );
     }
 

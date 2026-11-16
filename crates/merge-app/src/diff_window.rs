@@ -28,10 +28,10 @@ use gpui_kit::component::input::{
 use gpui_kit::component::{ActiveTheme as _, h_flex, v_flex};
 use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, Bounds, ClickEvent, Context, Div, ElementId, Entity,
-    Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement, ParentElement as _,
-    Pixels, PromptLevel, Render, Role, SharedString, Size, StatefulInteractiveElement as _,
-    Styled as _, Subscription, Task, TestSupportExt as _, Window, WindowOptions, canvas, div, hsla,
-    point, prelude::FluentBuilder as _, px,
+    Focusable as _, Hsla, InteractiveElement as _, IntoElement, ParentElement as _, Pixels,
+    PromptLevel, Render, Role, SharedString, Size, StatefulInteractiveElement as _, Styled as _,
+    Subscription, Task, TestSupportExt as _, Window, WindowOptions, canvas, div, point,
+    prelude::FluentBuilder as _, px,
 };
 use merge_config::settings::{Colours, DEFAULT_COLOURS, Scrollbars};
 use merge_core::diff::DiffOptions;
@@ -54,6 +54,7 @@ use vcs::{Annotation, IdKind, RepoKind, VcsError};
 
 use crate::blink::{self, Flash, SearchSteps};
 use crate::editor_sync::{self, Caret};
+use crate::move_pill::{MOVE_PILL_INSET, move_pill};
 use crate::origin_column::{
     Annotated, Described, HeadingText, OriginCell, OriginColumn, Visibility,
 };
@@ -81,17 +82,6 @@ pub const DIFF_DEBOUNCE: Duration = Duration::from_millis(100);
 /// How long the watcher waits after a change on disk for the events that follow it.
 const DISK_SETTLE: Duration = Duration::from_millis(100);
 const COPY_BUTTON_WIDTH: Pixels = px(14.);
-/// How far a move pill stands in from its pane's right edge: past the 12 px ruler and the
-/// scrollbar, on the 4 px grid.
-const MOVE_PILL_INSET: Pixels = px(16.);
-/// A move pill's padding either side of its text, on the 4 px grid.
-const MOVE_PILL_PADDING: Pixels = px(4.);
-/// Degrees in a turn, for hues given in degrees.
-const DEGREES: f32 = 360.;
-/// A move pill's fill: pale blue, translucent so the text under it shows through.
-const MOVE_PILL_FILL: Hsla = hsla(210. / DEGREES, 0.9, 0.85, 0.7);
-/// A move pill's text: deep blue, bold against the pale fill.
-const MOVE_PILL_TEXT: Hsla = hsla(220. / DEGREES, 0.9, 0.3, 1.);
 /// The copy buttons' column between the panes: one button each way.
 const GUTTER_WIDTH: Pixels = px(28.);
 /// Changed regions show in one colour on both sides (spec §5).
@@ -1908,25 +1898,16 @@ impl DiffWindow {
             .into_iter()
             .map(|(end, top)| {
                 let (line, other_line) = (end.lines.start, end.other_lines.start);
-                let pill = div()
-                    .id(move_pill_id(side, end.from))
-                    .test_support()
-                    .role(Role::Button)
-                    .aria_label(strings::move_pill_label(side, other_line))
-                    .h(line_height)
-                    .px(MOVE_PILL_PADDING)
-                    .flex()
-                    .items_center()
-                    .rounded_full()
-                    .bg(MOVE_PILL_FILL)
-                    .text_color(MOVE_PILL_TEXT)
-                    .font_weight(FontWeight::BOLD)
-                    .text_size(text_size)
-                    .cursor_pointer()
-                    .child(strings::move_pill(side, other_line))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                        this.go_to_other_end(side, line, window, cx);
-                    }));
+                let pill = move_pill(
+                    move_pill_id(side, end.from),
+                    strings::move_pill(side, other_line),
+                    strings::move_pill_label(side, other_line),
+                    line_height,
+                    text_size,
+                )
+                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    this.go_to_other_end(side, line, window, cx);
+                }));
                 gpui_kit::anchored()
                     .anchor(gpui_kit::Anchor::TopRight)
                     .position(point(bounds.right() - MOVE_PILL_INSET, top))

@@ -20,6 +20,9 @@ use crate::diff::{
 use crate::jj::{self, HunkKind, LineDiff};
 use crate::text::Text;
 
+mod moves;
+pub use moves::{Duplicate, SideMove, duplicates, side_moves};
+
 /// Side index of left in a three-way merge.
 pub const LEFT: usize = 0;
 /// Side index of right in a three-way merge.

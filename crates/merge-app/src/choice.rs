@@ -2,13 +2,13 @@
 //! menu (spec §5).
 
 use gpui_kit::Action;
-use merge_core::document::Resolution;
+use merge_core::document::{MergeDocument, Resolution};
 use merge_core::index::RegionIx;
 use merge_core::merge3::Source;
-use merge_core::suggest::Suggestion;
+use merge_core::suggest::{self, Suggestion};
 
 use crate::{
-    CarryMovedEdit, ClearChoice, TakeBase, TakeLeft, TakeLeftThenRight, TakeRight,
+    CarryMovedEdit, ClearChoice, DropDuplicate, TakeBase, TakeLeft, TakeLeftThenRight, TakeRight,
     TakeRightThenLeft, TakeSortedUnion,
 };
 
@@ -84,6 +84,11 @@ pub(crate) enum MenuAction {
         from: Choice,
         line: usize,
     },
+    /// Delete the region's copy of a block the result holds twice; the other copy, which
+    /// starts on result line `line`, counted from 1, stays (spec §4.4).
+    DropDuplicate {
+        line: usize,
+    },
 }
 
 impl MenuAction {
@@ -93,6 +98,7 @@ impl MenuAction {
             MenuAction::Take(choice) => choice.action(),
             MenuAction::SortedUnion => Box::new(TakeSortedUnion),
             MenuAction::CarryEdit { .. } => Box::new(CarryMovedEdit),
+            MenuAction::DropDuplicate { .. } => Box::new(DropDuplicate),
         }
     }
 
@@ -111,6 +117,19 @@ impl MenuAction {
             },
         }
     }
+}
+
+/// The suggestions of `region` of `doc`, as menu items: the core's for a conflict (spec
+/// §4.4), then a drop for a copy of a duplicated block.
+pub(crate) fn suggested_actions(doc: &MergeDocument, region: RegionIx) -> Vec<MenuAction> {
+    let line_of = |to: RegionIx| doc.line_of_byte(doc.region_start(to)).get() + 1;
+    let drop = suggest::duplicate_copy(doc, region)
+        .map(|copy| MenuAction::DropDuplicate { line: copy.kept.start + 1 });
+    suggest::suggestions(doc.inputs(), doc.regions(), region)
+        .iter()
+        .map(|suggestion| MenuAction::suggested(suggestion, line_of))
+        .chain(drop)
+        .collect()
 }
 
 /// An item of the right-click menu.
@@ -217,6 +236,38 @@ mod tests {
             .map(|item| item.action)
             .collect();
         assert_eq!(suggested, [MenuAction::Take(Choice::LeftThenRight), MenuAction::SortedUnion]);
+    }
+
+    #[test]
+    fn each_copy_of_a_duplicate_suggests_dropping_it_and_names_the_kept_copys_line() {
+        // Result `a b c m1 m2 d e m1 m2`: right's copy is region 2 on lines 4–5, counted from
+        // 1, left's region 4 on lines 8–9.
+        let d = merge_core::testing::doc(
+            "m1\nm2\na\nb\nc\nd\ne\n",
+            "a\nb\nc\nd\ne\nm1\nm2\n",
+            "a\nb\nc\nm1\nm2\nd\ne\n",
+        );
+        assert_eq!(
+            suggested_actions(&d, RegionIx::new(2)),
+            [MenuAction::DropDuplicate { line: 8 }]
+        );
+        assert_eq!(
+            suggested_actions(&d, RegionIx::new(4)),
+            [MenuAction::DropDuplicate { line: 4 }]
+        );
+        assert_eq!(suggested_actions(&d, RegionIx::new(1)), []);
+    }
+
+    #[test]
+    fn a_conflict_suggests_what_the_core_offers() {
+        // Left moves `m1 m2` below `a b c`; right edits `m2`. The unresolved conflict shows
+        // right's `m1 M2` on lines 1–2, `a b c` lines 3–5, so the block lands on line 6.
+        let d =
+            merge_core::testing::doc("m1\nm2\na\nb\nc\n", "a\nb\nc\nm1\nm2\n", "m1\nM2\na\nb\nc\n");
+        assert_eq!(
+            suggested_actions(&d, RegionIx::new(0)),
+            [MenuAction::CarryEdit { from: Choice::Right, line: 6 }]
+        );
     }
 
     #[test]

@@ -1,0 +1,109 @@
+#!/usr/bin/env -S python3 -I
+"""gen-moved-demo: write fixtures/demo/moved_{base,left,right}.py for checking moved and
+duplicated blocks by hand (spec sections 4.3, 4.6 and 5, PLAN.md section G16).
+
+The three files are one Python module of small functions. Each function is a block of three
+lines and a blank line. Between any two changes stands a function neither side touches, so
+each change is a region of its own and no two changes touch. The cases:
+
+- `parse_header`: left moves it down; right leaves it.
+- `format_total`: right moves it up; left leaves it.
+- `round_cents`: both sides move it to one place, which merges as one region.
+- `apply_discount`: both sides move it, to two places: the merge takes it twice.
+- `clamp`: both sides add it, at two places: the merge takes it twice. Left adds it after the
+  moved `tax_rate`, so only right's copy stands alone.
+- `tax_rate`: left moves it; right edits it where it was. A conflict, with Carry Edit.
+
+Usage: script/gen-moved-demo [--layout]
+
+With --layout it prints each block's lines in each file, 0-based and end-exclusive, as
+`inspect` counts them, instead of writing the files.
+"""
+
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+OUT = ROOT / "fixtures" / "demo"
+
+HEADER = ['"""Invoice totals: a demo of moved code for triad."""', ""]
+
+
+def block(name: str, args: str, doc: str, body: str) -> list[str]:
+    return [f"def {name}({args}):", f'    """{doc}"""', f"    {body}", ""]
+
+
+BLOCKS = {
+    "load_config": block("load_config", "path", "Read the settings file.", "return read_toml(path)"),
+    "parse_header": block("parse_header", "line", "Split the header into its fields.", 'return line.split(";")'),
+    "read_lines": block("read_lines", "path", "Read the invoice's lines.", "return open_file(path).readlines()"),
+    "tax_rate": block("tax_rate", "region", "The tax rate for a region.", "return RATES.get(region, 0.2)"),
+    "validate_row": block("validate_row", "row", "Check a row has every field.", "return len(row) == FIELDS"),
+    "round_cents": block("round_cents", "amount", "Round to whole cents.", "return round(amount, 2)"),
+    "sum_rows": block("sum_rows", "rows", "Add up the rows' amounts.", "return sum(r.amount for r in rows)"),
+    "apply_discount": block("apply_discount", "total, rate", "Take the discount off.", "return total * (1 - rate)"),
+    "subtotal": block("subtotal", "rows", "The total before tax.", "return round_cents(sum_rows(rows))"),
+    "format_total": block("format_total", "total", "The total as text.", 'return f"{total:.2f}"'),
+    "write_report": block("write_report", "path, text", "Write the report.", "open_file(path, 'w').write(text)"),
+    "log_line": block("log_line", "text", "Log one line.", "LOG.append(text)"),
+    "open_file": block("open_file", "path, mode='r'", "Open a file as UTF-8.", "return open(path, mode, encoding='utf-8')"),
+    "close_file": block("close_file", "handle", "Close a file.", "handle.close()"),
+    "count_rows": block("count_rows", "rows", "How many rows there are.", "return len(rows)"),
+    "parse_args": block("parse_args", "argv", "Read the command line.", "return argv[1:]"),
+    "clamp": block("clamp", "value, low, high", "Keep a value within bounds.", "return max(low, min(value, high))"),
+    "main": block("main", "", "Print the invoice's total.", "print(format_total(subtotal(read_lines(ARGS))))"),
+}
+
+# Right edits `tax_rate` where it was: a new default.
+EDITED_TAX_RATE = block("tax_rate", "region", "The tax rate for a region.", "return RATES.get(region, 0.25)")
+
+BASE = [
+    "load_config", "parse_header", "read_lines", "tax_rate", "validate_row", "round_cents",
+    "sum_rows", "apply_discount", "subtotal", "format_total", "write_report", "log_line",
+    "open_file", "close_file", "count_rows", "parse_args", "main",
+]
+LEFT = [
+    "load_config", "read_lines", "validate_row", "sum_rows", "subtotal", "format_total",
+    "write_report", "tax_rate", "clamp", "log_line", "round_cents", "open_file",
+    "apply_discount", "close_file", "parse_header", "count_rows", "parse_args", "main",
+]
+RIGHT = [
+    "format_total", "load_config", "parse_header", "read_lines", "tax_rate", "validate_row",
+    "sum_rows", "subtotal", "write_report", "log_line", "round_cents", "open_file",
+    "close_file", "count_rows", "apply_discount", "parse_args", "clamp", "main",
+]
+
+
+def lines(order: list[str], edited: dict[str, list[str]]) -> list[str]:
+    out = list(HEADER)
+    for name in order:
+        out.extend(edited.get(name, BLOCKS[name]))
+    return out
+
+
+FILES = {
+    "base": lines(BASE, {}),
+    "left": lines(LEFT, {}),
+    "right": lines(RIGHT, {"tax_rate": EDITED_TAX_RATE}),
+}
+ORDERS = {"base": BASE, "left": LEFT, "right": RIGHT}
+
+
+def layout() -> None:
+    width = len(HEADER)
+    block_len = len(BLOCKS["main"])
+    for name, order in ORDERS.items():
+        spans = (f"{b} {width + i * block_len}..{width + (i + 1) * block_len}" for i, b in enumerate(order))
+        print(f"{name}: " + ", ".join(spans))
+
+
+def main() -> None:
+    if sys.argv[1:] == ["--layout"]:
+        layout()
+        return
+    for name, text in FILES.items():
+        (OUT / f"moved_{name}.py").write_text("\n".join(text) + "\n", encoding="utf-8")
+
+
+if __name__ == "__main__":
+    main()

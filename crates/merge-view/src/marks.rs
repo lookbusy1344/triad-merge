@@ -15,6 +15,9 @@ pub enum Tone {
     Base,
     /// Text from more than one input.
     Both,
+    /// A moved block: [`Tone::Both`]'s colour, with a fainter band, since a move is context,
+    /// not a change to act on.
+    Moved,
     Conflict,
     Edited,
     /// The region contributes no text.
@@ -70,7 +73,8 @@ pub fn bands_unchanged(shown: &[Band], tracked: &[Range<usize>], bands: &[Band])
 
 /// The result pane's bands, in order, skipping regions without text. A picked or unresolved
 /// region gets one band per source, in that source's tone; an unresolved one marks each with
-/// [`UNRESOLVED`] and borders it in the conflict tone. Other regions get one band.
+/// [`UNRESOLVED`] and borders it in the conflict tone. Other regions get one band. Moves do
+/// not show: the result says which input each line came from, and the top panes show moves.
 #[must_use]
 pub fn bands(doc: &MergeDocument) -> Vec<Band> {
     let three_way = doc.inputs().is_three_way();
@@ -317,6 +321,14 @@ mod tests {
         d.apply(Command::Pick { region: RegionIx::new(7), sources: vec![Source::Base(0)] })
             .expect("base");
         assert_eq!(bands(&d)[3..], [band(14..16, Tone::Base, BASE)]);
+    }
+
+    #[test]
+    fn a_moved_block_in_the_result_keeps_its_regions_band_and_mark() {
+        // Left moves `m1 m2` below `a b c`, between new `n` and `o`: region 2, result bytes
+        // 6–16, is left's text, whatever moved within it.
+        let d = doc(three("m1\nm2\na\nb\nc\n", "a\nb\nc\nn\nm1\nm2\no\n", "m1\nm2\na\nb\nc\n"));
+        assert_eq!(bands(&d), [band(6..16, Tone::Left, LEFT)]);
     }
 
     #[test]

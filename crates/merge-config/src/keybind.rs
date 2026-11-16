@@ -142,6 +142,7 @@ pub enum KeyAction {
     TakeWholeRight,
     TakeSortedUnion,
     CarryMovedEdit,
+    DropDuplicate,
     ToggleBasePane,
     ToggleOriginColumn,
     ToggleSyntax,
@@ -162,7 +163,7 @@ impl KeyAction {
     /// Whether the merge window has this command.
     #[must_use]
     pub const fn in_merge_window(self) -> bool {
-        !matches!(self, Self::Save | Self::GoToMoveEnd)
+        !matches!(self, Self::Save)
     }
 
     /// Whether the diff window has this command.
@@ -645,7 +646,7 @@ mod tests {
         assert_eq!(actions_of(&bindings, "cmd+w"), [KeyAction::Cancel]);
         assert_eq!(actions_of(&bindings, "cmd+s"), [KeyAction::SaveAndExit, KeyAction::Save]);
         assert_eq!(actions_of(&bindings, "cmd+u"), [KeyAction::ToggleCollapseUnchanged]);
-        assert_eq!(windows_of(&bindings, "cmd+shift+m"), [(KeyAction::GoToMoveEnd, DIFF)]);
+        assert_eq!(windows_of(&bindings, "cmd+shift+m"), [(KeyAction::GoToMoveEnd, BOTH)]);
         assert_eq!(bindings.bound().len(), 31);
         assert_eq!(bindings.unbound().count(), 0);
     }

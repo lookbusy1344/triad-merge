@@ -34,6 +34,24 @@ struct MergeReport {
     warnings: Vec<&'static str>,
     conflicts: usize,
     regions: Vec<MergeRegion>,
+    moves: Vec<MergeMove>,
+    duplicates: Vec<MergeDuplicate>,
+}
+
+/// A block both sides insert at different places, which the merge takes twice (`PLAN.md`
+/// §G16).
+#[derive(Serialize)]
+struct MergeDuplicate {
+    left: [usize; 2],
+    right: [usize; 2],
+}
+
+/// A block of base lines that `side` deletes and inserts at `lines` (`PLAN.md` §G16).
+#[derive(Serialize)]
+struct MergeMove {
+    side: &'static str,
+    base: [usize; 2],
+    lines: [usize; 2],
 }
 
 #[derive(Serialize)]
@@ -159,12 +177,26 @@ pub fn inspect(
         warnings: warnings(&encodings),
         conflicts: regions.iter().filter(|r| r.kind == CONFLICT).count(),
         regions,
+        moves: document
+            .moves()
+            .iter()
+            .map(|m| MergeMove {
+                side: if m.side == LEFT { "left" } else { "right" },
+                base: span(&m.base),
+                lines: span(&m.lines),
+            })
+            .collect(),
+        duplicates: document
+            .duplicates()
+            .iter()
+            .map(|d| MergeDuplicate { left: span(&d.left), right: span(&d.right) })
+            .collect(),
     };
     let code = exit_code(report.conflicts);
     let text = if json {
         to_json(&report)?
     } else {
-        let lines = report.regions.iter().map(|r| {
+        let regions = report.regions.iter().map(|r| {
             format!(
                 "{} base {} left {} right {}",
                 r.kind,
@@ -173,6 +205,15 @@ pub fn inspect(
                 dots(r.right)
             )
         });
+        let moves = report
+            .moves
+            .iter()
+            .map(|m| format!("move {} base {} to {}", m.side, dots(m.base), dots(m.lines)));
+        let duplicates = report
+            .duplicates
+            .iter()
+            .map(|d| format!("duplicate left {} right {}", dots(d.left), dots(d.right)));
+        let lines = regions.chain(moves).chain(duplicates);
         to_text(&report.warnings, lines, &format!("conflicts: {}", report.conflicts))
     };
     Ok((text, code))
@@ -459,8 +500,54 @@ mod tests {
                     { "kind": "unchanged", "base": [0, 1], "left": [0, 1], "right": [0, 1] },
                     { "kind": "conflict", "base": [1, 2], "left": [1, 2], "right": [1, 2] },
                     { "kind": "unchanged", "base": [2, 3], "left": [2, 3], "right": [2, 3] }
-                ]
+                ],
+                "moves": [],
+                "duplicates": []
             })
+        );
+    }
+
+    /// Both sides move `m1 m2` from the top: left to the end, right before `d`.
+    fn moved_twice() -> Files {
+        three(b"m1\nm2\na\nb\nc\nd\ne\n", b"a\nb\nc\nd\ne\nm1\nm2\n", b"a\nb\nc\nm1\nm2\nd\ne\n")
+    }
+
+    #[test]
+    fn inspect_json_lists_each_sides_moves() {
+        let (out, code) =
+            inspect(&moved_twice().merge(), MergeOptions::default(), GIT, KEEP, true).expect("ok");
+        assert_eq!(code, ExitCode::Resolved);
+        assert_eq!(
+            json_of(&out)["moves"],
+            json!([
+                { "side": "left", "base": [0, 2], "lines": [5, 7] },
+                { "side": "right", "base": [0, 2], "lines": [3, 5] }
+            ])
+        );
+    }
+
+    #[test]
+    fn inspect_json_lists_blocks_the_merge_takes_twice() {
+        let (out, _) =
+            inspect(&moved_twice().merge(), MergeOptions::default(), GIT, KEEP, true).expect("ok");
+        assert_eq!(json_of(&out)["duplicates"], json!([{ "left": [5, 7], "right": [3, 5] }]));
+    }
+
+    #[test]
+    fn inspect_text_prints_moves_after_the_regions() {
+        let (out, _) =
+            inspect(&moved_twice().merge(), MergeOptions::default(), GIT, KEEP, false).expect("ok");
+        assert_eq!(
+            out,
+            "both-same base 0..2 left 0..0 right 0..0\n\
+             unchanged base 2..5 left 0..3 right 0..3\n\
+             right-only base 5..5 left 3..3 right 3..5\n\
+             unchanged base 5..7 left 3..5 right 5..7\n\
+             left-only base 7..7 left 5..7 right 7..7\n\
+             move left base 0..2 to 5..7\n\
+             move right base 0..2 to 3..5\n\
+             duplicate left 5..7 right 3..5\n\
+             conflicts: 0\n"
         );
     }
 

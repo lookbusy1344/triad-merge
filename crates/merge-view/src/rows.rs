@@ -130,6 +130,12 @@ impl RowMap {
         Ok(Self { sources, rows })
     }
 
+    /// The pane showing `source`, if one does.
+    #[must_use]
+    pub fn pane_of(&self, source: Source) -> Option<usize> {
+        self.sources.iter().position(|&s| s == source)
+    }
+
     #[must_use]
     pub fn row_count(&self) -> usize {
         self.rows.total()

@@ -18,6 +18,7 @@ mod logo;
 pub mod measure;
 mod menu_bar;
 mod menu_button;
+mod move_pill;
 pub mod open_dialog;
 pub mod origin_column;
 mod own_writes;
@@ -180,6 +181,7 @@ commands!(
     TakeWholeRight,
     TakeSortedUnion,
     CarryMovedEdit,
+    DropDuplicate,
     ToggleBasePane,
     ToggleOriginColumn,
     ToggleSyntax,
@@ -290,6 +292,7 @@ pub(crate) fn menus(ticks: ViewTicks) -> Vec<Menu> {
             MenuItem::action(menu::TAKE_RIGHT_THEN_LEFT, TakeRightThenLeft),
             MenuItem::action(menu::TAKE_SORTED_UNION, TakeSortedUnion),
             MenuItem::action(menu::CARRY_MOVED_EDIT, CarryMovedEdit),
+            MenuItem::action(menu::DROP_DUPLICATE, DropDuplicate),
             MenuItem::separator(),
             MenuItem::action(menu::TAKE_LEFT_ALL_UNRESOLVED, TakeLeftAllUnresolved),
             MenuItem::action(menu::TAKE_RIGHT_ALL_UNRESOLVED, TakeRightAllUnresolved),

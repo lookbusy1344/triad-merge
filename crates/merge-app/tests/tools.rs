@@ -928,6 +928,7 @@ fn the_menus_hold_every_window_action(cx: &mut TestAppContext) {
                     item("Take Right then Left", "triad::TakeRightThenLeft"),
                     item("Take Sorted Union", "triad::TakeSortedUnion"),
                     item("Carry Edit to Moved Block", "triad::CarryMovedEdit"),
+                    item("Drop Duplicate", "triad::DropDuplicate"),
                     Entry::Other,
                     item("Take Left for All Unresolved", "triad::TakeLeftAllUnresolved"),
                     item("Take Right for All Unresolved", "triad::TakeRightAllUnresolved"),

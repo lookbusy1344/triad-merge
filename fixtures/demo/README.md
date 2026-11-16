@@ -24,6 +24,30 @@ target/debug/triad-merge diff fixtures/demo/unusual_{left,right}.py             
 target/debug/triad-merge inspect fixtures/demo/unusual_{base,left,right}.py                     # exit 1: 1 conflict
 ```
 
+## Moved code
+
+`moved_base.py`, `moved_left.py` and `moved_right.py` are a 70-line Python module of small functions, for checking moved and duplicated blocks (spec §4.3, §4.6, §5). Each function is a block of four lines; a function neither side touches stands between any two changes, so each change is a region of its own.
+
+| Function | Left | Right | Shows |
+|---|---|---|---|
+| `parse_header` | moves it down, after `close_file` | leaves it | A left move: teal at both ends in the left pane, a pill on each |
+| `format_total` | leaves it | moves it to the top | A right move |
+| `round_cents` | moves it after `log_line` | the same | A move on each side to one place: the merge takes it once |
+| `apply_discount` | moves it after `open_file` | moves it after `count_rows` | A move on each side to two places: the merge takes it twice |
+| `clamp` | adds it after the moved `tax_rate` | adds it after `parse_args` | New text at two places: taken twice; right's copy lies inside left's larger insert |
+| `tax_rate` | moves it after `write_report` | changes its default to 0.25 where it was | A conflict, with Carry Right's Edit in the result's right-click menu |
+
+The merge has one conflict and two duplicated blocks, which the status bar counts and the ruler outlines. Press ⇧⌘M in a region that holds a move's end, or click a pill, to go to the other end. Diffing base against left shows left's four moves in the diff window.
+
+`script/gen-moved-demo` writes the three files again; `script/gen-moved-demo --layout` prints each function's lines in each file, as `inspect` counts them.
+
+```sh
+cargo build --workspace
+target/debug/triad-merge inspect fixtures/demo/moved_{base,left,right}.py                     # exit 1: 1 conflict, 7 moves, 2 duplicates
+target/debug/triad-merge fixtures/demo/moved_{base,left,right}.py target/moved-merged.py      # the merge window
+target/debug/triad-merge diff fixtures/demo/moved_{base,left}.py                              # the diff window
+```
+
 ## Directories
 
 `dirs/left` and `dirs/right` are a small Python project before and after a change, for trying the directory diff (spec §6.1). `script/gen-dirs-demo` writes them again; it names the binary and Latin-1 bytes by escape.
