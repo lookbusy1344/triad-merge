@@ -19,7 +19,7 @@ As of 2026-11-16.
 | M6 native resolution | Done: git stages a resolved save; jj snapshots before the read and after each save | D |
 | M7 syntax highlighting | Done: Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS | F |
 | p4merge parity | Done | E |
-| Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; §G6 done: the files that differ between two directories, or between a revision and the working copy (`diff`, `diff --rev`), in the directory window and printed by `diff --inspect`, and from `jj diff --tool` and `git difftool -d`, with renames paired as jj pairs them; invisible characters drawn as code points and odd spaces shaded in every pane, and escaped in terminal output (§A6.8); the rest open | G |
+| Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; §G6 done: the files that differ between two directories, or between a revision and the working copy (`diff`, `diff --rev`), in the directory window and printed by `diff --inspect`, and from `jj diff --tool` and `git difftool -d`, with renames paired as jj pairs them; invisible characters drawn as code points and odd spaces shaded in every pane, and escaped in terminal output (§A6.8); moved blocks in the merge window (§G16) next; the rest open | G |
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
 | jj-native features | Done: conflicts across a stack (`stack`, `resolve -r`), operation-log history (`history`, `diff --op`) and absorb by hunk (`absorb`); the stack window, with a preview of a save's effect on the descendants and a confirmation before a save changes them; the history window; the absorb window, by hunk; these windows and the directory window share one frame after Zed's panels (`docs/STYLE.md`): a header with a count and the buttons, status icons and file-name-first paths, keys for the lists, and Escape and Cancel to close; the conflict badge names the sides a conflict keeps; absorb, `resolve -r` and the default revset aliases checked against jj's CLI (§I5); `stack`, `resolve -r`, `history`, `absorb` and a three-sided save checked through the built binary in scenario repositories (`script/test-jj-repos`) | I |
 
@@ -35,10 +35,11 @@ In order. Each is one or more commits.
 
 1. **Close M3.** Skipped for now by the owner. The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
 2. **Screen-reader support** (part J). Skipped for now by the owner: live status, conflict regions, scrolling the row table, in the order of §J7.
-3. **Review and diff features** (part G): §G7–§G14.
-4. **More grammars,** one commit each: C, C++, Java and Kotlin; then Markdown; then Bash, Ruby, PHP and SQL.
-5. **M4b** (§3) once the owner has the machines and the certificate.
-6. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
+3. **Moved code in the merge window** (§G16), in its steps: moves from base to a side first, then duplicates.
+4. **Review and diff features** (part G): §G7–§G14.
+5. **More grammars,** one commit each: C, C++, Java and Kotlin; then Markdown; then Bash, Ruby, PHP and SQL.
+6. **M4b** (§3) once the owner has the machines and the certificate.
+7. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
 
 ## 3. Outstanding work
 
@@ -67,6 +68,8 @@ In order. Each is one or more commits.
 | Merge window folds: the untouched lines of an unchanged region whose result is edited | A line diff of the region | §G2 |
 | Ruler marks with folds: the marks keep their place in the whole file while the thumb follows display rows | A choice between the two | §G2 |
 | A key that opens the fold next to the caret | — | §G2 |
+| Moved code in the merge window: moves, then duplicates | — | §G16 |
+| Duplicate suggestion in the merge window | Owner's choice on §G15's open point for §G16 | §G16 |
 | Review and diff features: blank lines in a merge (§G4), §G7–§G14 | Owner's choices on §G15's open points for §G4 and §G8 | G |
 | Directory diff: copies detected, as jj finds them from modified files | — | §G6 |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
@@ -96,7 +99,7 @@ In order. Each is one or more commits.
 
 Features other merge and diff tools have and triad lacks, from a comparison with Beyond Compare, Araxis Merge, Kaleidoscope, Meld, KDiff3, IntelliJ and VS Code. None blocks the beta.
 
-Order: G2–G5, then G6–G10, then G11–G14. Each section is one or more commits and updates the spec when it lands. Every comparison rule keeps spec §4.2's rule: it changes which lines count as equal, never the output bytes.
+Order: G2–G6, then G16, then G7–G10, then G11–G14. Each section is one or more commits and updates the spec when it lands. Every comparison rule keeps spec §4.2's rule: it changes which lines count as equal, never the output bytes.
 
 Out of scope (spec §1.3): image and binary comparison, encodings other than UTF-8 and UTF-16, printing, HTML reports.
 
@@ -173,6 +176,34 @@ The merge window watches its inputs as the diff window does (spec §6.1). A chan
 
 `triad-merge diff - FILE` reads one side from stdin, read-only and titled `stdin`. The open dialog's Diff tab takes `Clipboard` in a slot.
 
+### G16 Moved code in the merge window
+
+Shows how blocks moved, from base to a side or between the sides, in the merge window's top panes, and warns where a clean merge holds a block twice. Builds on §G5's matcher and Carry Edit's rule (spec §4.4), so all three agree on what a move is.
+
+**Kinds of move.**
+
+1. **Base to one side.** A side deletes a block of base lines and inserts it at one other place. `diff2::moves` runs on the base→left changes and on the base→right changes, under the merge's whitespace mode and filters. A block moved on one side and edited on the other is Carry Edit's case and keeps its suggestion; the move shows as well.
+2. **The same move on both sides, to different places.** Both sides delete the block, which merges cleanly at the origin, and each inserts it at a different place, each insert clean. The result holds the block twice and no region conflicts; git and jj merge it the same way. Both moves show, and the pair is a duplicate.
+3. **The same new text on both sides, at different places.** No origin in base. Left's inserted blocks are matched against right's inserted lines as kind 1 matches; a match at exactly one place is a duplicate. Inserts the merge already joins as `BothSame` are one region and no duplicate.
+
+**Drawing.**
+
+- Each end takes the move tone on the bands and the ruler, in place of its side's colour, as in the diff window.
+- No `M` gutter mark: the top panes' gutter holds the pick targets.
+- Pills sit in the pane of the side that moved, at both ends: on the origin's first filler row, `→ L40`, and on the destination's first row, `← B12`. The base pane is hidden by default, so a pill there would rarely show. A move on both sides has a pill in each side's pane. Pill size, place, colours and the rule that it shows only while its row lies wholly in view follow spec §5's two-way mode.
+- A press on a pill, or Go to Other End of Move (⇧⌘M) with the current region at one end, goes to the other end as a jump does, with its blink.
+- The result pane draws no move: it is an editor, and its regions follow the edits. A duplicate is the exception, since it is about the result's own text: both copies mark the ruler in the conflict tone's outline, and the status bar counts them, `2 duplicated blocks`.
+
+**Data.** `merge_core` computes the moves with the regions in each recompute and installs them together, as `diff2` does (`DESIGN.md` §A4.7). A move names its side, its origin region and line range, or none for kind 3, and its destination region and line range. `merge-view` keys move ends by pane and region, since the merge window has three panes and the diff window two. `inspect` prints `moves` and `duplicates` in its JSON (`docs/json-schema.md`).
+
+**Steps.**
+
+1. Kinds 1 and 2 as moves: matcher, view model, pills, ruler, ⇧⌘M, `inspect`.
+2. Duplicates, kinds 2 and 3: the result's ruler marks, the status bar count, `inspect`.
+3. A suggestion that drops one copy of a duplicate, if §G15 decides for it.
+
+**Tests.** Expected moves come from hand-built triples in `fixtures/core`: a move on the left, on the right, on both sides to the same place (`BothSame`, no duplicate) and to different places (duplicate), new text on both sides at different places, a block that matches at two places (no move), a block of blank lines (no move), a move with an edit on the other side (move and Carry Edit both). Kind 3 under jj's semantics with more than two sides. Moves under each whitespace mode and filter. A move whose regions lag the text: no pill and no jump. The view's pill placement against the row table.
+
 ### G15 Decisions
 
 - **G2 default:** `collapse-unchanged` is `false`. The merge window moves by conflict, and next and previous conflict already pass the unchanged text; resolving a conflict needs the code around it. Folding in the result editor carries the most risk: edits in a fold, undo, search and scroll sync.
@@ -184,7 +215,9 @@ The merge window watches its inputs as the diff window does (spec §6.1). A chan
 - **G6 layout:** a list window that opens the diff window, as the history and stack windows do. An in-window list needs the diff window to swap files in place, and can follow.
 - **G5 minimum:** Carry Edit's rule, so the two matchers agree: a block with at least one non-blank line, found at exactly one place. `MOVE_MIN_LINES` is 1.
 
-Open: G4's blank lines in a merge, G8's resolution model.
+- **G16 duplicates:** open. A duplicate is reported, in the ruler, the status bar and `inspect`. Whether it is also offered as a suggestion, `Drop Duplicate at Line N`, which deletes one copy as one edit and one undo as Carry Edit does, waits for the owner. Proposed: report first, then one suggestion per copy, so the user picks which place keeps the block.
+
+Open: G4's blank lines in a merge, G8's resolution model, G16's duplicate suggestion.
 
 ## J. Screen-reader support
 
