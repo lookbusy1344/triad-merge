@@ -75,7 +75,7 @@ use merge_view::{scroll, status};
 use vcs::{IdKind, RepoKind, VcsError};
 
 use crate::blink::{self, Flash, SearchSteps};
-use crate::choice::{self, Choice, MenuAction, MenuChoice};
+use crate::choice::{self, Choice, MenuChoice};
 use crate::editor_sync::{self, Caret};
 use crate::input_find::{self, Step};
 use crate::input_select::{
@@ -100,9 +100,9 @@ use crate::tones::{Palette, Tones};
 use crate::toolbar::{self, Badge, GROUPS, Labels, PICKS, Tool};
 use crate::wrap::Wrap;
 use crate::{
-    Cancel, CarryMovedEdit, ClearChoice, CopyInput, ExitCode, Find, GoToLine, GoToMoveEnd,
-    LINE_HEIGHT, NextConflict, NextDifference, PreviousConflict, PreviousDifference, Redo,
-    SaveAndExit, SaveCopyAs, SelectAllInput, TakeBase, TakeLeft, TakeLeftAllUnresolved,
+    Cancel, CarryMovedEdit, ClearChoice, CopyInput, DropDuplicate, ExitCode, Find, GoToLine,
+    GoToMoveEnd, LINE_HEIGHT, NextConflict, NextDifference, PreviousConflict, PreviousDifference,
+    Redo, SaveAndExit, SaveCopyAs, SelectAllInput, TakeBase, TakeLeft, TakeLeftAllUnresolved,
     TakeLeftThenRight, TakeRight, TakeRightAllUnresolved, TakeRightThenLeft, TakeSortedUnion,
     TakeWholeLeft, TakeWholeRight, ToggleBase, ToggleBasePane, ToggleCollapseUnchanged, ToggleLeft,
     ToggleOriginColumn, ToggleRight, ToggleScrollSync, ToggleSoftWrap, ToggleSyntax, Typography,
@@ -2127,22 +2127,15 @@ impl MergeWindow {
         .on_action(cx.listener(|this, _: &CarryMovedEdit, window, cx| {
             this.take_suggestion(EditSuggestion::CarryEdit, window, cx);
         }))
+        .on_action(cx.listener(|this, _: &DropDuplicate, window, cx| {
+            this.take_suggestion(EditSuggestion::DropDuplicate, window, cx);
+        }))
     }
 
     /// The right-click menu's choices for the current region.
     fn menu_choices(&self, cx: &App) -> Vec<MenuChoice> {
         let region = self.current_region(cx);
-        let line_of = |to: RegionIx| {
-            self.session.document().line_of_byte(self.session.document().region_start(to)).get() + 1
-        };
-        let suggested: Vec<MenuAction> = suggest::suggestions(
-            self.session.document().inputs(),
-            self.session.document().regions(),
-            region,
-        )
-        .iter()
-        .map(|suggestion| MenuAction::suggested(suggestion, line_of))
-        .collect();
+        let suggested = choice::suggested_actions(self.session.document(), region);
         choice::menu_choices(Choice::of(self.session.document().resolution(region)), &suggested)
     }
 

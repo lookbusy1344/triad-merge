@@ -142,6 +142,7 @@ pub enum KeyAction {
     TakeWholeRight,
     TakeSortedUnion,
     CarryMovedEdit,
+    DropDuplicate,
     ToggleBasePane,
     ToggleOriginColumn,
     ToggleSyntax,

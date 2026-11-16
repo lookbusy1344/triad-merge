@@ -503,6 +503,7 @@ pub(crate) mod menu {
     pub(crate) const TAKE_WHOLE_LEFT: &str = "Take Whole Left File";
     pub(crate) const TAKE_WHOLE_RIGHT: &str = "Take Whole Right File";
     pub(crate) const CARRY_MOVED_EDIT: &str = "Carry Edit to Moved Block";
+    pub(crate) const DROP_DUPLICATE: &str = "Drop Duplicate";
     pub(crate) const NEXT_DIFFERENCE: &str = "Next Difference";
     pub(crate) const PREVIOUS_DIFFERENCE: &str = "Previous Difference";
     pub(crate) const NEXT_CONFLICT: &str = "Next Conflict";
@@ -883,6 +884,7 @@ pub(crate) fn menu_label(action: MenuAction) -> &'static str {
         MenuAction::Take(choice) => choice_label(choice),
         MenuAction::SortedUnion => "Sorted Union",
         MenuAction::CarryEdit { .. } => "Carry Edit to Moved Block",
+        MenuAction::DropDuplicate { .. } => "Drop Duplicate",
     }
 }
 
@@ -892,6 +894,7 @@ pub(crate) fn suggested_label(action: MenuAction) -> SharedString {
         MenuAction::CarryEdit { from, line } => {
             format!("Suggested: Carry {}'s Edit to Line {line}", choice_label(from))
         }
+        MenuAction::DropDuplicate { line } => format!("Suggested: Drop Duplicate of Line {line}"),
         MenuAction::Take(_) | MenuAction::SortedUnion => {
             format!("Suggested: {}", menu_label(action))
         }
@@ -1765,6 +1768,10 @@ mod tests {
         assert_eq!(
             suggested_label(MenuAction::CarryEdit { from: Choice::Right, line: 4 }).as_ref(),
             "Suggested: Carry Right's Edit to Line 4"
+        );
+        assert_eq!(
+            suggested_label(MenuAction::DropDuplicate { line: 8 }).as_ref(),
+            "Suggested: Drop Duplicate of Line 8"
         );
     }
 

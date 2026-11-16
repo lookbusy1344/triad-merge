@@ -9,8 +9,8 @@ use gpui_kit::test::TestWindowExt;
 use gpui_kit::{AnyWindowHandle, Entity, TestAppContext};
 use merge_app::window::{RESULT_ID, cell_id, pick_id};
 use merge_app::{
-    CarryMovedEdit, MergeWindow, Redo, TakeBase, TakeLeft, TakeRight, TakeRightAllUnresolved,
-    TakeSortedUnion, TakeWholeLeft, TakeWholeRight, Undo,
+    CarryMovedEdit, DropDuplicate, MergeWindow, Redo, TakeBase, TakeLeft, TakeRight,
+    TakeRightAllUnresolved, TakeSortedUnion, TakeWholeLeft, TakeWholeRight, Undo,
 };
 use merge_core::document::{MergeDocument, Resolution};
 use merge_core::merge3::Source;
@@ -423,4 +423,37 @@ fn without_a_conflict_the_window_opens_on_the_first_difference(cx: &mut TestAppC
 fn without_a_difference_the_window_opens_at_the_start(cx: &mut TestAppContext) {
     let (_, view) = open(cx, doc("a\nb\n", "a\nb\n", "a\nb\n"));
     assert_eq!(caret(cx, &view), 0);
+}
+
+/// Both sides move `m1 m2` from the top: right before `d`, left to the end. The result
+/// `a b c m1 m2 d e m1 m2` holds right's copy in region 2 (bytes 6–12), left's in region 4.
+fn moved_twice() -> MergeDocument {
+    doc("m1\nm2\na\nb\nc\nd\ne\n", "a\nb\nc\nd\ne\nm1\nm2\n", "a\nb\nc\nm1\nm2\nd\ne\n")
+}
+
+#[gpui_kit::test]
+fn dropping_a_duplicate_deletes_the_current_copy_in_one_undo_step(cx: &mut TestAppContext) {
+    let (window, view) = open(cx, moved_twice());
+    act(cx, window, |window, cx| window.click(RESULT_ID, cx));
+    set_caret(cx, &view, 7);
+    act(cx, window, |window, cx| window.dispatch_action(Box::new(DropDuplicate), cx));
+    let dropped = "a\nb\nc\nd\ne\nm1\nm2\n".to_owned();
+    assert_eq!(texts(cx, &view), (dropped.clone(), dropped));
+    assert_eq!(resolution(cx, &view, RegionIx::new(2)), Resolution::Edited);
+    assert_eq!(resolution(cx, &view, RegionIx::new(4)), Resolution::Auto);
+    act(cx, window, |window, cx| window.dispatch_action(Box::new(Undo), cx));
+    let both = "a\nb\nc\nm1\nm2\nd\ne\nm1\nm2\n".to_owned();
+    assert_eq!(texts(cx, &view), (both.clone(), both));
+    assert_eq!(resolution(cx, &view, RegionIx::new(2)), Resolution::Auto);
+}
+
+#[gpui_kit::test]
+fn dropping_a_duplicate_outside_a_copy_changes_nothing(cx: &mut TestAppContext) {
+    // Bytes 0–6 are `a b c`, which holds no copy.
+    let (window, view) = open(cx, moved_twice());
+    act(cx, window, |window, cx| window.click(RESULT_ID, cx));
+    set_caret(cx, &view, 2);
+    let before = texts(cx, &view);
+    act(cx, window, |window, cx| window.dispatch_action(Box::new(DropDuplicate), cx));
+    assert_eq!(texts(cx, &view), before);
 }

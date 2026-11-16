@@ -6,7 +6,7 @@ use std::ops::Range;
 
 use crate::document::MergeDocument;
 use crate::edit::{EditBatch, TextPatch};
-use crate::index::RegionIx;
+use crate::index::{Line, RegionIx};
 use crate::merge3::{Inputs, Kind, Region};
 use crate::text::Text;
 
@@ -40,6 +40,40 @@ pub enum EditSuggestion {
     SortedUnion,
     /// [`Suggestion::CarryEdit`].
     CarryEdit,
+    /// Delete the region's copy of a duplicated block ([`duplicate_copy`]).
+    DropDuplicate,
+}
+
+/// One copy of a block the result holds twice (`MergeDocument::held_duplicates`), in result
+/// lines.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DuplicateCopy {
+    /// This copy's lines.
+    pub lines: Range<usize>,
+    /// The other copy's lines, which stay when this one is dropped.
+    pub kept: Range<usize>,
+}
+
+/// The first copy of a duplicated block that `region` of `doc` holds.
+#[must_use]
+pub fn duplicate_copy(doc: &MergeDocument, region: RegionIx) -> Option<DuplicateCopy> {
+    let held = doc.region_bytes(region);
+    doc.held_duplicates()
+        .flat_map(|[left, right]| {
+            [
+                DuplicateCopy { lines: left.clone(), kept: right.clone() },
+                DuplicateCopy { lines: right, kept: left },
+            ]
+        })
+        .find(|copy| {
+            let bytes = line_bytes(doc, &copy.lines);
+            held.start <= bytes.start && bytes.end <= held.end
+        })
+}
+
+/// The result bytes of result lines `lines`.
+fn line_bytes(doc: &MergeDocument, lines: &Range<usize>) -> Range<usize> {
+    doc.byte_of_line(Line::new(lines.start)).get()..doc.byte_of_line(Line::new(lines.end)).get()
 }
 
 /// The edit that takes `wanted` for region `region` of `doc`, in the result's current
@@ -51,6 +85,11 @@ pub enum EditSuggestion {
 /// If `region` is out of range for `doc`.
 #[must_use]
 pub fn edit(doc: &MergeDocument, region: RegionIx, wanted: EditSuggestion) -> Option<EditBatch> {
+    if wanted == EditSuggestion::DropDuplicate {
+        let copy = duplicate_copy(doc, region)?;
+        let range = line_bytes(doc, &copy.lines);
+        return Some(EditBatch(vec![TextPatch { range, text: String::new() }]));
+    }
     let patches = suggestions(doc.inputs(), doc.regions(), region).into_iter().find_map(
         |suggestion| match (wanted, suggestion) {
             (EditSuggestion::SortedUnion, Suggestion::SortedUnion(text)) => {
@@ -197,9 +236,9 @@ fn union<'t>(a: &[&'t str], b: &[&'t str]) -> Vec<&'t str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::document::MergeOptions;
+    use crate::document::{Command, MergeOptions};
     use crate::merge3::{Inputs, Semantics, align};
-    use crate::testing::{text, three};
+    use crate::testing::{doc, text, three};
 
     /// Each region's suggestions, in both semantics, which must agree.
     fn suggested(base: &str, left: &str, right: &str) -> Vec<Vec<Suggestion>> {
@@ -216,6 +255,65 @@ mod tests {
     }
 
     const NONE: Vec<Suggestion> = Vec::new();
+
+    /// Both sides move `m1 m2` from the top: right before `d`, left to the end. The result
+    /// `a b c m1 m2 d e m1 m2` holds right's copy in region 2, lines 3–4 (bytes 6–12), and
+    /// left's in region 4, lines 7–8 (bytes 16–22).
+    fn moved_twice() -> MergeDocument {
+        doc("m1\nm2\na\nb\nc\nd\ne\n", "a\nb\nc\nd\ne\nm1\nm2\n", "a\nb\nc\nm1\nm2\nd\ne\n")
+    }
+
+    #[test]
+    fn each_copy_of_a_duplicate_names_the_other_as_kept() {
+        let d = moved_twice();
+        assert_eq!(
+            duplicate_copy(&d, RegionIx::new(2)),
+            Some(DuplicateCopy { lines: 3..5, kept: 7..9 })
+        );
+        assert_eq!(
+            duplicate_copy(&d, RegionIx::new(4)),
+            Some(DuplicateCopy { lines: 7..9, kept: 3..5 })
+        );
+        for region in [0, 1, 3] {
+            assert_eq!(duplicate_copy(&d, RegionIx::new(region)), None, "region {region}");
+        }
+    }
+
+    #[test]
+    fn dropping_a_copy_deletes_its_lines_as_one_undoable_edit() {
+        let mut d = moved_twice();
+        let batch = edit(&d, RegionIx::new(2), EditSuggestion::DropDuplicate).expect("a copy");
+        assert_eq!(batch, EditBatch(vec![TextPatch { range: 6..12, text: String::new() }]));
+        d.apply(Command::Edit(batch)).expect("applies");
+        assert_eq!(d.text(), "a\nb\nc\nd\ne\nm1\nm2\n");
+        assert_eq!(duplicate_copy(&d, RegionIx::new(4)), None, "one copy left");
+        d.apply(Command::Undo).expect("undoes");
+        assert_eq!(d.text(), "a\nb\nc\nm1\nm2\nd\ne\nm1\nm2\n");
+        let left = edit(&d, RegionIx::new(4), EditSuggestion::DropDuplicate).expect("a copy");
+        assert_eq!(left, EditBatch(vec![TextPatch { range: 16..22, text: String::new() }]));
+    }
+
+    #[test]
+    fn dropping_a_copy_inside_a_larger_insert_keeps_the_rest() {
+        // Left inserts `n x1 x2` after `a`: region 1, result lines 1–3; its copy is lines
+        // 2–3. Right inserts `x1 x2` before `e`: result lines 7–8.
+        let mut d = doc("a\nb\nc\nd\ne\n", "a\nn\nx1\nx2\nb\nc\nd\ne\n", "a\nb\nc\nd\nx1\nx2\ne\n");
+        assert_eq!(
+            duplicate_copy(&d, RegionIx::new(1)),
+            Some(DuplicateCopy { lines: 2..4, kept: 7..9 })
+        );
+        let batch = edit(&d, RegionIx::new(1), EditSuggestion::DropDuplicate).expect("a copy");
+        d.apply(Command::Edit(batch)).expect("applies");
+        assert_eq!(d.text(), "a\nn\nb\nc\nd\nx1\nx2\ne\n");
+    }
+
+    #[test]
+    fn a_region_after_an_edit_or_a_pick_offers_no_drop() {
+        let mut d = moved_twice();
+        d.apply(Command::Pick { region: RegionIx::new(4), sources: vec![] }).expect("picks");
+        assert_eq!(duplicate_copy(&d, RegionIx::new(2)), None);
+        assert_eq!(edit(&d, RegionIx::new(2), EditSuggestion::DropDuplicate), None);
+    }
 
     #[test]
     fn the_moved_demos_conflict_suggests_carrying_rights_edit() {
