@@ -8,6 +8,7 @@ pub mod heights;
 pub mod highlight;
 pub mod marks;
 pub mod merge_fold;
+pub mod moves;
 pub mod nav;
 pub mod origin;
 pub mod placeholder;
