@@ -19,7 +19,7 @@ As of 2026-11-16.
 | M6 native resolution | Done: git stages a resolved save; jj snapshots before the read and after each save | D |
 | M7 syntax highlighting | Done: Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS | F |
 | p4merge parity | Done | E |
-| Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; for §G6, the files that differ between two directories, in the directory window and printed by `diff --inspect LEFT_DIR RIGHT_DIR`; invisible characters drawn as code points and odd spaces shaded in every pane, and escaped in terminal output (§A6.8); the rest open | G |
+| Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; for §G6, the files that differ between two directories, in the directory window, from `jj diff --tool` and `git difftool -d`, and printed by `diff --inspect LEFT_DIR RIGHT_DIR`; invisible characters drawn as code points and odd spaces shaded in every pane, and escaped in terminal output (§A6.8); the rest open | G |
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
 | jj-native features | Done: conflicts across a stack (`stack`, `resolve -r`), operation-log history (`history`, `diff --op`) and absorb by hunk (`absorb`); the stack window, with a preview of a save's effect on the descendants and a confirmation before a save changes them; the history window; the absorb window, by hunk; the three windows' lists follow `docs/STYLE.md` and work from the keys; the conflict badge names the sides a conflict keeps; absorb, `resolve -r` and the default revset aliases checked against jj's CLI (§I5); `stack`, `resolve -r`, `history`, `absorb` and a three-sided save checked through the built binary in scenario repositories (`script/test-jj-repos`) | I |
 
@@ -128,11 +128,9 @@ Done: the matcher, `diff2::moves` (spec §4.6, `DESIGN.md` §A4.7), recomputed a
 
 ### G6 Directory diff
 
-`jj diff --tool` runs `file-by-file`, one window per file in turn.
-
 - Done: `merge_session::dir_diff` lists the files that differ (added, deleted, modified; text, binary, undecodable or special) and `diff --inspect LEFT_DIR RIGHT_DIR` prints them (spec §6.1, `docs/json-schema.md`).
 - Done: `triad-merge diff LEFT_DIR RIGHT_DIR` opens the directory window, a list window as the history window is (spec §6.1, `DESIGN.md` §A6.9). A text file opens in the diff window, one at a time; closing it lists the files again. Edits save per file; a right file that copies jj's working copy saves to the working copy.
-- jj: `diff-invocation-mode = "dir"`; git: `difftool --dir-diff`. `install` writes the dir-mode entries.
+- Done: `install --jj` writes `diff-invocation-mode = "dir"`, so `jj diff --tool triad` opens the directory window. `git difftool -d` runs git's existing `cmd` with two directories and an empty `$MERGED`, and its right directory links the working-tree files at absolute paths; checked with jj 0.47.1 and git through `diff --inspect` as the tool (spec §7.1).
 - Native mode: `triad-merge diff` with no path lists the working copy's changes against its parent. `vcs` gains `Repository::changed_paths(from, to)`, in the conformance suite.
 - Renames show as a delete and an add.
 - Later: detect renames and moves, by jj's and git's copy tracking in native mode or by content.

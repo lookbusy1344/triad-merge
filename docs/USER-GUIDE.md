@@ -77,7 +77,7 @@ jj resolve                          # each conflicted file in @, in turn
 jj resolve src/lib.rs               # one file
 jj resolve -r xyz src/lib.rs        # a conflict in another commit; jj rewrites it and rebases the descendants
 jj resolve --list                   # the conflicted files, without opening triad
-jj diff --tool triad                # each file @ changed, one window per file
+jj diff --tool triad                # the files @ changed, in a list; each opens in the diff window
 jj diff --tool triad src/lib.rs
 jj diff --tool triad -r xyz         # what commit xyz changed
 jj diff --tool triad --from main --to xyz src/lib.rs   # any two revisions
@@ -85,7 +85,7 @@ jj diff --tool triad --from main --to xyz src/lib.rs   # any two revisions
 
 Under `jj resolve`, a save with conflicts left exits 1. jj reads the saved markers back and keeps the rest of the conflict in the commit. Cancel (exit 2) leaves the conflict as it was.
 
-`jj diff --tool` passes temporary copies. When the right side is the working copy, triad opens the working-copy file instead, so edits there persist; every other side's edits are lost, and a banner says so. This needs `diff-do-chdir = false`, which `install --jj` writes.
+`install --jj` sets `diff-invocation-mode = "dir"`, so jj passes two directories holding the changed files and triad lists them (§2). `jj diff --tool` passes temporary copies. When a right-side file is the working copy, triad opens the working-copy file instead, so edits there persist; every other side's edits are lost, and a banner says so. This needs `diff-do-chdir = false`, which `install --jj` writes.
 
 triad is not yet jj's diff editor: `jj split -i`, `jj squash -i` and `jj diffedit` use jj's own editor (`docs/PLAN-diff-editor.md`).
 
@@ -117,7 +117,7 @@ Without a window: `triad-merge resolve --headless src/lib.rs` writes the automat
 
 ```sh
 triad-merge diff src/lib.rs        # against @-; edits save to the working copy
-jj diff --tool triad               # each changed file in turn
+jj diff --tool triad               # the changed files, in a list
 ```
 
 When `@` is a merge, the left side is the file in the merge of the parents' trees, as `jj diff` shows it.
@@ -255,11 +255,13 @@ git difftool --staged               # index against HEAD
 git difftool HEAD~1 -- src/lib.rs   # working tree against a revision
 git difftool main feature -- src/lib.rs   # two revisions
 git difftool -y                     # without git's prompt per file
+git difftool -d                     # every changed file in one list; each opens in the diff window
+git difftool -d HEAD~1              # against a revision
 ```
 
 Under `git mergetool`, a resolved save exits 0 and git stages the file. A save with conflicts left exits 1; git counts the file unresolved and restores its own copy, and triad offers to restore the session on the next run. Cancel exits 2.
 
-`git difftool` passes the real working-tree file on the right, so edits there persist. The left side is a temporary copy and read-only. When neither side is the working tree, as with `--staged` or two revisions, the right side is a temporary copy too: edits to it are lost, and no banner says so. `git difftool -R` puts the working-tree file on the read-only left.
+`git difftool` passes the real working-tree file on the right, so edits there persist. The left side is a temporary copy and read-only. When neither side is the working tree, as with `--staged` or two revisions, the right side is a temporary copy too: edits to it are lost, and no banner says so. `git difftool -R` puts the working-tree file on the read-only left. `git difftool -d` links each working-tree file into its right directory, so edits there persist too.
 
 In a jj repository use jj's commands: `git mergetool` there exits 3, since triad merges with jj's rules only.
 

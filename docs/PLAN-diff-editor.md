@@ -131,7 +131,7 @@ triad-merge discard [PATH...]    # left: index, right: working tree, output: wor
 
 ## H10 Step 7, optional: directory diff view
 
-The directory window of §H7 without a result pane: two panes and the file list, for `jj diff --tool`, `jj interdiff --tool` and `git difftool --dir-diff` with `diff-invocation-mode = "dir"`. Edits follow spec §7.1's rules for where they land. This replaces one window per file with one window per diff. It waits until §H7 has been used.
+The directory window of §H7 without a result pane: two panes and the file list, for `jj diff --tool`, `jj interdiff --tool` and `git difftool --dir-diff` with `diff-invocation-mode = "dir"`. Edits follow spec §7.1's rules for where they land. This replaces §G6's list window, which opens one diff window per file, with one window per diff. It waits until §H7 has been used.
 
 ## H11 Tests
 

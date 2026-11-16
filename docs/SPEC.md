@@ -10,7 +10,7 @@ triad is a native three-way merge and two-way diff tool for single text files. I
 - GUI in p4merge style: left and right panes side by side, each showing its changes from base, and the editable result pane below.
 - Non-conflicting changes apply automatically. The user resolves each conflict by choosing a source or editing the result.
 - Runs as a merge tool from `jj resolve` and `git mergetool`.
-- Two-way diff of one text file pair: two editable panes side by side (§4.6). Runs as a diff tool from `jj diff --tool` and `git difftool`. `triad-merge diff PATH` compares a working-copy file with its parent revision through jj-lib or gix, and saves edits straight to the working copy.
+- Two-way diff of one text file pair: two editable panes side by side (§4.6). Runs as a diff tool from `jj diff --tool` and `git difftool`; two directories, as `jj diff --tool` and `git difftool -d` pass them, open a list of the files that differ (§6.1). `triad-merge diff PATH` compares a working-copy file with its parent revision through jj-lib or gix, and saves edits straight to the working copy.
 - A headless CLI mode for scripts, tests and agents.
 
 ### 1.2 jj first, git parity
@@ -619,11 +619,11 @@ Diff tool configuration:
 ```toml
 [merge-tools.triad]
 diff-args = ["diff", "$left", "$right"]
-diff-invocation-mode = "file-by-file"
+diff-invocation-mode = "dir"
 diff-do-chdir = false
 ```
 
-`file-by-file` makes jj run the tool once for each changed file, because triad takes single files, not directories. `diff-do-chdir = false` runs the tool in the user's working directory with absolute paths; jj's default runs it in its temporary directory, where no repository is found. jj runs `program` with `diff-args`, so the arguments start with the `diff` subcommand, as git's `cmd` does; `triad-merge LEFT RIGHT` alone is a merge missing its inputs.
+`dir` makes jj run the tool once, with two directories holding the changed files, which open in the directory window (§6.1). `diff-do-chdir = false` runs the tool in the user's working directory with absolute paths; jj's default runs it in its temporary directory, where no repository is found. jj runs `program` with `diff-args`, so the arguments start with the `diff` subcommand, as git's `cmd` does; `triad-merge LEFT RIGHT` alone is a merge missing its inputs.
 
 ```gitconfig
 [diff]
@@ -633,6 +633,8 @@ diff-do-chdir = false
 ```
 
 `$MERGED` is the file's path in the repository. It titles the window, and it names the file when both sides are temporary copies, as in `git difftool --cached` and diffs of two commits, so their line origins can be found (§7.3). `$LOCAL` is a temporary copy git deletes after the run, so `--readonly-left` keeps edits out of it. `git difftool -R` swaps the sides, which leaves the working-tree file on the read-only left.
+
+`git difftool -d` runs the same `cmd` once, with `$LOCAL` and `$REMOTE` naming two directories that hold the changed files, and `$MERGED` empty. They open in the directory window (§6.1); each file's path below the directories names it for its line origins. A working-tree file on the right is a symlink to it at an absolute path, which the window follows, so saved edits land in the working tree.
 
 Where edits land:
 
