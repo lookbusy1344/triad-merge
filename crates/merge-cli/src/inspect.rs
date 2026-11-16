@@ -35,6 +35,15 @@ struct MergeReport {
     conflicts: usize,
     regions: Vec<MergeRegion>,
     moves: Vec<MergeMove>,
+    duplicates: Vec<MergeDuplicate>,
+}
+
+/// A block both sides insert at different places, which the merge takes twice (`PLAN.md`
+/// §G16).
+#[derive(Serialize)]
+struct MergeDuplicate {
+    left: [usize; 2],
+    right: [usize; 2],
 }
 
 /// A block of base lines that `side` deletes and inserts at `lines` (`PLAN.md` §G16).
@@ -177,6 +186,11 @@ pub fn inspect(
                 lines: span(&m.lines),
             })
             .collect(),
+        duplicates: document
+            .duplicates()
+            .iter()
+            .map(|d| MergeDuplicate { left: span(&d.left), right: span(&d.right) })
+            .collect(),
     };
     let code = exit_code(report.conflicts);
     let text = if json {
@@ -195,7 +209,11 @@ pub fn inspect(
             .moves
             .iter()
             .map(|m| format!("move {} base {} to {}", m.side, dots(m.base), dots(m.lines)));
-        let lines = regions.chain(moves);
+        let duplicates = report
+            .duplicates
+            .iter()
+            .map(|d| format!("duplicate left {} right {}", dots(d.left), dots(d.right)));
+        let lines = regions.chain(moves).chain(duplicates);
         to_text(&report.warnings, lines, &format!("conflicts: {}", report.conflicts))
     };
     Ok((text, code))
@@ -483,7 +501,8 @@ mod tests {
                     { "kind": "conflict", "base": [1, 2], "left": [1, 2], "right": [1, 2] },
                     { "kind": "unchanged", "base": [2, 3], "left": [2, 3], "right": [2, 3] }
                 ],
-                "moves": []
+                "moves": [],
+                "duplicates": []
             })
         );
     }
@@ -508,6 +527,13 @@ mod tests {
     }
 
     #[test]
+    fn inspect_json_lists_blocks_the_merge_takes_twice() {
+        let (out, _) =
+            inspect(&moved_twice().merge(), MergeOptions::default(), GIT, KEEP, true).expect("ok");
+        assert_eq!(json_of(&out)["duplicates"], json!([{ "left": [5, 7], "right": [3, 5] }]));
+    }
+
+    #[test]
     fn inspect_text_prints_moves_after_the_regions() {
         let (out, _) =
             inspect(&moved_twice().merge(), MergeOptions::default(), GIT, KEEP, false).expect("ok");
@@ -520,6 +546,7 @@ mod tests {
              left-only base 7..7 left 5..7 right 7..7\n\
              move left base 0..2 to 5..7\n\
              move right base 0..2 to 3..5\n\
+             duplicate left 5..7 right 3..5\n\
              conflicts: 0\n"
         );
     }
