@@ -29,6 +29,8 @@ pub enum RevSpec {
     Expr(String),
     /// One commit, by its full ID. The backend looks it up without parsing an expression.
     Commit(CommitId),
+    /// The empty tree, which holds no file: git's parent revision before the first commit.
+    Empty,
 }
 
 impl fmt::Display for RevSpec {
@@ -37,9 +39,13 @@ impl fmt::Display for RevSpec {
             Self::Index => f.write_str("index"),
             Self::Expr(expr) => f.write_str(expr),
             Self::Commit(id) => f.write_str(id.as_str()),
+            Self::Empty => f.write_str(EMPTY_TREE),
         }
     }
 }
+
+/// How [`RevSpec::Empty`] shows.
+const EMPTY_TREE: &str = "empty tree";
 
 /// The full ID of a commit, in hex. It is also a revision expression that names the commit;
 /// [`RevSpec::Commit`] and the methods that take one look it up without parsing.
@@ -284,6 +290,19 @@ pub enum VcsError {
     },
 }
 
+/// One revision's tree, from [`Repository::tree`].
+pub trait Tree {
+    /// What `path`, relative to the repository root, holds: a file with its bytes, another
+    /// kind of entry, or nothing.
+    ///
+    /// # Errors
+    ///
+    /// [`VcsError::OutsideRepository`] for a path with `..`, a leading `.` or a root,
+    /// [`VcsError::Conflicted`] when the path is conflicted, and [`VcsError::Backend`] when
+    /// reading fails.
+    fn entry(&self, path: &Utf8Path) -> Result<TermContent, VcsError>;
+}
+
 /// A git or jj repository, read through gix or jj-lib. `Send`, so a run hands its open
 /// repository to the thread that looks up line origins.
 pub trait Repository: Send {
@@ -303,6 +322,28 @@ pub trait Repository: Send {
     /// [`VcsError::NoIndex`] for [`RevSpec::Index`] on jj, [`VcsError::Conflicted`] when the
     /// file is conflicted at `rev`, and [`VcsError::Backend`] when reading fails.
     fn file_at(&self, path: &Utf8Path, rev: &RevSpec) -> Result<Option<Vec<u8>>, VcsError>;
+
+    /// What `path`, relative to the repository root, holds at `rev`: a file with its bytes,
+    /// another kind of entry, or nothing.
+    ///
+    /// # Errors
+    ///
+    /// As [`Repository::file_at`].
+    fn entry_at(&self, path: &Utf8Path, rev: &RevSpec) -> Result<TermContent, VcsError> {
+        self.tree(rev)?.entry(path)
+    }
+
+    /// `rev`'s tree, resolved once, to read many paths from: the merge of its commits' trees
+    /// when it names several, and the index for [`RevSpec::Index`]. Reads see the revision as
+    /// it was when the tree was taken.
+    ///
+    /// # Errors
+    ///
+    /// [`VcsError::UnknownRevision`] when `rev` does not resolve,
+    /// [`VcsError::AmbiguousRevision`] when a prefix or name in it is ambiguous,
+    /// [`VcsError::NoIndex`] for [`RevSpec::Index`] on jj, and [`VcsError::Backend`] when the
+    /// tree or the index cannot be read.
+    fn tree(&self, rev: &RevSpec) -> Result<Box<dyn Tree + '_>, VcsError>;
 
     /// The revision `path`'s working-copy version is compared with by default.
     ///
@@ -418,6 +459,25 @@ pub trait Repository: Send {
     ///
     /// [`VcsError::BadConfig`] for a value the VCS does not know.
     fn conflict_style(&self) -> Result<Option<ConflictStyle>, VcsError>;
+
+    /// The paths that may differ between the revision `rev` and the working copy, in path
+    /// order, component by component. Every path that differs is among them: a file whose
+    /// bytes differ, a file on one side only, an entry that changed kind. A path may be listed
+    /// whose bytes match, as after a change to the executable bit alone, so the caller
+    /// compares. git: the paths in `rev`'s tree or the index, against the files on disk, so
+    /// a change counts whether staged or not, and an untracked file does not count;
+    /// [`RevSpec::Index`] compares the index with the files on disk. jj: `rev`'s tree against
+    /// the working-copy commit's, as of the last snapshot; [`Repository::snapshot`] first takes
+    /// in the files on disk.
+    ///
+    /// # Errors
+    ///
+    /// [`VcsError::UnknownRevision`] when `rev` does not resolve,
+    /// [`VcsError::AmbiguousRevision`] when a prefix or name in it is ambiguous,
+    /// [`VcsError::NoIndex`] for [`RevSpec::Index`] on jj, [`VcsError::NotUtf8`] for a path
+    /// that is not UTF-8, and [`VcsError::Backend`] when the trees, the index or the files on
+    /// disk cannot be read.
+    fn changed_paths(&self, rev: &RevSpec) -> Result<Vec<Utf8PathBuf>, VcsError>;
 
     /// Take in the working tree as the VCS's next command would, before a conflict is read.
     /// jj snapshots the working copy with the user's jj config, in an operation of its own
@@ -565,6 +625,7 @@ mod tests {
     fn a_revision_shows_as_the_user_would_type_it() {
         assert_eq!(RevSpec::Index.to_string(), "index");
         assert_eq!(RevSpec::Expr("HEAD~1".to_owned()).to_string(), "HEAD~1");
+        assert_eq!(RevSpec::Empty.to_string(), "empty tree");
     }
 
     #[test]

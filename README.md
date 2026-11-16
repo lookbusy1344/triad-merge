@@ -185,7 +185,7 @@ triad-merge diff LEFT RIGHT                        # the diff window
 triad-merge diff --inspect --json LEFT RIGHT       # the diff's regions, as JSON
 ```
 
-`fixtures/demo` holds a 980-line merge with 20 conflicts to try, `triad-merge fixtures/demo/{base,left,right}.txt /tmp/out.txt`, and a merge of unusual characters (`fixtures/demo/README.md`).
+`fixtures/demo` holds a 980-line merge with 20 conflicts to try, `triad-merge fixtures/demo/{base,left,right}.txt /tmp/out.txt`, a merge of unusual characters, and two directories for the directory diff, `triad-merge diff fixtures/demo/dirs/{left,right}` (`fixtures/demo/README.md`).
 
 Exit codes: 0 all conflicts resolved, 1 conflicts left, 2 cancelled, 3 error. `diff --inspect` exits 0 for equal files and 1 for different ones, as `diff(1)` does. `docs/json-schema.md` defines the JSON and the `--commands` file that drives a headless merge.
 

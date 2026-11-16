@@ -5,11 +5,12 @@ use std::path::{Path, PathBuf};
 
 use camino::{Utf8Path, Utf8PathBuf};
 use merge_core::text::{DecodeError, Text};
-use vcs::{RepoKind, Repository, RevSpec, VcsError};
+use vcs::{CommitId, EntryKind, RepoKind, Repository, RevSpec, TermContent, Tree, VcsError};
 use vcs_git::GitRepository;
 use vcs_jj::JjRepository;
 use vcs_jj::config::ConfigEnv;
 
+use crate::dir_diff::{self, Blob, Change, ChangedFile, Content, Difference};
 use crate::repository::RunRepository;
 
 /// What `diff PATH` shows: a revision of the file on the left, the working copy on the right.
@@ -215,4 +216,201 @@ fn read_left(
         source,
     })?;
     Ok(NativeDiff { left, left_title, right: path.to_owned() })
+}
+
+/// The working copy's changed files, as `diff` with no path lists them (spec §6.1).
+#[derive(Debug)]
+pub struct Listing {
+    pub against: Against,
+    pub files: Vec<ChangedFile>,
+}
+
+/// What a [`Listing`] compared the working copy with.
+#[derive(Debug, Clone)]
+pub struct Against {
+    /// The repository's root, which the paths are relative to.
+    pub root: PathBuf,
+    /// The revision as given, or the parent revision's name, which titles show.
+    pub rev: String,
+    /// The commits `rev` named at the listing, by full ID: a listed file loads from them
+    /// though `rev` names others since. The empty tree before git's first commit.
+    pinned: RevSpec,
+}
+
+impl Against {
+    /// The commits the listing compared with, as a revision expression of their full IDs;
+    /// `None` for the empty tree.
+    #[must_use]
+    pub fn pinned(&self) -> Option<&str> {
+        match &self.pinned {
+            RevSpec::Expr(expr) => Some(expr),
+            RevSpec::Commit(id) => Some(id.as_str()),
+            RevSpec::Index | RevSpec::Empty => None,
+        }
+    }
+}
+
+/// The files that differ between `rev`, or the parent revision without one, and the working
+/// copy, from the run's repository. jj snapshots the working copy first, as its commands do;
+/// git compares the files on disk, staged or not, and leaves untracked files out. The parent
+/// is jj's `@-` and git's `HEAD`, or the empty tree before git's first commit: a staged change
+/// counts, so the index is no parent here. Each candidate the VCS lists is compared by bytes,
+/// so a change to the executable bit alone, or a staged change undone on disk, is left out. A
+/// path that holds a directory holds no file there, unless the working copy holds a submodule
+/// at it: git's index, jj's working-copy commit. A symlink, a submodule or a conflict is
+/// [`Content::Special`]. The revision is resolved once, so the listing reads one tree.
+///
+/// # Errors
+///
+/// [`NativeError::Vcs`] when no repository is found, the snapshot fails, or the revision or
+/// a file cannot be read; [`NativeError::Find`] when a file on disk cannot be read.
+pub fn changed_files(repo: &mut RunRepository, rev: Option<&str>) -> Result<Listing, NativeError> {
+    let repo = repo.require_mut()?;
+    repo.snapshot()?;
+    let repo: &dyn Repository = repo;
+    let (rev, commits) = match (rev, repo.kind()) {
+        (Some(rev), _) => (rev, repo.commits(rev)?),
+        (None, RepoKind::Jj) => (JJ_PARENT, repo.commits(JJ_PARENT)?),
+        (None, RepoKind::Git) => (GIT_PARENT, repo.index_base()?.into_iter().collect()),
+    };
+    let pinned = pinned(&commits);
+    let root = repo.root().as_std_path().to_owned();
+    let before = repo.tree(&pinned)?;
+    let working = working_tree(repo)?;
+    let mut listed = Vec::new();
+    for path in repo.changed_paths(&pinned)? {
+        let at = match before.entry(&path) {
+            Ok(TermContent::File { bytes, .. }) => Side::File(bytes),
+            Ok(TermContent::Absent | TermContent::Other(EntryKind::Directory)) => Side::Absent,
+            Ok(TermContent::Other(EntryKind::Symlink | EntryKind::Submodule))
+            | Err(VcsError::Conflicted { .. }) => Side::Special,
+            Err(error) => return Err(error.into()),
+        };
+        let now = match on_disk(&root.join(&path))? {
+            Side::Absent if holds_submodule(working.as_deref(), &path)? => Side::Special,
+            side => side,
+        };
+        if let Some((change, content, blob)) = compared(at, now)? {
+            listed.push((ChangedFile { path: path.into_std_path_buf(), change, content }, blob));
+        }
+    }
+    let files = dir_diff::with_renames(listed, |file| {
+        let path = root.join(&file.path);
+        if file.change != Change::Deleted {
+            return std::fs::read(&path).map_err(|source| NativeError::Find { path, source });
+        }
+        let relative =
+            Utf8Path::from_path(&file.path).ok_or_else(|| VcsError::NotUtf8(file.path.clone()))?;
+        match before.entry(relative)? {
+            TermContent::File { bytes, .. } => Ok(bytes),
+            TermContent::Absent | TermContent::Other(_) => {
+                Err(NativeError::Find { path, source: io::ErrorKind::NotFound.into() })
+            }
+        }
+    })?;
+    Ok(Listing { against: Against { root, rev: rev.to_owned(), pinned }, files })
+}
+
+/// The revision of `commits`: the empty tree for none, else their full IDs.
+fn pinned(commits: &[CommitId]) -> RevSpec {
+    match commits {
+        [] => RevSpec::Empty,
+        [commit] => RevSpec::Commit(commit.clone()),
+        _ => RevSpec::Expr(commits.iter().map(CommitId::as_str).collect::<Vec<_>>().join(UNION)),
+    }
+}
+
+/// The working copy's own tree, which says where a submodule sits: git's index, jj's
+/// working-copy commit. None for a jj workspace without a working-copy commit.
+fn working_tree(repo: &dyn Repository) -> Result<Option<Box<dyn Tree + '_>>, VcsError> {
+    let rev = match repo.kind() {
+        RepoKind::Git => RevSpec::Index,
+        RepoKind::Jj => match repo.working_copy_id()? {
+            Some(id) => RevSpec::Commit(id),
+            None => return Ok(None),
+        },
+    };
+    repo.tree(&rev).map(Some)
+}
+
+/// Whether `working` holds a submodule at `path`. A conflict there holds none.
+fn holds_submodule(working: Option<&dyn Tree>, path: &Utf8Path) -> Result<bool, VcsError> {
+    let Some(working) = working else {
+        return Ok(false);
+    };
+    match working.entry(path) {
+        Ok(entry) => Ok(entry == TermContent::Other(EntryKind::Submodule)),
+        Err(VcsError::Conflicted { .. }) => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+/// Load a file [`changed_files`] listed: `left` from the commits `against` pinned, against
+/// `right` on disk, both relative to the repository's root. The two differ for a rename. The
+/// file on disk may no longer exist.
+///
+/// # Errors
+///
+/// [`NativeError::Vcs`] when `left` is not UTF-8 or the revision cannot be read, and
+/// [`NativeError::Decode`] when the revision's file is not text.
+pub fn load_listed(
+    repo: &mut RunRepository,
+    against: &Against,
+    left: &Path,
+    right: &Path,
+) -> Result<NativeDiff, NativeError> {
+    let path = Utf8Path::from_path(left).ok_or_else(|| VcsError::NotUtf8(left.to_owned()))?;
+    read_left(repo.require()?, path, &against.pinned, &against.rev, &against.root.join(right))
+}
+
+/// The parent revisions [`changed_files`] compares with by default.
+const JJ_PARENT: &str = "@-";
+const GIT_PARENT: &str = "HEAD";
+
+/// Joins commit IDs into one revision expression: jj's revset union. A git revision names
+/// one commit, so git never sees it.
+const UNION: &str = " | ";
+
+/// What a path holds on one side of a listing.
+enum Side {
+    Absent,
+    File(Vec<u8>),
+    /// No regular file: a symlink, a submodule, a conflict, a device.
+    Special,
+}
+
+/// What `path` holds on disk. A directory holds no file at its path.
+fn on_disk(path: &Path) -> Result<Side, NativeError> {
+    let find = |source| NativeError::Find { path: path.to_owned(), source };
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.is_file() => std::fs::read(path).map(Side::File).map_err(find),
+        Ok(meta) if meta.is_dir() => Ok(Side::Absent),
+        Ok(_) => Ok(Side::Special),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Side::Absent),
+        Err(error) => Err(find(error)),
+    }
+}
+
+/// How a path changed from `before` to `after`, and the blob of a regular file on one side
+/// only; `None` when it did not change.
+///
+/// # Errors
+///
+/// [`VcsError::Backend`] when a blob ID cannot be computed.
+fn compared(before: Side, after: Side) -> Result<Option<Difference>, VcsError> {
+    let content = |side: &Side| match side {
+        Side::File(bytes) => dir_diff::decoded(bytes),
+        Side::Absent | Side::Special => Content::Special,
+    };
+    let blob = |side: &Side| match side {
+        Side::File(bytes) => Blob::of(bytes).map(Some),
+        Side::Absent | Side::Special => Ok(None),
+    };
+    Ok(match (before, after) {
+        (Side::Absent, Side::Absent) => None,
+        (Side::File(a), Side::File(b)) if a == b => None,
+        (Side::Absent, side) => Some((Change::Added, content(&side), blob(&side)?)),
+        (side, Side::Absent) => Some((Change::Deleted, content(&side), blob(&side)?)),
+        (a, b) => Some((Change::Modified, content(&a).max(content(&b)), None)),
+    })
 }

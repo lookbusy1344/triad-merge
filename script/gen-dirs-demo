@@ -1,0 +1,167 @@
+#!/usr/bin/env -S python3 -I
+"""gen-dirs-demo: write fixtures/demo/dirs/left and fixtures/demo/dirs/right, two directories
+for trying triad's directory diff by hand (spec section 6.1).
+
+The directories hold a small Python project. Between them one file moves and changes, one is
+renamed unchanged, one is edited, one is replaced by a file that keeps too little of it to
+count as a rename, one is deleted and three are added; two hold binary bytes and one Latin-1
+bytes. fixtures/demo/README.md lists what triad shows for each. This script names the binary
+and Latin-1 bytes by escape, so its own source holds none of them.
+
+Usage: script/gen-dirs-demo
+"""
+
+import shutil
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+OUT = ROOT / "fixtures" / "demo" / "dirs"
+
+# A PNG signature: its NUL bytes make a file binary (spec section 4.1).
+PNG = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+
+README = """# invoice
+
+Reads invoices from CSV and prints their totals.
+"""
+
+PARSER = """\"\"\"Read invoices from CSV.\"\"\"
+import csv
+
+
+def parse(path):
+    with open(path, newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    return [row_to_invoice(row) for row in rows]
+
+
+def row_to_invoice(row):
+    return {"id": row["id"], "amount": float(row["amount"])}
+"""
+
+# Moved to invoice/io/ with two lines changed: it keeps most of its bytes.
+PARSER_MOVED = """\"\"\"Read invoices from CSV files.\"\"\"
+import csv
+
+
+def parse(path):
+    with open(path, newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    return [row_to_invoice(row) for row in rows]
+
+
+def row_to_invoice(row):
+    return {"id": row["id"], "amount": round(float(row["amount"]), 2)}
+"""
+
+UTIL = """def chunks(items, size):
+    for start in range(0, len(items), size):
+        yield items[start : start + size]
+"""
+
+TOTALS_LEFT = """from invoice.parser import parse
+
+TAX_RATE = 0.2
+
+
+def total(invoices):
+    return sum(invoice["amount"] for invoice in invoices)
+
+
+def with_tax(amount):
+    return amount * (1 + TAX_RATE)
+
+
+def report(path):
+    invoices = parse(path)
+    print(f"{len(invoices)} invoices, total {with_tax(total(invoices)):.2f}")
+"""
+
+TOTALS_RIGHT = """from invoice.io.parser import parse
+
+TAX_RATE = 0.2
+
+
+def total(invoices):
+    return sum(invoice["amount"] for invoice in invoices)
+
+
+def with_tax(amount, rate=TAX_RATE):
+    return amount * (1 + rate)
+
+
+def report(path):
+    invoices = parse(path)
+    print(f"{len(invoices)} invoices, total {with_tax(total(invoices)):.2f}")
+    print(f"largest {max(invoice['amount'] for invoice in invoices):.2f}")
+"""
+
+NOTES = """# Notes
+
+- Amounts are in pounds.
+- The CSV has a header row.
+- Rows with no amount are skipped.
+- Tax is 20 per cent.
+- Totals round to two places.
+- Invoices are never merged.
+"""
+
+# Keeps two of the notes' eight lines: too little for a rename.
+DESIGN = """# Notes
+
+- The parser reads one file at a time.
+- Totals are computed after parsing.
+- The report prints to standard output.
+- The tax rate is a parameter.
+- Rounding happens once, in the parser.
+- Invoices are never merged.
+"""
+
+LEGACY = "Use totals.py for reports.\n"
+
+CLI = """import sys
+
+from invoice.totals import report
+
+
+def main():
+    report(sys.argv[1])
+"""
+
+LEFT = {
+    "README.md": README,
+    "invoice/parser.py": PARSER,
+    "invoice/util.py": UTIL,
+    "invoice/totals.py": TOTALS_LEFT,
+    "docs/notes.md": NOTES,
+    "legacy.txt": LEGACY,
+    "assets/logo.png": PNG + b"left",
+}
+
+RIGHT = {
+    "README.md": README,
+    "invoice/io/parser.py": PARSER_MOVED,
+    "invoice/helpers.py": UTIL,
+    "invoice/totals.py": TOTALS_RIGHT,
+    "docs/design.md": DESIGN,
+    "invoice/cli.py": CLI,
+    "assets/logo.png": PNG + b"right",
+    "assets/icon.png": PNG + b"icon",
+    # "Zoë" and "Renée" in Latin-1: neither UTF-8 nor UTF-16, so undecodable.
+    "names-latin1.txt": "Zoë\nRenée\n".encode("latin-1"),
+}
+
+
+def write(side: str, files: dict[str, str | bytes]) -> None:
+    for name, content in files.items():
+        path = OUT / side / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = content.encode("utf-8") if isinstance(content, str) else content
+        path.write_bytes(data)
+
+
+if OUT.exists():
+    shutil.rmtree(OUT)
+write("left", LEFT)
+write("right", RIGHT)
+print(OUT)

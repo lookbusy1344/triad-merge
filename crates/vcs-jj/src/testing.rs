@@ -38,7 +38,7 @@ use jj_lib::settings::UserSettings;
 use jj_lib::workspace::{DefaultWorkspaceLoaderFactory, Workspace, WorkspaceLoaderFactory as _};
 use pollster::FutureExt as _;
 use tempfile::TempDir;
-use vcs::testing::{Entry, SUBMODULE_COMMIT};
+use vcs::testing::Entry;
 
 use crate::JjRepository;
 
@@ -232,9 +232,18 @@ impl Fixture {
         reason = "called for its effect on the repository; tests often ignore the result"
     )]
     pub fn commit(&self, message: &str, files: &[(&str, &[u8])]) -> Committed {
+        self.commit_entries(message, &Entry::files(files))
+    }
+
+    /// Commit `entries` as the whole tree, as [`Fixture::commit`] does.
+    #[expect(
+        clippy::must_use_candidate,
+        reason = "called for its effect on the repository; tests often ignore the result"
+    )]
+    pub fn commit_entries(&self, message: &str, entries: &[(&str, Entry)]) -> Committed {
         let repo = self.repo();
         let parents = self.working_copy(repo.as_ref()).parent_ids().to_vec();
-        let committed = self.write_commit(&repo, parents, message, &Entry::files(files));
+        let committed = self.write_commit(&repo, parents, message, entries);
         self.check_out(&[&committed]);
         committed
     }
@@ -352,9 +361,10 @@ fn tree_of(repo: &ReadonlyRepo, entries: &[(&str, Entry)]) -> jj_lib::merged_tre
             Entry::Symlink(target) => TreeValue::Symlink(
                 store.write_symlink(&path, target).block_on().expect("a symlink"),
             ),
-            Entry::Submodule => TreeValue::GitSubmodule(
-                CommitId::try_from_hex(SUBMODULE_COMMIT).expect("a commit ID in hex"),
-            ),
+            Entry::Submodule | Entry::SubmoduleMoved => {
+                let hex = entry.submodule_commit().expect("a submodule");
+                TreeValue::GitSubmodule(CommitId::try_from_hex(hex).expect("a commit ID in hex"))
+            }
         };
         builder.set_or_remove(path, Some(value));
     }

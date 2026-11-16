@@ -56,6 +56,8 @@ The toolbar can take one side for every conflict left. The ruler at the right ma
 
 Two aligned, editable panes, each with copy to the other side. A block deleted in one place and inserted once in another shows teal at both ends, with an `M` beside it and a pill naming the other end's line, such as `R5 →`; click the `M` or the pill, or press ⇧⌘M with the caret in the block, to go to the other end. ⌘S writes each edited side to its own file and keeps the window open. Each side has its own undo. A file changed on disk reloads, or asks first when the pane has unsaved edits. When one side is a past revision, that side is read-only.
 
+Given two directories, `diff` opens a list of the files that differ instead, counted in its header. An icon shows how each file changed: added, modified, deleted or renamed, as Zed's git panel shows them. The file name comes first, then its directory. Enter or a click opens a file in the diff window; closing that window lists the files again. Binary files are listed and do not open. A file renamed or moved, alone or with edits that keep half its bytes, is listed once, ends with `from old.rs`, and opens against its old file, as `jj diff` pairs renames.
+
 Line origins (⌘I) show the commit, author and jj change that wrote each line, in both windows.
 
 ### Unusual characters
@@ -75,7 +77,7 @@ jj resolve                          # each conflicted file in @, in turn
 jj resolve src/lib.rs               # one file
 jj resolve -r xyz src/lib.rs        # a conflict in another commit; jj rewrites it and rebases the descendants
 jj resolve --list                   # the conflicted files, without opening triad
-jj diff --tool triad                # each file @ changed, one window per file
+jj diff --tool triad                # the files @ changed, in a list; each opens in the diff window
 jj diff --tool triad src/lib.rs
 jj diff --tool triad -r xyz         # what commit xyz changed
 jj diff --tool triad --from main --to xyz src/lib.rs   # any two revisions
@@ -83,7 +85,7 @@ jj diff --tool triad --from main --to xyz src/lib.rs   # any two revisions
 
 Under `jj resolve`, a save with conflicts left exits 1. jj reads the saved markers back and keeps the rest of the conflict in the commit. Cancel (exit 2) leaves the conflict as it was.
 
-`jj diff --tool` passes temporary copies. When the right side is the working copy, triad opens the working-copy file instead, so edits there persist; every other side's edits are lost, and a banner says so. This needs `diff-do-chdir = false`, which `install --jj` writes.
+`install --jj` sets `diff-invocation-mode = "dir"`, so jj passes two directories holding the changed files and triad lists them (§2). `jj diff --tool` passes temporary copies. When a right-side file is the working copy, triad opens the working-copy file instead, so edits there persist; every other side's edits are lost, and a banner says so. This needs `diff-do-chdir = false`, which `install --jj` writes.
 
 triad is not yet jj's diff editor: `jj split -i`, `jj squash -i` and `jj diffedit` use jj's own editor (`docs/PLAN-diff-editor.md`).
 
@@ -115,8 +117,12 @@ Without a window: `triad-merge resolve --headless src/lib.rs` writes the automat
 
 ```sh
 triad-merge diff src/lib.rs        # against @-; edits save to the working copy
-jj diff --tool triad               # each changed file in turn
+triad-merge diff                   # the changed files against @-, in a list
+triad-merge diff --rev 'trunk()'   # the changed files against trunk()
+jj diff --tool triad               # the changed files, in a list
 ```
+
+`triad-merge diff` with no file snapshots the working copy first, as jj's commands do, then lists the files that differ. Each opens against the revision; edits save to the working copy.
 
 When `@` is a merge, the left side is the file in the merge of the parents' trees, as `jj diff` shows it.
 
@@ -145,7 +151,7 @@ triad-merge history src/lib.rs --list           # print the list instead
 triad-merge diff src/lib.rs --op f5a69619a1f9   # one version against the working copy
 ```
 
-`history` opens a window listing each version, under the operation where it first appeared. Click one, or select it with ↑ and ↓ and press Enter, to open it in the diff window against the working-copy file: the version on the left, read-only, the file on the right. Copy lines back and save to restore them. One diff window is open at a time. When it closes, the list loads again and a save shows as a new version at the top. Closing the history window exits 0.
+`history` opens a window listing each version, under the operation where it first appeared. Click one, or select it with ↑ and ↓ and press Enter, to open it in the diff window against the working-copy file: the version on the left, read-only, the file on the right. Copy lines back and save to restore them. One diff window is open at a time. When it closes, the list loads again and a save shows as a new version at the top. Closing the history window, or Escape or ⌘W, exits 0.
 
 `--list` prints the same list:
 
@@ -168,7 +174,7 @@ triad-merge stack --list              # print the list instead
 triad-merge resolve src/lib.rs -r xyz # resolve in commit xyz; @ stays where it is
 ```
 
-`stack` opens a window that lists each commit's change, commit and summary, then its conflicted paths. `(inherited)` marks a path whose parent holds a conflict there too: resolve the parent first and the child often clears with it. Click a path, or select it with ↑ and ↓ and press Enter, to open its conflict in the merge window, as `resolve -r` does. One merge window is open at a time. Each save lists the commits again and says what it did. With a merge window open, Preview Save shows what saving its result would do to each descendant's conflicts. Like any jj command it snapshots the working copy first; it changes nothing else. Closing the stack window ends the run: 0 when no conflicted commit is left, 1 otherwise. With nothing conflicted, `stack` opens no window and exits 0.
+`stack` opens a window that lists each commit's change, commit and summary, then its conflicted paths. `(inherited)` marks a path whose parent holds a conflict there too: resolve the parent first and the child often clears with it. Click a path, or select it with ↑ and ↓ and press Enter, to open its conflict in the merge window, as `resolve -r` does. One merge window is open at a time. Each save lists the commits again and says what it did. With a merge window open, Preview Save shows what saving its result would do to each descendant's conflicts. Like any jj command it snapshots the working copy first; it changes nothing else. Closing the stack window, or Escape or ⌘W, ends the run: 0 when no conflicted commit is left, 1 otherwise. With nothing conflicted, `stack` opens no window and exits 0.
 
 `stack --list` prints the same list and exits the same way.
 
@@ -200,7 +206,7 @@ triad-merge absorb src/ --into @-   # only these paths, only these commits
 triad-merge absorb --list           # print the list instead
 ```
 
-`absorb` opens a window listing each hunk, its lines and the commit it goes into or why it stays, beside the commits a hunk may go into and Working copy. Click a hunk, then a commit to send it there or Working copy to keep it; the next hunk is then selected. From the keys: ↑ and ↓ select a hunk, Enter moves to the commits, ↑ and ↓ pick one, Enter sends the hunk there and Escape comes back without a change. Each commit shows how many hunks go into it. Apply writes the choices, says how many hunks went into how many commits and names each commit whose conflicts changed, and lists what is left. Apply refuses when the repository moved on since the list: Refresh and choose again. Closing the window exits 0. With nothing to absorb, `absorb` opens no window and exits 0.
+`absorb` opens a window listing each hunk, its lines and the commit it goes into or why it stays, beside the commits a hunk may go into and Working copy. Click a hunk, then a commit to send it there or Working copy to keep it; the next hunk is then selected. From the keys: ↑ and ↓ select a hunk, Enter moves to the commits, ↑ and ↓ pick one, Enter sends the hunk there and Escape comes back without a change. Each commit shows how many hunks go into it. Apply writes the choices, says how many hunks went into how many commits and names each commit whose conflicts changed, and lists what is left. Apply refuses when the repository moved on since the list: Refresh and choose again. Closing the window, ⌘W, or Escape in the hunks exits 0. With nothing to absorb, `absorb` opens no window and exits 0.
 
 `absorb --list` prints the list; it writes only with `--apply`:
 
@@ -253,11 +259,13 @@ git difftool --staged               # index against HEAD
 git difftool HEAD~1 -- src/lib.rs   # working tree against a revision
 git difftool main feature -- src/lib.rs   # two revisions
 git difftool -y                     # without git's prompt per file
+git difftool -d                     # every changed file in one list; each opens in the diff window
+git difftool -d HEAD~1              # against a revision
 ```
 
 Under `git mergetool`, a resolved save exits 0 and git stages the file. A save with conflicts left exits 1; git counts the file unresolved and restores its own copy, and triad offers to restore the session on the next run. Cancel exits 2.
 
-`git difftool` passes the real working-tree file on the right, so edits there persist. The left side is a temporary copy and read-only. When neither side is the working tree, as with `--staged` or two revisions, the right side is a temporary copy too: edits to it are lost, and no banner says so. `git difftool -R` puts the working-tree file on the read-only left.
+`git difftool` passes the real working-tree file on the right, so edits there persist. The left side is a temporary copy and read-only. When neither side is the working tree, as with `--staged` or two revisions, the right side is a temporary copy too: edits to it are lost, and no banner says so. `git difftool -R` puts the working-tree file on the read-only left. `git difftool -d` links each working-tree file into its right directory, so edits there persist too.
 
 In a jj repository use jj's commands: `git mergetool` there exits 3, since triad merges with jj's rules only.
 
@@ -277,7 +285,11 @@ triad reads git's `merge.conflictStyle` for the markers it writes.
 
 ```sh
 triad-merge diff src/lib.rs   # against the index when the file has staged changes, else HEAD
+triad-merge diff               # the changed files against HEAD, staged or not, in a list
+triad-merge diff --rev main    # the changed files against main
 ```
+
+The list leaves untracked files out, as `git diff` does. Each file opens against the revision; edits save to the working tree.
 
 ### Diff against older revisions
 
@@ -303,6 +315,7 @@ triad-merge BASE LEFT RIGHT -o OUTPUT             # the merge window
 triad-merge BASE LEFT RIGHT OUTPUT                # the same, as git passes it
 triad-merge diff LEFT RIGHT                       # the diff window; each side saves to its own file
 triad-merge diff LEFT RIGHT --readonly-left
+triad-merge diff LEFT_DIR RIGHT_DIR               # the files that differ; each opens in the diff window
 ```
 
 `fixtures/demo` holds a 980-line merge with 20 conflicts to try:
@@ -322,6 +335,8 @@ triad-merge --headless BASE LEFT RIGHT -o OUTPUT                   # the automat
 triad-merge --headless BASE LEFT RIGHT -o OUTPUT --commands FILE   # then FILE's picks and edits
 triad-merge inspect --json BASE LEFT RIGHT                         # the merge's regions
 triad-merge diff --inspect --json LEFT RIGHT                       # the diff's regions
+triad-merge diff --inspect --json LEFT_DIR RIGHT_DIR               # the files that differ between two directories
+triad-merge diff --inspect --json [--rev REV]                      # the working copy's changed files
 triad-merge resolve PATH -r REV --headless --commands FILE --dry-run   # jj: picks applied in a commit, reported, not written
 triad-merge stack --list
 triad-merge stack --json

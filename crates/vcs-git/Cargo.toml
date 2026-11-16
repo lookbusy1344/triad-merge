@@ -20,7 +20,7 @@ testing = ["dep:tempfile", "vcs/testing"]
 camino.workspace = true
 # `blame` annotates lines (spec §7.3). `attributes` runs git's clean filters on a staged
 # resolution (spec §7.4); jj-lib enables it already, so the build gains no crate.
-gix = { workspace = true, features = ["attributes", "blame"] }
+gix = { workspace = true, features = ["attributes", "blame", "status"] }
 tempfile = { workspace = true, optional = true }
 thiserror.workspace = true
 vcs.workspace = true

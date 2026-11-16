@@ -5,13 +5,13 @@ mod jj {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use crate::common::tool_window::{EDGE, ROW_GAP, ROW_HEIGHT};
-    use crate::common::{act, bounds, is_selected};
+    use crate::common::tool_window::{LIST_INSET, LIST_TOP, ROW_HEIGHT, SIDE};
+    use crate::common::{act, bounds, is_selected, label, viewport_width};
     use gpui_kit::test::TestWindowExt;
     use gpui_kit::{AnyWindowHandle, App, Entity, TestAppContext, VisualTestContext};
     use merge_app::absorb_window::{
-        self, APPLY_ID, AbsorbStart, AbsorbWindow, KEEP_ID, REFRESH_ID, destination_id, hunk_id,
-        lines_id,
+        self, APPLY_ID, AbsorbStart, AbsorbWindow, KEEP_ID, REFRESH_ID, SUMMARY_ID, destination_id,
+        hunk_id, lines_id,
     };
     use merge_app::{ExitCode, Typography, WindowSettings};
     use vcs_jj::config::ConfigEnv;
@@ -240,17 +240,38 @@ mod jj {
     }
 
     #[gpui_kit::test]
-    fn the_window_keeps_the_tool_window_edge_and_gaps(cx: &mut TestAppContext) {
+    fn the_window_has_the_tool_window_frame(cx: &mut TestAppContext) {
         let (fixture, ..) = stack();
         let started = start(cx, &fixture);
-        let refresh = bounds(cx, started.window, REFRESH_ID);
-        assert_eq!((refresh.left(), refresh.top()), (EDGE, EDGE));
         let hunk = bounds(cx, started.window, hunk_id(0));
-        assert_eq!(hunk.top(), refresh.bottom() + ROW_GAP);
-        assert_eq!(hunk.size.height, ROW_HEIGHT);
+        let width = viewport_width(cx, started.window);
+        let summary = bounds(cx, started.window, SUMMARY_ID);
+        assert_eq!(summary.left(), SIDE);
+        let apply = bounds(cx, started.window, APPLY_ID);
+        assert_eq!(apply.right(), width - SIDE);
+        assert!(bounds(cx, started.window, REFRESH_ID).right() < apply.left());
+        assert_eq!((hunk.left(), hunk.top(), hunk.size.height), (LIST_INSET, LIST_TOP, ROW_HEIGHT));
         let commit = bounds(cx, started.window, destination_id(0));
         assert_eq!(commit.top(), hunk.top());
+        assert_eq!(commit.right(), width - LIST_INSET);
         assert_eq!(commit.size.height, ROW_HEIGHT);
+    }
+
+    #[gpui_kit::test]
+    fn the_summary_counts_the_hunks(cx: &mut TestAppContext) {
+        let (fixture, ..) = stack();
+        let started = start(cx, &fixture);
+        assert_eq!(label(cx, started.window, SUMMARY_ID), "2 hunks");
+    }
+
+    #[gpui_kit::test]
+    fn escape_in_the_hunks_closes_the_window_and_writes_nothing(cx: &mut TestAppContext) {
+        let (fixture, one, _) = stack();
+        let started = start(cx, &fixture);
+        press(cx, started.window, "escape");
+        assert_eq!(started.exits.borrow().as_slice(), [ExitCode::Resolved]);
+        assert!(!cx.update(|cx| cx.windows().contains(&started.window)), "the window closed");
+        assert_eq!(fixture.held_in(&fixture.latest(&one), "a.txt"), Held::File(A_BEFORE.to_vec()));
     }
 
     #[gpui_kit::test]
@@ -311,6 +332,7 @@ mod jj {
         press(cx, started.window, "up");
         press(cx, started.window, "escape");
         assert!(!is_selected(cx, started.window, destination_id(0)));
+        assert_eq!(started.exits.borrow().as_slice(), [], "the window stays open");
         // The keys move through the hunks again.
         press(cx, started.window, "down");
         assert_eq!(selected(cx, &started.view), Some(1));

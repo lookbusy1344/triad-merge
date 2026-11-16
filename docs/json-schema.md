@@ -1,6 +1,6 @@
 # JSON output of `inspect` and `diff --inspect`, and merge commands
 
-`triad-merge inspect BASE LEFT RIGHT --json` and `triad-merge diff --inspect LEFT RIGHT --json` print one JSON object on stdout. `triad-merge --headless … --commands FILE` reads one merge command per line. This file defines both.
+`triad-merge inspect BASE LEFT RIGHT --json`, `triad-merge diff --inspect LEFT RIGHT --json` and `triad-merge diff --inspect LEFT_DIR RIGHT_DIR --json` print one JSON object on stdout. `triad-merge --headless … --commands FILE` reads one merge command per line. This file defines both.
 
 ## Versioning
 
@@ -11,10 +11,12 @@ Every object carries `"schema": 1`. A change that removes or renames a field, or
 | Field | Type | Meaning |
 |---|---|---|
 | `schema` | integer | Schema version, `1`. |
-| `command` | string | `"inspect"` or `"diff"`. |
+| `command` | string | `"inspect"`, `"diff"`, `"diff-dirs"` or `"diff-changes"`. |
 | `encodings` | object | Each input's encoding, keyed by input name. |
 | `warnings` | array of strings | Warning codes, in the order below. Empty when there are none. |
 | `regions` | array of objects | The regions in file order. Together they cover every line of every input. |
+
+`"diff-dirs"` and `"diff-changes"` carry `schema` and `command` alone of these; their section lists their fields.
 
 Encodings: `"utf-8"`, `"utf-8-bom"`, `"utf-16le"`, `"utf-16be"`. The UTF-16 encodings always have a byte order mark.
 
@@ -94,6 +96,31 @@ Exit code, as `diff(1)`: 0 if the inputs are equal under the whitespace mode, `d
 }
 ```
 
+## `diff --inspect` on two directories, or with no file
+
+`"diff-dirs"` lists two directories; `"diff-changes"`, with no file, lists the working copy's changes against a revision (spec §6.1). Both take these fields.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `changes` | integer | The number of entries in `files`. |
+| `files` | array of objects | The files that differ, by path, component by component (spec §6.1). |
+
+Each file has `path`, relative to both directories, or to the repository's root, with `/` between components on every platform; `change`, `"added"` (right only, or new since the revision), `"deleted"` (left only, or gone from disk), `"modified"` or `"renamed"`; for a rename, `from`, its old path, written as `path` is; and `content`, `"text"`, `"binary"`, `"undecodable"` or `"special"` (spec §6.1). A path component that is not UTF-8 shows with U+FFFD in place of its bad bytes.
+
+Exit code: 0 if no file differs, 1 if one does, 3 on error.
+
+```json
+{
+  "schema": 1,
+  "command": "diff-dirs",
+  "changes": 2,
+  "files": [
+    { "path": "img.png", "change": "added", "content": "binary" },
+    { "path": "src/a.rs", "change": "modified", "content": "text" }
+  ]
+}
+```
+
 ## Merge commands
 
 `--headless --commands FILE` (spec §6.1) reads FILE as JSON Lines: one command per line. The recovery journal stores its commands in the same encoding. The format follows the schema number above.
@@ -138,6 +165,14 @@ unchanged left 2..5 right 0..3
 changed left 5..5 right 3..5
 move from 0 left 0..2 to 2 right 3..5
 changes: 2
+```
+
+Two directories print one file per line, change, content and path, then a count:
+
+```
+added binary img.png
+modified text src/a.rs
+files: 2
 ```
 
 The text form is for people. Scripts use `--json`.

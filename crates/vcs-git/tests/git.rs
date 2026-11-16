@@ -502,3 +502,12 @@ fn the_working_tree_is_no_commit() {
     let (fixture, _) = forked();
     assert_eq!(fixture.open().working_copy_id().expect("nothing to read"), None);
 }
+
+#[test]
+fn a_blob_id_is_git_s() {
+    // `git hash-object` of empty input and of "hello\n".
+    let empty = vcs_git::blob_id(b"").expect("hashed");
+    assert_eq!(empty.to_string(), "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391");
+    let hello = vcs_git::blob_id(b"hello\n").expect("hashed");
+    assert_eq!(hello.to_string(), "ce013625030ba8dba906f756967f9e9ca394464a");
+}

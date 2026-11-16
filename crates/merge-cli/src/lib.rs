@@ -14,8 +14,11 @@ use std::path::{Path, PathBuf};
 
 use merge_config::settings::{self, Settings};
 use merge_core::document::OutputEnding;
+use merge_session::dir_diff::{self, Pair};
 use merge_session::env::Env;
-use merge_session::invocation::{Absorb, History, Merge, Resolve, SemanticsFlags, Stack, Window};
+use merge_session::invocation::{
+    Absorb, Diff, History, Merge, Resolve, SemanticsFlags, Stack, Window,
+};
 use merge_session::repository::RunRepository;
 use merge_session::{
     EncodedOutput, SaveError, SessionError, choose_marker_style, choose_semantics, jj_config, load,
@@ -52,6 +55,10 @@ pub enum CliError {
     Session(#[from] SessionError),
     #[error("cannot write the report as JSON: {0}")]
     Json(#[from] serde_json::Error),
+    #[error(transparent)]
+    DirDiff(#[from] dir_diff::DirDiffError),
+    #[error(transparent)]
+    Native(#[from] merge_session::native::NativeError),
     #[error(transparent)]
     Install(#[from] install::InstallError),
     #[error(transparent)]
@@ -153,41 +160,49 @@ fn window_form(
     stdout: &mut impl Write,
     stderr: &mut impl Write,
 ) -> Outcome {
-    let (window, repo) = match window {
+    match prepare_window(window, &settings, cwd.as_deref(), env, stdout) {
+        Ok(Some((window, repo))) => {
+            Outcome::Window(Box::new(WindowForm { window, settings, settings_errors, cwd, repo }))
+        }
+        Ok(None) => Outcome::Exit(ExitCode::Resolved),
+        Err(error) => {
+            Outcome::Exit(report(stderr, &format!("{PROGRAM}: {error}\n"), ExitCode::Error))
+        }
+    }
+}
+
+/// The window `window` opens and its run's repository; none when there is nothing to open.
+///
+/// # Errors
+///
+/// [`CliError`] when the form's repository or target cannot be settled.
+fn prepare_window(
+    window: Window,
+    settings: &Settings,
+    cwd: Option<&Path>,
+    env: &Env,
+    stdout: &mut impl Write,
+) -> Result<Option<(Window, RunRepository)>, CliError> {
+    let need_cwd = || cwd.ok_or(CliError::NoWorkingDirectory);
+    Ok(Some(match window {
         Window::Merge(mut merge) => {
-            let mut repo = RunRepository::of_merge(cwd.as_deref(), Some(&merge.output));
-            if let Err(error) = choose_for(&mut merge, &settings, cwd.as_deref(), &mut repo, env) {
-                return Outcome::Exit(report(
-                    stderr,
-                    &format!("{PROGRAM}: {error}\n"),
-                    ExitCode::Error,
-                ));
-            }
+            let mut repo = RunRepository::of_merge(cwd, Some(&merge.output));
+            choose_for(&mut merge, settings, cwd, &mut repo, env)?;
             (Window::Merge(merge), repo)
         }
         Window::Resolve(mut resolve) => {
-            let result = cwd.as_deref().ok_or(CliError::NoWorkingDirectory).and_then(|cwd| {
-                let (targets, repo) = resolve_prepare(&mut resolve, &settings, cwd, env, stdout)?;
-                Ok(targets.first().cloned().map(|first| (first, repo)))
-            });
-            match result {
-                Ok(Some((first, repo))) => {
-                    resolve.target = Some(first);
-                    (Window::Resolve(resolve), repo)
-                }
-                Ok(None) => return Outcome::Exit(ExitCode::Resolved),
-                Err(error) => {
-                    return Outcome::Exit(report(
-                        stderr,
-                        &format!("{PROGRAM}: {error}\n"),
-                        ExitCode::Error,
-                    ));
-                }
-            }
+            let (targets, repo) =
+                resolve_prepare(&mut resolve, settings, need_cwd()?, env, stdout)?;
+            let Some(first) = targets.first().cloned() else {
+                return Ok(None);
+            };
+            resolve.target = Some(first);
+            (Window::Resolve(resolve), repo)
         }
-        Window::Diff(diff) => {
-            let repo = RunRepository::of_diff_tool(cwd.as_deref(), &diff.right);
-            (Window::Diff(diff), repo)
+        Window::Diff(diff) | Window::DiffDirs(diff) => diff_form(diff, cwd)?,
+        Window::DiffChanges { rev, diff, title } => {
+            let repo = changes_repository(need_cwd()?, env)?;
+            (Window::DiffChanges { rev, diff, title }, repo)
         }
         Window::DiffNative { path, rev, op, diff, title } => {
             let repo = RunRepository::of_file(&path);
@@ -195,57 +210,52 @@ fn window_form(
         }
         Window::OpenDialog => (Window::OpenDialog, RunRepository::none()),
         Window::History(history) => {
-            let result = cwd
-                .as_deref()
-                .ok_or(CliError::NoWorkingDirectory)
-                .and_then(|cwd| history_prepare(&history, cwd, env));
-            match result {
-                Ok(repo) => (Window::History(history), repo),
-                Err(error) => {
-                    return Outcome::Exit(report(
-                        stderr,
-                        &format!("{PROGRAM}: {error}\n"),
-                        ExitCode::Error,
-                    ));
-                }
-            }
+            let repo = history_prepare(&history, need_cwd()?, env)?;
+            (Window::History(history), repo)
         }
         Window::Absorb(absorb) => {
-            let result = cwd
-                .as_deref()
-                .ok_or(CliError::NoWorkingDirectory)
-                .and_then(|cwd| absorb_prepare(&absorb, cwd, env));
-            match result {
-                Ok(Some(repo)) => (Window::Absorb(absorb), repo),
-                Ok(None) => return Outcome::Exit(ExitCode::Resolved),
-                Err(error) => {
-                    return Outcome::Exit(report(
-                        stderr,
-                        &format!("{PROGRAM}: {error}\n"),
-                        ExitCode::Error,
-                    ));
-                }
-            }
+            let Some(repo) = absorb_prepare(&absorb, need_cwd()?, env)? else {
+                return Ok(None);
+            };
+            (Window::Absorb(absorb), repo)
         }
         Window::Stack(mut stack) => {
-            let result = cwd
-                .as_deref()
-                .ok_or(CliError::NoWorkingDirectory)
-                .and_then(|cwd| stack_prepare(&mut stack, &settings, cwd, env));
-            match result {
-                Ok(Some(repo)) => (Window::Stack(stack), repo),
-                Ok(None) => return Outcome::Exit(ExitCode::Resolved),
-                Err(error) => {
-                    return Outcome::Exit(report(
-                        stderr,
-                        &format!("{PROGRAM}: {error}\n"),
-                        ExitCode::Error,
-                    ));
-                }
-            }
+            let Some(repo) = stack_prepare(&mut stack, settings, need_cwd()?, env)? else {
+                return Ok(None);
+            };
+            (Window::Stack(stack), repo)
         }
-    };
-    Outcome::Window(Box::new(WindowForm { window, settings, settings_errors, cwd, repo }))
+    }))
+}
+
+/// The window `diff LEFT RIGHT` opens and its repository: the diff window on two files, in
+/// the repository of the working directory or else of the right file, or the directory window
+/// on two directories, where each file finds its own repository as it opens.
+///
+/// # Errors
+///
+/// [`CliError::DirDiff`] when one side is a directory and the other is not.
+fn diff_form(diff: Diff, cwd: Option<&Path>) -> Result<(Window, RunRepository), CliError> {
+    Ok(match dir_diff::pair(&diff.left, &diff.right)? {
+        Pair::Files => {
+            let repo = RunRepository::of_diff_tool(cwd, &diff.right);
+            (Window::Diff(diff), repo)
+        }
+        Pair::Directories => (Window::DiffDirs(diff), RunRepository::none()),
+    })
+}
+
+/// The repository `diff` with no path lists the changes of: the one holding `cwd`, opened
+/// now so a run outside any repository ends before a window opens. jj's snapshots read the
+/// user's config.
+///
+/// # Errors
+///
+/// [`CliError::Native`] when no repository holds `cwd` or it cannot be opened.
+fn changes_repository(cwd: &Path, env: &Env) -> Result<RunRepository, CliError> {
+    let mut repo = RunRepository::find([cwd]).with_jj_config(jj_config::snapshot_config(env));
+    repo.require().map_err(merge_session::native::NativeError::from)?;
+    Ok(repo)
 }
 
 /// Run a form that needs no window, with its report on `stdout`.
@@ -300,7 +310,17 @@ fn batch_form(
             Ok(report(stdout, &text, code))
         }
         Batch::DiffInspect { left, right, diff, json } => {
-            let (text, code) = inspect::diff_inspect(&left, &right, &diff, json)?;
+            let (text, code) = match dir_diff::pair(&left, &right)? {
+                Pair::Directories => inspect::dirs_inspect(&left, &right, json)?,
+                Pair::Files => inspect::diff_inspect(&left, &right, &diff, json)?,
+            };
+            Ok(report(stdout, &text, code))
+        }
+        Batch::ChangesInspect { rev, json } => {
+            let cwd = cwd.ok_or(CliError::NoWorkingDirectory)?;
+            let mut repo = changes_repository(cwd, env)?;
+            let listing = merge_session::native::changed_files(&mut repo, rev.as_deref())?;
+            let (text, code) = inspect::files_report("diff-changes", &listing.files, json)?;
             Ok(report(stdout, &text, code))
         }
         Batch::Install { vcs, config } => {
@@ -734,6 +754,42 @@ mod tests {
         assert_eq!(settings_errors, Vec::<String>::new());
         assert_eq!(cwd, std::env::current_dir().ok());
         assert_eq!(repo.found(), RunRepository::none().found());
+    }
+
+    #[test]
+    fn a_diff_of_two_directories_opens_the_directory_window() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let [left, right] = ["l", "r"].map(|side| dir.path().join(side));
+        for side in [&left, &right] {
+            std::fs::create_dir(side).expect("dir");
+        }
+        let [l, r] = [&left, &right].map(|p| p.to_str().expect("utf-8"));
+        let (outcome, out, err) = run_args(&["diff", l, r, "--readonly-left"]);
+        let Outcome::Window(form) = outcome else {
+            panic!("{outcome:?} {err}");
+        };
+        let Window::DiffDirs(diff) = &form.window else {
+            panic!("the directory window, got {:?}", form.window);
+        };
+        assert_eq!((&diff.left, &diff.right, diff.readonly_left), (&left, &right, true));
+        assert_eq!((out.as_str(), err.as_str()), ("", ""));
+    }
+
+    #[test]
+    fn a_diff_of_a_directory_and_a_file_exits_3() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("f");
+        std::fs::write(&file, "x\n").expect("written");
+        let [d, f] = [dir.path(), &file].map(|p| p.to_str().expect("utf-8"));
+        let (outcome, out, err) = run_args(&["diff", f, d]);
+        assert_eq!(outcome.exit_code(), Some(ExitCode::Error));
+        assert_eq!(out, "");
+        assert_eq!(
+            err,
+            format!(
+                "triad-merge: diff takes two files or two directories: {d} is a directory, {f} is not\n"
+            )
+        );
     }
 
     #[test]

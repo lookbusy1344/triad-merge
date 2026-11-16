@@ -5,14 +5,14 @@ mod jj {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use crate::common::tool_window::{EDGE, LIST_TOP, ROW_GAP, ROW_HEIGHT};
-    use crate::common::{act, bounds, is_selected, viewport_width};
+    use crate::common::tool_window::{LIST_INSET, LIST_TOP, ROW_HEIGHT, assert_frame};
+    use crate::common::{act, bounds, is_selected, label, viewport_width};
     use gpui_kit::base::Root;
     use gpui_kit::test::TestWindowExt;
     use gpui_kit::{AnyWindowHandle, App, Entity, TestAppContext, VisualTestContext};
     use merge_app::stack_window::{
-        self, EMPTY_ID, PREVIEW_ID, Preview, REFRESH_ID, StackStart, StackWindow, commit_id,
-        path_id,
+        self, EMPTY_ID, PREVIEW_ID, Preview, REFRESH_ID, SUMMARY_ID, StackStart, StackWindow,
+        commit_id, path_id,
     };
     use merge_app::{ExitCode, MergeWindow, WindowSettings};
     use merge_core::document::MergeOptions;
@@ -288,25 +288,43 @@ mod jj {
     }
 
     #[gpui_kit::test]
-    fn the_window_keeps_the_tool_window_edge_and_gaps(cx: &mut TestAppContext) {
+    fn the_window_has_the_tool_window_frame(cx: &mut TestAppContext) {
         let (fixture, ..) = stacked();
         let started = start(cx, &fixture);
+        assert_frame(cx, started.window, SUMMARY_ID, PREVIEW_ID, commit_id(0));
         let refresh = bounds(cx, started.window, REFRESH_ID);
-        assert_eq!((refresh.left(), refresh.top()), (EDGE, EDGE));
-        let heading = bounds(cx, started.window, commit_id(0));
-        assert_eq!(heading.top(), refresh.bottom() + ROW_GAP);
+        assert!(refresh.right() < bounds(cx, started.window, PREVIEW_ID).left());
+    }
+
+    #[gpui_kit::test]
+    fn the_summary_counts_the_commits(cx: &mut TestAppContext) {
+        let (fixture, ..) = stacked();
+        let started = start(cx, &fixture);
+        let count = listed(cx, &started.view).len();
+        assert_eq!(label(cx, started.window, SUMMARY_ID), format!("{count} commits"));
+    }
+
+    #[gpui_kit::test]
+    fn escape_closes_the_window_and_ends_the_run_with_1_while_conflicts_are_left(
+        cx: &mut TestAppContext,
+    ) {
+        let (fixture, ..) = stacked();
+        let started = start(cx, &fixture);
+        press(cx, started.window, "escape");
+        assert_eq!(started.exits.borrow().as_slice(), [ExitCode::Conflicts]);
+        assert!(!cx.update(|cx| cx.windows().contains(&started.window)), "the window closed");
     }
 
     #[gpui_kit::test]
     fn headings_and_paths_are_rows_across_the_list(cx: &mut TestAppContext) {
         let (fixture, ..) = stacked();
         let started = start(cx, &fixture);
-        let width = viewport_width(cx, started.window) - EDGE - EDGE;
+        let width = viewport_width(cx, started.window) - LIST_INSET - LIST_INSET;
         let heading = bounds(cx, started.window, commit_id(0));
         let path = bounds(cx, started.window, path_id(0, 0));
         assert_eq!((heading.size.width, heading.size.height), (width, ROW_HEIGHT));
         assert_eq!((path.size.width, path.size.height), (width, ROW_HEIGHT));
-        assert_eq!(path.left(), EDGE);
+        assert_eq!(path.left(), LIST_INSET);
         assert_eq!(path.top(), heading.bottom());
     }
 

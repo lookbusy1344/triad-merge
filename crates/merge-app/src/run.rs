@@ -9,6 +9,7 @@ use merge_config::keybind::KeyBindings;
 use merge_config::settings::Settings as Stored;
 use merge_core::diff::DiffOptions;
 use merge_core::document::{MergeDocument, MergeOptions};
+use merge_core::text::Text;
 use merge_session::WindowForm;
 use merge_session::invocation::{Absorb, History, Resolve, Stack, Window};
 use merge_session::repository::{Handoff, RunRepository};
@@ -20,6 +21,7 @@ use vcs::RepoKind;
 use crate::absorb_window::{self, AbsorbStart};
 use crate::assets::AppAssets;
 use crate::diff_window::{self, DiffFile, DiffLookup, DiffSettings, Origin};
+use crate::dir_window::{self, DirStart, Source};
 use crate::history_window::{self, HistoryStart};
 use crate::measure::{self, Measure};
 use crate::resolve_queue::{self, Queue};
@@ -79,37 +81,47 @@ pub fn run(form: WindowForm) -> ExitCode {
             launch(bindings, move |cx| open_dialog::open(base, WATCH_FILES, cx).map(drop))
         }
         Window::Diff(diff) => {
-            let file = |path: PathBuf, read_only| {
-                merge_session::read_text(&path).map(|text| DiffFile {
-                    origin: Origin::File(path),
-                    text,
-                    read_only,
-                })
+            let pair = ToolPair {
+                paths: [diff.left, diff.right],
+                absent: [None, None],
+                readonly: [diff.readonly_left, diff.readonly_right],
+                title: diff.title,
             };
-            let mut repo = repo;
-            let cwd = working_dir(dir);
-            let working_copy =
-                (!diff.readonly_right).then(|| jj_working_copy(&mut repo, &diff.right, &cwd));
-            // The right side saves to the working copy; the left copy's edits would be lost.
-            let (right, readonly_left) = match working_copy.flatten() {
-                Some(file) => (file, true),
-                None => (diff.right.clone(), diff.readonly_left),
-            };
-            let kind = repo.kind();
-            let origins = DiffLookup::Tool {
-                paths: [diff.left.clone(), diff.right],
-                title: diff.title.clone(),
-                cwd,
-                repo: Handoff::new(repo),
-            };
-            let files = file(diff.left, readonly_left)
-                .and_then(|left| Ok((left, file(right, diff.readonly_right)?)));
-            let (left, right) = match files {
-                Ok(files) => files,
-                Err(error) => return report(&error.to_string()),
-            };
-            let settings = diff_settings(diff.title, diff.diff, base, origins, kind);
+            let ToolDiff { left, right, origins, kind, title } =
+                match tool_diff(pair, repo, working_dir(dir)) {
+                    Ok(loaded) => loaded,
+                    Err(error) => return report(&error.to_string()),
+                };
+            let settings = diff_settings(title, diff.diff, base, origins, kind);
             launch_diff(left, right, settings, errors, bindings)
+        }
+        Window::DiffDirs(diff) => {
+            let source = Source::Dirs {
+                left: diff.left,
+                right: diff.right,
+                readonly: [diff.readonly_left, diff.readonly_right],
+            };
+            let start = DirStart {
+                cwd: working_dir(dir),
+                source,
+                title: diff.title,
+                diff: diff.diff,
+                settings: base,
+                watch: WATCH_FILES,
+            };
+            launch_dirs(start, bindings)
+        }
+        Window::DiffChanges { rev, diff, title } => {
+            let source = Source::Changes { rev, jj_config: repo.jj_config().cloned() };
+            let start = DirStart {
+                cwd: working_dir(dir),
+                source,
+                title,
+                diff,
+                settings: base,
+                watch: WATCH_FILES,
+            };
+            launch_dirs(start, bindings)
         }
         Window::DiffNative { path, rev, op, diff, title } => {
             let window = NativeDiff { path, rev, op, diff, title };
@@ -119,6 +131,14 @@ pub fn run(form: WindowForm) -> ExitCode {
         Window::Stack(stack) => run_stack(stack, &repo, base, bindings),
         Window::Absorb(absorb) => run_absorb(absorb, &repo, working_dir(dir), base, bindings),
     }
+}
+
+/// Open the directory window on `start`.
+fn launch_dirs(start: DirStart, bindings: KeyBindings) -> ExitCode {
+    launch(bindings, move |cx| {
+        dir_window::start(start, |code, _| exit(code), cx).map(drop)?;
+        Ok(())
+    })
 }
 
 /// The history window on `history`'s file, whose diff windows watch their files.
@@ -198,6 +218,75 @@ fn jj_working_copy(repo: &mut RunRepository, right: &Path, cwd: &Path) -> Option
         tracing::warn!(%error, "cannot tell whether the right side is the working copy");
         None
     })
+}
+
+/// The files `diff LEFT RIGHT` compares, as `git difftool` and `jj diff --tool` pass them.
+pub(crate) struct ToolPair {
+    pub paths: [PathBuf; 2],
+    /// A side whose file is absent opens empty and read-only, titled so.
+    pub absent: [Option<String>; 2],
+    pub readonly: [bool; 2],
+    /// `--title`: the window's title, and the file's path for the line origins.
+    pub title: Option<String>,
+}
+
+/// A tool diff's sides, loaded, with its line origins' lookup, its repository's kind and
+/// its window's title.
+pub(crate) struct ToolDiff {
+    pub left: DiffFile,
+    pub right: DiffFile,
+    pub origins: DiffLookup,
+    pub kind: Option<RepoKind>,
+    pub title: Option<String>,
+}
+
+/// Load `pair` from the working directory `cwd`, in the run's repository `repo`. A right
+/// side that copies jj's working copy opens the working-copy file, and the left copy turns
+/// read-only, since its edits would be lost (spec §7.1).
+///
+/// # Errors
+///
+/// When a side cannot be read or decoded.
+pub(crate) fn tool_diff(
+    pair: ToolPair,
+    mut repo: RunRepository,
+    cwd: PathBuf,
+) -> Result<ToolDiff, merge_session::SessionError> {
+    let ToolPair { paths: [left, right], absent: [left_absent, right_absent], readonly, title } =
+        pair;
+    let [readonly_left, readonly_right] = readonly;
+    let working_copy = (!readonly_right && right_absent.is_none())
+        .then(|| jj_working_copy(&mut repo, &right, &cwd))
+        .flatten();
+    let (right_file, readonly_left) = match working_copy {
+        Some(file) => (file, true),
+        None => (right.clone(), readonly_left),
+    };
+    let left_side = tool_side(left.clone(), left_absent, readonly_left)?;
+    let right_side = tool_side(right_file, right_absent, readonly_right)?;
+    let kind = repo.kind();
+    let origins = DiffLookup::Tool {
+        paths: [left, right],
+        title: title.clone(),
+        cwd,
+        repo: Handoff::new(repo),
+    };
+    Ok(ToolDiff { left: left_side, right: right_side, origins, kind, title })
+}
+
+/// The side at `path`, or an empty read-only side titled `absent`.
+fn tool_side(
+    path: PathBuf,
+    absent: Option<String>,
+    read_only: bool,
+) -> Result<DiffFile, merge_session::SessionError> {
+    let Some(title) = absent else {
+        let text = merge_session::read_text(&path)?;
+        return Ok(DiffFile { origin: Origin::File(path), text, read_only });
+    };
+    Text::decode(Vec::new())
+        .map(|text| DiffFile::revision(text, title))
+        .map_err(|source| merge_session::SessionError::Decode { path, source })
 }
 
 /// The parts of a `diff PATH` window form.

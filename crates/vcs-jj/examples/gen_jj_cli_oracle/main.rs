@@ -1,5 +1,5 @@
-//! Writes `fixtures/oracle/jj-cli-aliases.json`, `jj-cli-absorb.json` and
-//! `jj-cli-resolve.json` from jj's own CLI (`DESIGN.md` §I5). Dev-time only; `script/gen-jj-cli-oracle` runs
+//! Writes `fixtures/oracle/jj-cli-aliases.json`, `jj-cli-absorb.json`, `jj-cli-resolve.json`
+//! and `jj-cli-renames.json` from jj's own CLI (`DESIGN.md` §I5). Dev-time only; `script/gen-jj-cli-oracle` runs
 //! it. The `jj` on `PATH` must be the release whose jj-lib `Cargo.lock` pins.
 //!
 //! The aliases are jj's defaults for `revset-aliases`. Each absorb case is a seeded random
@@ -7,7 +7,7 @@
 //! each commit's tree after `jj absorb`, and the commits it left conflicted. Three kinds of
 //! case come from three seeded streams: linear stacks with jj's default `--into`, histories
 //! that merge two branches, in a commit or in the working copy, and linear stacks with a
-//! narrower `--into`. The resolve cases are in `resolve.rs`.
+//! narrower `--into`. The resolve cases are in `resolve.rs`, the rename cases in `renames.rs`.
 #![expect(
     clippy::expect_used,
     clippy::panic,
@@ -24,6 +24,7 @@ use rand_chacha::ChaCha20Rng;
 use serde::Serialize;
 use vcs_jj::testing::locked_jj_lib_version;
 
+mod renames;
 mod resolve;
 
 const SEED: u64 = 500_135_715_172;
@@ -505,5 +506,8 @@ fn main() {
     fs::write(oracle.join("jj-cli-absorb.json"), body).expect("the absorb corpus is written");
     let resolved = resolve::corpus(scratch.path(), &config, &version);
     fs::write(oracle.join("jj-cli-resolve.json"), resolved).expect("the resolve corpus is written");
+    let renamed = renames::corpus(scratch.path(), &config, &version);
+    println!("rename corpus: {:?}", renames::summary(&renamed));
+    fs::write(oracle.join("jj-cli-renames.json"), renamed).expect("the rename corpus is written");
     println!("{} absorb cases", kept.len());
 }

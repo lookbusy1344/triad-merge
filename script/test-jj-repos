@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # test-jj-repos — build each script/gen-jj-repo scenario and check triad's jj-enabled commands
 # in it through the built binary, end to end: `stack --list`, `resolve -r` with a dry run and
-# a write, a save of a three-sided conflict, `history --list`, and `absorb --list` and
-# `--apply`. Expected output comes from each scenario's design (docs/test-repos.md);
+# a write, a save of a three-sided conflict, `history --list`, `absorb --list` and
+# `--apply`, and the changed files of `diff --inspect`, natively and from `jj diff --tool`. Expected output comes from each scenario's design (docs/test-repos.md);
 # jj's CLI reads back what triad wrote. Change and commit IDs come from jj, by bookmark.
 #
 # Needs the pinned jj on PATH and a built binary: `cargo build --workspace` first.
@@ -27,7 +27,13 @@ fi
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/triad-test-jj-repos.XXXXXX")
 config="$work/jj-config.toml"
-trap 'rm -rf "$work"' EXIT INT TERM HUP
+trap 'rm -rf "$work"' EXIT
+# Exiting from a signal trap runs the EXIT trap; dying from the signal does not.
+readonly SIGNAL_EXIT_BASE=128
+readonly SIGHUP_NUMBER=1 SIGINT_NUMBER=2 SIGTERM_NUMBER=15
+trap 'exit $((SIGNAL_EXIT_BASE + SIGHUP_NUMBER))' HUP
+trap 'exit $((SIGNAL_EXIT_BASE + SIGINT_NUMBER))' INT
+trap 'exit $((SIGNAL_EXIT_BASE + SIGTERM_NUMBER))' TERM
 cat >"$config" <<'EOF'
 [user]
 name = "triad Fixture"
@@ -38,6 +44,10 @@ color = "never"
 EOF
 # Both jj and triad read this config alone, so the user's jj config cannot change a result.
 export JJ_CONFIG="$config"
+# triad reads no settings file and logs into the work directory, so the user's settings
+# cannot change a result and the user's cache stays untouched.
+export TRIAD_CONFIG="$work/no-config.triad"
+export TRIAD_LOG_DIR="$work/logs"
 
 failures=0
 repo=
@@ -218,8 +228,39 @@ absorbed 3 hunks into 2 commits
   same "conflicted commits" "" "$(jjr log --no-graph -r 'conflicts()' -T 'change_id.short() ++ "\n"')"
 }
 
+test_dirs() {
+  build dirs
+  # The demo's design (fixtures/demo/README.md), with renames paired as jj pairs them.
+  local want="added binary assets/icon.png
+modified binary assets/logo.png
+added text docs/design.md
+deleted text docs/notes.md
+added text invoice/cli.py
+renamed text invoice/util.py => invoice/helpers.py
+renamed text invoice/parser.py => invoice/io/parser.py
+modified text invoice/totals.py
+deleted text legacy.txt
+added undecodable names-latin1.txt
+files: 10"
+  triad diff --inspect
+  same "diff --inspect exit" "$EXIT_CONFLICTS" "$code"
+  same "diff --inspect" "$want" "$out"
+  triad diff --inspect --rev base
+  same "diff --inspect --rev base" "$want" "$out"
+  same "renames jj names" "R invoice/{util.py => helpers.py},R invoice/{ => io}/parser.py" \
+    "$(jjr diff --summary | grep '^R' | paste -sd, -)"
+  # jj's dir mode: two directories of the changed files, as `install --jj` sets it up.
+  local got
+  got=$(jjr diff --tool triad \
+    --config "merge-tools.triad.program=\"$TRIAD\"" \
+    --config 'merge-tools.triad.diff-args=["diff", "--inspect", "$left", "$right"]' \
+    --config 'merge-tools.triad.diff-invocation-mode="dir"' \
+    --config 'merge-tools.triad.diff-expected-exit-codes=[0, 1]' 2>&1) || fail "jj diff --tool failed"
+  same "jj diff --tool" "$want" "$got"
+}
+
 scenarios=("$@")
-[[ ${#scenarios[@]} -gt 0 ]] || scenarios=(stack sides history absorb)
+[[ ${#scenarios[@]} -gt 0 ]] || scenarios=(stack sides history absorb dirs)
 for current in "${scenarios[@]}"; do
   declare -F "test_$current" >/dev/null || { echo "error: unknown scenario $current" >&2; exit 2; }
   before=$failures

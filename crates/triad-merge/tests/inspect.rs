@@ -384,3 +384,146 @@ fn inspect_keeps_syntax_boundaries_as_the_settings_file_says() {
          conflicts: 1\n"
     );
 }
+
+#[test]
+fn diff_inspect_of_two_directories_lists_the_changed_files() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let (left, right) = (root.path().join("l"), root.path().join("r"));
+    for dir in [&left, &right] {
+        std::fs::create_dir(dir).expect("dir");
+    }
+    std::fs::write(left.join("a.txt"), "1\n").expect("written");
+    std::fs::write(right.join("a.txt"), "1\n").expect("written");
+    let same = triad(&["diff".as_ref(), "--inspect".as_ref(), left.as_os_str(), right.as_os_str()]);
+    assert_eq!(String::from_utf8_lossy(&same.stdout), "files: 0\n");
+    assert_eq!(same.status.code(), Some(0));
+    std::fs::write(right.join("a.txt"), "2\n").expect("written");
+    let differ =
+        triad(&["diff".as_ref(), "--inspect".as_ref(), left.as_os_str(), right.as_os_str()]);
+    assert_eq!(String::from_utf8_lossy(&differ.stdout), "modified text a.txt\nfiles: 1\n");
+    assert_eq!(differ.status.code(), Some(1));
+}
+
+#[test]
+fn diff_inspect_of_a_directory_and_a_file_exits_3() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let file = root.path().join("f");
+    std::fs::write(&file, "x\n").expect("written");
+    let mixed =
+        triad(&["diff".as_ref(), "--inspect".as_ref(), root.path().as_os_str(), file.as_os_str()]);
+    assert_eq!(mixed.status.code(), Some(ERROR_EXIT));
+    assert_eq!(
+        String::from_utf8_lossy(&mixed.stderr),
+        format!(
+            "triad-merge: diff takes two files or two directories: {} is a directory, {} is not\n",
+            root.path().display(),
+            file.display()
+        )
+    );
+    assert_eq!(mixed.stdout, b"");
+}
+
+#[test]
+fn diff_inspect_without_a_path_lists_the_working_copy_s_changes() {
+    let fixture = vcs_git::testing::Fixture::new();
+    fixture.commit("one", &[("a.txt", b"1\n"), ("sub/b.txt", b"b\n")]);
+    fixture.stage(&[("a.txt", b"1\n"), ("sub/b.txt", b"b\n")]);
+    fixture.write("a.txt", b"1\n");
+    fixture.write("sub/b.txt", b"b\n");
+    let inspect = |args: &[&str]| {
+        command()
+            .arg("diff")
+            .arg("--inspect")
+            .args(args)
+            .current_dir(fixture.root().join("sub"))
+            .output()
+            .expect("binary runs")
+    };
+    let clean = inspect(&[]);
+    assert_eq!(String::from_utf8_lossy(&clean.stderr), "");
+    assert_eq!(String::from_utf8_lossy(&clean.stdout), "files: 0\n");
+    assert_eq!(clean.status.code(), Some(0));
+    fixture.write("sub/b.txt", b"changed\n");
+    let changed = inspect(&[]);
+    // Paths are relative to the repository's root, wherever the run starts.
+    assert_eq!(String::from_utf8_lossy(&changed.stdout), "modified text sub/b.txt\nfiles: 1\n");
+    assert_eq!(changed.status.code(), Some(1));
+    let json = inspect(&["--json"]);
+    let value: serde_json::Value = serde_json::from_slice(&json.stdout).expect("stdout is JSON");
+    assert_eq!(value["command"], "diff-changes");
+    assert_eq!(value["changes"], 1);
+    assert_eq!(value["files"][0]["path"], "sub/b.txt");
+    let unknown = inspect(&["--rev", "nope"]);
+    assert_eq!(String::from_utf8_lossy(&unknown.stderr), "triad-merge: unknown revision nope\n");
+    assert_eq!(unknown.status.code(), Some(ERROR_EXIT));
+}
+
+#[test]
+fn diff_inspect_without_a_path_outside_a_repository_exits_3() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = dunce::canonicalize(dir.path()).expect("canonical");
+    let result =
+        command().args(["diff", "--inspect"]).current_dir(&dir).output().expect("binary runs");
+    assert_eq!(result.status.code(), Some(ERROR_EXIT));
+    assert_eq!(
+        String::from_utf8_lossy(&result.stderr),
+        format!("triad-merge: {} is not inside a git or jj repository\n", dir.display())
+    );
+    assert_eq!(result.stdout, b"");
+}
+
+#[test]
+fn diff_inspect_prints_a_rename_with_both_paths() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let (left, right) = (root.path().join("l"), root.path().join("r"));
+    for dir in [&left, &right] {
+        std::fs::create_dir(dir).expect("dir");
+    }
+    std::fs::write(left.join("old.txt"), "1\n2\n3\n4\n").expect("written");
+    std::fs::create_dir(right.join("sub")).expect("dir");
+    std::fs::write(right.join("sub").join("new.txt"), "1\n2\n3\n5\n").expect("written");
+    let text = triad(&["diff".as_ref(), "--inspect".as_ref(), left.as_os_str(), right.as_os_str()]);
+    assert_eq!(
+        String::from_utf8_lossy(&text.stdout),
+        "renamed text old.txt => sub/new.txt\nfiles: 1\n"
+    );
+    assert_eq!(text.status.code(), Some(1));
+    let json = triad(&[
+        "diff".as_ref(),
+        "--inspect".as_ref(),
+        "--json".as_ref(),
+        left.as_os_str(),
+        right.as_os_str(),
+    ]);
+    let value: serde_json::Value = serde_json::from_slice(&json.stdout).expect("stdout is JSON");
+    assert_eq!(
+        value["files"],
+        serde_json::json!([
+            { "path": "sub/new.txt", "change": "renamed", "from": "old.txt", "content": "text" }
+        ])
+    );
+}
+
+#[test]
+fn the_directory_demo_lists_what_its_readme_says() {
+    let demo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/demo/dirs");
+    let (left, right) = (demo.join("left"), demo.join("right"));
+    let result =
+        triad(&["diff".as_ref(), "--inspect".as_ref(), left.as_os_str(), right.as_os_str()]);
+    assert_eq!(String::from_utf8_lossy(&result.stderr), "");
+    assert_eq!(
+        String::from_utf8_lossy(&result.stdout),
+        "added binary assets/icon.png\n\
+         modified binary assets/logo.png\n\
+         added text docs/design.md\n\
+         deleted text docs/notes.md\n\
+         added text invoice/cli.py\n\
+         renamed text invoice/util.py => invoice/helpers.py\n\
+         renamed text invoice/parser.py => invoice/io/parser.py\n\
+         modified text invoice/totals.py\n\
+         deleted text legacy.txt\n\
+         added undecodable names-latin1.txt\n\
+         files: 10\n"
+    );
+    assert_eq!(result.status.code(), Some(1));
+}

@@ -1,0 +1,6588 @@
+{
+  "jj": "0.47.1",
+  "seed": 500135715175,
+  "cases": [
+    {
+      "id": "rename-0",
+      "left": {
+        "a/w": "s3------\n",
+        "a/y.txt": "s3------\n",
+        "a/z.rs": "s10----\ns2---\ns4-\nu5-----\nu6-\nu7\nu8--\n",
+        "b/c/z.rs": "s8----\nu1-\nu2------\nu3-\ns5-----\ns0--\ns11-\nu4--\n",
+        "z.rs": "s5-----\ns7------\ns4------\n"
+      },
+      "right": {
+        "a/z.rs": "s10----\ns2---\ns4-\nu5-----\nu6-\nu7\nu8--\n",
+        "b/c/w": "s3------\n",
+        "b/c/x.txt": "u9-\ns4------\n",
+        "b/c/z.rs": "s8----\nu1-\nu2------\nu3-\ns5-----\ns0--\ns11-\nu4--\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "renamed",
+          "a/w",
+          "b/c/w"
+        ],
+        [
+          "added",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "removed",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-1",
+      "left": {
+        "a/w": "u12----\nu13---\ns7---\ns3---\n",
+        "b/c/w": "s4-----\ns4------\nu10---\ns10------\ns3------\ns2\nu11\ns0-\n",
+        "w": "u14----\ns10--\nu15-\nu16-----\ns8--\n"
+      },
+      "right": {
+        "a/w": "u12----\nu13---\ns7---\ns3---\n",
+        "b/c/x.txt": "s4-----\ns4------\nu10---\ns10------\ns3------\ns2\nu11\ns0-\n",
+        "b/c/z.rs": "u14----\ns10--\nu15-\nu16-----\ns8--\n",
+        "x.txt": "u17\nu18--\nu19\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "b/c/w",
+          "b/c/x.txt"
+        ],
+        [
+          "renamed",
+          "w",
+          "b/c/z.rs"
+        ],
+        [
+          "added",
+          "x.txt",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-2",
+      "left": {
+        "a/x.txt": "s2---\n",
+        "a/y.txt": "u30--\n",
+        "b/c/x.txt": "u29--\ns4------\n",
+        "b/c/y.txt": "u20-----\ns9------\nu21----\nu22----\ns9-----\nu23----\n",
+        "z.rs": "u24-\nu25--\nu26----\ns6-----\nu27-\ns4\nu28-----\ns9\n"
+      },
+      "right": {
+        "a/x.txt": "s2---\nu31\n",
+        "b/c/x.txt": "u29--\ns4------\n",
+        "b/c/z.rs": "u20-----\nu21----\nu22----\ns9-----\nu23----\n"
+      },
+      "changes": [
+        [
+          "modified",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "removed",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "renamed",
+          "b/c/y.txt",
+          "b/c/z.rs"
+        ],
+        [
+          "removed",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-3",
+      "left": {
+        "a/w": "s2---\ns1---\nu32--\ns10-----\ns5-----\nu33--\ns2-----\n",
+        "b/c/y.txt": "s2\ns6----\nu37----\ns4-\nu38------\n",
+        "w": "u35\nu36------\ns3---\ns6-----\n",
+        "z.rs": "s5---\ns5-\nu34----\ns0\n"
+      },
+      "right": {
+        "a/w": "s2---\ns1---\nu32--\ns10-----\ns5-----\nu33--\ns2-----\n",
+        "w": "s9---\nu36------\ns3---\ns6-----\ns10-\nu39-\n",
+        "z.rs": "s5---\ns5-\ns6-----\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "modified",
+          "w",
+          "w"
+        ],
+        [
+          "modified",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-4",
+      "left": {
+        "a/w": "s0-\nu42-----\nu43---\nu44\ns10-\ns3---\n",
+        "a/x.txt": "\u0000u45-----\nu46-----\nu47----\ns4-----\n",
+        "a/z.rs": "\u0000u40-\ns10\nu41-\ns1-----\ns9---\n"
+      },
+      "right": {
+        "a/y.txt": "u48\n\u0000u40-\ns10\nu41-\ns0-\ns1-----\ns0\ns9---\n",
+        "b/c/z.rs": "\u0000u45-----\nu46-----\nu47----\ns4-----\n",
+        "y.txt": "s10----\nu49-----\ns11-\nu50\ns9------\n",
+        "z.rs": "s8----\ns11---\nu51-----\nu52-----\ns11--\nu53---\nu54---\nu55--\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "added",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "removed",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "renamed",
+          "a/x.txt",
+          "b/c/z.rs"
+        ],
+        [
+          "added",
+          "y.txt",
+          "y.txt"
+        ],
+        [
+          "added",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-5",
+      "left": {
+        "a/w": "s5---\nu62-----\n",
+        "a/y.txt": "u56------\nu57\nu58-\nu59\n",
+        "b/c/x.txt": "u60\nu61----\ns6---\n",
+        "w": "",
+        "x.txt": "",
+        "y.txt": ""
+      },
+      "right": {
+        "a/w": "s5---\nu63--\nu64------\n",
+        "a/x.txt": "",
+        "a/z.rs": "u60\nu61----\ns6---\n",
+        "b/c/w": "u65-----\n",
+        "b/c/x.txt": "u60\nu61----\ns6---\n",
+        "b/c/y.txt": "",
+        "z.rs": "u56------\nu57\nu58-\ns0--\n"
+      },
+      "changes": [
+        [
+          "modified",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "added",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "added",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "added",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "added",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "removed",
+          "w",
+          "w"
+        ],
+        [
+          "removed",
+          "x.txt",
+          "x.txt"
+        ],
+        [
+          "removed",
+          "y.txt",
+          "y.txt"
+        ],
+        [
+          "renamed",
+          "a/y.txt",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-6",
+      "left": {
+        "a/w": "u66-----\nu67--\nu68--\nu69---\nu70-\ns2--\n",
+        "a/z.rs": "s10------\nu76---\nu77--\ns7-\n",
+        "b/c/y.txt": "u73---\ns7--\ns10-\ns9---\ns4----\nu74----\n",
+        "b/c/z.rs": "u75---\n",
+        "x.txt": "s7-\nu71----\nu72----\ns9----\ns7-\n",
+        "z.rs": "s7-\nu71----\nu72----\ns9----\ns7-\n"
+      },
+      "right": {
+        "a/x.txt": "u73---\ns7--\ns10-\ns4----\nu74----\n",
+        "a/y.txt": "s9--\nu71----\ns5---\nu72----\ns9----\nu80-----\ns7-\n",
+        "b/c/w": "u75---\n",
+        "b/c/x.txt": "u66-----\ns10---\nu69---\nu70-\nu78----\ns2--\n",
+        "w": "s7-\nu71----\nu72----\ns9----\ns7-\n",
+        "y.txt": "s10------\nu76---\nu77--\ns7-\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "b/c/y.txt",
+          "a/x.txt"
+        ],
+        [
+          "renamed",
+          "z.rs",
+          "a/y.txt"
+        ],
+        [
+          "renamed",
+          "b/c/z.rs",
+          "b/c/w"
+        ],
+        [
+          "renamed",
+          "a/w",
+          "b/c/x.txt"
+        ],
+        [
+          "renamed",
+          "x.txt",
+          "w"
+        ],
+        [
+          "renamed",
+          "a/z.rs",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-7",
+      "left": {
+        "a/x.txt": "\u0000u81----\n",
+        "a/z.rs": "u82--\ns1--\n"
+      },
+      "right": {
+        "a/z.rs": "u82--\ns1--\n",
+        "x.txt": "u83-----\ns4-\ns0-\ns6------\nu84---\n",
+        "y.txt": "u85------\nu86----\ns7------\nu87------\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "added",
+          "x.txt",
+          "x.txt"
+        ],
+        [
+          "added",
+          "y.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-8",
+      "left": {
+        "a/w": "u93------\ns2\nu94--\nu95-----\nu96-----\ns2---\nu97------\ns5------\n",
+        "b/c/w": "s9---\nu88----\nu89------\ns9\n",
+        "z.rs": "u90--\nu91-\ns1----\ns4-----\ns2----\ns3-\ns2------\nu92----\n"
+      },
+      "right": {
+        "a/w": "u93------\ns2\nu94--\nu95-----\nu96-----\ns2---\nu97------\ns5------\n",
+        "w": "u90--\nu91-\ns1----\ns2----\ns3-\ns11----\ns2------\ns4--\n",
+        "x.txt": "s9---\nu88----\nu89------\ns9\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "z.rs",
+          "w"
+        ],
+        [
+          "renamed",
+          "b/c/w",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-9",
+      "left": {
+        "a/y.txt": "u107\nu108\ns10\n",
+        "b/c/w": "s0---\nu98\ns3-----\nu99-----\nu100-----\nu101-\ns2------\nu102----\n",
+        "b/c/x.txt": "u103---\nu104------\nu105\n",
+        "b/c/y.txt": "s10----\nu106-\n",
+        "b/c/z.rs": "s1-----\ns4\n",
+        "z.rs": "s1--\ns11\ns0----\n"
+      },
+      "right": {
+        "a/w": "s11---\nu104------\nu105\n",
+        "a/x.txt": "s10----\nu106-\n",
+        "a/y.txt": "u107\nu108\ns10\n",
+        "b/c/w": "s0---\ns3--\ns3-----\nu99-----\nu100-----\nu101-\ns2------\nu102----\n",
+        "y.txt": "u109\ns1------\ns10-\ns4\n",
+        "z.rs": "s1--\ns11\ns0----\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "b/c/x.txt",
+          "a/w"
+        ],
+        [
+          "renamed",
+          "b/c/y.txt",
+          "a/x.txt"
+        ],
+        [
+          "modified",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "removed",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "added",
+          "y.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-10",
+      "left": {
+        "b/c/x.txt": "u114--\nu115----\ns2-\ns3-----\nu116----\n",
+        "b/c/y.txt": "s0---\nu110\ns7\nu111---\ns2------\ns8---\nu112\nu113-\n",
+        "w": "s2----\ns2---\ns10---\ns3\n"
+      },
+      "right": {
+        "a/w": "s0---\nu110\ns7\nu111---\ns2------\nu112\nu113-\n",
+        "a/x.txt": "s0---\nu110\nu111---\ns2------\ns8---\nu112\n",
+        "b/c/x.txt": "u115----\ns2-\ns3-----\ns0------\n",
+        "b/c/z.rs": "u114--\nu115----\ns2-\ns3-----\nu119--\nu116----\n",
+        "w": "u117---\ns2---\ns10---\ns3\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "b/c/y.txt",
+          "a/w"
+        ],
+        [
+          "added",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "modified",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "added",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "modified",
+          "w",
+          "w"
+        ]
+      ]
+    },
+    {
+      "id": "rename-11",
+      "left": {
+        "a/x.txt": "u120--\nu121------\nu122---\nu123\ns4--\nu124----\ns4-\ns4------\n",
+        "y.txt": "u120--\nu121------\nu122---\nu123\ns4--\nu124----\ns4-\ns4------\n"
+      },
+      "right": {
+        "w": "u120--\nu121------\nu122---\nu123\ns4--\nu124----\ns0-----\ns4------\n",
+        "y.txt": "u120--\nu121------\nu122---\nu123\ns4--\nu124----\ns4-\ns4------\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/x.txt",
+          "w"
+        ]
+      ]
+    },
+    {
+      "id": "rename-12",
+      "left": {
+        "b/c/x.txt": "u132\nu133-\n",
+        "b/c/z.rs": "\u0000u131-\ns0----\n",
+        "w": "s9---\ns5-----\ns11-----\ns4--\ns10----\ns4------\ns1---\n",
+        "y.txt": "u130----\n",
+        "z.rs": "u125-----\nu126\nu127------\ns3-\nu128-----\ns6----\nu129-\n"
+      },
+      "right": {
+        "a/x.txt": "",
+        "b/c/w": "\u0000u131-\ns0----\n",
+        "b/c/x.txt": "u132\nu133-\n",
+        "b/c/y.txt": "s9---\nu134----\ns5-----\ns11-----\ns7-----\ns10----\ns2--\ns4------\ns1---\n",
+        "b/c/z.rs": "\u0000u131-\ns0----\n",
+        "z.rs": "u125-----\nu126\nu127------\ns3-\nu128-----\ns6----\nu129-\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "added",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "renamed",
+          "w",
+          "b/c/y.txt"
+        ],
+        [
+          "removed",
+          "y.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-13",
+      "left": {
+        "a/x.txt": "",
+        "a/y.txt": "u136-\ns8-----\n",
+        "b/c/y.txt": "u135---\n"
+      },
+      "right": {
+        "a/y.txt": "s8-----\nu138------\n",
+        "b/c/w": "u137--\n",
+        "y.txt": "u139-----\ns7------\nu140\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "modified",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "added",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "removed",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "added",
+          "y.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-14",
+      "left": {
+        "a/x.txt": "u141------\n",
+        "a/y.txt": "u142\ns7\nu143------\ns0-\nu144------\nu145-\nu146-\ns11------\n",
+        "b/c/w": "u141------\n"
+      },
+      "right": {
+        "a/x.txt": "u141------\n",
+        "a/y.txt": "u142\ns7\nu143------\ns0-\nu144------\nu145-\nu146-\ns11------\n",
+        "b/c/y.txt": "u141------\n",
+        "x.txt": "s1----\ns3--\nu147-\nu148\ns8----\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "b/c/w",
+          "b/c/y.txt"
+        ],
+        [
+          "added",
+          "x.txt",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-15",
+      "left": {
+        "a/w": "",
+        "a/x.txt": "",
+        "a/z.rs": "s3\ns11--\nu149---\nu150\ns1--\ns3------\nu151------\n",
+        "b/c/w": "s8\nu152-\nu153--\nu154-----\nu155-\nu156-----\ns11---\n",
+        "b/c/y.txt": "",
+        "x.txt": "s7-\n"
+      },
+      "right": {
+        "a/x.txt": "",
+        "a/y.txt": "s7-\nu158----\ns5----\n",
+        "a/z.rs": "s3\ns11--\nu149---\nu150\ns1--\ns3------\nu151------\n",
+        "b/c/w": "s8\nu152-\nu153--\nu154-----\nu155-\nu156-----\ns11---\n",
+        "b/c/x.txt": "s10-----\ns5-----\ns11---\nu161---\ns9\ns0---\n",
+        "b/c/z.rs": "u157\n",
+        "y.txt": "",
+        "z.rs": "s2--\ns7-----\ns9-----\ns11----\nu159-\nu160-----\ns6\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "added",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "added",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "removed",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "added",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "removed",
+          "x.txt",
+          "x.txt"
+        ],
+        [
+          "added",
+          "y.txt",
+          "y.txt"
+        ],
+        [
+          "added",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-16",
+      "left": {
+        "a/w": "u162---\ns6---\nu163--\nu164---\n",
+        "a/y.txt": "u166-\nu167------\nu168-\n",
+        "a/z.rs": "s7-----\ns11---\ns9---\nu165--\n",
+        "b/c/x.txt": "u169---\nu170----\nu171-----\ns3-\n"
+      },
+      "right": {
+        "a/w": "u162---\ns6---\nu163--\nu164---\n",
+        "a/x.txt": "u166-\nu167------\nu168-\n",
+        "b/c/y.txt": "s11---\ns1--\nu165--\ns11--\n",
+        "w": "u162---\ns6---\nu163--\nu164---\n",
+        "y.txt": "u169---\nu171-----\ns3-\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/y.txt",
+          "a/x.txt"
+        ],
+        [
+          "renamed",
+          "a/z.rs",
+          "b/c/y.txt"
+        ],
+        [
+          "added",
+          "w",
+          "w"
+        ],
+        [
+          "renamed",
+          "b/c/x.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-17",
+      "left": {
+        "a/z.rs": "u172-----\ns1\nu173---\ns5---\n",
+        "b/c/y.txt": "s1------\ns8--\nu174--\n",
+        "b/c/z.rs": "u172-----\ns1\nu173---\ns5---\n"
+      },
+      "right": {
+        "a/w": "u177---\ns8-\nu178-----\nu179---\nu180----\nu181-\nu182-\nu183\n",
+        "a/x.txt": "u172-----\ns1\nu173---\ns5---\n",
+        "a/z.rs": "u172-----\ns1\nu175-----\nu173---\n",
+        "b/c/y.txt": "u176---\ns8--\nu174--\n",
+        "b/c/z.rs": "u172-----\ns1\nu173---\ns5---\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "copied",
+          "a/z.rs",
+          "a/x.txt"
+        ],
+        [
+          "modified",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "modified",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-18",
+      "left": {
+        "a/y.txt": "s3\ns6\ns1-----\n",
+        "b/c/w": "u184------\nu185------\nu186----\ns5-----\ns0\nu187------\ns4---\n"
+      },
+      "right": {
+        "y.txt": "u184------\nu185------\ns10----\ns5-----\ns0\nu187------\ns4---\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "renamed",
+          "b/c/w",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-19",
+      "left": {
+        "a/x.txt": "u194\ns11\nu195------\ns7--\nu196----\ns1---\nu197----\n",
+        "a/y.txt": "s2-----\n",
+        "a/z.rs": "",
+        "b/c/x.txt": "u188-----\nu189---\ns10---\nu190---\nu191--\ns4\n",
+        "z.rs": "\u0000s2\ns6----\nu192---\ns8--\ns5-\ns4-----\ns5-\nu193-\n"
+      },
+      "right": {
+        "b/c/x.txt": "u189---\ns10---\nu190---\nu191--\nu198-\ns4\n",
+        "b/c/z.rs": "s11\nu195------\ns4----\nu196----\ns1---\nu197----\n",
+        "w": "s2-----\n",
+        "y.txt": "s3------\nu201\n",
+        "z.rs": "\u0000s2\ns6----\nu199-----\nu192---\ns8--\ns5-\nu200--\nu193-\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "modified",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "renamed",
+          "a/x.txt",
+          "b/c/z.rs"
+        ],
+        [
+          "renamed",
+          "a/y.txt",
+          "w"
+        ],
+        [
+          "added",
+          "y.txt",
+          "y.txt"
+        ],
+        [
+          "modified",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-20",
+      "left": {
+        "a/w": "u207----\nu208\nu209-----\n",
+        "a/z.rs": "u205\ns4------\nu206-\n",
+        "b/c/z.rs": "u202-\nu203-\nu204--\ns2\n",
+        "z.rs": "u207----\nu208\nu209-----\n"
+      },
+      "right": {
+        "a/x.txt": "u205\ns4------\nu206-\n",
+        "w": "u202-\ns10----\ns2\n",
+        "y.txt": "u211---\ns5--\nu212\n",
+        "z.rs": "u207----\nu208\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "renamed",
+          "a/z.rs",
+          "a/x.txt"
+        ],
+        [
+          "removed",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "added",
+          "w",
+          "w"
+        ],
+        [
+          "added",
+          "y.txt",
+          "y.txt"
+        ],
+        [
+          "modified",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-21",
+      "left": {
+        "a/y.txt": "u213-----\ns6-----\n",
+        "a/z.rs": "u216\n",
+        "w": "u214------\ns11----\nu215\n",
+        "z.rs": "s6-----\n"
+      },
+      "right": {
+        "a/w": "u217----\nu213-----\ns0--\n",
+        "a/x.txt": "u214------\ns11----\nu215\n",
+        "a/z.rs": "u216\n",
+        "z.rs": "s6-----\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "renamed",
+          "w",
+          "a/x.txt"
+        ],
+        [
+          "removed",
+          "a/y.txt",
+          "a/y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-22",
+      "left": {
+        "a/y.txt": "u229------\ns8\n",
+        "b/c/w": "u226-----\ns2-\nu227-----\ns0----\ns11-\nu228------\n",
+        "b/c/x.txt": "\u0000s6-----\nu218\nu219\nu220\n",
+        "b/c/y.txt": "s1----\nu230-----\nu231----\ns2--\ns0\n",
+        "w": "u221---\nu222---\nu223\ns4-\nu224----\nu225--\n"
+      },
+      "right": {
+        "a/x.txt": "u226-----\ns2-\nu227-----\ns0----\ns11-\nu228------\n",
+        "a/y.txt": "u229------\ns8\n",
+        "b/c/x.txt": "\u0000s6-----\nu218\nu219\nu220\n",
+        "w": "u221---\nu232\nu223\ns4-\nu224----\nu225--\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "b/c/w",
+          "a/x.txt"
+        ],
+        [
+          "removed",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "modified",
+          "w",
+          "w"
+        ]
+      ]
+    },
+    {
+      "id": "rename-23",
+      "left": {
+        "a/y.txt": "\u0000u242--\nu243-\ns3----\ns10------\nu244-----\ns8\n",
+        "a/z.rs": "s1----\ns9---\ns11----\ns10-\nu234--\nu235-----\nu236-\n",
+        "b/c/x.txt": "u237----\ns10----\nu238------\nu239\nu240---\n",
+        "b/c/z.rs": "s4-----\ns0----\ns10--\n",
+        "y.txt": "u241\n"
+      },
+      "right": {
+        "a/x.txt": "u237----\ns10----\nu238------\nu239\nu240---\nu246---\n",
+        "a/y.txt": "\u0000u242--\ns0--\nu243-\nu245----\ns3----\ns10------\nu244-----\ns8\n",
+        "b/c/w": "s1----\ns9---\ns11----\nu234--\ns3\nu236-\n",
+        "b/c/y.txt": "u241\n",
+        "w": "s1----\ns9---\ns11----\ns10-\nu234--\nu235-----\ns3-\n",
+        "x.txt": "s4-----\ns0----\ns10--\ns1\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "b/c/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "modified",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "renamed",
+          "a/z.rs",
+          "b/c/w"
+        ],
+        [
+          "renamed",
+          "y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "added",
+          "w",
+          "w"
+        ],
+        [
+          "renamed",
+          "b/c/z.rs",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-24",
+      "left": {
+        "a/x.txt": "s10---\ns2------\ns0------\n",
+        "a/y.txt": "s10---\ns2------\ns0------\n",
+        "b/c/y.txt": "s9-\n",
+        "w": "u247-----\ns4-----\n"
+      },
+      "right": {
+        "w": "u247-----\nu249----\nu248----\n",
+        "x.txt": "s9-\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "removed",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "modified",
+          "w",
+          "w"
+        ],
+        [
+          "renamed",
+          "b/c/y.txt",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-25",
+      "left": {
+        "a/y.txt": "s8----\ns6------\ns0----\ns1------\n",
+        "b/c/w": "u251----\ns7-\ns11\nu252------\ns4-----\ns1\nu253-\nu254-\n",
+        "b/c/x.txt": "",
+        "b/c/z.rs": "u255-\ns4--\nu256-\nu257-\nu258------\ns2--\ns7--\nu259--\n",
+        "z.rs": "u250-----\n"
+      },
+      "right": {
+        "a/z.rs": "s9-----\ns6------\ns0----\ns1------\n",
+        "b/c/w": "u251----\ns7-\ns11\nu252------\ns4-----\ns1\nu253-\nu254-\n",
+        "z.rs": "u250-----\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/y.txt",
+          "a/z.rs"
+        ],
+        [
+          "removed",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "removed",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-26",
+      "left": {
+        "a/y.txt": "s7--\n",
+        "b/c/y.txt": "s4------\nu260-----\ns9---\nu261---\n",
+        "x.txt": "s7----\ns6------\n",
+        "y.txt": "s10--\nu262--\ns2----\nu263\ns7-\n"
+      },
+      "right": {
+        "a/x.txt": "s7--\nu264-----\n",
+        "b/c/y.txt": "s4------\nu260-----\ns9---\nu261---\n",
+        "x.txt": "s7----\ns6------\n",
+        "y.txt": "s10--\nu262--\ns2----\nu263\ns7-\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "removed",
+          "a/y.txt",
+          "a/y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-27",
+      "left": {
+        "a/w": "u267------\ns5----\ns4----\nu268-----\nu269\ns5------\ns7----\nu270----\n",
+        "b/c/z.rs": "u265------\nu266----\ns2--\n",
+        "z.rs": ""
+      },
+      "right": {
+        "a/x.txt": ""
+      },
+      "changes": [
+        [
+          "removed",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "added",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "removed",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "removed",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-28",
+      "left": {
+        "a/y.txt": "u273---\ns7-----\ns9----\nu274--\ns7-\n",
+        "x.txt": "u271\ns5------\ns2\nu272---\n"
+      },
+      "right": {
+        "a/z.rs": "s6--\ns9-\ns2\nu272---\nu276--\n",
+        "b/c/y.txt": "u273---\ns7-----\ns9----\nu274--\ns7-\n",
+        "w": "s8----\nu275-\ns4------\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "renamed",
+          "a/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "added",
+          "w",
+          "w"
+        ],
+        [
+          "removed",
+          "x.txt",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-29",
+      "left": {
+        "a/y.txt": "s8---\nu280---\ns3------\ns9----\nu281-\nu282---\n",
+        "b/c/y.txt": "u279-\n",
+        "x.txt": "s10-----\nu277------\nu278---\n",
+        "z.rs": "s8\ns11\n"
+      },
+      "right": {
+        "a/w": "u279-\n",
+        "w": "s8---\ns0------\nu280---\ns3------\ns9----\nu281-\nu283---\n",
+        "y.txt": "s10-----\nu277------\nu278---\n",
+        "z.rs": "s8\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "b/c/y.txt",
+          "a/w"
+        ],
+        [
+          "renamed",
+          "a/y.txt",
+          "w"
+        ],
+        [
+          "renamed",
+          "x.txt",
+          "y.txt"
+        ],
+        [
+          "modified",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-30",
+      "left": {
+        "a/x.txt": "s5---\nu284------\ns1----\ns9-----\ns6----\n",
+        "a/y.txt": "",
+        "b/c/w": "s4\ns4---\ns9-\ns7\ns0--\nu289---\n",
+        "z.rs": "u285-\nu286-\nu287----\ns2----\ns3----\ns3--\nu288\n"
+      },
+      "right": {
+        "a/x.txt": "s5---\nu284------\ns1----\ns9-----\ns6----\n",
+        "a/y.txt": "s4-\nu290\n",
+        "b/c/w": "s4\ns4---\ns9-\ns7\ns0--\nu289---\n",
+        "w": "u285-\nu286-\nu287----\ns2----\ns3----\ns3--\nu288\n"
+      },
+      "changes": [
+        [
+          "modified",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "renamed",
+          "z.rs",
+          "w"
+        ]
+      ]
+    },
+    {
+      "id": "rename-31",
+      "left": {
+        "a/w": "u291------\nu292------\ns2----\nu293------\nu294--\n",
+        "a/y.txt": "u291------\nu292------\ns2----\nu293------\nu294--\n",
+        "b/c/y.txt": "s7--\ns6------\ns5---\n",
+        "b/c/z.rs": "u295---\n",
+        "z.rs": "u291------\nu292------\ns2----\nu293------\nu294--\n"
+      },
+      "right": {
+        "a/x.txt": "u295---\n",
+        "a/y.txt": "u291------\nu292------\ns2----\nu293------\nu294--\n",
+        "b/c/x.txt": "u291------\nu292------\ns2----\nu293------\nu294--\n",
+        "b/c/y.txt": "s7--\ns6------\ns5---\n",
+        "w": "u291------\nu292------\nu296-\ns2----\nu293------\ns11-----\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "b/c/z.rs",
+          "a/x.txt"
+        ],
+        [
+          "renamed",
+          "a/w",
+          "b/c/x.txt"
+        ],
+        [
+          "renamed",
+          "z.rs",
+          "w"
+        ]
+      ]
+    },
+    {
+      "id": "rename-32",
+      "left": {
+        "a/y.txt": "\u0000u297----\n",
+        "b/c/x.txt": "u298\n"
+      },
+      "right": {
+        "z.rs": "u298\nu299---\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "removed",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "added",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-33",
+      "left": {
+        "a/w": "s3-----\nu301-----\nu302-\n",
+        "b/c/w": "\u0000u300-----\ns5----\ns0------\ns1\ns5---\ns4--\n",
+        "x.txt": "\u0000u300-----\ns5----\ns0------\ns1\ns5---\ns4--\n"
+      },
+      "right": {
+        "a/w": "s3-----\nu301-----\nu302-\n",
+        "b/c/w": "s7--\ns2----\ns0------\ns1\ns5---\ns4--\n",
+        "b/c/x.txt": "s7--\ns5----\ns0------\nu304\ns1\ns5---\ns4--\n",
+        "b/c/z.rs": "s3-----\nu301-----\nu302-\n"
+      },
+      "changes": [
+        [
+          "modified",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "copied",
+          "b/c/w",
+          "b/c/x.txt"
+        ],
+        [
+          "added",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "removed",
+          "x.txt",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-34",
+      "left": {
+        "a/w": "u307--\ns4-\n",
+        "a/x.txt": "u305-\nu306---\ns7-\n",
+        "a/z.rs": "u312\nu313------\ns3--\nu314----\nu315--\nu316-----\ns3-\nu317-----\n",
+        "b/c/x.txt": "",
+        "b/c/y.txt": "u309---\nu310----\nu311------\ns2----\ns1------\n",
+        "b/c/z.rs": "u308-\n"
+      },
+      "right": {
+        "a/y.txt": "s1--\n",
+        "b/c/w": "s0----\nu307--\nu319------\n",
+        "b/c/x.txt": "s1---\ns5-----\n",
+        "w": "u305-\nu306---\ns7-\nu320\n",
+        "x.txt": "s2\n",
+        "y.txt": "u312\nu313------\ns3--\nu314----\nu315--\nu316-----\ns3-\nu317-----\n",
+        "z.rs": "u309---\nu310----\nu311------\ns2----\ns1------\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "added",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "added",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "modified",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "removed",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "renamed",
+          "a/x.txt",
+          "w"
+        ],
+        [
+          "added",
+          "x.txt",
+          "x.txt"
+        ],
+        [
+          "renamed",
+          "a/z.rs",
+          "y.txt"
+        ],
+        [
+          "renamed",
+          "b/c/y.txt",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-35",
+      "left": {
+        "b/c/y.txt": "u322---\nu323---\ns5------\nu324\ns8------\nu325----\ns5---\n",
+        "z.rs": "s4-----\ns1---\n"
+      },
+      "right": {
+        "a/x.txt": "u322---\nu323---\ns5------\nu324\ns8------\nu326----\ns5---\n",
+        "a/y.txt": "s4-----\ns1---\n",
+        "b/c/w": "\u0000u327--\nu328--\nu329------\ns9\nu330---\ns2---\ns7-----\nu331----\n",
+        "y.txt": "u322---\nu323---\ns5------\nu324\ns8------\nu325----\ns5---\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "renamed",
+          "z.rs",
+          "a/y.txt"
+        ],
+        [
+          "added",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "renamed",
+          "b/c/y.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-36",
+      "left": {
+        "a/x.txt": "s5---\nu336------\nu337-----\nu338--\ns11----\ns5\ns4------\n",
+        "a/z.rs": "u339--\ns11-\nu340-----\n",
+        "b/c/w": "u342\nu343---\nu344--\ns8-----\ns11-----\nu345-----\nu346\n",
+        "b/c/z.rs": "u332-----\nu333\nu334---\ns8-\ns7---\nu335-----\n",
+        "x.txt": "s11--\nu341\ns7\n",
+        "y.txt": "u332-----\nu333\nu334---\ns8-\ns7---\nu335-----\n"
+      },
+      "right": {
+        "a/w": "s5---\nu336------\nu337-----\nu338--\ns11----\ns5\ns4------\n",
+        "a/y.txt": "s11--\nu341\ns7\n",
+        "b/c/w": "u342\nu343---\nu344--\ns8-----\ns11-----\nu345-----\ns1----\nu346\n",
+        "b/c/y.txt": "u332-----\nu333\nu334---\ns8-\ns7---\nu335-----\n",
+        "b/c/z.rs": "u332-----\nu333\nu334---\nu349\ns7---\nu335-----\n",
+        "w": "u347--\nu340-----\n",
+        "y.txt": "u332-----\nu333\nu334---\ns8-\ns7---\nu335-----\n",
+        "z.rs": "u332-----\nu333\nu334---\ns8-\ns7---\nu335-----\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/x.txt",
+          "a/w"
+        ],
+        [
+          "renamed",
+          "x.txt",
+          "a/y.txt"
+        ],
+        [
+          "removed",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "modified",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "copied",
+          "b/c/z.rs",
+          "b/c/y.txt"
+        ],
+        [
+          "modified",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "added",
+          "w",
+          "w"
+        ],
+        [
+          "copied",
+          "b/c/z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-37",
+      "left": {
+        "a/w": "s3----\ns8--\n",
+        "a/z.rs": "s0------\nu350----\ns6---\nu351--\ns3-\n",
+        "b/c/y.txt": "\u0000s5---\ns11----\ns11-----\nu352---\ns0-\nu353----\nu354-\nu355\n",
+        "y.txt": "u356-\nu357--\nu358---\ns3------\ns0----\ns7--\ns1---\n"
+      },
+      "right": {
+        "a/w": "s3----\ns8--\n",
+        "a/x.txt": "\u0000s5---\ns11----\ns11-----\nu352---\ns0-\nu353----\nu354-\ns2------\n",
+        "a/y.txt": "u356-\nu357--\nu358---\ns3------\ns0----\ns7--\ns1---\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "renamed",
+          "y.txt",
+          "a/y.txt"
+        ],
+        [
+          "removed",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "removed",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-38",
+      "left": {
+        "a/z.rs": "s0----\nu372---\nu373----\n",
+        "b/c/x.txt": "u364------\nu365-\ns3----\ns4----\nu366\ns5-\nu367--\n",
+        "w": "u370-----\nu371\n",
+        "x.txt": "s4-\nu368---\nu369------\n",
+        "y.txt": "u364------\nu365-\ns3----\ns4----\nu366\ns5-\nu367--\n",
+        "z.rs": "u359-\nu360\ns2--\nu361-----\ns5-----\ns8--\nu362----\nu363\n"
+      },
+      "right": {
+        "a/x.txt": "u370-----\ns5------\ns11--\n",
+        "a/z.rs": "s0----\nu372---\nu373----\n",
+        "b/c/w": "u364------\nu365-\ns3----\ns4----\nu366\ns5-\nu367--\n",
+        "b/c/y.txt": "s4-\nu368---\nu369------\n",
+        "y.txt": "u364------\nu365-\ns3----\ns4----\nu366\ns5-\nu367--\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "renamed",
+          "b/c/x.txt",
+          "b/c/w"
+        ],
+        [
+          "renamed",
+          "x.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "removed",
+          "w",
+          "w"
+        ],
+        [
+          "removed",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-39",
+      "left": {
+        "a/w": "s9----\ns0\ns2-\nu374---\nu375------\nu376---\ns0-----\nu377---\n",
+        "b/c/w": "u378-----\nu379-----\nu380-\nu381\ns6------\n",
+        "z.rs": "s11\nu382-----\nu383--\ns11--\nu384------\ns0----\n"
+      },
+      "right": {
+        "a/w": "s9----\nu386----\ns0\ns2-\nu374---\nu375------\nu376---\ns0-----\nu377---\nu385-\n",
+        "a/y.txt": "u387\ns5------\ns6----\n",
+        "b/c/w": "u378-----\nu379-----\nu380-\nu381\ns6------\n",
+        "y.txt": "u382-----\ns4-----\ns11--\ns0----\n",
+        "z.rs": "s11\nu382-----\nu383--\ns11--\nu384------\ns0----\n"
+      },
+      "changes": [
+        [
+          "modified",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "added",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "added",
+          "y.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-40",
+      "left": {
+        "a/z.rs": "s7-\nu389--\nu390--\nu391\ns8----\nu392\n",
+        "b/c/x.txt": "s7-\nu388------\ns2\n",
+        "w": "s7-\nu388------\ns2\n",
+        "y.txt": "u393\nu394---\nu395\nu396--\ns10---\nu397\ns11-\n"
+      },
+      "right": {
+        "a/x.txt": "\u0000s11------\nu400------\nu401------\ns7---\ns10----\nu402----\n",
+        "a/z.rs": "s7-\nu389--\nu390--\nu398-\ns8----\nu392\n",
+        "b/c/x.txt": "s7-\nu388------\ns2\n",
+        "w": "s7-\nu399----\ns2\n",
+        "y.txt": "u393\nu394---\nu395\nu396--\ns10---\nu397\ns11-\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "modified",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "modified",
+          "w",
+          "w"
+        ]
+      ]
+    },
+    {
+      "id": "rename-41",
+      "left": {
+        "a/x.txt": "\u0000u421------\ns2----\nu422---\nu423\nu424\ns2-----\nu425\ns0-----\n",
+        "a/y.txt": "s0----\ns10-\nu420----\ns4--\n",
+        "a/z.rs": "u407-\nu408-\nu409-----\nu410----\ns8---\nu411----\ns3-\ns7\n",
+        "b/c/w": "s11\ns2--\nu412--\nu413\nu414-----\nu415-\nu416\n",
+        "b/c/x.txt": "u403------\ns6---\nu404-----\nu405--\ns6----\nu406-----\ns0---\n",
+        "b/c/z.rs": "\u0000u417-----\ns7-\nu418---\nu419----\ns4------\n"
+      },
+      "right": {
+        "b/c/w": "s11\ns2--\nu413\nu414-----\nu415-\ns8----\nu427------\n",
+        "b/c/y.txt": "\u0000s0---\n",
+        "b/c/z.rs": "\u0000u417-----\ns7-\nu418---\nu419----\ns4------\n",
+        "x.txt": "u403------\ns6---\nu404-----\nu405--\ns6----\nu406-----\ns0---\n",
+        "y.txt": "u407-\nu408-\nu409-----\nu410----\ns8---\nu411----\ns3-\ns7\n",
+        "z.rs": "s0----\ns10-\nu420----\nu426-----\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "modified",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "added",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "renamed",
+          "b/c/x.txt",
+          "x.txt"
+        ],
+        [
+          "renamed",
+          "a/z.rs",
+          "y.txt"
+        ],
+        [
+          "renamed",
+          "a/y.txt",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-42",
+      "left": {
+        "b/c/z.rs": "s5-----\ns4----\nu431-----\ns5--\ns5---\nu432------\nu433\n",
+        "y.txt": "u428------\ns1----\ns2-\nu429-----\ns0--\nu430-----\ns11------\ns2\n",
+        "z.rs": "\u0000s3-----\ns0--\ns10\ns10-\ns2----\ns2\ns1-----\n"
+      },
+      "right": {
+        "a/w": "u428------\nu434\ns1----\ns2-\ns5----\ns0--\nu430-----\ns2\n",
+        "a/z.rs": "\u0000s3-----\ns6----\ns10\ns10-\ns2----\ns2\nu435--\n",
+        "b/c/w": "s7----\ns5-----\ns9----\nu431-----\ns5--\ns5---\nu432------\nu433\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "y.txt",
+          "a/w"
+        ],
+        [
+          "added",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "renamed",
+          "b/c/z.rs",
+          "b/c/w"
+        ],
+        [
+          "removed",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-43",
+      "left": {
+        "a/x.txt": "s8----\ns10\ns3\ns3\ns4------\ns10----\nu447\n",
+        "a/z.rs": "s7----\n",
+        "b/c/w": "u436--\ns10-----\nu437--\nu438------\ns11----\ns11---\ns4----\n",
+        "b/c/z.rs": "u443\ns9----\nu444--\ns1-----\nu445\ns11----\nu446--\ns5---\n",
+        "y.txt": "u439---\nu440-----\n",
+        "z.rs": "u441------\nu442-\ns9--\ns8-----\n"
+      },
+      "right": {
+        "a/w": "u443\ns3---\ns9-----\ns1-----\nu445\nu446--\ns5---\n",
+        "a/y.txt": "u441------\ns10---\ns9--\ns8-----\n",
+        "b/c/y.txt": "s8----\ns10\ns6-\ns4------\ns10----\n",
+        "w": "s1-----\nu440-----\n",
+        "x.txt": "s8----\ns10\ns3\ns3\ns4------\ns10----\nu447\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "b/c/z.rs",
+          "a/w"
+        ],
+        [
+          "renamed",
+          "z.rs",
+          "a/y.txt"
+        ],
+        [
+          "removed",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "removed",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "added",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "renamed",
+          "y.txt",
+          "w"
+        ],
+        [
+          "renamed",
+          "a/x.txt",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-44",
+      "left": {
+        "b/c/x.txt": "s1------\nu448-----\nu449------\nu450-----\nu451--\n",
+        "b/c/y.txt": "u452----\ns9\ns8-\n",
+        "x.txt": "s6-----\ns6---\nu453---\ns7--\ns2\ns1\nu454------\n"
+      },
+      "right": {
+        "a/w": "s4\ns9------\nu457--\nu458------\ns1-\nu459--\n",
+        "b/c/x.txt": "u448-----\ns9----\nu450-----\nu451--\n",
+        "b/c/y.txt": "u452----\ns9\ns8-\n",
+        "x.txt": "s6-----\nu453---\ns2\ns1\nu456--\nu454------\n",
+        "z.rs": "u452----\ns0------\ns6---\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "modified",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "modified",
+          "x.txt",
+          "x.txt"
+        ],
+        [
+          "added",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-45",
+      "left": {
+        "b/c/z.rs": "s5\n",
+        "y.txt": "s4------\ns5-----\nu460\ns5----\ns6-----\nu461-\n"
+      },
+      "right": {
+        "z.rs": "s0----\ns5\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "removed",
+          "y.txt",
+          "y.txt"
+        ],
+        [
+          "added",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-46",
+      "left": {
+        "a/w": "u465---\ns10-\n",
+        "a/y.txt": "u462------\nu463------\nu464-\n",
+        "b/c/w": "s9------\nu466------\n"
+      },
+      "right": {
+        "a/x.txt": "u465---\ns8---\n",
+        "b/c/w": "u466------\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/w",
+          "a/x.txt"
+        ],
+        [
+          "removed",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "modified",
+          "b/c/w",
+          "b/c/w"
+        ]
+      ]
+    },
+    {
+      "id": "rename-47",
+      "left": {
+        "a/y.txt": "s1-\ns11---\n",
+        "b/c/w": "s5----\ns1----\nu467---\n",
+        "x.txt": "s1-\ns11---\n"
+      },
+      "right": {
+        "a/z.rs": "u471------\ns1-\nu470--\ns11---\n",
+        "b/c/w": "s4------\ns1----\ns1\n",
+        "b/c/x.txt": "s5----\ns1----\n",
+        "b/c/y.txt": "s1-\nu468----\ns11---\n",
+        "z.rs": ""
+      },
+      "changes": [
+        [
+          "added",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "modified",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "added",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "renamed",
+          "a/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "removed",
+          "x.txt",
+          "x.txt"
+        ],
+        [
+          "added",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-48",
+      "left": {
+        "a/y.txt": "u475----\n",
+        "a/z.rs": "u477--\ns2-----\ns4----\n",
+        "b/c/y.txt": "u475----\n",
+        "b/c/z.rs": "s4--\ns2\nu472--\ns2--\ns5-----\nu473-----\nu474------\n",
+        "y.txt": "u476------\n"
+      },
+      "right": {
+        "a/w": "",
+        "a/y.txt": "u475----\n",
+        "a/z.rs": "u477--\ns2-----\ns4----\n",
+        "b/c/w": "s4--\ns2\ns7--\nu472--\ns2--\ns5-----\ns2----\nu473-----\nu474------\n",
+        "b/c/y.txt": "u475----\ns9-\n",
+        "y.txt": "u476------\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "renamed",
+          "b/c/z.rs",
+          "b/c/w"
+        ],
+        [
+          "modified",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-49",
+      "left": {
+        "b/c/w": "u481-----\ns11---\ns9----\ns4-\nu482\nu483-\ns9-----\n",
+        "b/c/x.txt": "u494------\nu495-\ns10--\ns1-\ns9-----\n",
+        "b/c/z.rs": "u485----\nu486------\ns10----\nu487-\nu488--\ns10----\nu489\ns8------\n",
+        "w": "s6\nu484------\ns1-----\n",
+        "x.txt": "u490\ns11-----\nu491---\nu492---\ns6---\nu493--\n",
+        "z.rs": "u479-----\ns4---\ns11---\ns5----\ns10---\nu480-----\n"
+      },
+      "right": {
+        "a/y.txt": "u485----\nu486------\ns10----\nu487-\nu488--\ns10----\nu489\ns8------\n",
+        "b/c/w": "s7-\nu481-----\ns11---\ns7---\ns9----\ns4-\nu482\ns0\ns9-----\n",
+        "b/c/x.txt": "u494------\nu495-\ns10--\ns1-\ns9-----\n",
+        "b/c/y.txt": "s2--\ns6\nu484------\ns1-----\n",
+        "z.rs": "u479-----\ns4---\ns11---\ns5----\ns10---\nu480-----\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "b/c/z.rs",
+          "a/y.txt"
+        ],
+        [
+          "modified",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "renamed",
+          "w",
+          "b/c/y.txt"
+        ],
+        [
+          "removed",
+          "x.txt",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-50",
+      "left": {
+        "a/w": "s9--\nu496----\ns0-\ns10------\nu497\ns7-----\n",
+        "a/x.txt": "u503---\ns9-\nu504-\ns9------\nu505--\nu506------\n",
+        "a/z.rs": "s11\nu498---\ns8----\nu499------\nu500\n",
+        "b/c/x.txt": "s9--\nu496----\ns0-\ns10------\nu497\ns7-----\n",
+        "b/c/z.rs": "s4------\ns0------\nu501----\ns7\ns10------\nu502---\ns3\n",
+        "y.txt": ""
+      },
+      "right": {
+        "a/y.txt": "s9--\nu507-----\nu496----\ns0-\ns9----\nu497\ns7-----\n",
+        "a/z.rs": "s11\nu498---\ns8----\nu499------\nu500\n",
+        "b/c/w": "u503---\ns9-\nu504-\ns9------\nu505--\nu506------\n",
+        "b/c/x.txt": "s9--\nu496----\ns0-\ns10------\nu497\ns7-----\n",
+        "w": ""
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/w",
+          "a/y.txt"
+        ],
+        [
+          "renamed",
+          "a/x.txt",
+          "b/c/w"
+        ],
+        [
+          "removed",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "added",
+          "w",
+          "w"
+        ],
+        [
+          "removed",
+          "y.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-51",
+      "left": {
+        "a/x.txt": "",
+        "w": "\u0000s8-----\ns6------\ns8\nu508--\nu509\n"
+      },
+      "right": {
+        "w": "\u0000s8-----\ns6------\ns8\nu510-\ns7\n",
+        "x.txt": ""
+      },
+      "changes": [
+        [
+          "removed",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "modified",
+          "w",
+          "w"
+        ],
+        [
+          "added",
+          "x.txt",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-52",
+      "left": {
+        "b/c/y.txt": "u511---\ns4--\ns2----\ns4-----\n",
+        "w": "",
+        "z.rs": "u512\ns5------\ns0------\ns11----\ns11--\nu513-\nu514------\n"
+      },
+      "right": {
+        "b/c/x.txt": "s10------\ns1-\ns4-----\n",
+        "b/c/y.txt": "s4--\ns2----\ns4-----\n",
+        "w": "s3\n"
+      },
+      "changes": [
+        [
+          "added",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "modified",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "modified",
+          "w",
+          "w"
+        ],
+        [
+          "removed",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-53",
+      "left": {
+        "w": "",
+        "x.txt": "s5---\n"
+      },
+      "right": {
+        "a/z.rs": "s11------\n",
+        "b/c/y.txt": "s5---\ns3---\nu517-----\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "added",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "removed",
+          "w",
+          "w"
+        ],
+        [
+          "removed",
+          "x.txt",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-54",
+      "left": {
+        "b/c/w": "s4---\nu519-----\nu520-\nu521-----\ns8--\ns0------\ns3-----\nu522-\n",
+        "b/c/z.rs": "s4---\nu519-----\nu520-\nu521-----\ns8--\ns0------\ns3-----\nu522-\n",
+        "w": "u518-----\ns4---\ns9--\ns6------\n",
+        "x.txt": "u523-----\nu524----\nu525-----\ns2--\nu526------\ns6-----\n",
+        "y.txt": "u527-\ns2---\n"
+      },
+      "right": {
+        "a/x.txt": "u528-\ns9\nu529----\nu530\ns4------\n",
+        "a/z.rs": "u527-\ns2---\n",
+        "b/c/y.txt": "s4---\nu519-----\nu520-\nu521-----\ns8--\ns0------\ns3-----\nu522-\n",
+        "x.txt": "u524----\nu525-----\ns2--\nu526------\ns6-----\n",
+        "y.txt": "u527-\ns2---\n",
+        "z.rs": "s4---\nu519-----\nu520-\nu521-----\ns8--\ns0------\ns3-----\nu522-\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "added",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "renamed",
+          "b/c/w",
+          "b/c/y.txt"
+        ],
+        [
+          "removed",
+          "w",
+          "w"
+        ],
+        [
+          "modified",
+          "x.txt",
+          "x.txt"
+        ],
+        [
+          "renamed",
+          "b/c/z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-55",
+      "left": {
+        "a/z.rs": "u541----\ns1-\ns8-\ns4----\nu542--\ns3------\ns2--\ns11---\n",
+        "b/c/x.txt": "u535-\nu536-\ns9----\nu537-\ns2------\nu538-\nu539-\nu540--\n",
+        "b/c/y.txt": "u535-\nu536-\ns9----\nu537-\ns2------\nu538-\nu539-\nu540--\n",
+        "w": "u531\nu532---\nu533--\ns2--\n",
+        "x.txt": "u531\nu532---\nu533--\ns2--\n",
+        "y.txt": "s4-\ns4----\nu534------\n"
+      },
+      "right": {
+        "a/w": "u541----\ns1-\ns8-\ns4----\nu542--\ns3------\ns2--\ns11---\n",
+        "a/x.txt": "u531\nu532---\nu533--\ns2--\n",
+        "b/c/w": "u535-\nu536-\ns9----\nu537-\ns2------\nu538-\nu539-\nu540--\n",
+        "x.txt": "s9--\nu531\nu532---\nu543-\ns2--\n",
+        "y.txt": "s4-\ns4----\nu534------\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/z.rs",
+          "a/w"
+        ],
+        [
+          "renamed",
+          "w",
+          "a/x.txt"
+        ],
+        [
+          "renamed",
+          "b/c/x.txt",
+          "b/c/w"
+        ],
+        [
+          "removed",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "modified",
+          "x.txt",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-56",
+      "left": {
+        "a/w": "s5-----\nu544----\ns11-\n",
+        "b/c/x.txt": "s5-----\nu544----\ns11-\n",
+        "b/c/y.txt": "s7-\nu545--\nu546-----\ns8\nu547------\ns8--\nu548------\n"
+      },
+      "right": {
+        "a/w": "s5-----\nu544----\ns11-\n",
+        "a/y.txt": "u549----\n",
+        "b/c/x.txt": "s5-----\nu544----\ns11-\n",
+        "b/c/y.txt": "s7-\nu545--\nu546-----\ns8\nu547------\ns8--\nu548------\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/y.txt",
+          "a/y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-57",
+      "left": {
+        "a/w": "s11----\nu550-\ns8\ns6-----\nu551-\ns11----\ns0\nu552---\n",
+        "a/z.rs": "s9------\ns9----\nu560------\ns10------\ns11\n",
+        "b/c/w": "",
+        "b/c/z.rs": "u555\ns5-\nu556--\nu557---\ns6---\nu558--\nu559-----\ns10----\n",
+        "w": "u555\ns5-\nu556--\nu557---\ns6---\nu558--\nu559-----\ns10----\n",
+        "z.rs": "\u0000s2----\ns8---\ns8\nu553-\nu554---\n"
+      },
+      "right": {
+        "a/w": "s11----\nu550-\ns8\ns6-----\nu551-\ns11----\ns0\nu552---\n",
+        "a/x.txt": "s9------\ns9----\nu560------\nu561-\n",
+        "b/c/w": "",
+        "b/c/y.txt": "s7-----\n",
+        "b/c/z.rs": "u555\ns5-\nu556--\nu557---\ns6---\nu558--\nu559-----\ns10----\n",
+        "z.rs": "\u0000s2----\ns8---\ns8\nu553-\nu554---\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/z.rs",
+          "a/x.txt"
+        ],
+        [
+          "added",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "removed",
+          "w",
+          "w"
+        ]
+      ]
+    },
+    {
+      "id": "rename-58",
+      "left": {
+        "a/z.rs": "s4---\nu565----\n",
+        "x.txt": "u562---\ns8---\nu563-----\ns1--\ns6-----\nu564--\n"
+      },
+      "right": {
+        "a/x.txt": "u562---\ns8---\nu563-----\nu566-----\ns6-----\nu564--\n",
+        "b/c/y.txt": "s4---\nu565----\n",
+        "x.txt": "u562---\ns4\ns8---\nu563-----\ns6-----\n"
+      },
+      "changes": [
+        [
+          "copied",
+          "x.txt",
+          "a/x.txt"
+        ],
+        [
+          "renamed",
+          "a/z.rs",
+          "b/c/y.txt"
+        ],
+        [
+          "modified",
+          "x.txt",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-59",
+      "left": {
+        "a/z.rs": "u567---\n",
+        "b/c/w": "s8-\nu570---\nu571--\ns1----\nu572-\nu573--\n",
+        "b/c/z.rs": "s5----\nu568-----\n",
+        "y.txt": "\u0000u569----\ns11-\ns8\n"
+      },
+      "right": {
+        "a/y.txt": "u575-----\nu568-----\n",
+        "a/z.rs": "u574-\nu567---\n",
+        "b/c/w": "s8-\nu570---\nu571--\ns1----\nu572-\nu573--\n",
+        "x.txt": "s9--\nu577-\ns7\ns10-\n",
+        "z.rs": "s11\ns11------\nu576-----\ns11-\ns8\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "b/c/z.rs",
+          "a/y.txt"
+        ],
+        [
+          "modified",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "added",
+          "x.txt",
+          "x.txt"
+        ],
+        [
+          "removed",
+          "y.txt",
+          "y.txt"
+        ],
+        [
+          "added",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-60",
+      "left": {
+        "b/c/y.txt": "s1-----\ns0---\n",
+        "b/c/z.rs": "u580------\nu581---\nu582---\ns3-\ns9--\ns9--\ns4\n",
+        "w": "u583----\nu584---\nu585\nu586-----\ns10-\ns5-\ns7-----\ns2--\n",
+        "y.txt": "u578--\nu579\ns9---\ns6-----\n",
+        "z.rs": "s1-----\ns0---\n"
+      },
+      "right": {
+        "a/z.rs": "u578--\nu579\ns9---\ns6-----\n",
+        "b/c/w": "u580------\ns5---\nu582---\ns3-\ns9--\ns9--\n",
+        "b/c/x.txt": "s0---\nu588----\n",
+        "b/c/y.txt": "s3----\nu587-\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "y.txt",
+          "a/z.rs"
+        ],
+        [
+          "renamed",
+          "b/c/z.rs",
+          "b/c/w"
+        ],
+        [
+          "added",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "modified",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "removed",
+          "w",
+          "w"
+        ],
+        [
+          "removed",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-61",
+      "left": {
+        "b/c/w": "s6\nu595\ns8----\nu596------\nu597--\ns0----\n",
+        "b/c/x.txt": "u589---\nu590--\ns5-----\nu591-\nu592------\nu593----\nu594----\n"
+      },
+      "right": {
+        "a/y.txt": "s6\ns8----\nu596------\ns0--\ns0----\n",
+        "w": "s6\nu595\ns8----\nu596------\nu597--\ns0----\n",
+        "y.txt": "u589---\nu590--\ns5-----\nu591-\nu598-----\nu592------\nu593----\nu594----\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "renamed",
+          "b/c/w",
+          "w"
+        ],
+        [
+          "renamed",
+          "b/c/x.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-62",
+      "left": {
+        "a/x.txt": "s0----\nu600---\nu601------\nu602----\nu603------\ns5-----\nu604----\n",
+        "b/c/w": "s8------\ns10-----\ns2-----\nu599\ns0\ns11---\n",
+        "b/c/x.txt": "s0----\nu600---\nu601------\nu602----\nu603------\ns5-----\nu604----\n",
+        "z.rs": "s9---\nu605-\ns9---\ns8------\ns5\nu606---\n"
+      },
+      "right": {
+        "a/x.txt": "u607--\ns0----\nu600---\nu601------\nu602----\nu603------\ns5-----\nu604----\n",
+        "b/c/w": "s8------\ns10-----\ns2-----\nu599\ns0\ns11---\n",
+        "b/c/z.rs": "s2--\ns3-\nu609--\nu610-\ns4--\n",
+        "x.txt": "s9------\ns7---\nu611---\nu612----\ns6----\nu613-\nu614\n",
+        "z.rs": "s9---\nu605-\ns9---\ns8------\nu608-----\nu606---\n"
+      },
+      "changes": [
+        [
+          "modified",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "removed",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "added",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "added",
+          "x.txt",
+          "x.txt"
+        ],
+        [
+          "modified",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-63",
+      "left": {
+        "a/w": "u621\ns9----\ns3--\n",
+        "b/c/w": "u622\n",
+        "b/c/x.txt": "u623--\ns5-----\n",
+        "w": "u619--\nu620------\ns8-----\n",
+        "y.txt": "u615--\nu616-\nu617\nu618-----\n",
+        "z.rs": "s5---\ns10----\ns9-\ns0---\n"
+      },
+      "right": {
+        "a/x.txt": "s2------\nu632---\ns9-\ns0---\n",
+        "a/y.txt": "u630-----\nu631--\n",
+        "a/z.rs": "u621\nu625-\ns3--\n",
+        "b/c/w": "u627-----\ns2-----\nu622\n",
+        "b/c/x.txt": "u628---\n",
+        "b/c/z.rs": "u619--\nu620------\ns8-----\n",
+        "x.txt": "s5---\ns10----\ns9-\ns0---\n",
+        "y.txt": "u616-\nu629----\nu618-----\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "added",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "renamed",
+          "a/w",
+          "a/z.rs"
+        ],
+        [
+          "modified",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "modified",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "renamed",
+          "w",
+          "b/c/z.rs"
+        ],
+        [
+          "renamed",
+          "z.rs",
+          "x.txt"
+        ],
+        [
+          "modified",
+          "y.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-64",
+      "left": {
+        "a/w": "\u0000u638------\n",
+        "a/x.txt": "s7---\nu636\ns10------\nu637\ns9------\n",
+        "b/c/y.txt": "\u0000s5------\nu633-----\nu634-----\nu635-----\ns4---\ns1----\n",
+        "y.txt": ""
+      },
+      "right": {
+        "a/x.txt": "s7---\nu636\ns10------\nu637\ns9------\n",
+        "a/z.rs": "s6----\nu641---\nu642------\ns8---\nu643\ns3------\n",
+        "b/c/y.txt": "u639------\nu633-----\nu634-----\nu635-----\ns4---\ns11\ns1----\nu640----\n",
+        "b/c/z.rs": "\u0000u638------\n",
+        "y.txt": ""
+      },
+      "changes": [
+        [
+          "added",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "modified",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "renamed",
+          "a/w",
+          "b/c/z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-65",
+      "left": {
+        "a/w": "s7-\nu650---\ns9-----\n",
+        "a/y.txt": "s0----\ns6-\ns1------\ns4----\ns5\nu647-----\nu648\n",
+        "a/z.rs": "u645---\nu646------\ns11---\n",
+        "b/c/x.txt": "s3------\nu649----\ns2----\ns7----\ns4------\n",
+        "x.txt": "s11--\ns2----\nu644---\n",
+        "z.rs": "s11---\n"
+      },
+      "right": {
+        "a/y.txt": "s0----\ns6-\nu651---\ns4----\ns5\nu647-----\nu648\n",
+        "b/c/w": "s0----\nu653-\ns1------\nu652------\ns4----\ns5\ns4\nu647-----\nu648\n",
+        "b/c/x.txt": "s3------\nu649----\ns2----\ns7----\ns4------\n",
+        "b/c/z.rs": "s11---\n",
+        "w": "u645---\ns3-----\nu646------\ns2------\ns1--\n",
+        "x.txt": "s11--\ns2----\ns7\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "modified",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "removed",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "copied",
+          "a/y.txt",
+          "b/c/w"
+        ],
+        [
+          "renamed",
+          "z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "added",
+          "w",
+          "w"
+        ],
+        [
+          "modified",
+          "x.txt",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-66",
+      "left": {
+        "a/z.rs": "s2------\nu656\nu657----\nu658\nu659-\ns10-\n",
+        "b/c/w": "u654--\nu655----\ns0\n",
+        "w": "u660\ns1----\nu661--\nu662-\n",
+        "z.rs": "u654--\nu655----\ns0\n"
+      },
+      "right": {
+        "a/x.txt": "s8--\nu657----\nu658\nu667---\nu659-\ns10-\n",
+        "a/y.txt": "u654--\ns2---\ns5---\ns0\n",
+        "a/z.rs": "s2------\nu656\nu657----\nu658\nu659-\ns10-\n",
+        "b/c/w": "u654--\nu655----\ns0\n",
+        "b/c/x.txt": "u663----\nu664\nu665----\ns11--\ns7---\nu666----\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "added",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "added",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "removed",
+          "w",
+          "w"
+        ],
+        [
+          "removed",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-67",
+      "left": {
+        "a/x.txt": "s2--\ns0--\ns8---\n",
+        "a/z.rs": "s2--\ns0--\ns8---\n",
+        "b/c/y.txt": "s8-\nu668----\ns7-\nu669---\n"
+      },
+      "right": {
+        "a/y.txt": "s2--\ns0--\ns8---\n",
+        "b/c/z.rs": "s2--\ns0--\ns8---\n",
+        "w": "s8-\nu668----\ns7-\nu669---\n",
+        "y.txt": "u670-----\nu671----\nu672------\ns3-\n",
+        "z.rs": "s2--\ns0--\ns7---\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/x.txt",
+          "a/y.txt"
+        ],
+        [
+          "renamed",
+          "a/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "renamed",
+          "b/c/y.txt",
+          "w"
+        ],
+        [
+          "added",
+          "y.txt",
+          "y.txt"
+        ],
+        [
+          "added",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-68",
+      "left": {
+        "a/w": "",
+        "a/x.txt": "s1-\nu679\ns10----\nu680-----\nu681\ns7---\ns1-----\n",
+        "b/c/x.txt": "u683-\nu684\nu685------\ns4-\nu686-\n",
+        "x.txt": "u673-\nu674-----\ns6---\nu675-----\nu676------\nu677\ns3----\nu678-\n",
+        "y.txt": "u687-\ns10-\ns5----\nu688-----\nu689----\n",
+        "z.rs": "s10---\nu682-----\ns3-\ns9------\ns2-\ns4------\n"
+      },
+      "right": {
+        "a/x.txt": "s1-\nu679\ns10----\nu680-----\nu681\ns7---\ns1-----\n",
+        "a/y.txt": "u691----\ns8-----\n",
+        "a/z.rs": "u673-\nu674-----\nu675-----\nu676------\nu677\ns3----\nu678-\n",
+        "b/c/w": "u683-\nu684\nu685------\ns4-\nu686-\n",
+        "b/c/x.txt": "u683-\nu684\nu685------\nu686-\n",
+        "b/c/y.txt": "s10---\nu682-----\ns3-\ns9------\ns2-\ns4------\nu690--\n",
+        "y.txt": "u687-\ns10-\ns5----\nu688-----\nu689----\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "added",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "renamed",
+          "x.txt",
+          "a/z.rs"
+        ],
+        [
+          "copied",
+          "b/c/x.txt",
+          "b/c/w"
+        ],
+        [
+          "modified",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "renamed",
+          "z.rs",
+          "b/c/y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-69",
+      "left": {
+        "a/w": "u694----\ns4\nu695----\nu696\ns6-\ns7------\n",
+        "a/y.txt": "s8---\ns7------\nu692-----\ns3----\nu693----\n",
+        "b/c/z.rs": "s7-\ns3------\n",
+        "x.txt": "s7-\ns3------\n",
+        "z.rs": "\u0000s5-\ns3------\ns6------\n"
+      },
+      "right": {
+        "a/w": "u694----\ns4\nu695----\ns4------\nu696\ns6-\ns7------\n",
+        "a/x.txt": "u697----\ns2-----\n",
+        "a/y.txt": "s8---\ns7------\nu692-----\ns3----\nu693----\n",
+        "b/c/w": "s9--\ns8\ns3------\ns6------\ns7---\n",
+        "b/c/x.txt": "s7-\ns3------\n",
+        "y.txt": "s8------\ns5----\nu698----\nu699-\n"
+      },
+      "changes": [
+        [
+          "modified",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "added",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "added",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "renamed",
+          "x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "removed",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "added",
+          "y.txt",
+          "y.txt"
+        ],
+        [
+          "removed",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-70",
+      "left": {
+        "a/w": "u703------\ns0-\nu704------\nu705-\ns6\nu706----\nu707\n",
+        "y.txt": "u700----\nu701----\nu702----\ns5------\ns6------\ns11-----\n"
+      },
+      "right": {
+        "a/w": "u703------\ns0-\nu704------\nu705-\ns6\nu706----\nu707\n",
+        "b/c/w": "u700----\nu701----\nu702----\ns5------\ns6------\ns11-----\n",
+        "y.txt": "u709-\nu701----\nu702----\ns5------\ns6------\ns11-----\nu708--\n"
+      },
+      "changes": [
+        [
+          "copied",
+          "y.txt",
+          "b/c/w"
+        ],
+        [
+          "modified",
+          "y.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-71",
+      "left": {
+        "a/y.txt": "u715-----\ns4----\n",
+        "a/z.rs": "s8--\nu710----\ns2----\ns8-\nu711-\nu712\nu713--\n",
+        "b/c/w": "s5--\ns11------\ns6-----\nu714-----\ns8\n",
+        "b/c/z.rs": "s8--\nu710----\ns2----\ns8-\nu711-\nu712\nu713--\n",
+        "x.txt": ""
+      },
+      "right": {
+        "a/x.txt": "s8--\nu710----\ns8-\nu711-\nu712\nu713--\n",
+        "b/c/w": "s5--\nu717--\ns8\n",
+        "b/c/x.txt": "s3-\n",
+        "b/c/y.txt": "u719-----\ns1------\n",
+        "b/c/z.rs": "s8--\nu710----\ns2----\ns8-\nu711-\nu712\nu713--\n",
+        "z.rs": "u716-----\ns4----\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/z.rs",
+          "a/x.txt"
+        ],
+        [
+          "removed",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "modified",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "added",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "added",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "removed",
+          "x.txt",
+          "x.txt"
+        ],
+        [
+          "added",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-72",
+      "left": {
+        "a/y.txt": "s8------\ns0---\ns3-----\nu724---\nu725----\n",
+        "a/z.rs": "u726-----\nu727\nu728-\nu729\n",
+        "b/c/z.rs": "s10---\n",
+        "w": "s7-----\nu720--\nu721----\ns10------\nu722-----\nu723-\n",
+        "x.txt": "u730----\ns5----\ns7-----\ns8-----\nu731-\nu732\ns5\n",
+        "z.rs": "s7-----\nu720--\nu721----\ns10------\nu722-----\nu723-\n"
+      },
+      "right": {
+        "a/w": "u730----\ns5----\ns7-----\ns8-----\nu731-\nu732\ns5\n",
+        "b/c/w": "s8------\ns3-----\nu724---\nu725----\nu733-\n",
+        "b/c/z.rs": "s3\n",
+        "w": "s7-----\nu720--\nu721----\ns10------\nu722-----\nu723-\n",
+        "y.txt": "u734------\nu726-----\nu727\nu728-\nu729\n",
+        "z.rs": "s7-----\nu720--\nu721----\ns10------\nu722-----\nu723-\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "x.txt",
+          "a/w"
+        ],
+        [
+          "renamed",
+          "a/y.txt",
+          "b/c/w"
+        ],
+        [
+          "modified",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "renamed",
+          "a/z.rs",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-73",
+      "left": {
+        "a/x.txt": "s10-\ns0------\nu738---\ns4\ns11\nu739----\nu740------\nu741---\n",
+        "b/c/w": "u746----\ns4\nu747-\nu748\ns11-----\n",
+        "b/c/z.rs": "u742--\ns4--\n",
+        "x.txt": "u735------\nu736-----\nu737-\ns5-----\n",
+        "y.txt": "u743----\ns11------\n",
+        "z.rs": "u744-----\nu745--\n"
+      },
+      "right": {
+        "a/w": "u743----\ns11------\n",
+        "a/x.txt": "s10-\ns0------\nu738---\ns4\ns11\nu739----\nu740------\nu741---\n",
+        "a/y.txt": "u746----\ns8----\ns4\nu747-\nu748\ns11-----\n",
+        "a/z.rs": "u742--\ns4--\n",
+        "b/c/x.txt": "u750\n",
+        "w": "u751-\nu752----\ns7------\ns1\nu753---\n",
+        "x.txt": "u735------\nu736-----\nu737-\ns5-----\n",
+        "z.rs": "u744-----\nu745--\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "y.txt",
+          "a/w"
+        ],
+        [
+          "renamed",
+          "b/c/w",
+          "a/y.txt"
+        ],
+        [
+          "renamed",
+          "b/c/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "added",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "added",
+          "w",
+          "w"
+        ]
+      ]
+    },
+    {
+      "id": "rename-74",
+      "left": {
+        "a/w": "\u0000u760-\n",
+        "a/y.txt": "u754----\nu755---\nu756-----\n",
+        "b/c/x.txt": "u757-----\ns5------\ns10----\nu758----\nu759-----\n",
+        "b/c/z.rs": "s5-\ns0\nu761---\nu762----\ns7---\nu763--\ns1-----\ns8----\n",
+        "w": "u764----\nu765---\nu766--\ns5\nu767--\n"
+      },
+      "right": {
+        "b/c/w": "s1\ns2-----\ns3-----\nu768-\ns10-\nu769---\nu770------\n",
+        "b/c/x.txt": "u757-----\ns5------\ns0-\ns10----\nu758----\ns3-\n",
+        "x.txt": "s5------\n\u0000u760-\n",
+        "y.txt": "s5-\ns0\nu761---\nu762----\ns7---\nu763--\ns1-----\ns8----\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "removed",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "added",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "modified",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "removed",
+          "w",
+          "w"
+        ],
+        [
+          "added",
+          "x.txt",
+          "x.txt"
+        ],
+        [
+          "renamed",
+          "b/c/z.rs",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-75",
+      "left": {
+        "b/c/x.txt": "u771-----\ns0\ns9-\nu772\ns9-----\ns8----\nu773--\n",
+        "y.txt": ""
+      },
+      "right": {
+        "b/c/x.txt": "u771-----\ns0\ns9-\nu772\ns9-----\ns8----\nu773--\n",
+        "w": "u775------\ns9-----\ns5-----\nu776-\nu777--\n",
+        "y.txt": "s9----\nu774----\ns0------\n",
+        "z.rs": ""
+      },
+      "changes": [
+        [
+          "added",
+          "w",
+          "w"
+        ],
+        [
+          "modified",
+          "y.txt",
+          "y.txt"
+        ],
+        [
+          "added",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-76",
+      "left": {
+        "a/y.txt": "u785----\ns5-----\nu786------\n",
+        "b/c/y.txt": "s3\nu779------\ns1------\nu780----\nu781---\nu782\nu783------\nu784------\n",
+        "b/c/z.rs": "s10------\ns7-\ns9--\nu778-----\ns11---\n",
+        "y.txt": "\u0000u787---\nu788-\ns10-\nu789\n"
+      },
+      "right": {
+        "a/w": "s5-----\nu785----\ns5-----\nu791------\n",
+        "a/y.txt": "u785----\ns5-----\nu786------\n",
+        "y.txt": "\u0000u787---\nu788-\ns10-\nu790---\nu789\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "removed",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "removed",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "modified",
+          "y.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-77",
+      "left": {
+        "a/w": "s7\ns11-\ns4---\n",
+        "a/x.txt": "\u0000s1------\nu794------\nu795----\nu796------\ns3-----\nu797------\ns7--\nu798-----\n",
+        "a/y.txt": "",
+        "b/c/w": "s1--\ns9-\ns8-\ns0---\nu792-\ns1--\ns8-----\n",
+        "y.txt": "u793-\n"
+      },
+      "right": {
+        "a/w": "s7\ns11-\ns4---\n",
+        "b/c/w": "s1--\ns9-\ns8-\ns0---\nu792-\ns1--\ns8-----\n",
+        "b/c/x.txt": "s6-----\ns0------\ns9--\nu799----\nu800---\n",
+        "x.txt": "s5--\n",
+        "z.rs": "\u0000s1------\nu794------\ns6----\nu795----\nu796------\ns3-----\nu797------\ns7--\nu798-----\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "removed",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "added",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "added",
+          "x.txt",
+          "x.txt"
+        ],
+        [
+          "removed",
+          "y.txt",
+          "y.txt"
+        ],
+        [
+          "added",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-78",
+      "left": {
+        "a/x.txt": "\u0000s0-\nu803-\nu804-\n",
+        "b/c/w": "s3--\nu801----\nu802-----\n",
+        "b/c/z.rs": "s7-----\nu805\nu806----\ns5---\nu807-----\ns6\n",
+        "y.txt": "s5----\n"
+      },
+      "right": {
+        "a/x.txt": "\u0000s0-\nu803-\nu804-\n",
+        "b/c/w": "s3--\nu801----\nu802-----\n",
+        "b/c/z.rs": "s7-----\nu805\nu806----\ns5---\nu807-----\ns6\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "y.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-79",
+      "left": {
+        "a/x.txt": "u819--\nu820-----\nu821-\ns11----\ns6---\nu822\n",
+        "a/y.txt": "u817----\ns5-\ns1\ns2---\nu818-----\ns1---\ns11---\n",
+        "b/c/x.txt": "s9----\ns0--\ns10----\ns3------\ns7------\n",
+        "b/c/y.txt": "u814--\nu815--\nu816---\n",
+        "b/c/z.rs": "s3---\ns4-\nu810--\nu811---\nu812-\nu813-----\n",
+        "x.txt": "s3------\ns1----\nu808-----\nu809\n"
+      },
+      "right": {
+        "a/w": "s3------\ns1----\nu808-----\nu824------\nu809\n",
+        "a/x.txt": "u823-\nu820-----\nu821-\ns11----\ns6---\nu822\ns6---\n",
+        "a/z.rs": "u817----\ns5-\ns2-\nu818-----\ns1---\n",
+        "b/c/w": "s3------\ns1----\nu808-----\nu809\n",
+        "b/c/y.txt": "u814--\nu815--\nu816---\n",
+        "b/c/z.rs": "s3---\ns4-\nu810--\nu811---\nu812-\nu813-----\n",
+        "y.txt": "s3---\ns4-\nu810--\nu811---\nu812-\nu813-----\ns2\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "modified",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "renamed",
+          "a/y.txt",
+          "a/z.rs"
+        ],
+        [
+          "renamed",
+          "x.txt",
+          "b/c/w"
+        ],
+        [
+          "removed",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "added",
+          "y.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-80",
+      "left": {
+        "a/w": "u828------\ns0----\n",
+        "a/z.rs": "s9---\ns2------\n",
+        "b/c/w": "u829-\ns6---\nu830---\ns2-\n",
+        "b/c/y.txt": "s7--\nu831------\nu832----\ns3--\ns9\nu833-----\nu834-\n",
+        "x.txt": "s4---\nu826------\ns0------\nu827---\n",
+        "z.rs": "u825-----\n"
+      },
+      "right": {
+        "a/w": "u828------\n",
+        "a/y.txt": "s7--\nu831------\nu832----\ns3--\ns9\nu833-----\nu834-\n",
+        "a/z.rs": "s11----\ns9---\ns2------\nu835-----\n",
+        "b/c/w": "u829-\ns6---\nu830---\ns2-\n",
+        "b/c/x.txt": "u838\ns1---\nu839----\nu840------\ns11-\ns7----\nu841----\ns2\n",
+        "b/c/z.rs": "u837---\ns6-----\n",
+        "w": "",
+        "x.txt": "s4---\nu826------\ns0------\nu827---\nu836\n"
+      },
+      "changes": [
+        [
+          "modified",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "renamed",
+          "b/c/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "modified",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "added",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "added",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "added",
+          "w",
+          "w"
+        ],
+        [
+          "modified",
+          "x.txt",
+          "x.txt"
+        ],
+        [
+          "removed",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-81",
+      "left": {
+        "x.txt": "s6----\ns0------\ns7------\ns4---\n",
+        "z.rs": "s9------\ns2---\ns9-----\ns4----\ns8---\n"
+      },
+      "right": {
+        "b/c/x.txt": "s6----\ns0------\ns7------\ns4---\n",
+        "z.rs": "s9------\ns2---\ns9-----\ns4----\ns8---\nu842----\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "modified",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-82",
+      "left": {
+        "a/x.txt": "s7--\ns11---\ns10\ns6-\ns6---\nu844------\ns7----\n",
+        "b/c/w": "s10----\n",
+        "b/c/x.txt": "s1-\nu843-\n",
+        "b/c/y.txt": "s10----\n",
+        "b/c/z.rs": "u850--\ns3-\ns2---\nu851--\ns6--\nu852\ns8------\nu853-\n",
+        "y.txt": "s11\nu845\ns11-----\nu846----\nu847-\ns1\nu848--\nu849---\n"
+      },
+      "right": {
+        "a/x.txt": "s7--\ns11---\ns10\ns6-\nu854------\nu844------\ns7----\n",
+        "a/y.txt": "u857---\ns11\nu845\ns11-----\nu846----\nu847-\ns1\nu848--\nu849---\n",
+        "a/z.rs": "u850--\ns3-\ns2---\nu851--\ns6--\nu852\ns8------\nu853-\n",
+        "b/c/w": "s10----\n",
+        "x.txt": "s11--\ns2--\nu858\ns6-\ns8------\nu859---\n",
+        "z.rs": "u855--\ns3-\ns2---\nu851--\ns6--\nu856---\ns8------\nu853-\n"
+      },
+      "changes": [
+        [
+          "modified",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "renamed",
+          "y.txt",
+          "a/y.txt"
+        ],
+        [
+          "renamed",
+          "b/c/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "removed",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "removed",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "added",
+          "x.txt",
+          "x.txt"
+        ],
+        [
+          "added",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-83",
+      "left": {
+        "a/w": "\u0000s4-----\nu860\ns10----\nu861-\nu862-----\ns4-\ns10-\nu863\n",
+        "a/z.rs": "u868--\ns9-----\n",
+        "b/c/z.rs": "u864------\nu865--\ns3----\ns3----\nu866----\nu867-----\ns10----\ns10--\n"
+      },
+      "right": {
+        "a/x.txt": "u868--\n",
+        "a/y.txt": "\u0000s4-----\nu860\ns10----\ns9--\nu862-----\ns4-\nu869\nu863\n",
+        "b/c/z.rs": "u864------\nu865--\ns3----\ns3----\nu866----\nu867-----\ns10----\ns10--\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "added",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "added",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "removed",
+          "a/z.rs",
+          "a/z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-84",
+      "left": {
+        "a/x.txt": "\u0000u875--\nu876--\nu877--\nu878\ns2--\ns1--\ns9----\n",
+        "a/y.txt": "u870------\ns2-\nu871--\ns8----\nu872-----\nu873\nu874-----\n"
+      },
+      "right": {
+        "b/c/w": "u870------\ns2-\nu871--\ns8----\ns7-\nu873\nu874-----\n",
+        "b/c/y.txt": "\u0000u875--\nu876--\nu877--\nu878\ns2--\ns1--\ns9----\n",
+        "b/c/z.rs": "s2-\nu871--\ns8----\nu872-----\nu873\nu880-----\nu879-\n",
+        "x.txt": "\u0000u875--\nu876--\nu877--\nu878\ns2--\ns1--\ns9----\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/y.txt",
+          "b/c/w"
+        ],
+        [
+          "renamed",
+          "a/x.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "added",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "added",
+          "x.txt",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-85",
+      "left": {
+        "a/x.txt": "s8----\nu881--\nu882--\nu883------\n",
+        "a/y.txt": "s4---\nu884----\ns8\nu885----\nu886---\n",
+        "b/c/w": "u887-----\nu888--\nu889-\ns1\n",
+        "z.rs": "s8----\nu881--\nu882--\nu883------\n"
+      },
+      "right": {
+        "a/w": "u887-----\nu889-\ns8---\ns1\n",
+        "a/x.txt": "u881--\nu882--\ns5\n",
+        "a/y.txt": "u890-\ns4---\nu884----\nu885----\nu886---\n",
+        "w": "s10\ns11-\nu891-----\nu892----\nu893--\nu894---\nu895---\nu896---\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "b/c/w",
+          "a/w"
+        ],
+        [
+          "modified",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "modified",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "added",
+          "w",
+          "w"
+        ],
+        [
+          "removed",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-86",
+      "left": {
+        "a/y.txt": "u897----\nu898------\ns4\ns2\nu899-----\nu900---\nu901-----\ns1\n",
+        "a/z.rs": "s0------\ns7---\ns5------\nu907\ns9---\ns1-----\n",
+        "b/c/z.rs": "u897----\nu898------\ns4\ns2\nu899-----\nu900---\nu901-----\ns1\n",
+        "w": "\u0000u908\nu909--\nu910----\ns6--\nu911-----\ns0----\ns4-----\nu912---\n",
+        "y.txt": "u913------\ns1-\nu914------\ns6-----\ns9--\n",
+        "z.rs": "u902-\nu903-\nu904---\nu905------\nu906---\n"
+      },
+      "right": {
+        "a/x.txt": "\u0000u908\nu910----\ns6--\nu911-----\ns0----\ns7--\nu912---\n",
+        "b/c/w": "u915------\nu898------\ns4\ns2\nu899-----\nu900---\ns1\n",
+        "b/c/y.txt": "s0------\ns7---\ns5------\nu907\ns9---\ns1-----\n",
+        "y.txt": "u913------\ns1-\nu914------\ns6-----\ns9--\n",
+        "z.rs": "u902-\nu917----\nu903-\nu916-----\nu905------\ns6------\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "renamed",
+          "a/y.txt",
+          "b/c/w"
+        ],
+        [
+          "renamed",
+          "a/z.rs",
+          "b/c/y.txt"
+        ],
+        [
+          "removed",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "removed",
+          "w",
+          "w"
+        ],
+        [
+          "modified",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-87",
+      "left": {
+        "a/x.txt": "u920---\n",
+        "b/c/z.rs": "s9\ns5--\ns6--\ns8---\nu918\nu919----\ns0--\ns3------\n",
+        "y.txt": "s2------\ns9--\nu921--\nu922-\n"
+      },
+      "right": {
+        "a/w": "u923--\nu920---\n",
+        "b/c/z.rs": "s9\ns5--\ns6--\ns8---\nu918\nu919----\ns0--\ns3------\n",
+        "y.txt": "s2------\ns9--\nu921--\nu922-\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/x.txt",
+          "a/w"
+        ]
+      ]
+    },
+    {
+      "id": "rename-88",
+      "left": {
+        "a/x.txt": "\u0000s9--\ns11----\nu926----\ns11------\nu927--\ns5-----\ns3--\n",
+        "a/y.txt": "s4----\ns5-----\n",
+        "b/c/x.txt": "u924---\ns9---\ns1--\nu925-----\n",
+        "z.rs": "s4----\ns5-----\n"
+      },
+      "right": {
+        "a/x.txt": "\u0000s9--\ns11----\nu926----\ns11------\nu927--\ns5-----\ns3--\n",
+        "a/z.rs": "s4----\ns5-----\n",
+        "b/c/x.txt": "u924---\ns9---\ns1--\nu925-----\n",
+        "w": "u924---\ns9---\ns1--\nu925-----\n",
+        "z.rs": "u928---\ns3-----\ns5-----\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/y.txt",
+          "a/z.rs"
+        ],
+        [
+          "added",
+          "w",
+          "w"
+        ],
+        [
+          "modified",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-89",
+      "left": {
+        "a/w": "s9\nu929------\ns0--\ns5---\nu930---\nu931---\ns2-----\n",
+        "b/c/x.txt": "u933----\ns9-\nu934-----\ns9---\n",
+        "b/c/y.txt": "s9\nu929------\ns0--\ns5---\nu930---\nu931---\ns2-----\n",
+        "w": "s6------\ns7---\nu932---\n",
+        "z.rs": "s6------\ns7---\nu932---\n"
+      },
+      "right": {
+        "a/z.rs": "s9\nu929------\ns0--\ns5---\nu931---\nu936\nu935--\n",
+        "b/c/z.rs": "\u0000s4-----\nu941----\nu942-\ns4----\ns0------\n",
+        "w": "u939\nu940----\nu932---\n",
+        "x.txt": "s9\nu929------\nu938\ns0--\ns5---\nu931---\nu937---\n",
+        "y.txt": "u933----\ns9-\nu934-----\ns9---\n",
+        "z.rs": "s6------\ns7---\nu932---\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/w",
+          "a/z.rs"
+        ],
+        [
+          "added",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "modified",
+          "w",
+          "w"
+        ],
+        [
+          "renamed",
+          "b/c/y.txt",
+          "x.txt"
+        ],
+        [
+          "renamed",
+          "b/c/x.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-90",
+      "left": {
+        "b/c/y.txt": "s6----\ns8----\nu948---\ns10--\ns10-----\ns11---\ns3--\ns8----\n",
+        "x.txt": "s3------\nu943-----\nu944\ns10-----\nu945-----\nu946--\nu947--\n"
+      },
+      "right": {
+        "a/y.txt": "s3------\ns10-----\nu945-----\nu949\nu947--\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "x.txt",
+          "a/y.txt"
+        ],
+        [
+          "removed",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-91",
+      "left": {
+        "a/y.txt": "s2----\ns1---\ns9---\n",
+        "b/c/y.txt": "s9--\ns9-----\nu954------\ns11\n",
+        "w": "u950----\nu951-----\ns10-----\ns1----\nu952---\nu953--\ns1-\ns6-\n"
+      },
+      "right": {
+        "b/c/y.txt": "s9--\ns9-----\nu954------\ns11\n",
+        "w": "u950----\nu951-----\ns10-----\ns1----\nu953--\ns1-\ns6-\ns4\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "modified",
+          "w",
+          "w"
+        ]
+      ]
+    },
+    {
+      "id": "rename-92",
+      "left": {
+        "a/y.txt": "s8----\nu961-----\ns8-\nu962-----\nu963-\nu964--\ns10----\n",
+        "b/c/x.txt": "s6\nu957-\nu958---\ns0\nu959-\nu960----\n",
+        "b/c/y.txt": "u965\nu966---\ns7--\ns11-\ns10-----\nu967-----\nu968\n",
+        "b/c/z.rs": "",
+        "y.txt": "\u0000u955---\ns8-----\nu956----\n"
+      },
+      "right": {
+        "a/y.txt": "s8----\nu961-----\ns8-\nu962-----\nu963-\nu964--\ns10----\n",
+        "x.txt": "u965\nu966---\ns7--\ns11-\ns10-----\nu967-----\nu968\n",
+        "z.rs": "\u0000u955---\nu970-----\ns8-----\ns8-\nu956----\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "removed",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "renamed",
+          "b/c/y.txt",
+          "x.txt"
+        ],
+        [
+          "removed",
+          "y.txt",
+          "y.txt"
+        ],
+        [
+          "added",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-93",
+      "left": {
+        "a/y.txt": "u978\ns5----\nu979--\ns9\nu980----\nu981----\nu982-----\n",
+        "a/z.rs": "s5------\nu988-----\ns9----\ns0---\n",
+        "b/c/w": "u987-----\n",
+        "b/c/y.txt": "u983--\ns9-\nu984-----\ns3\ns4-\nu985-----\nu986-\n",
+        "b/c/z.rs": "s6---\n",
+        "z.rs": "u971-\nu972--\nu973--\nu974-\nu975-----\nu976-----\ns4----\nu977--\n"
+      },
+      "right": {
+        "a/w": "s6---\nu990\n",
+        "a/z.rs": "s11\nu989-\ns5------\ns9----\ns0---\n",
+        "b/c/w": "u987-----\n",
+        "b/c/y.txt": "u983--\ns9-\nu984-----\ns3\ns4-\nu985-----\nu986-\n",
+        "x.txt": "u978\ns5----\nu979--\ns9\nu980----\nu981----\nu982-----\n",
+        "z.rs": "u971-\nu973--\nu974-\nu975-----\nu976-----\ns5-\ns4----\nu977--\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "b/c/z.rs",
+          "a/w"
+        ],
+        [
+          "modified",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "renamed",
+          "a/y.txt",
+          "x.txt"
+        ],
+        [
+          "modified",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-94",
+      "left": {
+        "a/x.txt": "u995\ns11----\ns5\ns10---\ns1\n",
+        "b/c/w": "u991-\nu992----\ns3-\ns5----\nu993--\ns10-----\nu994\n",
+        "b/c/x.txt": "",
+        "b/c/y.txt": "s8----\nu996\ns3\n",
+        "x.txt": "u991-\nu992----\ns3-\ns5----\nu993--\ns10-----\nu994\n"
+      },
+      "right": {
+        "a/z.rs": "u991-\nu992----\ns3-\ns5----\nu993--\ns10-----\nu994\n",
+        "b/c/w": "s5-\nu992----\ns3-\ns5----\nu993--\ns10-----\ns1-----\nu994\n",
+        "b/c/x.txt": "u997---\n",
+        "b/c/z.rs": "s5---\n",
+        "y.txt": "u995\ns11----\ns5\ns10---\ns1\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "x.txt",
+          "a/z.rs"
+        ],
+        [
+          "modified",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "modified",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "removed",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "added",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "renamed",
+          "a/x.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-95",
+      "left": {
+        "b/c/x.txt": "\u0000s11\nu1002\ns8---\nu1003-\nu1004----\ns2---\n",
+        "b/c/z.rs": "u998\nu999----\nu1000--\nu1001----\ns9\n"
+      },
+      "right": {},
+      "changes": [
+        [
+          "removed",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "removed",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-96",
+      "left": {
+        "a/w": "s3-\ns7-----\nu1005------\nu1006-\ns2------\nu1007---\nu1008------\ns8-----\n",
+        "a/y.txt": "s0--\n",
+        "x.txt": "u1009-\nu1010\ns10--\nu1011\n"
+      },
+      "right": {
+        "a/w": "s3-\ns7-----\nu1005------\nu1006-\ns2------\nu1007---\nu1008------\ns8-----\n",
+        "a/y.txt": "u1012--\ns4\n",
+        "x.txt": "u1009-\ns10--\nu1011\n",
+        "y.txt": "s3-\ns7-----\nu1005------\nu1006-\ns2------\nu1007---\nu1008------\ns8-----\n"
+      },
+      "changes": [
+        [
+          "modified",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "modified",
+          "x.txt",
+          "x.txt"
+        ],
+        [
+          "added",
+          "y.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-97",
+      "left": {
+        "b/c/w": "u1018-\nu1019-----\ns8-\nu1020-\nu1021---\n",
+        "b/c/x.txt": "u1022----\nu1023----\ns8--\nu1024\nu1025------\n",
+        "b/c/y.txt": "s5------\nu1026----\nu1027\nu1028-\nu1029\nu1030\nu1031\ns10----\n",
+        "x.txt": "u1032----\ns6----\nu1033------\ns4----\n",
+        "z.rs": "s3-----\ns10\nu1013----\nu1014--\nu1015-----\nu1016-----\nu1017-\n"
+      },
+      "right": {
+        "a/w": "u1022----\ns8--\ns7-\ns6--\n",
+        "a/z.rs": "u1035--\ns5------\ns4--\n",
+        "b/c/w": "u1018-\nu1019-----\ns0-----\nu1020-\nu1021---\n",
+        "b/c/z.rs": "s5------\nu1026----\nu1027\nu1028-\nu1029\nu1030\nu1031\ns10----\n",
+        "x.txt": "u1032----\nu1034--\nu1033------\ns4----\n",
+        "z.rs": "s3-----\ns10\nu1013----\nu1014--\nu1015-----\nu1016-----\nu1017-\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "added",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "modified",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "removed",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "renamed",
+          "b/c/y.txt",
+          "b/c/z.rs"
+        ],
+        [
+          "modified",
+          "x.txt",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-98",
+      "left": {
+        "b/c/w": "s2-\ns9--\nu1036--\ns8--\n",
+        "b/c/y.txt": "s11\ns10-\n",
+        "z.rs": "\u0000u1037----\ns2----\n"
+      },
+      "right": {
+        "a/z.rs": "u1039--\ns4\nu1040--\ns8\ns3-\ns11-----\n",
+        "b/c/x.txt": "u1041\nu1042-\ns7---\ns1--\n",
+        "x.txt": "u1038-----\n",
+        "z.rs": "\u0000u1037----\ns2----\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "removed",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "added",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "removed",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "added",
+          "x.txt",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-99",
+      "left": {
+        "a/w": "u1049--\ns2---\ns11--\ns10--\nu1050------\n",
+        "b/c/y.txt": "s6\nu1045---\nu1046\ns8----\ns8----\nu1047---\nu1048--\ns6-----\n",
+        "b/c/z.rs": "u1043------\nu1044\n"
+      },
+      "right": {
+        "a/w": "u1049--\ns2---\ns11--\ns10--\nu1050------\n",
+        "a/y.txt": "u1043------\n",
+        "w": "u1051-----\ns6\nu1045---\nu1046\ns8----\ns8----\nu1047---\ns6-----\ns9--\n",
+        "x.txt": "s6\nu1045---\nu1046\ns8----\ns8----\nu1048--\ns6-----\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "b/c/z.rs",
+          "a/y.txt"
+        ],
+        [
+          "added",
+          "w",
+          "w"
+        ],
+        [
+          "renamed",
+          "b/c/y.txt",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-100",
+      "left": {
+        "a/x.txt": "s11----\ns7-\ns3--\nu1052-----\nu1053\nu1054-\nu1055---\n",
+        "a/z.rs": "s1----\nu1056-----\ns10-\ns5---\ns9\ns5--\n",
+        "y.txt": "s11----\ns7-\ns3--\nu1052-----\nu1053\nu1054-\nu1055---\n"
+      },
+      "right": {
+        "a/x.txt": "s11----\ns7-\ns3--\nu1052-----\nu1053\nu1054-\nu1055---\n",
+        "a/y.txt": "s11----\ns7-\ns3--\nu1052-----\nu1057---\nu1054-\nu1055---\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "y.txt",
+          "a/y.txt"
+        ],
+        [
+          "removed",
+          "a/z.rs",
+          "a/z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-101",
+      "left": {
+        "a/w": "s5\nu1058-\ns2-----\ns9----\nu1059------\n",
+        "b/c/w": "u1066\ns6-\nu1067----\ns0-\nu1068-----\n",
+        "b/c/z.rs": "s5\nu1058-\ns2-----\ns9----\nu1059------\n",
+        "x.txt": "s8-\ns9------\ns5---\nu1060----\nu1061-----\nu1062----\nu1063---\nu1064---\n",
+        "z.rs": "u1065\n"
+      },
+      "right": {
+        "a/z.rs": "s5\nu1058-\ns2-----\ns9----\nu1059------\n",
+        "b/c/w": "s0-\nu1068-----\n",
+        "b/c/z.rs": "s5\nu1059------\n",
+        "w": "s8-\ns9------\ns7------\nu1060----\nu1069--\nu1062----\nu1063---\nu1064---\n",
+        "z.rs": "u1065\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/w",
+          "a/z.rs"
+        ],
+        [
+          "modified",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "modified",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "renamed",
+          "x.txt",
+          "w"
+        ]
+      ]
+    },
+    {
+      "id": "rename-102",
+      "left": {
+        "a/x.txt": "u1076\ns11-\nu1077----\nu1078-----\ns6\ns0------\nu1079\nu1080\n",
+        "a/y.txt": "s1-----\ns8-\ns4-----\nu1085-\ns9---\n",
+        "b/c/x.txt": "s9------\ns11-\ns5-----\ns10---\ns7------\n",
+        "y.txt": "u1070------\nu1071------\ns6----\nu1072\nu1073-----\ns0--\nu1074-----\nu1075------\n",
+        "z.rs": "u1081\nu1082-\nu1083---\nu1084-\ns2---\n"
+      },
+      "right": {
+        "b/c/w": "s9------\ns11-\ns5-----\nu1087\ns10---\nu1086--\n",
+        "b/c/z.rs": "u1076\ns11-\nu1077----\nu1078-----\ns6\ns0------\nu1079\nu1080\n",
+        "x.txt": "s1-----\ns8-\ns4-----\nu1085-\ns9---\n",
+        "y.txt": "u1070------\nu1071------\ns6----\nu1072\nu1073-----\ns0--\nu1074-----\nu1075------\n",
+        "z.rs": "u1081\nu1082-\nu1083---\nu1089-----\ns2---\nu1088------\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "b/c/x.txt",
+          "b/c/w"
+        ],
+        [
+          "renamed",
+          "a/x.txt",
+          "b/c/z.rs"
+        ],
+        [
+          "renamed",
+          "a/y.txt",
+          "x.txt"
+        ],
+        [
+          "modified",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-103",
+      "left": {
+        "a/w": "s6-----\ns1\nu1094\nu1095\nu1096\n",
+        "a/x.txt": "s4--\ns9--\ns9------\nu1090\ns2---\n",
+        "b/c/w": "s6----\ns6----\ns2\ns2------\nu1092-\nu1093------\ns9---\n",
+        "y.txt": "u1091---\ns0---\n",
+        "z.rs": "s9\ns0\n"
+      },
+      "right": {
+        "a/y.txt": "s1---\ns0---\nu1103--\ns4\n",
+        "a/z.rs": "s6----\ns2\nu1099-----\ns2------\nu1092-\nu1093------\ns7-\ns9---\n",
+        "b/c/z.rs": "s6-----\ns1\nu1094\nu1096\n",
+        "w": "u1101-----\ns9\ns0\nu1102-\nu1100------\n",
+        "x.txt": "s4--\nu1097--\ns9------\nu1090\ns2---\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "renamed",
+          "b/c/w",
+          "a/z.rs"
+        ],
+        [
+          "renamed",
+          "a/w",
+          "b/c/z.rs"
+        ],
+        [
+          "added",
+          "w",
+          "w"
+        ],
+        [
+          "renamed",
+          "a/x.txt",
+          "x.txt"
+        ],
+        [
+          "removed",
+          "y.txt",
+          "y.txt"
+        ],
+        [
+          "removed",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-104",
+      "left": {
+        "a/x.txt": "s0-----\ns0-----\ns11\ns1---\nu1111---\nu1112--\ns10\nu1113-----\n",
+        "a/z.rs": "s4----\nu1109\nu1110-----\n",
+        "b/c/x.txt": "s0-\nu1106\nu1107--\ns11--\nu1108--\n",
+        "b/c/z.rs": "s9--\nu1104---\ns6----\ns1\nu1105------\ns9-----\ns2\n"
+      },
+      "right": {
+        "w": "s0-----\ns0-----\ns11\ns1---\nu1111---\nu1112--\ns10\nu1113-----\n",
+        "x.txt": "s0-----\ns0-----\ns11\ns1---\nu1111---\nu1112--\ns10\nu1113-----\n",
+        "y.txt": "s9--\nu1104---\ns6----\ns1\nu1105------\ns9-----\ns2\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "removed",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "renamed",
+          "a/x.txt",
+          "w"
+        ],
+        [
+          "added",
+          "x.txt",
+          "x.txt"
+        ],
+        [
+          "renamed",
+          "b/c/z.rs",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-105",
+      "left": {
+        "a/x.txt": "s10-\ns10-----\ns4-----\nu1116------\ns2-\nu1117--\ns9------\n",
+        "b/c/y.txt": "u1118\ns0-----\ns6\nu1119------\n",
+        "b/c/z.rs": "s3----\nu1114-\nu1115---\ns8-\n",
+        "w": "s10-\ns10-----\ns4-----\nu1116------\ns2-\nu1117--\ns9------\n",
+        "z.rs": "s3----\nu1114-\nu1115---\ns8-\n"
+      },
+      "right": {
+        "a/z.rs": "s10-\ns10-----\ns4-----\nu1116------\ns6----\ns2-\nu1117--\ns9------\n",
+        "b/c/w": "u1118\ns0-----\ns6\nu1119------\n",
+        "b/c/x.txt": "u1120--\ns1\ns3-\nu1121------\nu1122-\n",
+        "x.txt": "s3----\nu1114-\nu1115---\ns8-\n",
+        "y.txt": ""
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/x.txt",
+          "a/z.rs"
+        ],
+        [
+          "renamed",
+          "b/c/y.txt",
+          "b/c/w"
+        ],
+        [
+          "added",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "removed",
+          "w",
+          "w"
+        ],
+        [
+          "renamed",
+          "b/c/z.rs",
+          "x.txt"
+        ],
+        [
+          "added",
+          "y.txt",
+          "y.txt"
+        ],
+        [
+          "removed",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-106",
+      "left": {
+        "a/y.txt": "s7---\nu1124--\nu1125--\nu1126-----\ns8------\n",
+        "b/c/w": "s11--\n",
+        "b/c/x.txt": "s7---\nu1124--\nu1125--\nu1126-----\ns8------\n",
+        "x.txt": "u1127---\ns2-\ns6---\ns11--\nu1128-----\nu1129\n",
+        "y.txt": "s10--\ns8\ns6-----\nu1123------\n",
+        "z.rs": ""
+      },
+      "right": {
+        "a/w": "s6------\n",
+        "a/y.txt": "s7---\nu1124--\nu1125--\nu1126-----\ns8------\n",
+        "b/c/w": "s0-\n",
+        "b/c/x.txt": "s7---\nu1124--\ns9-\nu1125--\ns8------\n",
+        "b/c/y.txt": "u1130----\ns2-\ns6---\ns11--\nu1128-----\nu1129\n",
+        "b/c/z.rs": "s2-\nu1131----\n",
+        "y.txt": "s6-----\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "modified",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "modified",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "renamed",
+          "x.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "added",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "modified",
+          "y.txt",
+          "y.txt"
+        ],
+        [
+          "removed",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-107",
+      "left": {
+        "a/w": "u1132--\nu1133--\nu1134-----\n",
+        "b/c/x.txt": "s6\ns3----\n",
+        "y.txt": "s3-----\nu1135--\nu1136\nu1137-\nu1138--\ns5------\n"
+      },
+      "right": {
+        "a/x.txt": "u1132--\nu1133--\nu1134-----\n",
+        "y.txt": "s3-----\nu1135--\ns6----\ns5------\n",
+        "z.rs": "u1139------\ns3----\ns9----\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/w",
+          "a/x.txt"
+        ],
+        [
+          "removed",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "modified",
+          "y.txt",
+          "y.txt"
+        ],
+        [
+          "added",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-108",
+      "left": {
+        "a/w": "s5----\n",
+        "a/x.txt": "u1140--\ns8---\ns3---\n",
+        "b/c/x.txt": "u1140--\ns8---\ns3---\n"
+      },
+      "right": {
+        "a/y.txt": "s2----\ns8---\ns3---\n",
+        "b/c/y.txt": "u1142\ns5----\n",
+        "b/c/z.rs": "s11-----\nu1144------\nu1145-\nu1146-----\n",
+        "y.txt": "u1140--\ns3---\nu1143\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "b/c/x.txt",
+          "a/y.txt"
+        ],
+        [
+          "renamed",
+          "a/w",
+          "b/c/y.txt"
+        ],
+        [
+          "added",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "renamed",
+          "a/x.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-109",
+      "left": {
+        "a/x.txt": "u1150--\ns0----\nu1151-\ns6\ns1------\n",
+        "b/c/x.txt": "u1147\ns2\ns11---\nu1148----\nu1149------\n"
+      },
+      "right": {
+        "a/w": "u1150--\ns0----\nu1157--\nu1159-----\ns6\nu1158-\n",
+        "b/c/x.txt": "u1147\ns10\nu1152---\ns11---\nu1148----\nu1149------\n",
+        "b/c/z.rs": "u1150--\ns0----\nu1151-\ns1------\n",
+        "y.txt": "s11------\ns5----\nu1153-----\nu1154--\ns10------\nu1155--\nu1156----\ns8--\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "modified",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "renamed",
+          "a/x.txt",
+          "b/c/z.rs"
+        ],
+        [
+          "added",
+          "y.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-110",
+      "left": {
+        "a/w": "s3\nu1161\nu1162------\ns10----\n",
+        "b/c/x.txt": "s10----\nu1160\n",
+        "z.rs": "s5------\ns0\nu1163------\nu1164----\nu1165----\ns1------\nu1166----\n"
+      },
+      "right": {
+        "a/w": "s3\nu1161\nu1162------\ns10----\n",
+        "b/c/w": "s1------\n",
+        "b/c/y.txt": "s10----\ns11--\n",
+        "b/c/z.rs": "\u0000s7---\ns9-\n",
+        "z.rs": "s5------\ns0\nu1163------\nu1164----\nu1165----\ns1------\nu1166----\n"
+      },
+      "changes": [
+        [
+          "added",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "renamed",
+          "b/c/x.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "added",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-111",
+      "left": {
+        "a/y.txt": "\u0000s10\nu1167----\nu1168--\nu1169-----\ns8---\ns7---\n",
+        "z.rs": "s5-----\nu1170---\ns7-----\nu1171--\n"
+      },
+      "right": {
+        "b/c/w": "u1174----\nu1175------\nu1176-----\nu1177--\nu1178---\ns4\nu1179\ns7-\n",
+        "x.txt": "s5-----\nu1170---\nu1172------\nu1171--\nu1173---\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "added",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "renamed",
+          "z.rs",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-112",
+      "left": {
+        "a/x.txt": "s10--\ns6---\ns5----\nu1184----\n",
+        "x.txt": "s1---\ns4----\ns4----\nu1180----\nu1181--\nu1182\nu1183\n"
+      },
+      "right": {
+        "y.txt": "s10--\ns6---\ns5----\nu1184----\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "x.txt",
+          "x.txt"
+        ],
+        [
+          "renamed",
+          "a/x.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-113",
+      "left": {
+        "a/w": "u1195--\ns4\ns2\ns7---\n",
+        "a/y.txt": "u1185-\nu1186\nu1187---\ns3-\ns8---\nu1188--\ns6-----\nu1189----\n",
+        "b/c/x.txt": "u1190---\nu1191--\ns4--\ns4----\nu1192\nu1193--\nu1194-\n",
+        "w": "u1185-\nu1186\nu1187---\ns3-\ns8---\nu1188--\ns6-----\nu1189----\n",
+        "z.rs": "u1196---\ns6------\ns5--\nu1197-----\n"
+      },
+      "right": {
+        "a/x.txt": "u1185-\nu1186\nu1187---\ns3-\ns8---\nu1188--\ns6-----\nu1189----\n",
+        "a/y.txt": "u1185-\nu1186\nu1187---\ns3-\ns8---\nu1188--\ns6-----\nu1189----\n",
+        "b/c/w": "s11------\ns11-\n",
+        "b/c/z.rs": "u1190---\nu1191--\ns4--\ns4----\nu1192\nu1193--\nu1194-\n",
+        "x.txt": "u1198-\ns6------\ns5--\nu1197-----\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "renamed",
+          "w",
+          "a/x.txt"
+        ],
+        [
+          "added",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "renamed",
+          "b/c/x.txt",
+          "b/c/z.rs"
+        ],
+        [
+          "renamed",
+          "z.rs",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-114",
+      "left": {
+        "a/x.txt": "u1202-\nu1203\nu1204-----\nu1205------\nu1206------\nu1207---\ns8----\n",
+        "b/c/z.rs": "s6-----\nu1199-----\ns2\nu1200--\ns7--\nu1201\n"
+      },
+      "right": {
+        "a/z.rs": "u1202-\nu1203\nu1204-----\nu1205------\nu1206------\nu1207---\ns8----\n",
+        "b/c/z.rs": "s8-----\nu1199-----\ns2\nu1200--\ns7--\nu1208------\nu1201\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/x.txt",
+          "a/z.rs"
+        ],
+        [
+          "modified",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-115",
+      "left": {
+        "b/c/x.txt": "u1212---\n",
+        "w": "s0\nu1213-----\ns10--\nu1214---\ns11-\nu1215-----\ns0------\nu1216----\n",
+        "x.txt": "u1209----\ns11-----\nu1210----\ns0----\nu1211-\n"
+      },
+      "right": {
+        "w": "u1213-----\ns10--\nu1214---\nu1215-----\ns0------\nu1216----\ns7--\n",
+        "y.txt": "u1212---\n",
+        "z.rs": "u1209----\ns11-----\nu1210----\ns0----\nu1211-\n"
+      },
+      "changes": [
+        [
+          "modified",
+          "w",
+          "w"
+        ],
+        [
+          "renamed",
+          "b/c/x.txt",
+          "y.txt"
+        ],
+        [
+          "renamed",
+          "x.txt",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-116",
+      "left": {
+        "a/z.rs": "s9------\n",
+        "b/c/w": "u1217--\nu1218----\nu1219-----\nu1220-\ns2--\nu1221----\ns11----\n",
+        "w": "s9------\n"
+      },
+      "right": {
+        "a/x.txt": "s10-----\ns9------\n",
+        "a/z.rs": "s9------\n",
+        "x.txt": "u1217--\nu1218----\nu1219-----\nu1220-\ns2--\nu1221----\ns11----\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "w",
+          "a/x.txt"
+        ],
+        [
+          "renamed",
+          "b/c/w",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-117",
+      "left": {
+        "x.txt": "u1224\nu1225-\ns4--\nu1226---\nu1227-----\nu1228\n",
+        "z.rs": "u1222----\ns7---\ns3-\nu1223-\ns10------\ns3\n"
+      },
+      "right": {
+        "a/w": "u1222----\ns7---\ns3-\nu1223-\ns10------\ns3\n",
+        "w": "u1222----\ns7---\ns3-\ns10------\ns3\n",
+        "x.txt": "u1225-\ns4--\ns2---\nu1226---\nu1227-----\nu1228\n",
+        "z.rs": "u1222----\ns7---\ns3-\nu1223-\ns10------\ns3\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "added",
+          "w",
+          "w"
+        ],
+        [
+          "modified",
+          "x.txt",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-118",
+      "left": {
+        "a/w": "s2----\ns2------\nu1235-\ns11---\nu1236---\n",
+        "a/x.txt": "",
+        "b/c/w": "u1229---\n",
+        "b/c/x.txt": "u1230-----\ns2----\n",
+        "b/c/z.rs": "s0\n",
+        "z.rs": "u1231-----\ns11-----\nu1232------\nu1233-----\nu1234----\n"
+      },
+      "right": {
+        "a/w": "s2----\ns2------\nu1235-\ns11---\nu1236---\n",
+        "a/y.txt": "s9-\nu1241--\n",
+        "b/c/x.txt": "u1238------\nu1230-----\ns2----\n",
+        "b/c/y.txt": "s8-----\n",
+        "x.txt": "u1242---\n",
+        "y.txt": "u1229---\n",
+        "z.rs": "u1231-----\ns11-----\nu1232------\nu1233-----\nu1239-\nu1240-\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "added",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "modified",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "added",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "removed",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "added",
+          "x.txt",
+          "x.txt"
+        ],
+        [
+          "renamed",
+          "b/c/w",
+          "y.txt"
+        ],
+        [
+          "modified",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-119",
+      "left": {
+        "b/c/w": "u1243----\ns3---\ns6----\ns7----\n",
+        "b/c/y.txt": "u1246---\ns7----\nu1247-----\nu1248------\ns10\n",
+        "b/c/z.rs": "u1244-----\ns10\nu1245-----\n",
+        "y.txt": "\u0000u1249----\ns10-\ns4---\nu1250---\ns3--\nu1251-\n",
+        "z.rs": "u1246---\ns7----\nu1247-----\nu1248------\ns10\n"
+      },
+      "right": {
+        "a/x.txt": "u1243----\ns3---\ns6----\ns7----\n",
+        "b/c/z.rs": "u1244-----\ns10\nu1245-----\n",
+        "w": "u1246---\nu1247-----\nu1252-----\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "b/c/w",
+          "a/x.txt"
+        ],
+        [
+          "removed",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "added",
+          "w",
+          "w"
+        ],
+        [
+          "removed",
+          "y.txt",
+          "y.txt"
+        ],
+        [
+          "removed",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-120",
+      "left": {
+        "a/z.rs": "s5----\ns6-\nu1257------\nu1258------\n",
+        "b/c/w": "s11-\n",
+        "b/c/z.rs": "u1253------\nu1254----\nu1255\nu1256-----\n",
+        "z.rs": "s4-----\n"
+      },
+      "right": {
+        "a/x.txt": "s7-----\nu1263\nu1264-\n",
+        "b/c/w": "u1259--\n",
+        "b/c/y.txt": "u1261-----\ns11------\nu1262---\ns10-----\ns0-----\ns10-\n",
+        "z.rs": "s4-----\nu1260\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "removed",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "modified",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "added",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "removed",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "modified",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-121",
+      "left": {
+        "a/y.txt": "u1265----\ns3---\ns0------\nu1266\nu1267-\ns7\n",
+        "a/z.rs": "s5-\ns11------\ns0-\n",
+        "b/c/x.txt": "s5-\ns9------\nu1268------\n",
+        "b/c/z.rs": "s5--\nu1269------\nu1270--\nu1271----\ns11------\nu1272--\ns9------\n",
+        "z.rs": "s3----\nu1273--\n"
+      },
+      "right": {
+        "a/x.txt": "u1265----\ns3---\ns0------\nu1266\nu1267-\ns7\n",
+        "b/c/w": "u1274-----\ns3---\ns0------\nu1266\ns7\n",
+        "b/c/x.txt": "s5-\ns9------\nu1268------\n",
+        "w": "s5--\nu1269------\nu1270--\nu1271----\ns11------\nu1272--\ns9------\n",
+        "z.rs": "s3----\nu1273--\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/y.txt",
+          "a/x.txt"
+        ],
+        [
+          "removed",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "added",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "renamed",
+          "b/c/z.rs",
+          "w"
+        ]
+      ]
+    },
+    {
+      "id": "rename-122",
+      "left": {
+        "w": "u1276------\nu1277----\nu1278\ns3-----\ns11-----\nu1279----\nu1280----\nu1281----\n",
+        "y.txt": "s3\nu1275---\n"
+      },
+      "right": {
+        "b/c/x.txt": "u1276------\nu1277----\nu1278\ns3-----\ns11-----\nu1279----\nu1281----\ns11----\n",
+        "z.rs": "u1275---\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "w",
+          "b/c/x.txt"
+        ],
+        [
+          "renamed",
+          "y.txt",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-123",
+      "left": {
+        "a/w": "u1284---\ns11-----\ns3-----\ns11------\ns6-----\n",
+        "a/x.txt": "u1285------\ns3-----\ns7------\nu1286----\ns9-\nu1287---\nu1288----\n",
+        "b/c/w": "s7-----\n",
+        "x.txt": "s7-----\n",
+        "y.txt": "s8-\ns0---\nu1282\nu1283---\n"
+      },
+      "right": {
+        "a/w": "u1284---\ns11-----\ns3-----\ns4-----\ns9----\n",
+        "a/y.txt": "s8-\ns3----\nu1282\nu1283---\n",
+        "a/z.rs": "u1290---\ns7-----\nu1289--\n",
+        "w": "u1285------\ns3-----\ns7------\nu1286----\ns9-\nu1291---\nu1288----\n",
+        "x.txt": "s7-----\n"
+      },
+      "changes": [
+        [
+          "modified",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "renamed",
+          "y.txt",
+          "a/y.txt"
+        ],
+        [
+          "added",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "removed",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "renamed",
+          "a/x.txt",
+          "w"
+        ]
+      ]
+    },
+    {
+      "id": "rename-124",
+      "left": {
+        "a/z.rs": "u1292----\ns8-\nu1293-----\nu1294-\n",
+        "b/c/w": "s8\nu1300----\n",
+        "b/c/z.rs": "s6----\ns5----\ns5-\n",
+        "y.txt": "s2----\nu1301-\n",
+        "z.rs": "s4-\nu1295-\ns7-----\nu1296-\nu1297--\nu1298------\nu1299-\n"
+      },
+      "right": {
+        "a/w": "u1292----\ns8-\nu1293-----\nu1294-\n",
+        "b/c/w": "u1303-\ns0----\nu1300----\n",
+        "b/c/x.txt": "s6----\ns5----\ns5-\n",
+        "b/c/y.txt": "u1304------\ns4------\ns5----\ns7-\n",
+        "y.txt": "s2----\nu1301-\n",
+        "z.rs": "s4-\nu1295-\ns7-----\nu1296-\nu1297--\nu1298------\nu1299-\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/z.rs",
+          "a/w"
+        ],
+        [
+          "modified",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "renamed",
+          "b/c/z.rs",
+          "b/c/x.txt"
+        ],
+        [
+          "added",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-125",
+      "left": {
+        "b/c/w": "\u0000u1307--\nu1308--\ns2--\ns5-----\ns8----\ns6--\ns6----\ns3--\n",
+        "b/c/y.txt": "u1305-\n",
+        "b/c/z.rs": "u1309----\nu1310----\ns5---\n",
+        "y.txt": "u1306----\n"
+      },
+      "right": {
+        "a/x.txt": "u1312--\n",
+        "w": "u1311----\nu1308--\ns10-\ns2--\ns5-----\ns8----\ns6--\ns6----\n",
+        "z.rs": "u1313-\nu1306----\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "removed",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "removed",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "removed",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "added",
+          "w",
+          "w"
+        ],
+        [
+          "renamed",
+          "y.txt",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-126",
+      "left": {
+        "a/y.txt": "u1314---\ns11\nu1315----\ns4\nu1316--\nu1317-----\ns3\ns5----\n",
+        "b/c/z.rs": "s10----\ns2---\n",
+        "w": "u1318-----\nu1319-\ns2--\nu1320-----\ns6---\nu1321--\n"
+      },
+      "right": {
+        "a/x.txt": "s10----\nu1323--\nu1322---\n",
+        "a/y.txt": "u1314---\ns11\ns1---\ns4\nu1316--\nu1317-----\ns3\ns5----\n",
+        "b/c/y.txt": "u1324----\ns2----\ns4----\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "modified",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "added",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "removed",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "removed",
+          "w",
+          "w"
+        ]
+      ]
+    },
+    {
+      "id": "rename-127",
+      "left": {
+        "a/y.txt": "s2--\n",
+        "b/c/x.txt": "s0\ns4----\nu1326-----\n",
+        "b/c/y.txt": "s5---\nu1325\n",
+        "b/c/z.rs": "",
+        "y.txt": "s6---\ns1---\ns2--\n"
+      },
+      "right": {
+        "a/x.txt": "s10\n",
+        "a/y.txt": "s2--\n",
+        "b/c/w": "",
+        "b/c/y.txt": "s5---\nu1325\n",
+        "z.rs": ""
+      },
+      "changes": [
+        [
+          "added",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "added",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "removed",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "removed",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "removed",
+          "y.txt",
+          "y.txt"
+        ],
+        [
+          "added",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-128",
+      "left": {
+        "a/z.rs": "u1329\nu1330--\nu1331----\n",
+        "x.txt": "\u0000u1327-----\ns4--\nu1328-\ns2--\ns9-\n"
+      },
+      "right": {
+        "a/y.txt": "u1329\nu1330--\nu1331----\n",
+        "y.txt": "\u0000u1327-----\ns4--\nu1328-\ns2--\ns9-\n",
+        "z.rs": "u1332---\n\u0000u1327-----\ns4--\nu1328-\ns2--\ns0------\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/z.rs",
+          "a/y.txt"
+        ],
+        [
+          "renamed",
+          "x.txt",
+          "y.txt"
+        ],
+        [
+          "added",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-129",
+      "left": {
+        "a/y.txt": "u1340--\ns11--\n",
+        "b/c/y.txt": "u1333------\nu1334----\nu1335------\nu1336-----\nu1337\nu1338-\ns11------\nu1339\n",
+        "b/c/z.rs": "u1333------\nu1334----\nu1335------\nu1336-----\nu1337\nu1338-\ns11------\nu1339\n",
+        "w": "u1340--\ns11--\n",
+        "y.txt": "\u0000u1341------\ns5\nu1342--\nu1343\nu1344------\n"
+      },
+      "right": {
+        "a/w": "u1345---\nu1334----\nu1335------\nu1336-----\nu1337\nu1338-\ns0--\ns11------\nu1339\n",
+        "a/x.txt": "u1346---\nu1347--\n",
+        "b/c/x.txt": "u1340--\ns11--\n",
+        "b/c/z.rs": "u1333------\nu1334----\nu1335------\nu1336-----\nu1337\nu1338-\ns11------\nu1339\n",
+        "w": "u1340--\ns11--\n",
+        "y.txt": "\u0000u1341------\ns5\nu1342--\nu1343\nu1344------\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "b/c/y.txt",
+          "a/w"
+        ],
+        [
+          "added",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "renamed",
+          "a/y.txt",
+          "b/c/x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-130",
+      "left": {
+        "a/x.txt": "u1348----\n",
+        "a/z.rs": "s3-\ns2----\nu1349----\n",
+        "y.txt": "s3-\ns2----\nu1349----\n"
+      },
+      "right": {
+        "a/x.txt": "u1348----\n",
+        "b/c/x.txt": "s3-\ns2----\nu1349----\n",
+        "b/c/y.txt": "s4-\ns1-----\nu1352-----\nu1353----\ns11-\n",
+        "b/c/z.rs": "s3-\nu1350-----\nu1351---\ns2----\nu1349----\n",
+        "w": "s3-\ns2----\nu1349----\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/z.rs",
+          "b/c/x.txt"
+        ],
+        [
+          "added",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "added",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "renamed",
+          "y.txt",
+          "w"
+        ]
+      ]
+    },
+    {
+      "id": "rename-131",
+      "left": {
+        "a/w": "s2-\ns4------\ns5----\ns2----\nu1354----\nu1355------\ns8--\n",
+        "a/y.txt": "s7------\ns5\nu1356------\ns2-----\nu1357\n",
+        "a/z.rs": "s4----\ns0------\ns2\ns6\ns2---\n"
+      },
+      "right": {
+        "a/z.rs": "s4----\ns0------\ns2\ns6\ns2---\n",
+        "b/c/y.txt": "s2-\ns4------\ns5----\ns2----\nu1354----\nu1355------\ns8--\n",
+        "x.txt": "",
+        "y.txt": "s7------\ns5\nu1356------\ns2-----\nu1358\nu1357\n",
+        "z.rs": "s2-\ns4------\ns5----\ns2----\nu1354----\nu1355------\ns8--\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/w",
+          "b/c/y.txt"
+        ],
+        [
+          "added",
+          "x.txt",
+          "x.txt"
+        ],
+        [
+          "renamed",
+          "a/y.txt",
+          "y.txt"
+        ],
+        [
+          "added",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-132",
+      "left": {
+        "a/x.txt": "s9----\nu1362----\nu1363-\nu1364-\nu1365-----\n",
+        "a/y.txt": "s4------\n",
+        "b/c/y.txt": "s11--\nu1359----\nu1360------\nu1361------\n",
+        "b/c/z.rs": "s4------\n",
+        "w": "s4------\n",
+        "z.rs": "s11--\nu1359----\nu1360------\nu1361------\n"
+      },
+      "right": {
+        "a/z.rs": "u1366---\nu1367---\n",
+        "b/c/x.txt": "s4------\n",
+        "b/c/z.rs": "s5----\ns4------\n",
+        "x.txt": "s11--\nu1359----\nu1360------\nu1368----\n",
+        "y.txt": "s9----\ns1-\nu1363-\nu1364-\nu1365-----\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "renamed",
+          "a/y.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "modified",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "removed",
+          "w",
+          "w"
+        ],
+        [
+          "renamed",
+          "b/c/y.txt",
+          "x.txt"
+        ],
+        [
+          "renamed",
+          "a/x.txt",
+          "y.txt"
+        ],
+        [
+          "removed",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-133",
+      "left": {
+        "a/x.txt": "u1375-\ns3----\n",
+        "a/y.txt": "u1376-----\nu1377---\nu1378------\ns3----\ns3---\n",
+        "b/c/y.txt": "u1375-\ns3----\n",
+        "b/c/z.rs": "u1369--\nu1370------\nu1371\nu1372------\nu1373--\nu1374----\ns8-\n"
+      },
+      "right": {
+        "a/y.txt": "u1376-----\nu1377---\nu1378------\ns3----\ns3---\n",
+        "a/z.rs": "u1375-\ns3----\n",
+        "b/c/x.txt": "u1371\nu1372------\nu1379-\nu1373--\nu1374----\ns8-\n",
+        "x.txt": "u1375-\ns3----\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/x.txt",
+          "a/z.rs"
+        ],
+        [
+          "renamed",
+          "b/c/z.rs",
+          "b/c/x.txt"
+        ],
+        [
+          "renamed",
+          "b/c/y.txt",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-134",
+      "left": {
+        "a/w": "s2-\nu1380----\n",
+        "a/x.txt": "s2-\nu1380----\n",
+        "b/c/z.rs": "s2-\nu1380----\n"
+      },
+      "right": {
+        "b/c/x.txt": "s8-----\ns2\nu1383-----\nu1384---\ns4-----\ns0---\n",
+        "b/c/z.rs": "s2-\nu1380----\nu1382-\n",
+        "w": "u1381\ns2-\ns9------\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "removed",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "added",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "modified",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "added",
+          "w",
+          "w"
+        ]
+      ]
+    },
+    {
+      "id": "rename-135",
+      "left": {
+        "x.txt": "\u0000u1385-\nu1386-\n",
+        "y.txt": "s9--\nu1387----\nu1388---\n"
+      },
+      "right": {
+        "a/y.txt": "\u0000u1385-\nu1386-\n",
+        "b/c/z.rs": "u1389---\n\u0000u1385-\ns9--\nu1390----\n",
+        "w": "\u0000u1385-\nu1386-\n",
+        "y.txt": "s9--\nu1387----\nu1388---\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "x.txt",
+          "a/y.txt"
+        ],
+        [
+          "added",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "added",
+          "w",
+          "w"
+        ]
+      ]
+    },
+    {
+      "id": "rename-136",
+      "left": {
+        "a/y.txt": "u1396---\ns6-----\nu1397-----\nu1398---\nu1399----\ns1------\ns5------\n",
+        "w": "s11\n",
+        "x.txt": "s9----\ns4----\ns6---\ns8----\ns8-\nu1394-\ns4----\nu1395\n",
+        "y.txt": "s6----\ns8--\nu1391----\nu1392--\ns4-\nu1393-----\n"
+      },
+      "right": {
+        "b/c/z.rs": "s1------\ns4----\ns6---\ns8----\ns8-\nu1394-\ns4----\nu1395\n",
+        "w": "u1401----\nu1402-\n",
+        "x.txt": "s9----\ns4----\ns6---\ns8----\ns8-\nu1394-\ns4----\nu1395\n",
+        "y.txt": "s6----\ns8--\nu1391----\nu1392--\ns4-\nu1393-----\n",
+        "z.rs": "u1396---\ns6-----\nu1397-----\nu1398---\nu1399----\ns1------\ns5------\n"
+      },
+      "changes": [
+        [
+          "added",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "modified",
+          "w",
+          "w"
+        ],
+        [
+          "renamed",
+          "a/y.txt",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-137",
+      "left": {
+        "a/w": "s9-----\nu1407-\nu1408-----\ns2-\ns9------\n",
+        "a/y.txt": "s4--\nu1403\nu1404------\nu1405---\nu1406----\n",
+        "z.rs": "u1409---\ns7--\nu1410-\nu1411----\nu1412---\n"
+      },
+      "right": {
+        "a/w": "s9-----\nu1407-\nu1408-----\ns2-\nu1413------\n",
+        "b/c/w": "u1414\nu1415-\nu1416----\ns0-----\nu1417----\n",
+        "b/c/x.txt": "s1----\nu1418----\nu1419--\n",
+        "w": "s4--\nu1403\nu1404------\nu1405---\nu1406----\n",
+        "z.rs": "s1-\nu1409---\ns7--\nu1410-\nu1411----\nu1412---\n"
+      },
+      "changes": [
+        [
+          "modified",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "added",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "added",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "renamed",
+          "a/y.txt",
+          "w"
+        ],
+        [
+          "modified",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-138",
+      "left": {
+        "a/z.rs": "u1420-----\nu1421----\nu1422-----\ns3\ns8-\nu1423\nu1424-\ns10\n",
+        "b/c/w": "u1420-----\nu1421----\nu1422-----\ns3\ns8-\nu1423\nu1424-\ns10\n",
+        "z.rs": "s1-----\n"
+      },
+      "right": {
+        "a/w": "u1420-----\nu1425\ns3\ns8-\nu1424-\ns10\n",
+        "b/c/w": "u1420-----\nu1421----\nu1422-----\ns3\ns8-\ns0-\nu1424-\nu1426----\ns10\n",
+        "z.rs": "u1427---\ns1-----\nu1428--\ns11\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/z.rs",
+          "a/w"
+        ],
+        [
+          "modified",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "modified",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-139",
+      "left": {
+        "a/x.txt": "u1429----\nu1430--\ns11-----\n",
+        "a/y.txt": "u1431-----\nu1432-----\n",
+        "b/c/w": "u1429----\nu1430--\ns11-----\n",
+        "b/c/x.txt": "u1429----\nu1430--\ns11-----\n",
+        "w": "u1433--\n",
+        "y.txt": "s2------\nu1434----\nu1435------\ns8\ns5----\ns7-----\n"
+      },
+      "right": {
+        "a/w": "u1438\nu1430--\nu1437\n",
+        "a/z.rs": "u1429----\nu1430--\ns11-----\n",
+        "b/c/x.txt": "u1429----\nu1430--\ns11-----\n",
+        "b/c/y.txt": "u1429----\nu1430--\ns11-----\n",
+        "w": "u1433--\n",
+        "x.txt": "s8---\nu1434----\nu1435------\ns8\ns5----\nu1439-----\ns7-----\n",
+        "z.rs": "u1436--\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "removed",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "renamed",
+          "a/x.txt",
+          "a/z.rs"
+        ],
+        [
+          "renamed",
+          "b/c/w",
+          "b/c/y.txt"
+        ],
+        [
+          "renamed",
+          "y.txt",
+          "x.txt"
+        ],
+        [
+          "added",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-140",
+      "left": {
+        "a/x.txt": "s3-\n",
+        "b/c/y.txt": "s3-\n",
+        "b/c/z.rs": "\u0000s7---\n"
+      },
+      "right": {
+        "a/x.txt": "u1440-----\ns4------\ns4--\n",
+        "a/z.rs": "u1442-\nu1441-----\n",
+        "y.txt": "s3-\n"
+      },
+      "changes": [
+        [
+          "modified",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "added",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "removed",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "renamed",
+          "b/c/y.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-141",
+      "left": {
+        "a/w": "u1443--\n",
+        "a/x.txt": "s10----\nu1444\n",
+        "b/c/w": "u1445--\nu1446\ns2\nu1447-----\nu1448----\nu1449------\nu1450-\ns1------\n",
+        "y.txt": "u1451--\nu1452--\ns4\nu1453------\n"
+      },
+      "right": {
+        "a/w": "u1443--\n",
+        "b/c/w": "u1445--\nu1446\ns2\nu1447-----\ns9---\ns9----\nu1450-\ns1------\n",
+        "b/c/x.txt": "s10----\nu1444\n",
+        "y.txt": "u1451--\nu1452--\ns4\nu1453------\n",
+        "z.rs": "s10-----\nu1454--\n"
+      },
+      "changes": [
+        [
+          "modified",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "renamed",
+          "a/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "added",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-142",
+      "left": {
+        "a/y.txt": "u1455---\nu1456----\ns1\ns6---\nu1457------\ns7----\nu1458-\n",
+        "w": "u1459------\ns3----\nu1460---\ns9\ns7------\nu1461---\nu1462---\n"
+      },
+      "right": {
+        "a/w": "u1459------\ns3----\nu1460---\ns9\ns7------\nu1461---\nu1462---\n",
+        "a/x.txt": "u1463--\nu1459------\ns4---\nu1460---\ns0----\ns7------\nu1461---\nu1462---\n",
+        "b/c/x.txt": "u1455---\nu1456----\ns1\ns6---\nu1457------\ns7----\nu1458-\n",
+        "b/c/y.txt": "u1459------\ns3----\nu1460---\ns9\ns7------\nu1461---\nu1462---\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "w",
+          "a/w"
+        ],
+        [
+          "added",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "renamed",
+          "a/y.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "added",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-143",
+      "left": {
+        "b/c/x.txt": "u1464-\ns4------\nu1465---\nu1466\n",
+        "y.txt": "u1464-\ns4------\nu1465---\nu1466\n"
+      },
+      "right": {
+        "a/z.rs": "u1464-\ns4------\nu1465---\nu1466\n",
+        "b/c/x.txt": "u1467--\ns4------\ns7------\nu1468--\nu1465---\nu1466\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "y.txt",
+          "a/z.rs"
+        ],
+        [
+          "modified",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-144",
+      "left": {
+        "a/w": "s3--\ns0-----\ns6--\ns9\n",
+        "w": "s5\ns11--\ns3-----\ns0-----\n",
+        "x.txt": ""
+      },
+      "right": {
+        "a/z.rs": "",
+        "b/c/x.txt": "s6--\n",
+        "x.txt": ""
+      },
+      "changes": [
+        [
+          "removed",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "added",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "added",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "removed",
+          "w",
+          "w"
+        ]
+      ]
+    },
+    {
+      "id": "rename-145",
+      "left": {
+        "a/y.txt": "u1474\ns7---\ns10----\ns7----\ns4--\n",
+        "b/c/w": "",
+        "b/c/z.rs": "\u0000u1470------\nu1471--\ns10------\ns6--\nu1472--\nu1473\ns8-----\n",
+        "w": "\u0000u1470------\nu1471--\ns10------\ns6--\nu1472--\nu1473\ns8-----\n",
+        "y.txt": "u1475-\ns2----\nu1476-\ns4-\ns0-\nu1477-----\nu1478-----\n"
+      },
+      "right": {
+        "a/x.txt": "u1474\ns7---\ns10----\ns7----\ns4--\n",
+        "a/z.rs": "u1480------\ns1------\n",
+        "b/c/x.txt": "u1479---\ns6----\n",
+        "x.txt": "u1475-\ns2----\nu1476-\ns4-\ns0-\ns3------\nu1478-----\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/y.txt",
+          "a/x.txt"
+        ],
+        [
+          "added",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "removed",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "added",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "removed",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "removed",
+          "w",
+          "w"
+        ],
+        [
+          "renamed",
+          "y.txt",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-146",
+      "left": {
+        "a/w": "s2--\nu1481--\n",
+        "b/c/y.txt": "s1-\nu1482----\ns10---\ns8--\nu1483-----\ns7---\ns7------\n"
+      },
+      "right": {
+        "b/c/y.txt": "s1-\nu1482----\ns10---\ns8--\nu1483-----\ns7---\ns7------\n",
+        "b/c/z.rs": "s1-\nu1482----\ns8--\nu1483-----\ns7---\ns7------\n",
+        "y.txt": "s2--\nu1481--\n",
+        "z.rs": "s8---\ns1--\ns1\nu1484--\ns2-----\n"
+      },
+      "changes": [
+        [
+          "added",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "renamed",
+          "a/w",
+          "y.txt"
+        ],
+        [
+          "added",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-147",
+      "left": {
+        "a/z.rs": "u1485----\nu1486---\nu1487---\n",
+        "b/c/x.txt": "u1489\nu1490---\nu1491-\ns4-\ns3-----\nu1492--\ns7--\ns5--\n",
+        "b/c/y.txt": "u1488--\ns1------\ns4----\n",
+        "b/c/z.rs": "",
+        "x.txt": "s7---\n",
+        "y.txt": "u1493------\ns6------\nu1494-----\nu1495---\n"
+      },
+      "right": {
+        "a/w": "u1499--\ns9------\ns5-\ns6-\nu1500----\nu1501-----\nu1502-----\n",
+        "a/y.txt": "s7---\n",
+        "b/c/w": "u1496------\ns4----\n",
+        "b/c/z.rs": "",
+        "w": "u1485----\nu1486---\nu1487---\n",
+        "y.txt": "u1493------\ns9--\nu1497-----\nu1494-----\ns10---\nu1495---\n",
+        "z.rs": "u1498----\ns5-----\ns7----\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "renamed",
+          "x.txt",
+          "a/y.txt"
+        ],
+        [
+          "added",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "removed",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "removed",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "renamed",
+          "a/z.rs",
+          "w"
+        ],
+        [
+          "modified",
+          "y.txt",
+          "y.txt"
+        ],
+        [
+          "added",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-148",
+      "left": {
+        "a/w": "s0--\nu1509---\nu1510------\nu1511-\nu1512-\nu1513-\n",
+        "a/x.txt": "",
+        "a/y.txt": "s2---\ns1----\ns1---\ns9\n",
+        "b/c/z.rs": "s11-----\n",
+        "x.txt": "u1503------\ns4----\nu1504-----\n",
+        "y.txt": "u1505\nu1506------\nu1507----\ns3----\ns0-----\nu1508-\ns0\n"
+      },
+      "right": {
+        "a/x.txt": "",
+        "b/c/w": "s1----\ns1---\nu1514----\n",
+        "b/c/z.rs": "s11-----\ns5-\n",
+        "w": "s0--\nu1509---\nu1510------\nu1511-\nu1512-\nu1513-\n",
+        "x.txt": "u1503------\ns4----\nu1504-----\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/y.txt",
+          "b/c/w"
+        ],
+        [
+          "modified",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "renamed",
+          "a/w",
+          "w"
+        ],
+        [
+          "removed",
+          "y.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-149",
+      "left": {
+        "a/x.txt": "",
+        "b/c/y.txt": "u1515\ns8---\ns7-\nu1516-----\nu1517-\ns8--\n",
+        "y.txt": "",
+        "z.rs": "s0-\ns5-----\nu1518--\n"
+      },
+      "right": {
+        "a/y.txt": "s11----\nu1520----\n",
+        "b/c/x.txt": "s4-\nu1526------\nu1518--\n",
+        "b/c/y.txt": "s2\ns8---\ns7-\nu1516-----\ns8--\n",
+        "w": "u1521-----\nu1522---\nu1523-\ns5----\nu1524---\ns0----\nu1525\ns3\n",
+        "y.txt": "",
+        "z.rs": "s0-\ns5-----\nu1518--\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "added",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "added",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "modified",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "added",
+          "w",
+          "w"
+        ]
+      ]
+    },
+    {
+      "id": "rename-150",
+      "left": {
+        "a/y.txt": "u1532----\nu1533-\nu1534-----\ns8\ns10------\n",
+        "a/z.rs": "u1532----\nu1533-\nu1534-----\ns8\ns10------\n",
+        "b/c/y.txt": "u1528----\ns8--\nu1529------\ns3-\ns10-\ns7---\nu1530-----\nu1531------\n",
+        "b/c/z.rs": "u1532----\nu1533-\nu1534-----\ns8\ns10------\n",
+        "w": "s11\n",
+        "y.txt": "s6--\ns1------\ns8-----\ns5---\nu1527-----\n"
+      },
+      "right": {
+        "a/w": "u1532----\nu1533-\nu1534-----\ns1--\ns10------\n",
+        "a/x.txt": "u1532----\nu1533-\nu1534-----\ns8\ns10------\n",
+        "b/c/x.txt": "u1528----\ns8--\nu1529------\ns3-\ns10-\ns7---\nu1530-----\nu1531------\n",
+        "w": "s5----\ns11\n",
+        "x.txt": "u1532----\nu1535---\nu1534-----\ns8\nu1536------\ns10------\n",
+        "z.rs": "s6--\ns1------\ns8-----\ns5---\ns2-----\nu1527-----\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "b/c/z.rs",
+          "a/w"
+        ],
+        [
+          "renamed",
+          "a/y.txt",
+          "a/x.txt"
+        ],
+        [
+          "renamed",
+          "b/c/y.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "modified",
+          "w",
+          "w"
+        ],
+        [
+          "renamed",
+          "a/z.rs",
+          "x.txt"
+        ],
+        [
+          "renamed",
+          "y.txt",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-151",
+      "left": {
+        "a/y.txt": "s10----\nu1537-----\n",
+        "w": "\u0000s6-\n"
+      },
+      "right": {
+        "a/y.txt": "s10----\nu1537-----\n",
+        "b/c/z.rs": "s8---\ns5---\ns7--\nu1538--\n",
+        "w": "\u0000s6-\n",
+        "x.txt": "s10----\n"
+      },
+      "changes": [
+        [
+          "added",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "added",
+          "x.txt",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-152",
+      "left": {
+        "a/w": "u1543-----\nu1544--\nu1545--\ns5-----\n",
+        "a/x.txt": "u1546------\ns1-----\ns6--\n",
+        "b/c/z.rs": "s11-\nu1539-----\nu1540----\ns2-----\nu1541---\nu1542---\ns5\n",
+        "w": "s8-\nu1547----\nu1548------\ns4------\ns8-----\nu1549----\nu1550\ns5-\n"
+      },
+      "right": {
+        "a/x.txt": "u1546------\n",
+        "a/z.rs": "s2------\ns11\nu1551------\nu1552------\n",
+        "b/c/y.txt": "u1543-----\nu1544--\nu1545--\ns4\ns5-----\n",
+        "b/c/z.rs": "s11-\nu1539-----\nu1540----\ns2-----\nu1541---\nu1542---\ns9-\ns5\n",
+        "w": "s8-\nu1547----\nu1548------\ns4------\ns8-----\nu1549----\nu1550\ns5-\n"
+      },
+      "changes": [
+        [
+          "modified",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "added",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "renamed",
+          "a/w",
+          "b/c/y.txt"
+        ],
+        [
+          "modified",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-153",
+      "left": {
+        "a/w": "s8-----\n",
+        "a/x.txt": "u1558--\nu1559-\ns4--\ns6-----\ns4-\nu1560\n",
+        "a/y.txt": "u1553--\nu1554---\ns10-----\nu1555\ns5\nu1556---\nu1557-\n",
+        "b/c/w": "u1553--\nu1554---\ns10-----\nu1555\ns5\nu1556---\nu1557-\n",
+        "b/c/z.rs": "u1558--\nu1559-\ns4--\ns6-----\ns4-\nu1560\n",
+        "z.rs": ""
+      },
+      "right": {
+        "a/x.txt": "u1558--\ns2--\nu1559-\ns6-----\ns4-\nu1561----\n",
+        "a/y.txt": "s9--\nu1554---\ns0\nu1555\ns5\nu1556---\nu1562--\n",
+        "b/c/w": "u1553--\ns0----\ns10-----\nu1555\ns3------\nu1556---\nu1557-\n",
+        "b/c/x.txt": "u1558--\nu1559-\ns4--\ns6-----\ns4-\n",
+        "b/c/y.txt": "s8-----\n",
+        "z.rs": ""
+      },
+      "changes": [
+        [
+          "modified",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "modified",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "modified",
+          "b/c/w",
+          "b/c/w"
+        ],
+        [
+          "renamed",
+          "b/c/z.rs",
+          "b/c/x.txt"
+        ],
+        [
+          "renamed",
+          "a/w",
+          "b/c/y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-154",
+      "left": {
+        "b/c/w": "s10--\nu1563\ns3---\ns4-----\ns0\ns8------\nu1564---\ns1----\n",
+        "y.txt": "u1565-\ns4----\n"
+      },
+      "right": {
+        "b/c/w": "s10--\nu1563\ns3---\ns4-----\ns0\ns8------\nu1564---\ns1----\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "y.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-155",
+      "left": {
+        "a/z.rs": "u1566----\ns6------\nu1567----\nu1568----\nu1569\n",
+        "b/c/w": "s9-----\nu1570--\nu1571------\n",
+        "x.txt": "u1566----\ns6------\nu1567----\nu1568----\nu1569\n"
+      },
+      "right": {
+        "a/z.rs": "u1572---\ns6------\nu1567----\nu1568----\nu1573---\nu1569\n",
+        "b/c/w": "s9-----\nu1570--\nu1571------\n"
+      },
+      "changes": [
+        [
+          "modified",
+          "a/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "removed",
+          "x.txt",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-156",
+      "left": {
+        "a/y.txt": "s3----\nu1574---\n",
+        "a/z.rs": "s8-----\ns8-----\n",
+        "b/c/y.txt": "s6---\nu1575----\ns11-----\n",
+        "b/c/z.rs": "s3----\nu1574---\n",
+        "w": "s6---\nu1575----\ns11-----\n",
+        "y.txt": "s3----\nu1574---\n"
+      },
+      "right": {
+        "a/w": "s8-----\ns8-----\nu1580----\n",
+        "a/y.txt": "s3----\nu1574---\n",
+        "a/z.rs": "s8-----\ns8-----\n",
+        "b/c/x.txt": "s10-----\n",
+        "b/c/z.rs": "s3----\nu1576--\n",
+        "x.txt": "s6---\nu1577\nu1578-----\ns11-----\n",
+        "y.txt": "u1579----\n",
+        "z.rs": "s11-----\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "added",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "removed",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "modified",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "removed",
+          "w",
+          "w"
+        ],
+        [
+          "added",
+          "x.txt",
+          "x.txt"
+        ],
+        [
+          "modified",
+          "y.txt",
+          "y.txt"
+        ],
+        [
+          "added",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-157",
+      "left": {
+        "a/w": "u1581------\n",
+        "b/c/x.txt": "s3-\nu1582-\nu1583-\n",
+        "b/c/y.txt": "",
+        "b/c/z.rs": "u1587-----\nu1588--\n",
+        "w": "s3-\nu1582-\nu1583-\n",
+        "y.txt": "s3------\nu1584----\ns8------\ns5------\nu1585-----\nu1586\ns2-\n"
+      },
+      "right": {
+        "a/w": "u1581------\n",
+        "a/x.txt": "s3-\nu1590----\n",
+        "a/y.txt": "s1------\n",
+        "b/c/w": "s3-\nu1582-\nu1583-\n",
+        "b/c/x.txt": "s3-\nu1582-\nu1583-\n",
+        "b/c/z.rs": "u1587-----\nu1589-\n",
+        "x.txt": "s5------\nu1584----\ns8------\ns5------\nu1585-----\nu1586\ns2-\nu1591\n"
+      },
+      "changes": [
+        [
+          "added",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "added",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "renamed",
+          "w",
+          "b/c/w"
+        ],
+        [
+          "removed",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "modified",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "renamed",
+          "y.txt",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "rename-158",
+      "left": {
+        "b/c/w": "s0----\nu1594\ns8--\n",
+        "b/c/y.txt": "u1592-----\nu1593--\ns8---\ns0-\n"
+      },
+      "right": {
+        "b/c/w": "s0----\nu1594\ns8--\n",
+        "b/c/y.txt": "u1592-----\nu1593--\ns8---\ns0-\n",
+        "b/c/z.rs": "u1592-----\nu1593--\ns8---\ns0-\n"
+      },
+      "changes": [
+        [
+          "added",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "rename-159",
+      "left": {
+        "a/w": "s9-----\nu1595--\ns4---\nu1596---\ns1\ns9\n",
+        "a/x.txt": "u1597---\nu1598---\ns10-\ns7----\nu1599---\nu1600--\nu1601-----\ns7----\n",
+        "a/y.txt": "u1602----\n",
+        "b/c/w": "u1608-----\ns0--\ns3---\nu1609----\ns7\ns4-----\ns7----\n",
+        "b/c/y.txt": "u1603--\ns8------\ns4------\nu1604---\ns10------\nu1605-----\ns0---\nu1606----\n",
+        "y.txt": "s10------\nu1607-\n"
+      },
+      "right": {
+        "a/w": "s10-\ns9-----\ns4---\ns1\ns9\n",
+        "a/x.txt": "s2------\nu1597---\nu1598---\ns10-\ns7----\nu1599---\nu1600--\nu1601-----\ns7----\n",
+        "b/c/z.rs": "u1608-----\ns0--\ns3---\nu1609----\ns7\ns4-----\ns7----\n",
+        "y.txt": "s10-----\n",
+        "z.rs": "s4\n"
+      },
+      "changes": [
+        [
+          "modified",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "modified",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "removed",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "removed",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "renamed",
+          "b/c/w",
+          "b/c/z.rs"
+        ],
+        [
+          "modified",
+          "y.txt",
+          "y.txt"
+        ],
+        [
+          "added",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "tie-0",
+      "left": {
+        "a/y.txt": "s6\ns9\nu1------\ns6---\ns0---\nu2------\n",
+        "x.txt": "s6\ns9\nu1------\ns6---\ns0---\nu2------\n"
+      },
+      "right": {
+        "b/c/y.txt": "s6\ns9\nu3----\ns6---\ns0---\nu2------\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "removed",
+          "x.txt",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "tie-1",
+      "left": {
+        "b/c/z.rs": "u4------\nu5\ns7-----\nu6------\nu7\nu8-\n",
+        "w": "u4------\nu5\ns7-----\nu6------\nu7\nu8-\n"
+      },
+      "right": {
+        "a/w": "u4------\nu5\ns7-----\nu6------\ns2-\nu8-\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "w",
+          "a/w"
+        ],
+        [
+          "removed",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "tie-2",
+      "left": {
+        "a/y.txt": "u9--\ns1-\nu10----\nu11----\ns11----\nu12---\n",
+        "b/c/x.txt": "u9--\ns1-\nu10----\nu11----\ns11----\nu12---\n"
+      },
+      "right": {
+        "y.txt": "u9--\ns1-\nu10----\nu11----\ns0------\nu12---\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "renamed",
+          "a/y.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "tie-3",
+      "left": {
+        "a/y.txt": "s9---\ns6--\nu13---\nu14\ns1------\nu15-----\nu16----\n",
+        "z.rs": "s9---\ns6--\nu13---\nu14\ns1------\nu15-----\nu16----\n"
+      },
+      "right": {
+        "b/c/y.txt": "s9---\ns6--\nu13---\nu14\ns1------\nu15-----\nu17---\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "a/y.txt",
+          "b/c/y.txt"
+        ],
+        [
+          "removed",
+          "z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "tie-4",
+      "left": {
+        "b/c/y.txt": "s0\ns5\nu18---\nu19-\ns11--\n",
+        "x.txt": "s0\ns5\nu18---\nu19-\ns11--\n"
+      },
+      "right": {
+        "a/y.txt": "s7-----\ns5\nu18---\nu19-\ns11--\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "b/c/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "removed",
+          "x.txt",
+          "x.txt"
+        ]
+      ]
+    },
+    {
+      "id": "tie-5",
+      "left": {
+        "b/c/y.txt": "u20--\ns0\ns7-\nu21---\n",
+        "z.rs": "u20--\ns0\ns7-\nu21---\n"
+      },
+      "right": {
+        "a/z.rs": "u20--\ns8----\ns7-\nu21---\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "z.rs",
+          "a/z.rs"
+        ],
+        [
+          "removed",
+          "b/c/y.txt",
+          "b/c/y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "tie-6",
+      "left": {
+        "a/x.txt": "s0--\ns10--\ns3--\ns3--\n",
+        "b/c/z.rs": "s0--\ns10--\ns3--\ns3--\n"
+      },
+      "right": {
+        "z.rs": "s0--\ns10--\ns3--\nu22---\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "renamed",
+          "b/c/z.rs",
+          "z.rs"
+        ]
+      ]
+    },
+    {
+      "id": "tie-7",
+      "left": {
+        "a/w": "s4--\ns9-----\ns9------\ns11\ns10---\n",
+        "y.txt": "s4--\ns9-----\ns9------\ns11\ns10---\n"
+      },
+      "right": {
+        "b/c/y.txt": "s4--\ns9-----\ns9------\ns11\ns9--\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/w",
+          "a/w"
+        ],
+        [
+          "renamed",
+          "y.txt",
+          "b/c/y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "tie-8",
+      "left": {
+        "a/y.txt": "u23\ns0----\ns5-----\ns6------\n",
+        "b/c/z.rs": "u23\ns0----\ns5-----\ns6------\n"
+      },
+      "right": {
+        "y.txt": "u23\ns0----\ns9------\ns6------\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "renamed",
+          "a/y.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "tie-9",
+      "left": {
+        "a/y.txt": "u24-----\ns11\nu25------\nu26------\n",
+        "b/c/z.rs": "u24-----\ns11\nu25------\nu26------\n"
+      },
+      "right": {
+        "y.txt": "s0--\ns11\nu25------\nu26------\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "renamed",
+          "a/y.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "tie-10",
+      "left": {
+        "a/x.txt": "u27----\nu28---\nu29----\ns9-\nu30-----\ns1-\n",
+        "b/c/y.txt": "u27----\nu28---\nu29----\ns9-\nu30-----\ns1-\n"
+      },
+      "right": {
+        "y.txt": "u27----\nu28---\nu29----\ns9-\nu30-----\ns9------\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/x.txt",
+          "a/x.txt"
+        ],
+        [
+          "renamed",
+          "b/c/y.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "tie-11",
+      "left": {
+        "b/c/w": "s9-\ns0\ns7\ns2----\ns5---\ns3--\ns4---\n",
+        "z.rs": "s9-\ns0\ns7\ns2----\ns5---\ns3--\ns4---\n"
+      },
+      "right": {
+        "a/z.rs": "s9-\ns0\ns7\ns2-----\ns5---\ns3--\ns4---\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "z.rs",
+          "a/z.rs"
+        ],
+        [
+          "removed",
+          "b/c/w",
+          "b/c/w"
+        ]
+      ]
+    },
+    {
+      "id": "tie-12",
+      "left": {
+        "a/y.txt": "u31-\ns9----\nu32------\ns6---\nu33----\n",
+        "w": "u31-\ns9----\nu32------\ns6---\nu33----\n"
+      },
+      "right": {
+        "b/c/w": "u34------\ns9----\nu32------\ns6---\nu33----\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "a/y.txt",
+          "a/y.txt"
+        ],
+        [
+          "renamed",
+          "w",
+          "b/c/w"
+        ]
+      ]
+    },
+    {
+      "id": "tie-13",
+      "left": {
+        "a/y.txt": "s1\nu35--\nu36\ns10------\nu37---\nu38---\ns9---\n",
+        "b/c/z.rs": "s1\nu35--\nu36\ns10------\nu37---\nu38---\ns9---\n"
+      },
+      "right": {
+        "y.txt": "s1\nu35--\nu36\ns10------\nu37---\nu38---\ns5-\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "b/c/z.rs",
+          "b/c/z.rs"
+        ],
+        [
+          "renamed",
+          "a/y.txt",
+          "y.txt"
+        ]
+      ]
+    },
+    {
+      "id": "tie-14",
+      "left": {
+        "a/w": "s5----\ns2--\ns10---\ns8------\nu39------\ns7------\n",
+        "b/c/x.txt": "s5----\ns2--\ns10---\ns8------\nu39------\ns7------\n"
+      },
+      "right": {
+        "w": "u40---\ns2--\ns10---\ns8------\nu39------\ns7------\n"
+      },
+      "changes": [
+        [
+          "removed",
+          "b/c/x.txt",
+          "b/c/x.txt"
+        ],
+        [
+          "renamed",
+          "a/w",
+          "w"
+        ]
+      ]
+    },
+    {
+      "id": "tie-15",
+      "left": {
+        "b/c/z.rs": "u41-\ns2----\ns9----\ns7--\ns1-----\nu42---\ns5-----\ns6--\n",
+        "w": "u41-\ns2----\ns9----\ns7--\ns1-----\nu42---\ns5-----\ns6--\n"
+      },
+      "right": {
+        "a/z.rs": "u41-\ns2----\ns9----\ns7--\ns1-----\ns8-----\ns5-----\ns6--\n"
+      },
+      "changes": [
+        [
+          "renamed",
+          "b/c/z.rs",
+          "a/z.rs"
+        ],
+        [
+          "removed",
+          "w",
+          "w"
+        ]
+      ]
+    }
+  ]
+}

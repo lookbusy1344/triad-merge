@@ -7,7 +7,7 @@ use gpui_kit::{Action, App, KeyBinding, KeyBindingContextPredicate, NoAction};
 use merge_config::keybind::{Chord, KeyAction, KeyBindings, Modifier, Windows};
 
 use crate::input_select::INPUT_PANES_CONTEXT;
-use crate::{CopyInput, SelectAllInput, diff_window, window};
+use crate::{CopyInput, SelectAllInput, diff_window, tool_window, window};
 
 /// The editor's own key context.
 const EDITOR_CONTEXT: &str = "Input";
@@ -34,16 +34,22 @@ impl Contexts {
             KeyAction::OpenSettings | KeyAction::About => vec![None],
             // Inside an editor, the editor's own ⌘F opens its search.
             KeyAction::Find => vec![Some(window::WINDOW_CONTEXT), Some(diff_window::DIFF_CONTEXT)],
-            _ => {
-                let merge = [window::WINDOW_CONTEXT, self.result.as_str()];
-                let diff = [diff_window::DIFF_CONTEXT, self.pane.as_str()];
-                [(windows.merge, merge), (windows.diff, diff)]
-                    .into_iter()
-                    .filter(|(runs, _)| *runs)
-                    .flat_map(|(_, contexts)| contexts.map(Some))
-                    .collect()
+            // The tool windows close on Cancel, as the merge and diff windows do.
+            KeyAction::Cancel => {
+                self.windows(windows).chain([Some(tool_window::CONTEXT)]).collect()
             }
+            _ => self.windows(windows).collect(),
         }
+    }
+
+    /// The merge and diff windows' contexts, for those of them `windows` runs a command in.
+    fn windows(&self, windows: Windows) -> impl Iterator<Item = Option<&str>> {
+        let merge = [window::WINDOW_CONTEXT, self.result.as_str()];
+        let diff = [diff_window::DIFF_CONTEXT, self.pane.as_str()];
+        [(windows.merge, merge), (windows.diff, diff)]
+            .into_iter()
+            .filter(|(runs, _)| *runs)
+            .flat_map(|(_, contexts)| contexts.map(Some))
     }
 }
 
@@ -130,6 +136,24 @@ mod tests {
 
     fn chord(text: &str, platform: Platform) -> Chord {
         Chord::parse(text, platform).expect("a chord")
+    }
+
+    #[test]
+    fn cancel_binds_in_the_tool_windows_too() {
+        let both = Windows { merge: true, diff: true };
+        let contexts = Contexts::new();
+        assert_eq!(
+            contexts.of(KeyAction::Cancel, both),
+            [
+                Some(window::WINDOW_CONTEXT),
+                Some(contexts.result.as_str()),
+                Some(diff_window::DIFF_CONTEXT),
+                Some(contexts.pane.as_str()),
+                Some(tool_window::CONTEXT),
+            ]
+        );
+        let save = contexts.of(KeyAction::Save, both);
+        assert!(!save.contains(&Some(tool_window::CONTEXT)), "only Cancel closes a tool window");
     }
 
     #[test]

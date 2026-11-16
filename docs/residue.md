@@ -27,7 +27,7 @@ A journal for a merge that no longer matters can go at once. Deleting the whole 
 |---|---|---|
 | Conflict repositories from `script/gen-conflict-repo` | `$TMPDIR/triad-conflicts.<random>/` | Kept on purpose for manual testing. Delete each by its path when done. |
 | Scenario repositories from `script/gen-jj-repo` | `$TMPDIR/triad-jj-<scenario>.<random>/` | Kept on purpose for manual testing. Delete each by its path when done. |
-| Repositories from `script/test-jj-repos` | `$TMPDIR/triad-test-jj-repos.<random>/` | Deleted when the check ends, fails, or stops on Ctrl-C, SIGHUP or SIGTERM. Only SIGKILL leaves one behind. |
+| Repositories, jj config and triad logs from `script/test-jj-repos` | `$TMPDIR/triad-test-jj-repos.<random>/` | Deleted when the check ends, fails, or stops on Ctrl-C, SIGHUP or SIGTERM. Only SIGKILL leaves one behind. |
 | Test fixtures (gix and jj-lib repositories, files) | `$TMPDIR`, through `tempfile` | Deleted when the test ends. A test killed by a timeout or a signal can leave one behind. |
 | Throwaway clones from `script/pre-push` on plain git | `$TMPDIR/triad-pre-push.<random>/` | Deleted when the check ends, fails, or stops on Ctrl-C, SIGHUP or SIGTERM (`script/test-pre-push`). Only SIGKILL leaves one behind. |
 | Build output | `target/` | Grows with every build; `cargo clean` clears it. `target/release/triad.app` comes from `script/macos-app`. |

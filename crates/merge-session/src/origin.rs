@@ -219,7 +219,7 @@ fn diff_in(
     let parent = match &parent {
         RevSpec::Expr(expr) => Some(expr.as_str()),
         RevSpec::Commit(id) => Some(id.as_str()),
-        RevSpec::Index => None,
+        RevSpec::Index | RevSpec::Empty => None,
     };
     let read_from = rev.or(parent);
     let left_revision = read_from.map(|rev| single_commit(repo, rev)).transpose()?.flatten();
@@ -358,6 +358,7 @@ fn history(repo: &dyn Repository, parent: &RevSpec) -> Result<Option<CommitId>, 
         RevSpec::Expr(expr) => single_commit(repo, expr),
         RevSpec::Commit(id) => Ok(Some(id.clone())),
         RevSpec::Index => repo.index_base(),
+        RevSpec::Empty => Ok(None),
     }
 }
 

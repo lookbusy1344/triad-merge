@@ -4,6 +4,7 @@
 pub mod testing;
 pub mod tool_config;
 
+use std::collections::BTreeSet;
 use std::error::Error;
 
 use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
@@ -138,6 +139,14 @@ impl GitRepository {
             Ok(commit) => Ok(commit.id),
             Err(_) => Err(VcsError::UnknownRevision(expr.to_owned())),
         }
+    }
+
+    /// The tree of the commit, tag or tree `revision`.
+    fn tree_of(&self, revision: gix::ObjectId) -> Result<gix::Tree<'_>, VcsError> {
+        self.repo
+            .find_object(revision)
+            .and_then(gix::Object::peel_to_tree)
+            .map_err(backend("reading a revision's tree"))
     }
 
     /// The blob `path` has in `revision`'s tree, if it is a file there.
@@ -397,6 +406,70 @@ fn git_path(path: &Utf8Path) -> BString {
     path.components().map(|component| component.as_str()).collect::<Vec<_>>().join("/").into()
 }
 
+/// What a [`GitTree`] reads.
+enum Source<'r> {
+    Tree(gix::Tree<'r>),
+    Index(gix::worktree::Index),
+    Empty,
+}
+
+/// A revision's tree, the index or the empty tree, from [`Repository::tree`].
+struct GitTree<'r> {
+    repo: &'r GitRepository,
+    source: Source<'r>,
+}
+
+impl vcs::Tree for GitTree<'_> {
+    fn entry(&self, path: &Utf8Path) -> Result<TermContent, VcsError> {
+        use gix::object::tree::EntryKind as Kind;
+        check_inside(path)?;
+        let tree = match &self.source {
+            Source::Index(index) => {
+                return self.repo.term_content(index.entry_by_path(git_path(path).as_ref()));
+            }
+            Source::Empty => return Ok(TermContent::Absent),
+            Source::Tree(tree) => tree,
+        };
+        let Some(entry) = tree
+            .lookup_entry_by_path(path.as_std_path())
+            .map_err(backend("finding a path in a tree"))?
+        else {
+            return Ok(TermContent::Absent);
+        };
+        let file = |executable| {
+            self.repo.blob(entry.object_id()).map(|bytes| TermContent::File { bytes, executable })
+        };
+        match entry.mode().kind() {
+            Kind::Blob => file(false),
+            Kind::BlobExecutable => file(true),
+            Kind::Link => Ok(TermContent::Other(EntryKind::Symlink)),
+            Kind::Commit => Ok(TermContent::Other(EntryKind::Submodule)),
+            Kind::Tree => Ok(TermContent::Other(EntryKind::Directory)),
+        }
+    }
+}
+
+/// git's ID of a blob, as git and jj's git backend name a file's bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BlobId(gix::ObjectId);
+
+impl std::fmt::Display for BlobId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// The SHA-1 ID git gives a blob holding `bytes`, which jj's git backend uses too.
+///
+/// # Errors
+///
+/// [`VcsError::Backend`] when the hash detects a SHA-1 collision attack.
+pub fn blob_id(bytes: &[u8]) -> Result<BlobId, VcsError> {
+    gix::objs::compute_hash(gix::hash::Kind::Sha1, gix::object::Kind::Blob, bytes)
+        .map(BlobId)
+        .map_err(backend("hashing a blob"))
+}
+
 fn backend<E: Error + Send + Sync + 'static>(context: &'static str) -> impl FnOnce(E) -> VcsError {
     move |error| VcsError::Backend { context, source: Box::new(error) }
 }
@@ -416,7 +489,20 @@ impl Repository for GitRepository {
             RevSpec::Index => self.staged(path),
             RevSpec::Expr(expr) => self.committed(path, self.revision(expr)?),
             RevSpec::Commit(id) => self.committed(path, self.commit_by_id(id)?),
+            RevSpec::Empty => Ok(None),
         }
+    }
+
+    fn tree(&self, rev: &RevSpec) -> Result<Box<dyn vcs::Tree + '_>, VcsError> {
+        let source = match rev {
+            RevSpec::Index => {
+                Source::Index(self.repo.index_or_empty().map_err(backend("reading the index"))?)
+            }
+            RevSpec::Expr(expr) => Source::Tree(self.tree_of(self.revision(expr)?)?),
+            RevSpec::Commit(id) => Source::Tree(self.tree_of(self.commit_by_id(id)?)?),
+            RevSpec::Empty => Source::Empty,
+        };
+        Ok(Box::new(GitTree { repo: self, source }))
     }
 
     /// The index when `path` has staged changes or there is no commit yet; otherwise `HEAD`.
@@ -547,6 +633,48 @@ impl Repository for GitRepository {
 
     fn index_base(&self) -> Result<Option<CommitId>, VcsError> {
         Ok(self.head_id()?.as_ref().map(commit_id))
+    }
+
+    /// gix's status: `rev`'s tree against the index, and the index against the files on disk,
+    /// with untracked files, submodules and rename tracking off, so a rename lists both
+    /// paths. gix drops an entry whose stat alone went stale.
+    fn changed_paths(&self, rev: &RevSpec) -> Result<Vec<Utf8PathBuf>, VcsError> {
+        let tree = match rev {
+            RevSpec::Index => None,
+            RevSpec::Expr(expr) => Some(self.tree_of(self.revision(expr)?)?.id),
+            RevSpec::Commit(id) => Some(self.tree_of(self.commit_by_id(id)?)?.id),
+            RevSpec::Empty => Some(gix::ObjectId::empty_tree(gix::hash::Kind::Sha1)),
+        };
+        let status = self
+            .repo
+            .status(gix::progress::Discard)
+            .map_err(backend("reading the status"))?
+            .untracked_files(gix::status::UntrackedFiles::None)
+            .index_worktree_submodules(None)
+            .tree_index_track_renames(gix::status::tree_index::TrackRenames::Disabled);
+        let mut paths = BTreeSet::new();
+        let mut add = |path: &gix::bstr::BStr| -> Result<(), VcsError> {
+            let path = gix::path::from_bstr(path).map_err(backend("reading a status path"))?;
+            paths.insert(Utf8PathBuf::from_path_buf(path.into_owned()).map_err(VcsError::NotUtf8)?);
+            Ok(())
+        };
+        if let Some(tree) = tree {
+            let items =
+                status.head_tree(tree).into_iter(None).map_err(backend("reading the status"))?;
+            for item in items {
+                match item.map_err(backend("reading the status"))? {
+                    gix::status::Item::TreeIndex(change) => add(change.location())?,
+                    gix::status::Item::IndexWorktree(item) => add(item.rela_path())?,
+                }
+            }
+        } else {
+            let items =
+                status.into_index_worktree_iter(None).map_err(backend("reading the status"))?;
+            for item in items {
+                add(item.map_err(backend("reading the status"))?.rela_path())?;
+            }
+        }
+        Ok(paths.into_iter().collect())
     }
 
     /// git takes the working tree in at `git add`, never by itself.

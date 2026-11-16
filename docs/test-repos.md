@@ -5,7 +5,7 @@ Scripts that build disposable jj repositories to try triad in by hand, and a scr
 | Script | Builds or checks |
 |---|---|
 | `script/gen-conflict-repo [dest]` | A merge with conflicts in two Rust files in the working copy (`fixtures/conflict-repo/README.md`) |
-| `script/gen-jj-repo SCENARIO [dest]` | One repository per jj-enabled feature: `stack`, `sides`, `history`, `absorb` |
+| `script/gen-jj-repo SCENARIO [dest]` | One repository per feature: `stack`, `sides`, `history`, `absorb`, `dirs` |
 | `script/test-jj-repos [SCENARIO...]` | Builds each `gen-jj-repo` scenario in a temporary directory and runs triad's commands in it |
 
 Each generator prints the new repository's path, under `$TMPDIR` without `dest`, and fails when jj does not see the state it meant to build. The repositories stay until you delete them (`docs/residue.md`).
@@ -23,8 +23,9 @@ script/test-jj-repos                 # from the repo root, after cargo build --w
 | `sides` | A three-sided conflict in the working copy | `triad-merge resolve s.txt`: one pane per side; the badge shows `3 of 3 sides`, then `2 of 3 sides` |
 | `history` | `notes.txt` across nine operations, a deletion and a conflict among them | `triad-merge history notes.txt`; `triad-merge diff notes.txt --op OP` |
 | `absorb` | Working-copy fixes over commits A, B and C, on an immutable `base` | `triad-merge absorb`: hunks go to A or B, or stay: `base` wrote the lines, a new file, or it would conflict in A |
+| `dirs` | The directory demo's change: `base` holds `fixtures/demo/dirs/left`, the working copy `right` | `triad-merge diff`; `jj diff --tool triad` after `triad-merge install --jj` |
 
-`test-jj-repos` needs the jj release that jj-lib is pinned to, and takes about 4 s.
+`test-jj-repos` needs the jj release that jj-lib is pinned to, and takes about 5 s.
 
 ## gen-jj-repo scenarios
 
@@ -91,9 +92,21 @@ The repository's config makes `base` immutable (`revset-aliases."immutable_heads
 
 Send f12 to `A` anyway and Apply: `A` and its descendants then hold a conflict, and the report names them.
 
+### dirs: changed files against a commit
+
+```
+@        (no description)           fixtures/demo/dirs/right
+○  base  the demo's left directory  fixtures/demo/dirs/left
+```
+
+The working copy holds ten changes, two of them renames; `fixtures/demo/README.md` lists each. `jj diff --summary` names the same renames as triad. Try:
+
+- `triad-merge diff`: the directory window, against `@-`. Open `invoice/io/parser.py`: `invoice/parser.py` at `@-` on the left, read-only. Copy a line across, save and close: the list comes back, read again after a snapshot.
+- `jj diff --tool triad`: jj's dir mode passes two directories of the changed files; the same list opens.
+
 ## What test-jj-repos checks
 
-Expected output comes from each scenario's design, written by hand; change and commit IDs come from jj, by bookmark. jj's CLI reads back every write. The script needs a built binary (`cargo build --workspace`) and the jj release that jj-lib is pinned to, and refuses any other. `script/checks` runs it on a full run and when either `gen-jj-repo` or the script changes. It takes about 4 s.
+Expected output comes from each scenario's design, written by hand; change and commit IDs come from jj, by bookmark. jj's CLI reads back every write. The script needs a built binary (`cargo build --workspace`) and the jj release that jj-lib is pinned to, and refuses any other. `script/checks` runs it on a full run and when `gen-jj-repo`, the script or `fixtures/demo/dirs` changes. It takes about 5 s.
 
 | Scenario | Checks |
 |---|---|
@@ -101,5 +114,6 @@ Expected output comes from each scenario's design, written by hand; change and c
 | sides | A headless save exits 1 and writes jj's snapshot-style markers, sides and bases in turn (spec §4.4); jj reads them back as the same conflict, so `@` keeps its commit and no operation is written (spec §7.4) |
 | history | `history --list` gives nine versions in order with their marks; jj, at each listed operation, shows the text the list implies |
 | absorb | `absorb --list` text, and `--apply`: the report, the text of `A` and `B`, what `@` keeps, no conflicted commit, one operation, `absorb in triad` |
+| dirs | `diff --inspect` text and exit 1, with and without `--rev base`; the renames `jj diff --summary` names; `jj diff --tool` in dir mode with triad's `diff --inspect` as the tool prints the same list |
 
 The Rust tests cover the same features through jj-lib, case by case (`DESIGN.md` part I). These scripts add the built binary, its argument parsing and report text, and jj's own CLI reading the result.

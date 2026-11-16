@@ -6,14 +6,14 @@ mod jj {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use crate::common::tool_window::{EDGE, LIST_TOP, ROW_GAP, ROW_HEIGHT};
-    use crate::common::{act, bounds, is_selected, viewport_width};
+    use crate::common::tool_window::{LIST_INSET, LIST_TOP, ROW_HEIGHT, assert_frame};
+    use crate::common::{act, bounds, is_selected, label, viewport_width};
     use gpui_kit::base::Root;
     use gpui_kit::test::TestWindowExt;
     use gpui_kit::{AnyWindowHandle, App, Entity, TestAppContext, VisualTestContext};
     use merge_app::diff_window::{DiffWindow, copy_id};
     use merge_app::history_window::{
-        self, EMPTY_ID, HistoryStart, HistoryWindow, REFRESH_ID, version_id,
+        self, EMPTY_ID, HistoryStart, HistoryWindow, REFRESH_ID, SUMMARY_ID, version_id,
     };
     use merge_app::{ExitCode, WindowSettings};
     use merge_core::diff2::Side;
@@ -245,20 +245,34 @@ mod jj {
     }
 
     #[gpui_kit::test]
-    fn the_window_keeps_the_tool_window_edge_and_gaps(cx: &mut TestAppContext) {
+    fn the_window_has_the_tool_window_frame(cx: &mut TestAppContext) {
         let (fixture, _) = edited();
         let started = start(cx, &fixture, None);
-        let refresh = bounds(cx, started.window, REFRESH_ID);
-        assert_eq!((refresh.left(), refresh.top()), (EDGE, EDGE));
-        let first = bounds(cx, started.window, version_id(0));
-        assert_eq!(first.top(), refresh.bottom() + ROW_GAP);
+        assert_frame(cx, started.window, SUMMARY_ID, REFRESH_ID, version_id(0));
+    }
+
+    #[gpui_kit::test]
+    fn the_summary_counts_the_versions(cx: &mut TestAppContext) {
+        let (fixture, _) = edited();
+        let started = start(cx, &fixture, None);
+        let count = listed(cx, &started.view).len();
+        assert_eq!(label(cx, started.window, SUMMARY_ID), format!("{count} versions"));
+    }
+
+    #[gpui_kit::test]
+    fn escape_closes_the_window_and_ends_the_run_with_0(cx: &mut TestAppContext) {
+        let (fixture, _) = edited();
+        let started = start(cx, &fixture, None);
+        press(cx, started.window, "escape");
+        assert_eq!(started.exits.borrow().as_slice(), [ExitCode::Resolved]);
+        assert!(!cx.update(|cx| cx.windows().contains(&started.window)), "the window closed");
     }
 
     #[gpui_kit::test]
     fn each_version_is_a_row_across_the_list(cx: &mut TestAppContext) {
         let (fixture, _) = edited();
         let started = start(cx, &fixture, None);
-        let width = viewport_width(cx, started.window) - EDGE - EDGE;
+        let width = viewport_width(cx, started.window) - LIST_INSET - LIST_INSET;
         let [first, second] = [0, 1].map(|v| bounds(cx, started.window, version_id(v)));
         assert_eq!((first.size.width, first.size.height), (width, ROW_HEIGHT));
         assert_eq!(second.top(), first.bottom());

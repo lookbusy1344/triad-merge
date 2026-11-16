@@ -1,6 +1,9 @@
 //! `diff PATH` inputs from git and jj repositories built through gix and jj-lib (spec §6.1,
 //! DESIGN.md §A7.1).
 
+use std::path::Path;
+
+use merge_session::dir_diff::{Change, Content};
 use merge_session::native::{self, NativeDiff, NativeError};
 use merge_session::repository::RunRepository;
 use vcs::VcsError;
@@ -13,6 +16,272 @@ fn load(path: &camino::Utf8Path, rev: Option<&str>) -> NativeDiff {
 /// [`native::load`] in the repository holding `path`, as `diff PATH` finds it.
 fn try_load(path: &std::path::Path, rev: Option<&str>) -> Result<NativeDiff, NativeError> {
     native::load(&mut RunRepository::of_file(path), path, rev)
+}
+
+/// [`native::changed_files`] from the working directory `dir`, as path, change and content.
+fn listed(dir: &camino::Utf8Path, rev: Option<&str>) -> (String, Vec<(String, Change, Content)>) {
+    let listing = try_list(dir, rev).expect("the files are listed");
+    let files = listing
+        .files
+        .iter()
+        .map(|file| (file.display_path(), file.change.clone(), file.content))
+        .collect();
+    (listing.against.rev, files)
+}
+
+fn try_list(dir: &camino::Utf8Path, rev: Option<&str>) -> Result<native::Listing, NativeError> {
+    let mut repo = RunRepository::find([dir.as_std_path()]);
+    native::changed_files(&mut repo, rev)
+}
+
+fn file(path: &str, change: Change, content: Content) -> (String, Change, Content) {
+    (path.to_owned(), change, content)
+}
+
+#[test]
+fn the_working_tree_lists_its_staged_and_unstaged_changes_against_head() {
+    let fixture = Fixture::new();
+    let committed: &[(&str, &[u8])] = &[
+        ("a.txt", b"1\n"),
+        ("gone.txt", b"g\n"),
+        ("same.txt", b"s\n"),
+        ("undone.txt", b"u\n"),
+        ("img.bin", b"\x00a"),
+    ];
+    fixture.commit("one", committed);
+    // A staged change undone on disk, and a staged new file.
+    fixture.stage(&[
+        ("a.txt", b"1\n"),
+        ("gone.txt", b"g\n"),
+        ("same.txt", b"s\n"),
+        ("undone.txt", b"staged\n"),
+        ("img.bin", b"\x00a"),
+        ("new.txt", b"n\n"),
+    ]);
+    for (path, bytes) in [
+        ("a.txt", &b"2\n"[..]),
+        ("same.txt", b"s\n"),
+        ("undone.txt", b"u\n"),
+        ("img.bin", b"\x00b"),
+        ("new.txt", b"n\n"),
+        ("untracked.txt", b"x\n"),
+    ] {
+        fixture.write(path, bytes);
+    }
+    assert_eq!(
+        listed(fixture.root(), None),
+        (
+            "HEAD".to_owned(),
+            vec![
+                file("a.txt", Change::Modified, Content::Text),
+                file("gone.txt", Change::Deleted, Content::Text),
+                file("img.bin", Change::Modified, Content::Binary),
+                file("new.txt", Change::Added, Content::Text),
+            ]
+        )
+    );
+}
+
+#[test]
+fn rev_lists_the_changes_against_that_revision() {
+    let fixture = Fixture::new();
+    fixture.commit("one", &[("a.txt", b"1\n")]);
+    fixture.commit("two", &[("a.txt", b"2\n"), ("b.txt", b"b\n")]);
+    fixture.stage(&[("a.txt", b"2\n"), ("b.txt", b"b\n")]);
+    fixture.write("a.txt", b"2\n");
+    fixture.write("b.txt", b"b\n");
+    assert_eq!(listed(fixture.root(), Some("HEAD")), ("HEAD".to_owned(), vec![]));
+    assert_eq!(
+        listed(fixture.root(), Some("HEAD~1")),
+        (
+            "HEAD~1".to_owned(),
+            vec![
+                file("a.txt", Change::Modified, Content::Text),
+                file("b.txt", Change::Added, Content::Text),
+            ]
+        )
+    );
+}
+
+#[test]
+fn a_listing_names_an_unknown_revision() {
+    let fixture = Fixture::new();
+    fixture.commit("one", &[("a.txt", b"1\n")]);
+    let error = try_list(fixture.root(), Some("nope")).expect_err("no such revision");
+    assert!(
+        matches!(&error, NativeError::Vcs(VcsError::UnknownRevision(rev)) if rev == "nope"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn a_listing_outside_any_repository_is_refused() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = camino::Utf8Path::from_path(dir.path()).expect("UTF-8");
+    let error = try_list(dir, None).expect_err("no repository");
+    assert!(matches!(&error, NativeError::Vcs(VcsError::NotARepository(_))), "{error:?}");
+}
+
+/// [`native::load_listed`] of `left` against `right`, from `listing`.
+fn load_from(listing: &native::Listing, left: &str, right: &str) -> NativeDiff {
+    let mut repo = RunRepository::find([listing.against.root.as_path()]);
+    native::load_listed(&mut repo, &listing.against, Path::new(left), Path::new(right))
+        .expect("loaded")
+}
+
+#[test]
+fn a_listed_file_loads_from_the_commit_listed_though_head_moved() {
+    let fixture = Fixture::new();
+    fixture.commit("one", &[("a.txt", b"one\n"), ("old.txt", b"1\n2\n3\n4\n")]);
+    fixture.stage(&[("a.txt", b"one\n"), ("new.txt", b"1\n2\n3\n4\n")]);
+    fixture.write("a.txt", b"edited\n");
+    fixture.write("new.txt", b"1\n2\n3\n4\n");
+    let listing = try_list(fixture.root(), None).expect("listed");
+    // A commit moves `HEAD` after the listing.
+    fixture.commit("two", &[("a.txt", b"two\n"), ("new.txt", b"1\n2\n3\n4\n")]);
+    let diff = load_from(&listing, "a.txt", "a.txt");
+    assert_eq!((diff.left.content(), diff.left_title.as_str()), ("one\n", "HEAD"));
+    let diff = load_from(&listing, "old.txt", "new.txt");
+    assert_eq!((diff.left.content(), diff.left_title.as_str()), ("1\n2\n3\n4\n", "HEAD"));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlink_deleted_retargeted_or_made_a_file_is_listed_as_special() {
+    use std::os::unix::fs::symlink;
+    use vcs::testing::Entry;
+    let fixture = Fixture::new();
+    let entries = [
+        ("gone", Entry::Symlink("t")),
+        ("moved", Entry::Symlink("t")),
+        ("now-file", Entry::Symlink("t")),
+        ("same", Entry::Symlink("t")),
+        ("t", Entry::File(b"t\n")),
+    ];
+    fixture.commit_entries("one", &entries);
+    fixture.stage_entries(&entries);
+    let root = fixture.root().as_std_path();
+    fixture.write("t", b"t\n");
+    symlink("t", root.join("same")).expect("same");
+    symlink("u", root.join("moved")).expect("moved");
+    fixture.write("now-file", b"f\n");
+    assert_eq!(
+        listed(fixture.root(), None).1,
+        [
+            file("gone", Change::Deleted, Content::Special),
+            file("moved", Change::Modified, Content::Special),
+            file("now-file", Change::Modified, Content::Special),
+        ]
+    );
+}
+
+#[test]
+fn a_submodule_moved_added_or_removed_is_listed_as_special() {
+    use vcs::testing::Entry;
+    let fixture = Fixture::new();
+    let plain = Entry::File(b"f\n");
+    fixture.commit_entries(
+        "one",
+        &[("f.txt", plain), ("gone", Entry::Submodule), ("moved", Entry::Submodule)],
+    );
+    // `git submodule update` after a move, `git submodule add`, `git rm`.
+    fixture.stage_entries(&[
+        ("added", Entry::Submodule),
+        ("f.txt", plain),
+        ("moved", Entry::SubmoduleMoved),
+    ]);
+    fixture.write("f.txt", b"f\n");
+    fixture.write("added/inner.txt", b"i\n");
+    fixture.write("moved/inner.txt", b"i\n");
+    assert_eq!(
+        listed(fixture.root(), None).1,
+        [
+            file("added", Change::Added, Content::Special),
+            file("gone", Change::Deleted, Content::Special),
+            file("moved", Change::Modified, Content::Special),
+        ]
+    );
+}
+
+#[test]
+fn a_repository_without_commits_lists_its_files_as_added() {
+    let fixture = Fixture::new();
+    fixture.stage(&[("a.txt", b"1\n"), ("b.txt", b"b\n")]);
+    fixture.write("a.txt", b"2\n");
+    fixture.write("b.txt", b"b\n");
+    fixture.write("untracked.txt", b"u\n");
+    assert_eq!(
+        listed(fixture.root(), None),
+        (
+            "HEAD".to_owned(),
+            vec![
+                file("a.txt", Change::Added, Content::Text),
+                file("b.txt", Change::Added, Content::Text),
+            ]
+        )
+    );
+    let listing = try_list(fixture.root(), None).expect("listed");
+    let diff = load_from(&listing, "a.txt", "a.txt");
+    assert_eq!((diff.left.content(), diff.left_title.as_str()), ("", "HEAD (no file)"));
+    // A revision given by name must exist.
+    let error = try_list(fixture.root(), Some("HEAD")).expect_err("no commit");
+    assert!(
+        matches!(&error, NativeError::Vcs(VcsError::UnknownRevision(rev)) if rev == "HEAD"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn a_listed_file_loads_against_the_listing_s_revision() {
+    let fixture = Fixture::new();
+    fixture.commit("one", &[("sub/a.txt", b"one\n"), ("gone.txt", b"g\n")]);
+    fixture.commit("two", &[("sub/a.txt", b"two\n"), ("gone.txt", b"g\n")]);
+    fixture.write("sub/a.txt", b"three\n");
+    let listing = try_list(fixture.root(), Some("HEAD~1")).expect("listed");
+    let diff = load_from(&listing, "sub/a.txt", "sub/a.txt");
+    assert_eq!(diff.left.content(), "one\n");
+    assert_eq!(diff.left_title, "HEAD~1");
+    // The repository's root is canonical.
+    let root = dunce::canonicalize(fixture.root()).expect("canonical");
+    assert_eq!(listing.against.root, root);
+    assert_eq!(diff.right, root.join("sub").join("a.txt"));
+    // A file deleted on disk still loads its revision. The fixture commits without
+    // writing files, so `gone.txt` is absent on disk.
+    assert!(!root.join("gone.txt").exists());
+    let diff = load_from(&listing, "gone.txt", "gone.txt");
+    assert_eq!(diff.left.content(), "g\n");
+    assert_eq!(diff.left_title, "HEAD~1");
+    assert_eq!(load_from(&listing, "new.txt", "new.txt").left_title, "HEAD~1 (no file)");
+    // A rename reads its old path at the revision and its new path on disk.
+    let diff = load_from(&listing, "gone.txt", "sub/a.txt");
+    assert_eq!(diff.left.content(), "g\n");
+    assert_eq!(diff.right, root.join("sub").join("a.txt"));
+}
+
+#[test]
+fn a_staged_rename_is_listed_at_its_new_path() {
+    let fixture = Fixture::new();
+    let body = b"1\n2\n3\n4\n";
+    fixture.commit("one", &[("old.txt", body), ("keep.txt", b"k\n")]);
+    // `git mv old.txt sub/new.txt`, then an edit that keeps 6 of 8 bytes.
+    fixture.stage(&[("sub/new.txt", body), ("keep.txt", b"k\n")]);
+    fixture.write("sub/new.txt", b"1\n2\n3\n5\n");
+    fixture.write("keep.txt", b"k\n");
+    let (_, files) = listed(fixture.root(), None);
+    assert_eq!(
+        files,
+        [file("sub/new.txt", Change::Renamed { from: "old.txt".into() }, Content::Text)]
+    );
+}
+
+#[test]
+fn an_untracked_copy_of_a_deleted_file_is_no_rename_in_git() {
+    let fixture = Fixture::new();
+    fixture.commit("one", &[("old.txt", b"body\n")]);
+    fixture.stage(&[]);
+    fixture.write("new.txt", b"body\n");
+    let (_, files) = listed(fixture.root(), None);
+    assert_eq!(files, [file("old.txt", Change::Deleted, Content::Text)]);
 }
 
 #[test]
@@ -156,7 +425,8 @@ fn a_binary_parent_is_refused_with_its_revision() {
 }
 
 mod jj {
-    use super::load;
+    use super::{Change, Content, file, listed, load};
+    use merge_session::dir_diff::ChangedFile;
     use merge_session::native;
     use merge_session::repository::RunRepository;
     use vcs::RepoKind;
@@ -324,6 +594,145 @@ mod jj {
         assert_eq!(
             native::discover(outer_git.root()).expect("the outer one").kind(),
             RepoKind::Git
+        );
+    }
+
+    #[test]
+    fn a_listing_snapshots_the_working_copy_first() {
+        let fixture = Fixture::new();
+        fixture.commit("one", &[("a.txt", b"1\n"), ("gone.txt", b"g\n")]);
+        fixture.check_out_to_disk();
+        fixture.write("a.txt", b"2\n");
+        fixture.write("new.txt", b"n\n");
+        std::fs::remove_file(fixture.root().join("gone.txt")).expect("removed");
+        let before = fixture.operation_count();
+        assert_eq!(
+            listed(fixture.root(), None),
+            (
+                "@-".to_owned(),
+                vec![
+                    file("a.txt", Change::Modified, Content::Text),
+                    file("gone.txt", Change::Deleted, Content::Text),
+                    file("new.txt", Change::Added, Content::Text),
+                ]
+            )
+        );
+        assert_eq!(fixture.operation_count(), before + 1, "one snapshot operation");
+    }
+
+    #[test]
+    fn a_file_conflicted_at_the_revision_is_special() {
+        let fixture = Fixture::new();
+        fixture.three_way("a.txt", [b"base\n", b"left\n", b"right\n"]);
+        fixture.check_out_to_disk();
+        // Resolved on disk; conflicted in the merge of `@-`'s trees.
+        fixture.write("a.txt", b"resolved\n");
+        assert_eq!(
+            listed(fixture.root(), None).1,
+            [file("a.txt", Change::Modified, Content::Special)]
+        );
+    }
+
+    /// The listing of `fixture`'s working copy against `@-`.
+    fn listing(fixture: &Fixture) -> native::Listing {
+        let mut repo = RunRepository::find([fixture.root().as_std_path()]);
+        native::changed_files(&mut repo, None).expect("listed")
+    }
+
+    #[test]
+    fn a_listed_file_loads_from_the_commit_listed_though_at_minus_moved() {
+        let fixture = Fixture::new();
+        fixture.commit("one", &[("a.txt", b"one\n")]);
+        fixture.check_out_to_disk();
+        fixture.write("a.txt", b"edited\n");
+        let listing = listing(&fixture);
+        // `jj commit` from elsewhere: `@-` is now `two`.
+        fixture.commit("two", &[("a.txt", b"two\n")]);
+        let diff = super::load_from(&listing, "a.txt", "a.txt");
+        assert_eq!((diff.left.content(), diff.left_title.as_str()), ("one\n", "@-"));
+    }
+
+    #[test]
+    fn a_merge_working_copy_loads_from_the_merge_of_its_parents() {
+        let fixture = Fixture::new();
+        let left = fixture.commit_on(&[], "left", &[("a.txt", b"a\n")]);
+        let right = fixture.commit_on(&[], "right", &[("b.txt", b"b\n")]);
+        fixture.check_out(&[&left, &right]);
+        fixture.check_out_to_disk();
+        fixture.write("a.txt", b"edited\n");
+        let listing = listing(&fixture);
+        assert_eq!(
+            listing.files.iter().map(ChangedFile::display_path).collect::<Vec<_>>(),
+            ["a.txt"]
+        );
+        let diff = super::load_from(&listing, "a.txt", "a.txt");
+        assert_eq!((diff.left.content(), diff.left_title.as_str()), ("a\n", "@-"));
+        assert_eq!(super::load_from(&listing, "b.txt", "b.txt").left.content(), "b\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_deleted_retargeted_or_made_a_file_is_listed_as_special() {
+        use std::os::unix::fs::symlink;
+        use vcs::testing::Entry;
+        let fixture = Fixture::new();
+        fixture.commit_entries(
+            "one",
+            &[
+                ("gone", Entry::Symlink("t")),
+                ("moved", Entry::Symlink("t")),
+                ("now-file", Entry::Symlink("t")),
+                ("same", Entry::Symlink("t")),
+                ("t", Entry::File(b"t\n")),
+            ],
+        );
+        fixture.check_out_to_disk();
+        let root = fixture.root().as_std_path();
+        for path in ["gone", "moved", "now-file"] {
+            std::fs::remove_file(root.join(path)).expect("removed");
+        }
+        symlink("u", root.join("moved")).expect("moved");
+        fixture.write("now-file", b"f\n");
+        symlink("t", root.join("added")).expect("added");
+        assert_eq!(
+            listed(fixture.root(), None).1,
+            [
+                file("added", Change::Added, Content::Special),
+                file("gone", Change::Deleted, Content::Special),
+                file("moved", Change::Modified, Content::Special),
+                file("now-file", Change::Modified, Content::Special),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_submodule_moved_in_the_working_copy_is_listed_as_special() {
+        use vcs::testing::Entry;
+        let fixture = Fixture::new();
+        let plain = Entry::File(b"f\n");
+        fixture.commit_entries("one", &[("f.txt", plain), ("sub", Entry::Submodule)]);
+        // jj leaves a submodule's directory alone; its commit moves in `@`.
+        fixture.amend_entries(
+            &fixture.working_copy_commit(),
+            &[("f.txt", plain), ("sub", Entry::SubmoduleMoved)],
+        );
+        fixture.check_out_to_disk();
+        assert_eq!(
+            listed(fixture.root(), None).1,
+            [file("sub", Change::Modified, Content::Special)]
+        );
+    }
+
+    #[test]
+    fn a_file_moved_on_disk_is_a_rename_after_the_snapshot() {
+        let fixture = Fixture::new();
+        fixture.commit("one", &[("src/old.rs", b"fn a() {}\n")]);
+        fixture.check_out_to_disk();
+        std::fs::remove_file(fixture.root().join("src/old.rs")).expect("removed");
+        fixture.write("lib/new.rs", b"fn a() {}\n");
+        assert_eq!(
+            listed(fixture.root(), None).1,
+            [file("lib/new.rs", Change::Renamed { from: "src/old.rs".into() }, Content::Text)]
         );
     }
 }

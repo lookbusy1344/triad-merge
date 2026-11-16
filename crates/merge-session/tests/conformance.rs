@@ -63,6 +63,19 @@ impl Fixture {
         }
     }
 
+    /// Commit `entries` as the whole tree, as [`Fixture::commit`] does.
+    fn commit_entries(&self, message: &str, entries: &[(&str, Entry)]) {
+        match self {
+            Self::Git(fixture) => {
+                fixture.commit_entries(message, entries);
+                fixture.stage_entries(entries);
+            }
+            Self::Jj(fixture) => {
+                fixture.commit_entries(message, entries);
+            }
+        }
+    }
+
     /// The commit `back` generations before the latest, in the backend's syntax.
     fn rev(&self, back: usize) -> RevSpec {
         RevSpec::Expr(self.expr(back))
@@ -191,6 +204,216 @@ impl Fixture {
     fn open_run(&self) -> RunRepository {
         RunRepository::find([self.root().as_std_path()]).with_jj_config(ConfigEnv::default())
     }
+}
+
+impl Fixture {
+    /// Commit `committed` as the whole tree, then leave the working copy on disk holding
+    /// `disk`: committed files missing from it are deleted. git stages `staged` over the
+    /// commit; jj snapshots, so every file on disk is tracked.
+    fn change_on_disk(
+        &self,
+        committed: &[(&str, &[u8])],
+        staged: &[(&str, &[u8])],
+        disk: &[(&str, &[u8])],
+    ) {
+        self.commit("one", committed);
+        match self {
+            Self::Git(fixture) => {
+                let index: Vec<_> = committed
+                    .iter()
+                    .filter(|(path, _)| !staged.iter().any(|(s, _)| s == path))
+                    .chain(staged)
+                    .copied()
+                    .collect();
+                fixture.stage(&index);
+            }
+            Self::Jj(fixture) => fixture.check_out_to_disk(),
+        }
+        for (path, _) in committed {
+            let file = self.root().join(path);
+            if file.exists() {
+                std::fs::remove_file(file).expect("the file is removed");
+            }
+        }
+        for (path, bytes) in disk {
+            self.write(path, bytes);
+        }
+        let mut run = self.open_run();
+        run.require_mut().expect("the repository opens").snapshot().expect("the snapshot");
+    }
+
+    /// The parent revision of the working copy: git's `HEAD`, jj's `@-`.
+    fn parent(&self) -> RevSpec {
+        RevSpec::Expr(
+            match self {
+                Self::Git(_) => "HEAD",
+                Self::Jj(_) => "@-",
+            }
+            .to_owned(),
+        )
+    }
+}
+
+fn changed(repo: &dyn Repository, rev: &RevSpec) -> Vec<String> {
+    let paths = repo.changed_paths(rev).expect("the paths are listed");
+    paths.into_iter().map(Utf8PathBuf::into_string).collect()
+}
+
+fn the_changed_paths_are_the_files_the_working_copy_changed(fixture: &Fixture) {
+    let committed: &[(&str, &[u8])] =
+        &[("a.txt", b"1\n"), ("gone.txt", b"g\n"), ("same.txt", b"s\n"), ("sub/s.txt", b"s\n")];
+    // git: the new file is staged; the edit and the delete are not.
+    let staged: &[(&str, &[u8])] = &[("new.txt", b"n\n")];
+    let disk: &[(&str, &[u8])] =
+        &[("a.txt", b"2\n"), ("same.txt", b"s\n"), ("sub/s.txt", b"s\n"), ("new.txt", b"n\n")];
+    fixture.change_on_disk(committed, staged, disk);
+    let repo = fixture.open();
+    assert_eq!(changed(repo.as_ref(), &fixture.parent()), ["a.txt", "gone.txt", "new.txt"]);
+}
+
+fn a_renamed_file_lists_both_paths(fixture: &Fixture) {
+    // git: staged, as `git mv` leaves it, which git's status pairs as a rename.
+    let body: &[(&str, &[u8])] = &[("new.txt", b"body\n")];
+    fixture.change_on_disk(&[("old.txt", b"body\n")], body, body);
+    assert_eq!(changed(fixture.open().as_ref(), &fixture.parent()), ["new.txt", "old.txt"]);
+}
+
+fn a_staged_change_counts_as_a_change(fixture: &Fixture) {
+    // jj has no index: the change is simply in the working copy.
+    let committed: &[(&str, &[u8])] = &[("a.txt", b"1\n"), ("b.txt", b"b\n")];
+    fixture.change_on_disk(
+        committed,
+        &[("a.txt", b"2\n")],
+        &[("a.txt", b"2\n"), ("b.txt", b"b\n")],
+    );
+    assert_eq!(changed(fixture.open().as_ref(), &fixture.parent()), ["a.txt"]);
+}
+
+fn a_clean_working_copy_has_no_changed_paths(fixture: &Fixture) {
+    let files: &[(&str, &[u8])] = &[("a.txt", b"1\n"), ("sub/b.txt", b"b\n")];
+    fixture.change_on_disk(files, &[], files);
+    assert_eq!(changed(fixture.open().as_ref(), &fixture.parent()), Vec::<String>::new());
+}
+
+fn changed_paths_come_in_path_order(fixture: &Fixture) {
+    let committed: &[(&str, &[u8])] = &[("a-b", b"1\n"), ("a/c", b"1\n"), ("z", b"1\n")];
+    let disk: &[(&str, &[u8])] = &[("a-b", b"2\n"), ("a/c", b"2\n"), ("z", b"2\n")];
+    fixture.change_on_disk(committed, &[], disk);
+    assert_eq!(changed(fixture.open().as_ref(), &fixture.parent()), ["a/c", "a-b", "z"]);
+}
+
+fn changed_paths_compare_with_any_revision(fixture: &Fixture) {
+    fixture.commit("old", &[("a.txt", b"1\n")]);
+    let files: &[(&str, &[u8])] = &[("a.txt", b"2\n"), ("b.txt", b"b\n")];
+    fixture.change_on_disk(files, &[], files);
+    let repo = fixture.open();
+    assert_eq!(changed(repo.as_ref(), &fixture.rev(1)), ["a.txt", "b.txt"]);
+    assert_eq!(changed(repo.as_ref(), &fixture.rev(0)), Vec::<String>::new());
+}
+
+fn an_untracked_file_is_listed_only_where_the_vcs_tracks_it(fixture: &Fixture) {
+    let files: &[(&str, &[u8])] = &[("a.txt", b"1\n")];
+    fixture.change_on_disk(files, &[], &[("a.txt", b"1\n"), ("untracked.txt", b"u\n")]);
+    let expected: &[&str] = match fixture {
+        // git leaves an untracked file out, as `git diff` does.
+        Fixture::Git(_) => &[],
+        // jj's snapshot tracks every file it does not ignore.
+        Fixture::Jj(_) => &["untracked.txt"],
+    };
+    assert_eq!(changed(fixture.open().as_ref(), &fixture.parent()), expected);
+}
+
+fn changed_paths_against_the_index_leave_out_staged_changes(fixture: &Fixture) {
+    let committed: &[(&str, &[u8])] = &[("a.txt", b"1\n"), ("b.txt", b"1\n")];
+    let disk: &[(&str, &[u8])] = &[("a.txt", b"2\n"), ("b.txt", b"2\n")];
+    fixture.change_on_disk(committed, &[("a.txt", b"2\n")], disk);
+    let listed = fixture.open().changed_paths(&RevSpec::Index);
+    match (fixture, listed) {
+        (Fixture::Git(_), Ok(paths)) => assert_eq!(paths, [Utf8PathBuf::from("b.txt")]),
+        (Fixture::Jj(_), Err(VcsError::NoIndex("jj"))) => {}
+        (_, other) => panic!("unexpected {other:?}"),
+    }
+}
+
+fn changed_paths_name_an_unknown_revision(fixture: &Fixture) {
+    fixture.commit("one", &[("a.txt", b"a\n")]);
+    match fixture.open().changed_paths(&RevSpec::Expr("nope".to_owned())) {
+        Err(VcsError::UnknownRevision(rev)) => assert_eq!(rev, "nope"),
+        other => panic!("expected UnknownRevision, got {other:?}"),
+    }
+}
+
+fn an_entry_names_its_kind_at_a_revision(fixture: &Fixture) {
+    use vcs::EntryKind::{Directory, Submodule, Symlink};
+    fixture.commit_entries(
+        "one",
+        &[
+            ("a.txt", Entry::File(b"a\n")),
+            ("run.sh", Entry::Executable(b"x\n")),
+            ("link", Entry::Symlink("a.txt")),
+            ("sub", Entry::Submodule),
+            ("dir/f.txt", Entry::File(b"f\n")),
+        ],
+    );
+    let repo = fixture.open();
+    let at = |path: &str| {
+        repo.entry_at(Utf8Path::new(path), &fixture.rev(0)).expect("the read succeeds")
+    };
+    assert_eq!(at("a.txt"), TermContent::File { bytes: b"a\n".to_vec(), executable: false });
+    assert_eq!(at("run.sh"), TermContent::File { bytes: b"x\n".to_vec(), executable: true });
+    assert_eq!(at("link"), TermContent::Other(Symlink));
+    assert_eq!(at("sub"), TermContent::Other(Submodule));
+    assert_eq!(at("dir"), TermContent::Other(Directory));
+    assert_eq!(at("missing"), TermContent::Absent);
+    assert_eq!(at("dir/missing"), TermContent::Absent);
+}
+
+fn an_entry_at_an_unknown_revision_or_outside_is_refused(fixture: &Fixture) {
+    fixture.commit("one", &[("a.txt", b"a\n")]);
+    let repo = fixture.open();
+    match repo.entry_at(Utf8Path::new("a.txt"), &RevSpec::Expr("nope".to_owned())) {
+        Err(VcsError::UnknownRevision(rev)) => assert_eq!(rev, "nope"),
+        other => panic!("expected UnknownRevision, got {other:?}"),
+    }
+    match repo.entry_at(Utf8Path::new("../a.txt"), &fixture.rev(0)) {
+        Err(VcsError::OutsideRepository(path)) => assert_eq!(path, "../a.txt"),
+        other => panic!("expected OutsideRepository, got {other:?}"),
+    }
+}
+
+fn a_tree_reads_its_revision_as_it_was_when_taken(fixture: &Fixture) {
+    fixture.commit("one", &[("a.txt", b"1\n"), ("dir/b.txt", b"b\n")]);
+    let repo = fixture.open();
+    let tree = repo.tree(&fixture.rev(0)).expect("the tree is taken");
+    // The revision moves on after the tree was taken.
+    fixture.commit("two", &[("a.txt", b"2\n")]);
+    let at = |path: &str| tree.entry(Utf8Path::new(path)).expect("the read succeeds");
+    assert_eq!(at("a.txt"), file(b"1\n"));
+    assert_eq!(at("dir/b.txt"), file(b"b\n"));
+    assert_eq!(at("dir"), TermContent::Other(vcs::EntryKind::Directory));
+    assert_eq!(at("missing"), TermContent::Absent);
+    match tree.entry(Utf8Path::new("../a.txt")) {
+        Err(VcsError::OutsideRepository(path)) => assert_eq!(path, "../a.txt"),
+        other => panic!("expected OutsideRepository, got {other:?}"),
+    }
+}
+
+fn a_tree_at_an_unknown_revision_is_refused(fixture: &Fixture) {
+    fixture.commit("one", &[("a.txt", b"a\n")]);
+    match fixture.open().tree(&RevSpec::Expr("nope".to_owned())).err() {
+        Some(VcsError::UnknownRevision(rev)) => assert_eq!(rev, "nope"),
+        other => panic!("expected UnknownRevision, got {other:?}"),
+    }
+}
+
+fn the_empty_tree_holds_nothing_and_every_file_differs_from_it(fixture: &Fixture) {
+    let files: &[(&str, &[u8])] = &[("a.txt", b"1\n"), ("sub/b.txt", b"b\n")];
+    fixture.change_on_disk(files, &[], files);
+    let repo = fixture.open();
+    let tree = repo.tree(&RevSpec::Empty).expect("the empty tree");
+    assert_eq!(tree.entry(Utf8Path::new("a.txt")).expect("read"), TermContent::Absent);
+    assert_eq!(read(repo.as_ref(), "a.txt", &RevSpec::Empty), None);
+    assert_eq!(changed(repo.as_ref(), &RevSpec::Empty), ["a.txt", "sub/b.txt"]);
 }
 
 fn read(repo: &dyn Repository, path: &str, rev: &RevSpec) -> Option<Vec<u8>> {
@@ -733,6 +956,8 @@ macro_rules! suite {
             conformance!($backend, $fixture, [
                 discovery_climbs_from_a_subdirectory,
                 a_missing_path_or_a_directory_is_none,
+                an_entry_names_its_kind_at_a_revision,
+                an_entry_at_an_unknown_revision_or_outside_is_refused,
                 binary_bytes_come_back_unchanged,
                 a_renamed_file_is_found_only_under_its_name_at_each_revision,
                 the_parent_holds_the_last_commit_and_is_titled_by_the_vcs,
@@ -766,6 +991,18 @@ macro_rules! suite {
                 a_clean_or_missing_path_is_no_conflict,
                 a_resolved_save_clears_its_conflict_and_leaves_the_others,
                 a_save_with_markers_leaves_its_conflict,
+                the_changed_paths_are_the_files_the_working_copy_changed,
+                a_staged_change_counts_as_a_change,
+                a_renamed_file_lists_both_paths,
+                a_clean_working_copy_has_no_changed_paths,
+                changed_paths_come_in_path_order,
+                changed_paths_compare_with_any_revision,
+                an_untracked_file_is_listed_only_where_the_vcs_tracks_it,
+                changed_paths_name_an_unknown_revision,
+                changed_paths_against_the_index_leave_out_staged_changes,
+                a_tree_reads_its_revision_as_it_was_when_taken,
+                a_tree_at_an_unknown_revision_is_refused,
+                the_empty_tree_holds_nothing_and_every_file_differs_from_it,
             ]);
         )*
     };

@@ -2,19 +2,18 @@
 //! each with its conflicted paths. A path opens in the merge window as `resolve -r` opens it;
 //! one merge window at a time. A save refreshes the list. Preview shows what saving the open
 //! merge window's result would do to each descendant's conflicts, and writes nothing.
-//! Closing the stack window ends the run: 0 when no conflicted commit is left, else 1.
+//! Closing the stack window, or Escape or Cancel, ends the run: 0 when no conflicted commit
+//! is left, else 1.
 
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use gpui_kit::component::button::Button;
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, h_flex, v_flex};
+use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{
     AnyElement, AnyWindowHandle, App, AppContext as _, ClickEvent, Context, ElementId, Entity,
-    FocusHandle, InteractiveElement as _, IntoElement, ParentElement as _, Render, Role,
-    ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _,
-    WeakEntity, Window, WindowBounds, WindowOptions, div,
+    FocusHandle, InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render,
+    ScrollHandle, SharedString, Styled as _, WeakEntity, Window, WindowBounds, WindowOptions, px,
 };
 use merge_core::document::MergeOptions;
 use merge_session::jj_config::ConfigEnv;
@@ -24,6 +23,7 @@ use merge_session::resolve::{Opened, ResolveError};
 use vcs::IdKind;
 
 use crate::pick_list::{self, Activate, SelectNext, SelectPrevious, State};
+use crate::tool_window;
 use crate::window::{MergeWindow, WindowSettings};
 use crate::{ExitCode, Finish, ignore_closed_view, strings};
 
@@ -33,6 +33,7 @@ pub const REFRESH_ID: &str = "stack-refresh";
 pub const NOTE_ID: &str = "stack-note";
 pub const EFFECTS_ID: &str = "stack-effects";
 pub const EMPTY_ID: &str = "stack-empty";
+pub const SUMMARY_ID: &str = "stack-summary";
 const LIST_ID: &str = "stack-list";
 
 /// The id of commit `commit`'s heading, counted from 0.
@@ -48,8 +49,8 @@ pub fn path_id(commit: usize, path: usize) -> ElementId {
 }
 
 /// The window's size: a list beside the merge window, not over it.
-const WINDOW_WIDTH: f32 = 420.;
-const WINDOW_HEIGHT: f32 = 560.;
+const WINDOW_WIDTH: Pixels = px(420.);
+const WINDOW_HEIGHT: Pixels = px(560.);
 
 /// How the run ends: the process exits, or a test records the code.
 type ExitFn = dyn Fn(ExitCode, &mut App);
@@ -120,7 +121,7 @@ pub fn start(
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(gpui_kit::Bounds::centered(
             None,
-            gpui_kit::size(gpui_kit::px(WINDOW_WIDTH), gpui_kit::px(WINDOW_HEIGHT)),
+            gpui_kit::size(WINDOW_WIDTH, WINDOW_HEIGHT),
             cx,
         ))),
         ..crate::menu_bar::plain_options()
@@ -438,70 +439,36 @@ impl StackWindow {
         rows
     }
 
-    fn render_preview(&self) -> Option<impl IntoElement + use<>> {
+    /// The preview's result, in the footer.
+    fn render_preview(&self, cx: &App) -> Option<impl IntoElement + use<>> {
         let text: SharedString = match self.preview.as_ref()? {
             Preview::Running => strings::PREVIEW_RUNNING.into(),
             Preview::Done(rewrite) => strings::stack_preview(rewrite).into(),
             Preview::Failed(error) => error.clone().into(),
         };
-        Some(
-            div()
-                .id(EFFECTS_ID)
-                .test_support()
-                .role(Role::Status)
-                .aria_label(text.clone())
-                .whitespace_normal()
-                .child(text),
-        )
+        Some(tool_window::footer(EFFECTS_ID, text, cx))
     }
 }
 
 impl Render for StackWindow {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
-        let (background, foreground, muted) =
-            (theme.background, theme.foreground, theme.muted_foreground);
+        let muted = cx.theme().muted_foreground;
+        let summary = (!self.listing).then(|| strings::stack_summary(self.commits.len()).into());
         let empty = (self.commits.is_empty() && !self.listing)
             .then(|| pick_list::note(EMPTY_ID, strings::STACK_EMPTY, muted));
-        let note = self.note.clone().map(|note| {
-            div()
-                .id(NOTE_ID)
-                .test_support()
-                .role(Role::Status)
-                .aria_label(note.clone())
-                .text_color(muted)
-                .child(note)
-        });
-        let can_preview = self.open.is_some();
-        v_flex()
-            .size_full()
-            .p_3()
-            .gap_2()
-            .bg(background)
-            .text_color(foreground)
-            .text_xs()
-            .child(
-                h_flex()
-                    .gap_2()
-                    .child(
-                        Button::new(REFRESH_ID)
-                            .small()
-                            .label(strings::REFRESH)
-                            .disabled(self.listing)
-                            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.refresh(cx))),
-                    )
-                    .child(
-                        Button::new(PREVIEW_ID)
-                            .small()
-                            .label(strings::STACK_PREVIEW)
-                            .disabled(!can_preview)
-                            .on_click(
-                                cx.listener(|this, _: &ClickEvent, _, cx| this.start_preview(cx)),
-                            ),
-                    ),
-            )
-            .children(note)
-            .child(
+        let refresh = tool_window::refresh_button(REFRESH_ID, self.listing)
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.refresh(cx)));
+        // Preview writes nothing, so it is not the window's primary button.
+        let preview = tool_window::button(PREVIEW_ID, strings::STACK_PREVIEW, self.open.is_none())
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_preview(cx)));
+        let this = cx.entity().downgrade();
+        tool_window::frame(cx, move |_, cx| {
+            this.update(cx, StackWindow::close_requested).unwrap_or(true)
+        })
+        .child(tool_window::header(SUMMARY_ID, summary, [refresh, preview], cx))
+        .children(tool_window::status(NOTE_ID, self.note.as_ref(), cx))
+        .child(
+            tool_window::body().child(
                 pick_list::list(LIST_ID, &self.focus, &self.scroll)
                     .flex_1()
                     .on_action(cx.listener(Self::select_next))
@@ -509,7 +476,8 @@ impl Render for StackWindow {
                     .on_action(cx.listener(Self::activate))
                     .children(self.render_commits(cx))
                     .children(empty),
-            )
-            .children(self.render_preview())
+            ),
+        )
+        .children(self.render_preview(cx))
     }
 }

@@ -1,0 +1,1 @@
+Use totals.py for reports.
