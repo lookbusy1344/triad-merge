@@ -63,6 +63,19 @@ impl Fixture {
         }
     }
 
+    /// Commit `entries` as the whole tree, as [`Fixture::commit`] does.
+    fn commit_entries(&self, message: &str, entries: &[(&str, Entry)]) {
+        match self {
+            Self::Git(fixture) => {
+                fixture.commit_entries(message, entries);
+                fixture.stage_entries(entries);
+            }
+            Self::Jj(fixture) => {
+                fixture.commit_entries(message, entries);
+            }
+        }
+    }
+
     /// The commit `back` generations before the latest, in the backend's syntax.
     fn rev(&self, back: usize) -> RevSpec {
         RevSpec::Expr(self.expr(back))
@@ -327,6 +340,44 @@ fn changed_paths_name_an_unknown_revision(fixture: &Fixture) {
     match fixture.open().changed_paths(&RevSpec::Expr("nope".to_owned())) {
         Err(VcsError::UnknownRevision(rev)) => assert_eq!(rev, "nope"),
         other => panic!("expected UnknownRevision, got {other:?}"),
+    }
+}
+
+fn an_entry_names_its_kind_at_a_revision(fixture: &Fixture) {
+    use vcs::EntryKind::{Directory, Submodule, Symlink};
+    fixture.commit_entries(
+        "one",
+        &[
+            ("a.txt", Entry::File(b"a\n")),
+            ("run.sh", Entry::Executable(b"x\n")),
+            ("link", Entry::Symlink("a.txt")),
+            ("sub", Entry::Submodule),
+            ("dir/f.txt", Entry::File(b"f\n")),
+        ],
+    );
+    let repo = fixture.open();
+    let at = |path: &str| {
+        repo.entry_at(Utf8Path::new(path), &fixture.rev(0)).expect("the read succeeds")
+    };
+    assert_eq!(at("a.txt"), TermContent::File { bytes: b"a\n".to_vec(), executable: false });
+    assert_eq!(at("run.sh"), TermContent::File { bytes: b"x\n".to_vec(), executable: true });
+    assert_eq!(at("link"), TermContent::Other(Symlink));
+    assert_eq!(at("sub"), TermContent::Other(Submodule));
+    assert_eq!(at("dir"), TermContent::Other(Directory));
+    assert_eq!(at("missing"), TermContent::Absent);
+    assert_eq!(at("dir/missing"), TermContent::Absent);
+}
+
+fn an_entry_at_an_unknown_revision_or_outside_is_refused(fixture: &Fixture) {
+    fixture.commit("one", &[("a.txt", b"a\n")]);
+    let repo = fixture.open();
+    match repo.entry_at(Utf8Path::new("a.txt"), &RevSpec::Expr("nope".to_owned())) {
+        Err(VcsError::UnknownRevision(rev)) => assert_eq!(rev, "nope"),
+        other => panic!("expected UnknownRevision, got {other:?}"),
+    }
+    match repo.entry_at(Utf8Path::new("../a.txt"), &fixture.rev(0)) {
+        Err(VcsError::OutsideRepository(path)) => assert_eq!(path, "../a.txt"),
+        other => panic!("expected OutsideRepository, got {other:?}"),
     }
 }
 
@@ -870,6 +921,8 @@ macro_rules! suite {
             conformance!($backend, $fixture, [
                 discovery_climbs_from_a_subdirectory,
                 a_missing_path_or_a_directory_is_none,
+                an_entry_names_its_kind_at_a_revision,
+                an_entry_at_an_unknown_revision_or_outside_is_refused,
                 binary_bytes_come_back_unchanged,
                 a_renamed_file_is_found_only_under_its_name_at_each_revision,
                 the_parent_holds_the_last_commit_and_is_titled_by_the_vcs,

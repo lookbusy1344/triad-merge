@@ -26,7 +26,7 @@ fn listed(dir: &camino::Utf8Path, rev: Option<&str>) -> (String, Vec<(String, Ch
         .iter()
         .map(|file| (file.display_path(), file.change.clone(), file.content))
         .collect();
-    (listing.rev, files)
+    (listing.against.rev, files)
 }
 
 fn try_list(dir: &camino::Utf8Path, rev: Option<&str>) -> Result<native::Listing, NativeError> {
@@ -124,9 +124,55 @@ fn a_listing_outside_any_repository_is_refused() {
 
 /// [`native::load_listed`] of `left` against `right`, from `listing`.
 fn load_from(listing: &native::Listing, left: &str, right: &str) -> NativeDiff {
-    let mut repo = RunRepository::find([listing.root.as_path()]);
-    native::load_listed(&mut repo, &listing.root, &listing.rev, Path::new(left), Path::new(right))
+    let mut repo = RunRepository::find([listing.against.root.as_path()]);
+    native::load_listed(&mut repo, &listing.against, Path::new(left), Path::new(right))
         .expect("loaded")
+}
+
+#[test]
+fn a_listed_file_loads_from_the_commit_listed_though_head_moved() {
+    let fixture = Fixture::new();
+    fixture.commit("one", &[("a.txt", b"one\n"), ("old.txt", b"1\n2\n3\n4\n")]);
+    fixture.stage(&[("a.txt", b"one\n"), ("new.txt", b"1\n2\n3\n4\n")]);
+    fixture.write("a.txt", b"edited\n");
+    fixture.write("new.txt", b"1\n2\n3\n4\n");
+    let listing = try_list(fixture.root(), None).expect("listed");
+    // A commit moves `HEAD` after the listing.
+    fixture.commit("two", &[("a.txt", b"two\n"), ("new.txt", b"1\n2\n3\n4\n")]);
+    let diff = load_from(&listing, "a.txt", "a.txt");
+    assert_eq!((diff.left.content(), diff.left_title.as_str()), ("one\n", "HEAD"));
+    let diff = load_from(&listing, "old.txt", "new.txt");
+    assert_eq!((diff.left.content(), diff.left_title.as_str()), ("1\n2\n3\n4\n", "HEAD"));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlink_deleted_retargeted_or_made_a_file_is_listed_as_special() {
+    use std::os::unix::fs::symlink;
+    use vcs::testing::Entry;
+    let fixture = Fixture::new();
+    let entries = [
+        ("gone", Entry::Symlink("t")),
+        ("moved", Entry::Symlink("t")),
+        ("now-file", Entry::Symlink("t")),
+        ("same", Entry::Symlink("t")),
+        ("t", Entry::File(b"t\n")),
+    ];
+    fixture.commit_entries("one", &entries);
+    fixture.stage_entries(&entries);
+    let root = fixture.root().as_std_path();
+    fixture.write("t", b"t\n");
+    symlink("t", root.join("same")).expect("same");
+    symlink("u", root.join("moved")).expect("moved");
+    fixture.write("now-file", b"f\n");
+    assert_eq!(
+        listed(fixture.root(), None).1,
+        [
+            file("gone", Change::Deleted, Content::Special),
+            file("moved", Change::Modified, Content::Special),
+            file("now-file", Change::Modified, Content::Special),
+        ]
+    );
 }
 
 #[test]
@@ -141,7 +187,7 @@ fn a_listed_file_loads_against_the_listing_s_revision() {
     assert_eq!(diff.left_title, "HEAD~1");
     // The repository's root is canonical.
     let root = dunce::canonicalize(fixture.root()).expect("canonical");
-    assert_eq!(listing.root, root);
+    assert_eq!(listing.against.root, root);
     assert_eq!(diff.right, root.join("sub").join("a.txt"));
     // A file deleted on disk still loads its revision. The fixture commits without
     // writing files, so `gone.txt` is absent on disk.
@@ -324,6 +370,7 @@ fn a_binary_parent_is_refused_with_its_revision() {
 
 mod jj {
     use super::{Change, Content, file, listed, load};
+    use merge_session::dir_diff::ChangedFile;
     use merge_session::native;
     use merge_session::repository::RunRepository;
     use vcs::RepoKind;
@@ -527,6 +574,78 @@ mod jj {
         assert_eq!(
             listed(fixture.root(), None).1,
             [file("a.txt", Change::Modified, Content::Special)]
+        );
+    }
+
+    /// The listing of `fixture`'s working copy against `@-`.
+    fn listing(fixture: &Fixture) -> native::Listing {
+        let mut repo = RunRepository::find([fixture.root().as_std_path()]);
+        native::changed_files(&mut repo, None).expect("listed")
+    }
+
+    #[test]
+    fn a_listed_file_loads_from_the_commit_listed_though_at_minus_moved() {
+        let fixture = Fixture::new();
+        fixture.commit("one", &[("a.txt", b"one\n")]);
+        fixture.check_out_to_disk();
+        fixture.write("a.txt", b"edited\n");
+        let listing = listing(&fixture);
+        // `jj commit` from elsewhere: `@-` is now `two`.
+        fixture.commit("two", &[("a.txt", b"two\n")]);
+        let diff = super::load_from(&listing, "a.txt", "a.txt");
+        assert_eq!((diff.left.content(), diff.left_title.as_str()), ("one\n", "@-"));
+    }
+
+    #[test]
+    fn a_merge_working_copy_loads_from_the_merge_of_its_parents() {
+        let fixture = Fixture::new();
+        let left = fixture.commit_on(&[], "left", &[("a.txt", b"a\n")]);
+        let right = fixture.commit_on(&[], "right", &[("b.txt", b"b\n")]);
+        fixture.check_out(&[&left, &right]);
+        fixture.check_out_to_disk();
+        fixture.write("a.txt", b"edited\n");
+        let listing = listing(&fixture);
+        assert_eq!(
+            listing.files.iter().map(ChangedFile::display_path).collect::<Vec<_>>(),
+            ["a.txt"]
+        );
+        let diff = super::load_from(&listing, "a.txt", "a.txt");
+        assert_eq!((diff.left.content(), diff.left_title.as_str()), ("a\n", "@-"));
+        assert_eq!(super::load_from(&listing, "b.txt", "b.txt").left.content(), "b\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_deleted_retargeted_or_made_a_file_is_listed_as_special() {
+        use std::os::unix::fs::symlink;
+        use vcs::testing::Entry;
+        let fixture = Fixture::new();
+        fixture.commit_entries(
+            "one",
+            &[
+                ("gone", Entry::Symlink("t")),
+                ("moved", Entry::Symlink("t")),
+                ("now-file", Entry::Symlink("t")),
+                ("same", Entry::Symlink("t")),
+                ("t", Entry::File(b"t\n")),
+            ],
+        );
+        fixture.check_out_to_disk();
+        let root = fixture.root().as_std_path();
+        for path in ["gone", "moved", "now-file"] {
+            std::fs::remove_file(root.join(path)).expect("removed");
+        }
+        symlink("u", root.join("moved")).expect("moved");
+        fixture.write("now-file", b"f\n");
+        symlink("t", root.join("added")).expect("added");
+        assert_eq!(
+            listed(fixture.root(), None).1,
+            [
+                file("added", Change::Added, Content::Special),
+                file("gone", Change::Deleted, Content::Special),
+                file("moved", Change::Modified, Content::Special),
+                file("now-file", Change::Modified, Content::Special),
+            ]
         );
     }
 

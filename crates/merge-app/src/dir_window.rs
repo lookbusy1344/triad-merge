@@ -19,7 +19,7 @@ use merge_core::diff::DiffOptions;
 use merge_core::text::Text;
 use merge_session::dir_diff::{self, Change, ChangedFile};
 use merge_session::jj_config::ConfigEnv;
-use merge_session::native::{self, Listing, NO_FILE};
+use merge_session::native::{self, Against, Listing, NO_FILE};
 use merge_session::repository::{Handoff, RunRepository};
 
 use crate::diff_window::{self, DiffFile, DiffLookup, DiffSettings};
@@ -150,13 +150,6 @@ pub fn start(
     Ok((window, view))
 }
 
-/// The repository's root and the revision a [`Source::Changes`] listing compared with.
-#[derive(Clone)]
-struct Against {
-    root: PathBuf,
-    rev: String,
-}
-
 /// A listing: its files, and for [`Source::Changes`] what they were compared with.
 type Listed = Result<(Vec<ChangedFile>, Option<Against>), String>;
 
@@ -168,9 +161,9 @@ fn list(source: &Source, cwd: &Path) -> Listed {
         }
         Source::Changes { rev, jj_config } => {
             let mut repo = changes_repository(cwd, jj_config.as_ref());
-            let Listing { root, rev, files } =
+            let Listing { against, files } =
                 native::changed_files(&mut repo, rev.as_deref()).map_err(to_string)?;
-            Ok((files, Some(Against { root, rev })))
+            Ok((files, Some(against)))
         }
     }
 }
@@ -193,17 +186,16 @@ fn changes_repository(dir: &Path, jj_config: Option<&ConfigEnv>) -> RunRepositor
 /// deleted on disk opens an empty, read-only right side.
 fn load_changed(
     file: &ChangedFile,
-    Against { root, rev }: Against,
+    against: &Against,
     jj_config: Option<&ConfigEnv>,
 ) -> Result<ToolDiff, String> {
     let shown = file.display_path();
-    let mut repo = changes_repository(&root, jj_config);
+    let mut repo = changes_repository(&against.root, jj_config);
     let from = match &file.change {
         Change::Renamed { from } => from,
         Change::Added | Change::Deleted | Change::Modified => &file.path,
     };
-    let loaded =
-        native::load_listed(&mut repo, &root, &rev, from, &file.path).map_err(to_string)?;
+    let loaded = native::load_listed(&mut repo, against, from, &file.path).map_err(to_string)?;
     let path = loaded.right.clone();
     let (left, right) = match file.change {
         Change::Deleted => {
@@ -216,7 +208,8 @@ fn load_changed(
         }
     };
     let kind = repo.kind();
-    let origins = DiffLookup::Native { path, rev: Some(rev), repo: Handoff::new(repo) };
+    let rev = Some(against.pinned().to_owned());
+    let origins = DiffLookup::Native { path, rev, repo: Handoff::new(repo) };
     Ok(ToolDiff { left, right, origins, kind, title: Some(shown) })
 }
 
@@ -332,7 +325,7 @@ impl DirWindow {
             }
             (Source::Changes { jj_config, .. }, Some(against)) => {
                 cx.background_spawn(
-                    async move { load_changed(&listed, against, jj_config.as_ref()) },
+                    async move { load_changed(&listed, &against, jj_config.as_ref()) },
                 )
             }
             (Source::Changes { .. }, None) => return,

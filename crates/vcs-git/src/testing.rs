@@ -171,7 +171,12 @@ impl Fixture {
 
     /// Make the index hold `files` as its whole content.
     pub fn stage(&self, files: &[(&str, &[u8])]) {
-        let tree = self.tree(files);
+        self.stage_entries(&Entry::files(files));
+    }
+
+    /// Make the index hold `entries` as its whole content.
+    pub fn stage_entries(&self, entries: &[(&str, Entry)]) {
+        let tree = self.tree_of(entries);
         let mut index = self.repo.index_from_tree(&tree).expect("an index");
         index.write(gix::index::write::Options::default()).expect("the index is written");
     }

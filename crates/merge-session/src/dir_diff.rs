@@ -4,9 +4,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use merge_core::rename::{self, Candidate};
+use merge_core::rename::{self, Candidate, Group};
 use merge_core::text::{DecodeError, Text};
 use vcs::VcsError;
+use vcs_git::BlobId;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DirDiffError {
@@ -126,51 +127,79 @@ pub fn display(path: &Path) -> String {
 ///
 /// [`DirDiffError`] when either is not a directory, or an entry cannot be read.
 pub fn changed_files(left: &Path, right: &Path) -> Result<Vec<ChangedFile>, DirDiffError> {
-    let (left, right) = (walk(left)?, walk(right)?);
-    let paths: BTreeSet<&PathBuf> = left.keys().chain(right.keys()).collect();
+    let (left_entries, right_entries) = (walk(left)?, walk(right)?);
+    let paths: BTreeSet<&PathBuf> = left_entries.keys().chain(right_entries.keys()).collect();
     let listed = paths
         .into_iter()
         .filter_map(|path| {
-            compare(left.get(path), right.get(path))
+            compare(left_entries.get(path), right_entries.get(path))
                 .map(|found| {
-                    found.map(|(change, content, bytes)| {
-                        (ChangedFile { path: path.clone(), change, content }, bytes)
+                    found.map(|(change, content, blob)| {
+                        (ChangedFile { path: path.clone(), change, content }, blob)
                     })
                 })
                 .transpose()
         })
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(with_renames(listed)?)
+    with_renames(listed, |file| {
+        let root = if file.change == Change::Deleted { left } else { right };
+        let path = root.join(&file.path);
+        fs::read(&path).map_err(read_error(&path))
+    })
 }
 
-/// A listed file, with its bytes when it is a regular file on one side only.
-pub(crate) type Listed = (ChangedFile, Option<Vec<u8>>);
+/// What the rename search needs of a regular file on one side only. Its bytes are read
+/// again only for a similarity pass.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Blob {
+    id: BlobId,
+    len: usize,
+    binary: bool,
+}
 
-/// How a path differs, what it holds, and its bytes when it is a regular file on one side
+impl Blob {
+    /// The blob of a file holding `bytes`.
+    ///
+    /// # Errors
+    ///
+    /// [`VcsError::Backend`] when the blob ID cannot be computed.
+    pub(crate) fn of(bytes: &[u8]) -> Result<Self, VcsError> {
+        Ok(Self {
+            id: vcs_git::blob_id(bytes)?,
+            len: bytes.len(),
+            binary: rename::is_binary(bytes),
+        })
+    }
+}
+
+/// A listed file, with its blob when it is a regular file on one side only.
+pub(crate) type Listed = (ChangedFile, Option<Blob>);
+
+/// How a path differs, what it holds, and its blob when it is a regular file on one side
 /// only.
-pub(crate) type Difference = (Change, Content, Option<Vec<u8>>);
+pub(crate) type Difference = (Change, Content, Option<Blob>);
 
 /// `listed` with each added file that renames a deleted one turned into a rename, and the
-/// deleted file dropped. Only regular files on one side, whose bytes `listed` holds, take
-/// part. The order stays: a rename is listed at its new path.
+/// deleted file dropped. Only regular files on one side, for which `listed` holds a blob,
+/// take part. `load` reads a listed file's bytes on its one side, for a similarity pass.
+/// The order stays: a rename is listed at its new path.
 ///
 /// # Errors
 ///
-/// [`VcsError::Backend`] when a file's blob ID cannot be computed.
-pub(crate) fn with_renames(listed: Vec<Listed>) -> Result<Vec<ChangedFile>, VcsError> {
+/// The first error `load` returns.
+pub(crate) fn with_renames<E>(
+    listed: Vec<Listed>,
+    mut load: impl FnMut(&ChangedFile) -> Result<Vec<u8>, E>,
+) -> Result<Vec<ChangedFile>, E> {
     let locations: Vec<String> = listed.iter().map(|(file, _)| file.display_path()).collect();
-    let ids = listed
-        .iter()
-        .map(|(_, bytes)| bytes.as_deref().map(vcs_git::blob_id).transpose())
-        .collect::<Result<Vec<_>, _>>()?;
     // Each side's candidates, and the index in `listed` of each.
     let (mut deleted, mut deleted_at, mut added, mut added_at) =
         (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-    for (ix, ((file, bytes), id)) in listed.iter().zip(&ids).enumerate() {
-        let (Some(bytes), Some(id)) = (bytes, id) else {
+    for (ix, (file, blob)) in listed.iter().enumerate() {
+        let Some(Blob { id, len, binary }) = *blob else {
             continue;
         };
-        let candidate = Candidate { id: *id, location: locations[ix].as_bytes(), bytes };
+        let candidate = Candidate { id, location: locations[ix].as_bytes(), len, binary };
         match file.change {
             Change::Deleted => {
                 deleted.push(candidate);
@@ -183,7 +212,13 @@ pub(crate) fn with_renames(listed: Vec<Listed>) -> Result<Vec<ChangedFile>, VcsE
             Change::Modified | Change::Renamed { .. } => {}
         }
     }
-    let found = rename::renames(&deleted, &added);
+    let found = rename::renames(&deleted, &added, |group, ix| {
+        let at = match group {
+            Group::Deleted => deleted_at[ix],
+            Group::Added => added_at[ix],
+        };
+        load(&listed[at].0)
+    })?;
     let mut source = vec![None; listed.len()];
     let mut gone = vec![false; listed.len()];
     for found in found {
@@ -258,7 +293,7 @@ fn link(path: PathBuf) -> Result<Entry, DirDiffError> {
     Ok(if to_file { Entry::File(path) } else { Entry::Special(Some(target)) })
 }
 
-/// How a path differs between its two entries, and the bytes of a regular file on one side
+/// How a path differs between its two entries, and the blob of a regular file on one side
 /// only; `None` when it does not differ.
 fn compare(
     left: Option<&Entry>,
@@ -266,12 +301,12 @@ fn compare(
 ) -> Result<Option<Difference>, DirDiffError> {
     Ok(match (left, right) {
         (Some(entry), None) => {
-            let (content, bytes) = content_of(entry)?;
-            Some((Change::Deleted, content, bytes))
+            let (content, blob) = content_of(entry)?;
+            Some((Change::Deleted, content, blob))
         }
         (None, Some(entry)) => {
-            let (content, bytes) = content_of(entry)?;
-            Some((Change::Added, content, bytes))
+            let (content, blob) = content_of(entry)?;
+            Some((Change::Added, content, blob))
         }
         (Some(Entry::File(left)), Some(Entry::File(right))) => {
             let left_bytes = fs::read(left).map_err(read_error(left))?;
@@ -287,13 +322,13 @@ fn compare(
     })
 }
 
-/// What `entry` holds, and a regular file's bytes.
-fn content_of(entry: &Entry) -> Result<(Content, Option<Vec<u8>>), DirDiffError> {
+/// What `entry` holds, and a regular file's blob.
+fn content_of(entry: &Entry) -> Result<(Content, Option<Blob>), DirDiffError> {
     match entry {
         Entry::Special(_) => Ok((Content::Special, None)),
         Entry::File(path) => {
             let bytes = fs::read(path).map_err(read_error(path))?;
-            Ok((decoded(&bytes), Some(bytes)))
+            Ok((decoded(&bytes), Some(Blob::of(&bytes)?)))
         }
     }
 }

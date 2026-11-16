@@ -451,6 +451,39 @@ impl Repository for GitRepository {
         }
     }
 
+    fn entry_at(&self, path: &Utf8Path, rev: &RevSpec) -> Result<TermContent, VcsError> {
+        check_inside(path)?;
+        let revision = match rev {
+            RevSpec::Index => {
+                let index = self.repo.index_or_empty().map_err(backend("reading the index"))?;
+                return self.term_content(index.entry_by_path(git_path(path).as_ref()));
+            }
+            RevSpec::Expr(expr) => self.revision(expr)?,
+            RevSpec::Commit(id) => self.commit_by_id(id)?,
+        };
+        let tree = self
+            .repo
+            .find_object(revision)
+            .and_then(gix::Object::peel_to_tree)
+            .map_err(backend("reading a revision's tree"))?;
+        let Some(entry) = tree
+            .lookup_entry_by_path(path.as_std_path())
+            .map_err(backend("finding a path in a tree"))?
+        else {
+            return Ok(TermContent::Absent);
+        };
+        let file = |executable| {
+            self.blob(entry.object_id()).map(|bytes| TermContent::File { bytes, executable })
+        };
+        match entry.mode().kind() {
+            gix::object::tree::EntryKind::Blob => file(false),
+            gix::object::tree::EntryKind::BlobExecutable => file(true),
+            gix::object::tree::EntryKind::Link => Ok(TermContent::Other(EntryKind::Symlink)),
+            gix::object::tree::EntryKind::Commit => Ok(TermContent::Other(EntryKind::Submodule)),
+            gix::object::tree::EntryKind::Tree => Ok(TermContent::Other(EntryKind::Directory)),
+        }
+    }
+
     /// The index when `path` has staged changes or there is no commit yet; otherwise `HEAD`.
     fn default_parent(&self, path: &Utf8Path) -> Result<Parent, VcsError> {
         let index = Parent {
@@ -581,10 +614,9 @@ impl Repository for GitRepository {
         Ok(self.head_id()?.as_ref().map(commit_id))
     }
 
-    /// git takes the working tree in at `git add`, never by itself.
     /// gix's status: `rev`'s tree against the index, and the index against the files on disk,
-    /// with untracked files, submodules and rename tracking off, so a rename lists both paths. gix drops an entry whose stat alone went
-    /// stale.
+    /// with untracked files, submodules and rename tracking off, so a rename lists both
+    /// paths. gix drops an entry whose stat alone went stale.
     fn changed_paths(&self, rev: &RevSpec) -> Result<Vec<Utf8PathBuf>, VcsError> {
         let tree = match rev {
             RevSpec::Index => None,
@@ -623,6 +655,7 @@ impl Repository for GitRepository {
         Ok(paths.into_iter().collect())
     }
 
+    /// git takes the working tree in at `git add`, never by itself.
     fn snapshot(&mut self) -> Result<(), VcsError> {
         Ok(())
     }

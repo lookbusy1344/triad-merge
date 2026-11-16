@@ -232,9 +232,18 @@ impl Fixture {
         reason = "called for its effect on the repository; tests often ignore the result"
     )]
     pub fn commit(&self, message: &str, files: &[(&str, &[u8])]) -> Committed {
+        self.commit_entries(message, &Entry::files(files))
+    }
+
+    /// Commit `entries` as the whole tree, as [`Fixture::commit`] does.
+    #[expect(
+        clippy::must_use_candidate,
+        reason = "called for its effect on the repository; tests often ignore the result"
+    )]
+    pub fn commit_entries(&self, message: &str, entries: &[(&str, Entry)]) -> Committed {
         let repo = self.repo();
         let parents = self.working_copy(repo.as_ref()).parent_ids().to_vec();
-        let committed = self.write_commit(&repo, parents, message, &Entry::files(files));
+        let committed = self.write_commit(&repo, parents, message, entries);
         self.check_out(&[&committed]);
         committed
     }

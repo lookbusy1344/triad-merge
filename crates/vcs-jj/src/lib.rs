@@ -505,6 +505,20 @@ impl JjRepository {
         Ok(<[_; 1]>::try_from(bases).ok().map(|[base]| base))
     }
 
+    /// The tree of `rev`, the merge of its commits' trees when it names several, and the
+    /// revision as an error names it.
+    fn tree_at<'r>(&self, rev: &'r RevSpec) -> Result<(MergedTree, &'r str), VcsError> {
+        let (commits, named) = match rev {
+            RevSpec::Index => return Err(VcsError::NoIndex(JJ)),
+            RevSpec::Expr(expr) => (self.resolve(expr)?, expr.as_str()),
+            RevSpec::Commit(id) => (vec![self.commit_by_id(id)?], id.as_str()),
+        };
+        let tree = jj_lib::rewrite::merge_commit_trees(self.repo.as_ref(), &commits)
+            .block_on()
+            .map_err(backend("merging a revision's trees"))?;
+        Ok((tree, named))
+    }
+
     /// What one term of a conflict holds; `Absent` without a value.
     fn term_content(
         &self,
@@ -639,18 +653,23 @@ impl Repository for JjRepository {
     fn file_at(&self, path: &Utf8Path, rev: &RevSpec) -> Result<Option<Vec<u8>>, VcsError> {
         let repo_path = RepoPathBuf::from_relative_path(path)
             .map_err(|_| VcsError::OutsideRepository(path.to_owned()))?;
-        let (commits, named) = match rev {
-            RevSpec::Index => return Err(VcsError::NoIndex(JJ)),
-            RevSpec::Expr(expr) => (self.resolve(expr)?, expr.as_str()),
-            RevSpec::Commit(id) => (vec![self.commit_by_id(id)?], id.as_str()),
-        };
-        let tree = jj_lib::rewrite::merge_commit_trees(self.repo.as_ref(), &commits)
-            .block_on()
-            .map_err(backend("merging a revision's trees"))?;
+        let (tree, named) = self.tree_at(rev)?;
         let Some(id) = file_id(&tree, &repo_path, path, named)? else {
             return Ok(None);
         };
         self.read_file(&repo_path, &id).map(Some)
+    }
+
+    fn entry_at(&self, path: &Utf8Path, rev: &RevSpec) -> Result<TermContent, VcsError> {
+        let repo_path = RepoPathBuf::from_relative_path(path)
+            .map_err(|_| VcsError::OutsideRepository(path.to_owned()))?;
+        let (tree, named) = self.tree_at(rev)?;
+        let value =
+            tree.path_value(&repo_path).block_on().map_err(backend("finding a path in a tree"))?;
+        match value.into_resolved() {
+            Ok(value) => self.term_content(&repo_path, value.as_ref()),
+            Err(_) => Err(VcsError::Conflicted { path: path.to_owned(), rev: named.to_owned() }),
+        }
     }
 
     /// `@-`, titled by its change ID and summary; untitled when the working copy is a merge.

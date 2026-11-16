@@ -5,12 +5,12 @@ use std::path::{Path, PathBuf};
 
 use camino::{Utf8Path, Utf8PathBuf};
 use merge_core::text::{DecodeError, Text};
-use vcs::{RepoKind, Repository, RevSpec, VcsError};
+use vcs::{CommitId, EntryKind, RepoKind, Repository, RevSpec, TermContent, VcsError};
 use vcs_git::GitRepository;
 use vcs_jj::JjRepository;
 use vcs_jj::config::ConfigEnv;
 
-use crate::dir_diff::{self, Change, ChangedFile, Content, Difference};
+use crate::dir_diff::{self, Blob, Change, ChangedFile, Content, Difference};
 use crate::repository::RunRepository;
 
 /// What `diff PATH` shows: a revision of the file on the left, the working copy on the right.
@@ -221,11 +221,28 @@ fn read_left(
 /// The working copy's changed files, as `diff` with no path lists them (spec §6.1).
 #[derive(Debug)]
 pub struct Listing {
+    pub against: Against,
+    pub files: Vec<ChangedFile>,
+}
+
+/// What a [`Listing`] compared the working copy with.
+#[derive(Debug, Clone)]
+pub struct Against {
     /// The repository's root, which the paths are relative to.
     pub root: PathBuf,
-    /// The revision the files are compared with, as the VCS reads it.
+    /// The revision as given, or the parent revision's name, which titles show.
     pub rev: String,
-    pub files: Vec<ChangedFile>,
+    /// The full IDs of the commits `rev` named at the listing, as a revision expression: a
+    /// listed file loads from them though `rev` names others since.
+    pinned: String,
+}
+
+impl Against {
+    /// The commits the listing compared with, as a revision expression of their full IDs.
+    #[must_use]
+    pub fn pinned(&self) -> &str {
+        &self.pinned
+    }
 }
 
 /// The files that differ between `rev`, or the parent revision without one, and the working
@@ -233,8 +250,8 @@ pub struct Listing {
 /// git compares the files on disk, staged or not, and leaves untracked files out. The parent
 /// is jj's `@-` and git's `HEAD`: a staged change counts, so the index is no parent here. Each
 /// candidate the VCS lists is compared by bytes, so a change to the executable bit alone, or a
-/// staged change undone on disk, is left out. A path that is no regular file at the revision
-/// reads as absent there, and one conflicted there is [`Content::Special`].
+/// staged change undone on disk, is left out. A path that holds a directory at the revision
+/// holds no file there; a symlink, a submodule or a conflict there is [`Content::Special`].
 ///
 /// # Errors
 ///
@@ -253,27 +270,39 @@ pub fn changed_files(repo: &mut RunRepository, rev: Option<&str>) -> Result<List
         },
         str::to_owned,
     );
-    let spec = RevSpec::Expr(rev.clone());
+    let pinned = repo.commits(&rev)?.iter().map(CommitId::as_str).collect::<Vec<_>>().join(UNION);
+    let spec = RevSpec::Expr(pinned.clone());
     let root = repo.root().as_std_path().to_owned();
     let mut listed = Vec::new();
     for path in repo.changed_paths(&spec)? {
-        let before = match repo.file_at(&path, &spec) {
-            Ok(Some(bytes)) => Side::File(bytes),
-            Ok(None) => Side::Absent,
-            Err(VcsError::Conflicted { .. }) => Side::Special,
+        let before = match repo.entry_at(&path, &spec) {
+            Ok(TermContent::File { bytes, .. }) => Side::File(bytes),
+            Ok(TermContent::Absent | TermContent::Other(EntryKind::Directory)) => Side::Absent,
+            Ok(TermContent::Other(EntryKind::Symlink | EntryKind::Submodule))
+            | Err(VcsError::Conflicted { .. }) => Side::Special,
             Err(error) => return Err(error.into()),
         };
         let after = on_disk(&root.join(&path))?;
-        if let Some((change, content, bytes)) = compared(before, after) {
-            listed.push((ChangedFile { path: path.into_std_path_buf(), change, content }, bytes));
+        if let Some((change, content, blob)) = compared(before, after)? {
+            listed.push((ChangedFile { path: path.into_std_path_buf(), change, content }, blob));
         }
     }
-    Ok(Listing { root, rev, files: dir_diff::with_renames(listed)? })
+    let files = dir_diff::with_renames(listed, |file| {
+        let path = root.join(&file.path);
+        if file.change != Change::Deleted {
+            return std::fs::read(&path).map_err(|source| NativeError::Find { path, source });
+        }
+        let relative =
+            Utf8Path::from_path(&file.path).ok_or_else(|| VcsError::NotUtf8(file.path.clone()))?;
+        repo.file_at(relative, &spec)?
+            .ok_or_else(|| NativeError::Find { path, source: io::ErrorKind::NotFound.into() })
+    })?;
+    Ok(Listing { against: Against { root, rev, pinned }, files })
 }
 
-/// Load a file [`changed_files`] listed: `left` at the listing's revision `rev` against
-/// `right` on disk, both relative to the root `root` of the run's repository. The two differ
-/// for a rename. The file on disk may no longer exist.
+/// Load a file [`changed_files`] listed: `left` from the commits `against` pinned, against
+/// `right` on disk, both relative to the repository's root. The two differ for a rename. The
+/// file on disk may no longer exist.
 ///
 /// # Errors
 ///
@@ -281,25 +310,28 @@ pub fn changed_files(repo: &mut RunRepository, rev: Option<&str>) -> Result<List
 /// [`NativeError::Decode`] when the revision's file is not text.
 pub fn load_listed(
     repo: &mut RunRepository,
-    root: &Path,
-    rev: &str,
+    against: &Against,
     left: &Path,
     right: &Path,
 ) -> Result<NativeDiff, NativeError> {
     let path = Utf8Path::from_path(left).ok_or_else(|| VcsError::NotUtf8(left.to_owned()))?;
-    let spec = RevSpec::Expr(rev.to_owned());
-    read_left(repo.require()?, path, &spec, rev, &root.join(right))
+    let spec = RevSpec::Expr(against.pinned.clone());
+    read_left(repo.require()?, path, &spec, &against.rev, &against.root.join(right))
 }
 
 /// The parent revisions [`changed_files`] compares with by default.
 const JJ_PARENT: &str = "@-";
 const GIT_PARENT: &str = "HEAD";
 
+/// Joins commit IDs into one revision expression: jj's revset union. A git revision names
+/// one commit, so git never sees it.
+const UNION: &str = " | ";
+
 /// What a path holds on one side of a listing.
 enum Side {
     Absent,
     File(Vec<u8>),
-    /// No regular file: a symlink, a conflict, a device.
+    /// No regular file: a symlink, a submodule, a conflict, a device.
     Special,
 }
 
@@ -315,22 +347,26 @@ fn on_disk(path: &Path) -> Result<Side, NativeError> {
     }
 }
 
-/// How a path changed from `before` to `after`, and the bytes of a regular file on one side
+/// How a path changed from `before` to `after`, and the blob of a regular file on one side
 /// only; `None` when it did not change.
-fn compared(before: Side, after: Side) -> Option<Difference> {
+///
+/// # Errors
+///
+/// [`VcsError::Backend`] when a blob ID cannot be computed.
+fn compared(before: Side, after: Side) -> Result<Option<Difference>, VcsError> {
     let content = |side: &Side| match side {
         Side::File(bytes) => dir_diff::decoded(bytes),
         Side::Absent | Side::Special => Content::Special,
     };
-    let bytes = |side: Side| match side {
-        Side::File(bytes) => Some(bytes),
-        Side::Absent | Side::Special => None,
+    let blob = |side: &Side| match side {
+        Side::File(bytes) => Blob::of(bytes).map(Some),
+        Side::Absent | Side::Special => Ok(None),
     };
-    match (before, after) {
+    Ok(match (before, after) {
         (Side::Absent, Side::Absent) => None,
         (Side::File(a), Side::File(b)) if a == b => None,
-        (Side::Absent, side) => Some((Change::Added, content(&side), bytes(side))),
-        (side, Side::Absent) => Some((Change::Deleted, content(&side), bytes(side))),
+        (Side::Absent, side) => Some((Change::Added, content(&side), blob(&side)?)),
+        (side, Side::Absent) => Some((Change::Deleted, content(&side), blob(&side)?)),
         (a, b) => Some((Change::Modified, content(&a).max(content(&b)), None)),
-    }
+    })
 }

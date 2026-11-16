@@ -304,6 +304,14 @@ pub trait Repository: Send {
     /// file is conflicted at `rev`, and [`VcsError::Backend`] when reading fails.
     fn file_at(&self, path: &Utf8Path, rev: &RevSpec) -> Result<Option<Vec<u8>>, VcsError>;
 
+    /// What `path`, relative to the repository root, holds at `rev`: a file with its bytes,
+    /// another kind of entry, or nothing.
+    ///
+    /// # Errors
+    ///
+    /// As [`Repository::file_at`].
+    fn entry_at(&self, path: &Utf8Path, rev: &RevSpec) -> Result<TermContent, VcsError>;
+
     /// The revision `path`'s working-copy version is compared with by default.
     ///
     /// # Errors
