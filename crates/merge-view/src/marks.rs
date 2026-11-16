@@ -15,6 +15,9 @@ pub enum Tone {
     Base,
     /// Text from more than one input.
     Both,
+    /// A moved block: [`Tone::Both`]'s colour, with a fainter band, since a move is context,
+    /// not a change to act on.
+    Moved,
     Conflict,
     Edited,
     /// The region contributes no text.

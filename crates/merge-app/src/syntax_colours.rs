@@ -69,11 +69,12 @@ mod tests {
     use gpui_kit::{Hsla, Rgba, TestAppContext};
     use merge_view::marks::Tone;
 
-    const TONES: [Tone; 8] = [
+    const TONES: [Tone; 9] = [
         Tone::Left,
         Tone::Right,
         Tone::Base,
         Tone::Both,
+        Tone::Moved,
         Tone::Conflict,
         Tone::Edited,
         Tone::Cleared,

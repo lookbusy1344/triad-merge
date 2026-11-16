@@ -1,5 +1,5 @@
 //! Colours for region tones (spec §5): left blue, right pink, base yellow, conflict orange,
-//! edited purple, word-merged green by default. Bands are translucent so text and the active
+//! edited purple, word-merged green, moved a faint teal by default. Bands are translucent so text and the active
 //! line show through.
 //!
 //! A window builds its [`Palette`] from the settings' colours (spec §6.4) when it opens.
@@ -9,6 +9,9 @@ use merge_config::settings::{Colour, Colours, DEFAULT_COLOURS, Themed};
 use merge_view::marks::Tone;
 
 const OPAQUE: f32 = 1.;
+/// A move's band opacity as a share of the others': fainter than a side's band, since a move
+/// explains where text came from and needs no action.
+const MOVED_BAND_SHARE: f32 = 0.5;
 /// The grey of the cleared tone, which has no setting.
 const CLEARED_LIGHTNESS: f32 = 0.45;
 const CLEARED_LIGHTNESS_DARK: f32 = 0.65;
@@ -58,15 +61,20 @@ impl Tones {
             Tone::Base => self.base,
             Tone::Conflict => self.conflict,
             Tone::Edited => self.edited,
-            Tone::Both => self.both,
+            Tone::Both | Tone::Moved => self.both,
             Tone::WordMerged => self.word_merged,
             Tone::Cleared => self.cleared,
         }
     }
 
-    /// The translucent band behind a tone's rows: its mark at the band opacity.
+    /// The translucent band behind a tone's rows: its mark at the band opacity, a move's at
+    /// [`MOVED_BAND_SHARE`] of it.
     pub(crate) const fn band(&self, tone: Tone) -> Hsla {
-        self.translucent(self.mark(tone))
+        let band = self.translucent(self.mark(tone));
+        match tone {
+            Tone::Moved => Hsla { a: band.a * MOVED_BAND_SHARE, ..band },
+            _ => band,
+        }
     }
 
     /// The colour of the current region's bars in the top panes and frame in the result.
@@ -250,6 +258,16 @@ mod tests {
         assert!(got.into_iter().eq((1..=9).map(red)), "{got:?}");
         assert_eq!(tones.conflict_badge(true), Hsla { a: 0.5, ..red(10) });
         assert_eq!(tones.conflict_badge(false), Hsla { a: 0.5, ..red(4) });
+    }
+
+    #[test]
+    fn a_move_takes_the_both_colour_with_a_band_half_as_strong() {
+        for dark in THEMES {
+            let tones = *Palette::default().tones(dark);
+            let both = tones.band(Tone::Both);
+            assert_eq!(tones.mark(Tone::Moved), tones.mark(Tone::Both), "dark {dark}");
+            assert_eq!(tones.band(Tone::Moved), Hsla { a: both.a / 2., ..both }, "dark {dark}");
+        }
     }
 
     #[test]

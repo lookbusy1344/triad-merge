@@ -615,7 +615,7 @@ mod tests {
             [
                 mark(RegionIx::new(0), 0..0, Style::Plain(Tone::Right)),
                 mark(RegionIx::new(2), 3..4, Style::Plain(Tone::Right)),
-                mark(RegionIx::new(2), 4..6, Style::Plain(Tone::Both)),
+                mark(RegionIx::new(2), 4..6, Style::Plain(Tone::Moved)),
                 mark(RegionIx::new(2), 6..7, Style::Plain(Tone::Right)),
             ]
         );
@@ -623,7 +623,7 @@ mod tests {
         assert_eq!(
             left,
             [
-                mark(RegionIx::new(0), 0..2, Style::Plain(Tone::Both)),
+                mark(RegionIx::new(0), 0..2, Style::Plain(Tone::Moved)),
                 mark(RegionIx::new(2), 5..5, Style::Plain(Tone::Left)),
             ]
         );

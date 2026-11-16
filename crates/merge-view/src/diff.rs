@@ -44,9 +44,8 @@ fn line_bytes(doc: &DiffDocument, side: Side, lines: Range<usize>) -> Range<usiz
     byte(lines.start)..byte(lines.end)
 }
 
-/// The gutter mark of both ends of a moved block (spec §4.6), in the tone of text from both
-/// sides.
-pub const MOVE_MARK: Mark = Mark { label: "M", tone: Tone::Both };
+/// The gutter mark of both ends of a moved block (spec §4.6), in the move tone.
+pub const MOVE_MARK: Mark = Mark { label: "M", tone: Tone::Moved };
 pub const MOVE_TONE: Tone = MOVE_MARK.tone;
 
 /// A full-line band over a run of one side's lines.
@@ -335,13 +334,13 @@ mod tests {
     #[test]
     fn a_moved_block_takes_the_move_tone_at_both_ends() {
         let d = moved();
-        assert_eq!(MOVE_TONE, Tone::Both);
-        assert_eq!(bands(&d, Side::Left), [band(0..6, Tone::Both, Some(2))]);
+        assert_eq!(MOVE_TONE, Tone::Moved);
+        assert_eq!(bands(&d, Side::Left), [band(0..6, Tone::Moved, Some(2))]);
         assert_eq!(
             bands(&d, Side::Right),
             [
                 band(6..8, Tone::Right, None),
-                band(8..14, Tone::Both, Some(0)),
+                band(8..14, Tone::Moved, Some(0)),
                 band(14..16, Tone::Right, None)
             ]
         );
@@ -360,7 +359,7 @@ mod tests {
         let d = doc("m1\nm2\na\nb\nc\n", "a\nb\nc\nm1\nm2\no\n");
         assert_eq!(
             bands(&d, Side::Right),
-            [band(6..12, Tone::Both, Some(0)), band(12..14, Tone::Right, None)]
+            [band(6..12, Tone::Moved, Some(0)), band(12..14, Tone::Right, None)]
         );
     }
 
