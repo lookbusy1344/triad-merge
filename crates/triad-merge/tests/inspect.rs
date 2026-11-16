@@ -503,3 +503,27 @@ fn diff_inspect_prints_a_rename_with_both_paths() {
         ])
     );
 }
+
+#[test]
+fn the_directory_demo_lists_what_its_readme_says() {
+    let demo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/demo/dirs");
+    let (left, right) = (demo.join("left"), demo.join("right"));
+    let result =
+        triad(&["diff".as_ref(), "--inspect".as_ref(), left.as_os_str(), right.as_os_str()]);
+    assert_eq!(String::from_utf8_lossy(&result.stderr), "");
+    assert_eq!(
+        String::from_utf8_lossy(&result.stdout),
+        "added binary assets/icon.png\n\
+         modified binary assets/logo.png\n\
+         added text docs/design.md\n\
+         deleted text docs/notes.md\n\
+         added text invoice/cli.py\n\
+         renamed text invoice/util.py => invoice/helpers.py\n\
+         renamed text invoice/parser.py => invoice/io/parser.py\n\
+         modified text invoice/totals.py\n\
+         deleted text legacy.txt\n\
+         added undecodable names-latin1.txt\n\
+         files: 10\n"
+    );
+    assert_eq!(result.status.code(), Some(1));
+}

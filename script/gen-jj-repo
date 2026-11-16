@@ -8,6 +8,7 @@
 #   sides    a three-sided conflict in the working copy: the panes and the conflict badge
 #   history  one file's versions across the operation log: `history`, `diff --op`
 #   absorb   working-copy fixes over a stack of commits: `absorb`
+#   dirs     the demo directories as a commit and the working copy: `diff`, `jj diff --tool`
 #
 # Identity, timestamps and change IDs are fixed, so every run gives the same commit and
 # change IDs. The script ignores the user's jj config. Each scenario checks the state it built
@@ -17,7 +18,8 @@
 #   dest  a directory that does not exist or is empty (default: a new temp directory)
 set -euo pipefail
 
-SCENARIOS="stack sides history absorb"
+SCENARIOS="stack sides history absorb dirs"
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
 
 usage() { sed -n '2,/^set -euo/{/^set -euo/d;s/^# \{0,1\}//;p;}' "$0"; }
 
@@ -217,6 +219,22 @@ gen_absorb() {
   mutable=$(cd "$dest" && jj --quiet log --no-graph -r 'mutable() & ::@-' -T 'description.first_line() ++ "\n"' | sort | paste -sd, -)
   [[ "$mutable" == "A: change f3, f6 and f12,B: change f9,C: change f13" ]] ||
     fail "expected A, B and C mutable and base immutable, got: $mutable"
+}
+
+# fixtures/demo/dirs/left committed as `base`; the working copy then holds right instead.
+gen_dirs() {
+  local demo="$ROOT/fixtures/demo/dirs"
+  cp -R "$demo/left/." "$dest/"
+  jj_ commit -m "base: the demo's left directory"
+  jj_ bookmark create base -r @-
+  find "$dest" -mindepth 1 -maxdepth 1 ! -name .jj ! -name .git -exec rm -rf {} +
+  cp -R "$demo/right/." "$dest/"
+  jj_ status >/dev/null
+
+  local summary
+  summary=$(cd "$dest" && jj --quiet diff --summary | paste -sd, -)
+  [[ "$summary" == "A assets/icon.png,M assets/logo.png,A docs/design.md,D docs/notes.md,A invoice/cli.py,R invoice/{util.py => helpers.py},R invoice/{ => io}/parser.py,M invoice/totals.py,D legacy.txt,A names-latin1.txt" ]] ||
+    fail "expected two renames among ten changes, jj lists: $summary"
 }
 
 "gen_$scenario"

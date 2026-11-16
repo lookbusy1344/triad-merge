@@ -23,3 +23,28 @@ target/debug/triad-merge fixtures/demo/unusual_{base,left,right}.py target/unusu
 target/debug/triad-merge diff fixtures/demo/unusual_{left,right}.py                             # the diff window
 target/debug/triad-merge inspect fixtures/demo/unusual_{base,left,right}.py                     # exit 1: 1 conflict
 ```
+
+## Directories
+
+`dirs/left` and `dirs/right` are a small Python project before and after a change, for trying the directory diff (spec §6.1). `script/gen-dirs-demo` writes them again; it names the binary and Latin-1 bytes by escape.
+
+| Path in `right` | Shown as | Why |
+|---|---|---|
+| `invoice/io/parser.py` | renamed from `invoice/parser.py` | Moved, with two lines changed: it keeps most of its bytes |
+| `invoice/helpers.py` | renamed from `invoice/util.py` | The same bytes under a new name |
+| `invoice/totals.py` | modified | |
+| `docs/design.md`, and `docs/notes.md` | added, and deleted | It keeps two of the notes' eight lines, under half their bytes |
+| `legacy.txt` | deleted | Only in `left` |
+| `invoice/cli.py` | added | Only in `right` |
+| `assets/logo.png`, `assets/icon.png` | modified, added; binary | NUL bytes; listed, greyed, and do not open |
+| `names-latin1.txt` | added, undecodable | Latin-1 bytes, neither UTF-8 nor UTF-16 |
+| `README.md` | left out | The same on both sides |
+
+```sh
+cargo build --workspace
+target/debug/triad-merge diff --inspect fixtures/demo/dirs/{left,right}   # exit 1: 10 files
+target/debug/triad-merge diff fixtures/demo/dirs/{left,right}             # the directory window
+```
+
+Edits in the diff window save to the files under `fixtures/demo/dirs`; `script/gen-dirs-demo` puts them back. The same change as a jj repository, for `triad-merge diff` and `jj diff --tool triad`, is `script/gen-jj-repo dirs` (`docs/test-repos.md`).
+

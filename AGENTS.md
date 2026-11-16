@@ -152,7 +152,7 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | `fixtures/syntax` | One sample file per highlighted language, for the highlighting tests. |
 | `fixtures/oracle` | `jj-corpus.jsonl`: jj-lib merges with jj seeds, from `script/gen-jj-oracle`. `corpus.jsonl`: `git merge-file` triples, from `script/gen-oracle`. `jj-cli-aliases.json`, `jj-cli-absorb.json` and `jj-cli-resolve.json`: jj's default revset aliases, `jj absorb` results and repositories after `jj resolve -r`, from `script/gen-jj-cli-oracle`. |
 | `fixtures/conflict-repo` | Sources of a disposable jj repository with two conflicted Rust files, for `script/gen-conflict-repo`. |
-| `fixtures/demo` | Merges to try by hand: a 980-line Rust merge with 20 conflicts, and one of unusual characters (`fixtures/demo/README.md`). |
+| `fixtures/demo` | Inputs to try by hand: a 980-line Rust merge with 20 conflicts, one of unusual characters, and two directories for the directory diff (`fixtures/demo/README.md`). |
 | `images` | Mark, logo and app icon as SVG, PNG, ICNS and ICO, from `script/gen-images.swift`. |
 | `packaging/linux` | Desktop entry of the Linux packages. |
 | `docs` | The documents README § Documents lists. |

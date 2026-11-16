@@ -15,8 +15,8 @@
 # depend on them, `cargo deny` only when a manifest or the lock file changed, and
 # the vendored crate's tests only when vendor/ changed, script/test-pre-push only
 # when script/pre-push or that test changed, script/test-tip only when script/build-id,
-# script/pre-push or that test changed, and script/test-jj-repos only when script/gen-jj-repo
-# or that test changed. A vendor/ change also runs
+# script/pre-push or that test changed, and script/test-jj-repos only when script/gen-jj-repo,
+# that test or the directory demo it builds from changed. A vendor/ change also runs
 # the tests of the crates that depend on gpui-kit, through which the vendored crate
 # reaches the workspace, and of their dependents. A change to docs/ or to a Markdown file
 # at the root runs no tests. Any other changed path outside crates/ runs every test.
@@ -87,7 +87,7 @@ if [[ "${quick}" == true && ${#changed[@]} -gt 0 ]]; then
                 tip=true
                 all_tests=true
                 ;;
-            script/gen-jj-repo | script/test-jj-repos)
+            script/gen-jj-repo | script/test-jj-repos | fixtures/demo/dirs/*)
                 jj_repos=true
                 all_tests=true
                 ;;
