@@ -11,5 +11,6 @@ mod discovery;
 mod install;
 mod native;
 mod origin;
+mod rename_oracle;
 mod resolve;
 mod write_relative;
