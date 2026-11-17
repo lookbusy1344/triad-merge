@@ -1,4 +1,9 @@
-//! Every string the window shows, in one place for later translation (spec §6.5).
+//! Every string the window shows, in one place (spec §6.5). Each function names a message of
+//! the catalogues in `locales/` and formats it in the run's language through [`crate::i18n`].
+//! Product names, file and VCS ids, encodings, line endings and arrows stay in code: they
+//! read the same in every language.
+
+use std::borrow::Cow;
 
 use gpui_kit::SharedString;
 use merge_core::diff::{
@@ -14,40 +19,59 @@ use merge_session::jj_native::{
     AbsorbHunk, Absorbed, CommitEffect, FileVersion, Goes, Rewrite, SHORT_OPERATION, StackCommit,
     StackPath, Stay, VersionState, stays,
 };
+use merge_session::native::{LeftAt, Revision};
 use merge_view::nav::Sides;
-use merge_view::status::{Divergence, Status};
+use merge_view::status::{Divergence, Role, Status};
 use vcs::{ChangeInfo, IdKind, RepoKind};
 
 use crate::choice::{Choice, MenuAction};
+use crate::i18n::{self, Locale, t};
 use crate::open_dialog::{Mode, Slot};
 use crate::pick_list::{self, Row, Shown};
 use crate::toolbar::Tool;
 
+/// One function per message without arguments, named for it.
+macro_rules! texts {
+    ($($(#[$doc:meta])* $name:ident = $id:literal;)+) => {
+        $(
+            $(#[$doc])*
+            pub(crate) fn $name() -> SharedString {
+                t!($id)
+            }
+        )+
+    };
+}
+
 pub(crate) const APP_NAME: &str = "triad";
-/// The About window's title and its menu item.
-pub(crate) const ABOUT_TITLE: &str = "About triad";
-/// The About window's line under the version.
-pub(crate) const DESCRIPTION: &str = "Three-way merge and two-way diff";
-/// The About window's line under the description.
-pub(crate) const VCS_SUPPORT: &str = "Built for Jujutsu, with full Git support";
 /// The prefix of every message on stderr, as `merge-cli` writes them.
 pub(crate) const PROGRAM: &str = "triad-merge";
 /// The prefix of the measurement lines on stderr (DESIGN.md §A6.7).
 pub(crate) const MEASURE: &str = "triad-merge measure";
-pub(crate) const RESULT_TITLE: &str = "Result";
-pub(crate) const TOOLBAR: &str = "Merge tools";
-pub(crate) const DIFF_TOOLBAR: &str = "Diff tools";
-/// The accessible label of the merge window's aligned input lines.
-pub(crate) const INPUT_LINES: &str = "Input lines";
-pub(crate) const GO_TO_LINE_FIELD: &str = "Line number";
-/// An input pane's count when the result's search matches nothing in it (spec §6.3).
-pub(crate) const NO_MATCHES: &str = "No matches";
-/// The settings banner's close button.
-pub(crate) const CLOSE: &str = "Close";
+/// Between the items of a status bar, a badge or a list row.
+const ITEMS: &str = " · ";
+
+texts! {
+    /// The About window's title and its menu item.
+    about_title = "about-title";
+    /// The About window's line under the version.
+    description = "about-description";
+    /// The About window's line under the description.
+    vcs_support = "about-vcs-support";
+    result_title = "result-title";
+    toolbar = "merge-toolbar";
+    diff_toolbar = "diff-toolbar";
+    /// The accessible label of the merge window's aligned input lines.
+    input_lines = "input-lines";
+    go_to_line_field = "go-to-line-field";
+    /// An input pane's count when the result's search matches nothing in it (spec §6.3).
+    no_matches = "no-matches";
+    /// The settings banner's close button.
+    close = "close";
+}
 
 /// The About window's version line.
 pub(crate) fn version() -> SharedString {
-    format!("Version {}", env!("CARGO_PKG_VERSION")).into()
+    t!("about-version", version = env!("CARGO_PKG_VERSION")).into()
 }
 
 /// The About window's line naming the source of the build. `script/build-id` sets both
@@ -65,14 +89,13 @@ pub(crate) fn build(
     change: Option<&str>,
     profile: Profile,
 ) -> Option<SharedString> {
+    let line = |commit: &str, change: Option<&str>| match change {
+        Some(change) => t!("about-build-commit-change", commit = commit, change = change).into(),
+        None => t!("about-build-commit", commit = commit).into(),
+    };
     match (commit.filter(|id| !id.is_empty()), profile) {
-        (Some(commit), _) => Some(match change.filter(|id| !id.is_empty()) {
-            Some(change) => format!("Commit {commit}, change {change}").into(),
-            None => format!("Commit {commit}").into(),
-        }),
-        (None, Profile::Debug) => {
-            Some(format!("Commit {NULL_COMMIT}, change {ROOT_CHANGE}").into())
-        }
+        (Some(commit), _) => Some(line(commit, change.filter(|id| !id.is_empty()))),
+        (None, Profile::Debug) => Some(line(NULL_COMMIT, Some(ROOT_CHANGE))),
         (None, Profile::Release) => None,
     }
 }
@@ -91,72 +114,67 @@ pub(crate) enum Profile {
 
 /// The settings banner's accessible label: what it is, then its errors.
 pub(crate) fn settings_errors_label(errors: &str) -> String {
-    format!("The config file has errors: {}", errors.replace('\n', "; "))
+    t!("settings-errors", errors = errors.replace('\n', "; ").as_str())
 }
 
 /// The confirmations and alerts of Save & Exit and Cancel (spec §6.2). The first answer
 /// of each goes ahead.
 pub(crate) mod prompt {
+    use gpui_kit::{PromptButton, SharedString};
     use merge_core::merge3::Semantics;
 
-    pub(crate) const SAVE_UNRESOLVED: &str = "Save with unresolved conflicts?";
-    pub(crate) const SAVE_WITH_CONFLICTS: &str = "Save with Conflicts";
-    pub(crate) const KEEP_EDITING: &str = "Keep Editing";
-    pub(crate) const SAVE_AND_EXIT: &str = super::menu::SAVE_AND_EXIT;
-    pub(crate) const DISCARD_DETAIL: &str =
-        "Discard writes nothing, and the merge stays unresolved in git or jj.";
-    pub(crate) const DISCARD: &str = "Discard";
-    pub(crate) const CANNOT_WRITE: &str = "Cannot write the output";
-    pub(crate) const CANNOT_WRITE_COPY: &str = "Cannot write the copy";
-    pub(crate) const CANNOT_RECORD: &str = "The repository did not record the save";
-    pub(crate) const NO_OUTPUT: &str = "This window has no output file.";
-    pub(crate) const QUIT: &str = "Quit";
-    pub(crate) const TRY_AGAIN: &str = "Try Again";
-    pub(crate) const SAVE_COPY_AS: &str = "Save Copy As…";
-    pub(crate) const RESTORE_SESSION: &str = "Restore the previous session?";
-    pub(crate) const RESTORE_DETAIL: &str = "A session on these files ended before its merge was resolved. Its picks and edits can \
-         come back.";
-    pub(crate) const RESTORE: &str = "Restore";
-    pub(crate) const START_OVER: &str = "Start Over";
-    pub(crate) const CANNOT_RESTORE: &str = "Cannot restore the session";
-    pub(crate) const SAVE_CHANGES: &str = "Save your changes?";
-    pub(crate) const SAVE: &str = "Save";
-    pub(crate) const CANNOT_SAVE: &str = "Cannot save the file";
-    pub(crate) const OK: &str = "OK";
-    pub(crate) const CHANGED_DETAIL: &str =
-        "Reload it and lose your edits, or keep your version and save over it later.";
-    pub(crate) const RELOAD: &str = "Reload";
-    pub(crate) const KEEP_MINE: &str = "Keep Mine";
+    use crate::i18n::t;
+
+    texts! {
+        save_unresolved = "prompt-save-unresolved";
+        save_with_conflicts = "prompt-save-with-conflicts";
+        keep_editing = "prompt-keep-editing";
+        save_and_exit = "menu-save-and-exit";
+        discard_detail = "prompt-discard-detail";
+        discard = "prompt-discard";
+        cannot_write = "prompt-cannot-write";
+        cannot_write_copy = "prompt-cannot-write-copy";
+        cannot_record = "prompt-cannot-record";
+        no_output = "prompt-no-output";
+        quit = "prompt-quit";
+        try_again = "prompt-try-again";
+        save_copy_as = "menu-save-copy-as";
+        restore_session = "prompt-restore-session";
+        restore_detail = "prompt-restore-detail";
+        restore = "prompt-restore";
+        start_over = "prompt-start-over";
+        cannot_restore = "prompt-cannot-restore";
+        save_changes = "prompt-save-changes";
+        save = "menu-save";
+        cannot_save = "prompt-cannot-save";
+        ok = "prompt-ok";
+        changed_detail = "prompt-changed-detail";
+        reload = "prompt-reload";
+        keep_mine = "prompt-keep-mine";
+    }
+
+    /// The button that closes an alert. It takes the platform's role of OK.
+    pub(crate) fn ok_button() -> PromptButton {
+        PromptButton::ok(ok())
+    }
 
     /// The question before a save into a jj commit that changes the conflicts of
     /// `descendants` of its descendants (spec §7.5.1).
     pub(crate) fn descendants_changed(descendants: usize) -> String {
-        match descendants {
-            1 => "Saving changes the conflicts of 1 descendant.".to_owned(),
-            n => format!("Saving changes the conflicts of {n} descendants."),
-        }
+        t!("prompt-descendants-changed", count = descendants)
     }
 
     /// The question when a file with unsaved edits changes on disk.
     pub(crate) fn changed_on_disk(name: &str) -> String {
-        format!("{name} changed on disk.")
+        t!("prompt-changed-on-disk", name = name)
     }
 
     /// What saving with `unresolved` conflicts left does. Under git, `git mergetool` then
     /// puts back its own file, and the recovery journal holds the work (spec §6.2).
     pub(crate) fn save_unresolved_detail(unresolved: usize, semantics: Semantics) -> String {
-        let conflicts = if unresolved == 1 {
-            "1 conflict keeps its"
-        } else {
-            &format!("{unresolved} conflicts keep their")
-        };
-        let detail = format!("{conflicts} markers, and git or jj sees the merge as unresolved.");
         match semantics {
-            Semantics::Git => format!(
-                "{detail} git mergetool then puts back its own copy of the file; run it again \
-                 to restore this session."
-            ),
-            Semantics::Jj => detail,
+            Semantics::Git => t!("prompt-unresolved-detail-git", count = unresolved),
+            Semantics::Jj => t!("prompt-unresolved-detail", count = unresolved),
         }
     }
 }
@@ -176,26 +194,26 @@ pub(crate) fn descendant_effects<'a>(
         .join("\n")
 }
 
-/// `paths` joined by commas, or [`NO_PATHS`].
+/// `paths` joined by commas, or the word for none.
 fn path_list(paths: &[impl AsRef<str>]) -> String {
     if paths.is_empty() {
-        NO_PATHS.to_owned()
+        t!("no-paths").to_string()
     } else {
         paths.iter().map(AsRef::as_ref).collect::<Vec<_>>().join(", ")
     }
 }
 
-/// A descendant's conflicted paths when it has none.
-const NO_PATHS: &str = "none";
-
-/// The stack window's title (spec §7.5.1).
-pub(crate) const STACK_TITLE: &str = "Conflicted commits";
-pub(crate) const STACK_EMPTY: &str = "No conflicted commits.";
-pub(crate) const HISTORY_EMPTY: &str = "No versions.";
-/// The stack and history windows' button that lists again.
-pub(crate) const REFRESH: &str = "Refresh";
-pub(crate) const STACK_PREVIEW: &str = "Preview Save";
-pub(crate) const PREVIEW_RUNNING: &str = "Working out what the save would do…";
+texts! {
+    /// The stack window's title (spec §7.5.1).
+    stack_title = "stack-title";
+    stack_empty = "stack-empty";
+    history_empty = "history-empty";
+    /// The stack and history windows' button that lists again.
+    refresh = "refresh";
+    /// The stack window's button that previews a save.
+    stack_preview_button = "stack-preview";
+    preview_running = "preview-running";
+}
 
 /// A change's IDs, as the lists print them: change, then commit.
 fn change_ids(change: &ChangeInfo) -> SharedString {
@@ -205,8 +223,9 @@ fn change_ids(change: &ChangeInfo) -> SharedString {
 /// A listed commit's heading, as `stack --list` prints it: its change, commit and summary.
 pub(crate) fn stack_commit(commit: &StackCommit) -> Row {
     let ids = change_ids(&commit.change);
-    let text = commit.change.summary.clone().map_or(NO_DESCRIPTION.into(), SharedString::from);
-    let label = commit.working_copy.then(|| format!("{WORKING_COPY} {ids} {text}").into());
+    let text =
+        commit.change.summary.clone().map_or_else(|| t!("no-description"), SharedString::from);
+    let label = commit.working_copy.then(|| format!("{} {ids} {text}", t!("working-copy")).into());
     Row {
         mark: commit.working_copy.then_some(SharedString::new_static(WORKING_COPY_MARK)),
         lead: Some(ids),
@@ -220,23 +239,22 @@ pub(crate) fn stack_commit(commit: &StackCommit) -> Row {
 
 /// jj's mark for the working-copy commit, as `jj log` draws it.
 const WORKING_COPY_MARK: &str = "@";
-/// The working-copy commit's mark, read aloud.
-const WORKING_COPY: &str = "working copy";
-
-/// jj's text for a commit without a description.
-const NO_DESCRIPTION: &str = "(no description set)";
 
 /// A listed commit's tooltip: its full change and commit IDs, the time `jj log` shows, and
 /// the whole description.
 pub(crate) fn stack_commit_tooltip(commit: &StackCommit) -> String {
     let description = commit.description.trim_end();
-    let description = if description.is_empty() { NO_DESCRIPTION } else { description };
-    format!(
-        "Change ID: {}\nCommit ID: {}\nDate: {}\n\n{description}",
-        commit.change_id,
-        commit.id.as_str(),
-        merge_view::origin::local_time(commit.time),
-    )
+    let ids = t!(
+        "commit-tooltip",
+        change = &commit.change_id,
+        commit = commit.id.as_str(),
+        date = merge_view::origin::local_time(commit.time).as_str(),
+    );
+    if description.is_empty() {
+        format!("{ids}\n\n{}", t!("no-description"))
+    } else {
+        format!("{ids}\n\n{description}")
+    }
 }
 
 /// A listed path, conflicted, marked when a parent holds a conflict there too.
@@ -245,24 +263,24 @@ pub(crate) fn stack_path(path: &StackPath) -> Row {
         status: Some(pick_list::Status::Conflict),
         text: path.path.to_string().into(),
         shown: Shown::Path,
-        trail: path.inherited.then_some(SharedString::new_static("(inherited)")),
+        trail: path.inherited.then(|| t!("inherited")),
         ..Row::default()
     }
 }
 
 /// The stack window's summary: the conflicted commits listed.
 pub(crate) fn stack_summary(commits: usize) -> String {
-    count(commits, "commit", "commits")
+    t!("count-commits", count = commits)
 }
 
 /// What the stack window says after the merge window on `path` in `change` finished with
 /// `code`; nothing after a cancel.
 pub(crate) fn stack_note(code: ExitCode, path: &str, change: &str) -> Option<String> {
     match code {
-        ExitCode::Resolved => Some(format!("Resolved {path} in {change}.")),
-        ExitCode::Conflicts => Some(format!("Saved {path} in {change} with conflicts.")),
+        ExitCode::Resolved => Some(t!("stack-resolved", path = path, change = change)),
+        ExitCode::Conflicts => Some(t!("stack-saved-conflicts", path = path, change = change)),
         ExitCode::Cancelled => None,
-        ExitCode::Error => Some(format!("The merge of {path} in {change} ended with an error.")),
+        ExitCode::Error => Some(t!("stack-error", path = path, change = change)),
     }
 }
 
@@ -271,62 +289,68 @@ pub(crate) fn stack_note(code: ExitCode, path: &str, change: &str) -> Option<Str
 pub(crate) fn stack_preview(rewrite: &Rewrite) -> String {
     let change = rewrite.target.id(IdKind::Change);
     let outcome = if rewrite.resolved {
-        format!("Saving resolves the path in {change}.")
+        t!("preview-resolves", change = change)
     } else {
-        format!("Saving keeps conflicts in {change}.")
+        t!("preview-keeps", change = change)
     };
     if rewrite.rewritten.is_empty() {
-        format!("{outcome}\nNo descendant is rebased.")
+        format!("{outcome}\n{}", t!("preview-no-rebase"))
     } else {
         format!("{outcome}\n{}", descendant_effects(&rewrite.rewritten))
     }
 }
 
 /// A status icon's tooltip: the state in one word.
-pub(crate) const fn status_tooltip(status: pick_list::Status) -> &'static str {
+pub(crate) fn status_tooltip(status: pick_list::Status) -> SharedString {
     match status {
-        pick_list::Status::Added => "Added",
-        pick_list::Status::Modified => "Modified",
-        pick_list::Status::Deleted => "Deleted",
-        pick_list::Status::Renamed => "Moved",
-        pick_list::Status::Copied => "Copied",
-        pick_list::Status::Conflict => "Conflicted",
+        pick_list::Status::Added => t!("status-added"),
+        pick_list::Status::Modified => t!("status-modified"),
+        pick_list::Status::Deleted => t!("status-deleted"),
+        pick_list::Status::Renamed => t!("status-moved"),
+        pick_list::Status::Copied => t!("status-copied"),
+        pick_list::Status::Conflict => t!("status-conflicted"),
     }
 }
 
-/// The directory window's title without `--title` (spec §6.1).
-pub(crate) const DIRS_TITLE: &str = "Changed files";
-pub(crate) const DIRS_EMPTY: &str = "No files differ.";
+texts! {
+    /// The directory window's title without `--title` (spec §6.1).
+    dirs_title = "dirs-title";
+    dirs_empty = "dirs-empty";
+}
 
 /// A listed file: how it changed as an icon, its path, and in the trail a rename's old path
 /// and, for a file that does not open, why. Its accessible name says the change in words.
 pub(crate) fn dir_file(file: &ChangedFile) -> Row {
-    let from = file.from().map(|from| format!("from {from}"));
-    let (status, word) = match &file.change {
-        Change::Added => (pick_list::Status::Added, "added"),
-        Change::Deleted => (pick_list::Status::Deleted, "deleted"),
-        Change::Modified => (pick_list::Status::Modified, "modified"),
-        Change::Renamed { .. } => (pick_list::Status::Renamed, "renamed"),
-        Change::Copied { .. } => (pick_list::Status::Copied, "copied"),
+    let from = file.from().unwrap_or_default();
+    let (status, change) = match &file.change {
+        Change::Added => (pick_list::Status::Added, t!("file-added").to_string()),
+        Change::Deleted => (pick_list::Status::Deleted, t!("file-deleted").to_string()),
+        Change::Modified => (pick_list::Status::Modified, t!("file-modified").to_string()),
+        Change::Renamed { .. } => (pick_list::Status::Renamed, t!("file-renamed", from = &from)),
+        Change::Copied { .. } => (pick_list::Status::Copied, t!("file-copied", from = &from)),
     };
     // A copy shows the added icon, so its trail names the copy.
     let shown_from = match &file.change {
-        Change::Copied { .. } => from.as_deref().map(|from| format!("{word} {from}")),
-        _ => from.clone(),
+        Change::Renamed { .. } => Some(t!("file-from", from = &from)),
+        Change::Copied { .. } => Some(change.clone()),
+        Change::Added | Change::Deleted | Change::Modified => None,
     };
     let why = match file.content {
         Content::Text => None,
-        Content::Undecodable => Some("undecodable"),
-        Content::Binary => Some("binary"),
-        Content::Special => Some("special"),
+        Content::Undecodable => Some(t!("file-undecodable")),
+        Content::Binary => Some(t!("file-binary")),
+        Content::Special => Some(t!("file-special")),
     };
     let path = file.display_path();
-    let change = [Some(word), from.as_deref()].into_iter().flatten().collect::<Vec<_>>().join(" ");
-    let label = match why {
-        Some(why) => format!("{path} {change}, {why}"),
-        None => format!("{path} {change}"),
+    let label = match &why {
+        Some(why) => t!("file-label-why", path = path.as_str(), change = &change, why = why),
+        None => t!("file-label", path = path.as_str(), change = &change),
     };
-    let trail = [shown_from.as_deref(), why].into_iter().flatten().collect::<Vec<_>>().join(", ");
+    let trail = [shown_from.as_deref(), why.as_deref()]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(", ");
     let shown = if file.change == Change::Deleted { Shown::Deleted } else { Shown::Path };
     Row {
         status: Some(status),
@@ -341,16 +365,16 @@ pub(crate) fn dir_file(file: &ChangedFile) -> Row {
 /// The directory window's summary: the files listed and, for a repository's changes, the
 /// revision they are compared with.
 pub(crate) fn dirs_summary(files: usize, against: Option<&str>) -> String {
-    let files = count(files, "file", "files");
+    let files = t!("count-files", count = files);
     match against {
-        Some(rev) => format!("{files} against {rev}"),
+        Some(rev) => t!("dirs-against", files = &files, rev = rev),
         None => files,
     }
 }
 
 /// The history window's title (spec §7.5.2).
 pub(crate) fn history_title(path: &str) -> String {
-    format!("History of {path}")
+    t!("history-title", path = path)
 }
 
 /// A listed version, as `history --list` prints it: the operation where it appeared, the
@@ -359,33 +383,33 @@ pub(crate) fn history_version(version: &FileVersion) -> Row {
     let short: String = version.operation.chars().take(SHORT_OPERATION).collect();
     let mark = match version.state {
         VersionState::File => None,
-        VersionState::Conflict => Some("(conflict)"),
-        VersionState::Absent => Some("(absent)"),
-        VersionState::Other => Some("(other)"),
+        VersionState::Conflict => Some(t!("version-conflict")),
+        VersionState::Absent => Some(t!("version-absent")),
+        VersionState::Other => Some(t!("version-other")),
     };
     Row {
         lead: Some(format!("{short} {}", version.time).into()),
         text: version.description.clone().into(),
-        trail: mark.map(SharedString::new_static),
+        trail: mark,
         ..Row::default()
     }
 }
 
 /// The history window's summary: the versions listed.
 pub(crate) fn history_summary(versions: usize) -> String {
-    count(versions, "version", "versions")
+    t!("count-versions", count = versions)
 }
 
-/// The absorb window's title (spec §7.5.3).
-pub(crate) const ABSORB_TITLE: &str = "Absorb";
-pub(crate) const ABSORB_EMPTY: &str = "Nothing to absorb.";
-pub(crate) const ABSORB_APPLY: &str = "Apply";
-/// The choice that keeps a hunk in the working copy.
-const ABSORB_KEEP: &str = "Working copy";
+texts! {
+    /// The absorb window's title (spec §7.5.3).
+    absorb_title = "absorb-title";
+    absorb_empty = "absorb-empty";
+    absorb_apply = "absorb-apply";
+}
 
 /// A listed hunk, as `absorb --list` prints it, with the commit chosen for it now: the
 /// listing's reason when it stays as listed, `kept` when the choice keeps a hunk the listing
-/// moved.
+/// moved. The trail is the command line's text, so it reads the same in every language.
 pub(crate) fn absorb_hunk(hunk: &AbsorbHunk, target: Option<&ChangeInfo>) -> Row {
     let goes = match (target, &hunk.goes) {
         (Some(t), _) => format!("-> {} {}", t.id(IdKind::Change), t.id(IdKind::Commit)),
@@ -410,7 +434,7 @@ pub(crate) fn absorb_hunk(hunk: &AbsorbHunk, target: Option<&ChangeInfo>) -> Row
 
 /// The absorb window's summary: the hunks listed.
 pub(crate) fn absorb_summary(hunks: usize) -> String {
-    count(hunks, "hunk", "hunks")
+    t!("count-hunks", count = hunks)
 }
 
 /// A hunk's lines, each with the side it is on: those it replaces, each after `- `, on the
@@ -437,11 +461,11 @@ pub(crate) fn absorb_destination(change: &ChangeInfo, hunks: usize) -> Row {
 
 /// The working copy as a choice, with the number of hunks kept when any.
 pub(crate) fn absorb_keep(hunks: usize) -> Row {
-    Row { text: ABSORB_KEEP.into(), trail: with_hunks(hunks), ..Row::default() }
+    Row { text: t!("absorb-keep"), trail: with_hunks(hunks), ..Row::default() }
 }
 
 fn with_hunks(hunks: usize) -> Option<SharedString> {
-    (hunks > 0).then(|| format!("· {}", count(hunks, "hunk", "hunks")).into())
+    (hunks > 0).then(|| format!("· {}", t!("count-hunks", count = hunks)).into())
 }
 
 /// What Apply did: the hunks moved and the commits they went into, then each commit whose
@@ -452,10 +476,10 @@ pub(crate) fn absorb_note(absorbed: &Absorbed) -> String {
     let mut commits = moved.clone();
     commits.sort_unstable();
     commits.dedup();
-    let summary = format!(
-        "Absorbed {} into {}.",
-        count(moved.len(), "hunk", "hunks"),
-        count(commits.len(), "commit", "commits")
+    let summary = t!(
+        "absorb-note",
+        hunks = &t!("count-hunks", count = moved.len()),
+        commits = &t!("count-commits", count = commits.len()),
     );
     let mut changed =
         absorbed.rewrite.rewritten.iter().filter(|effect| effect.before != effect.after).peekable();
@@ -464,113 +488,126 @@ pub(crate) fn absorb_note(absorbed: &Absorbed) -> String {
     } else {
         format!("{summary}\n{}", descendant_effects(changed))
     };
-    if absorbed.rewrite.stale { format!("{note}\n{STALE_WORKING_COPY}") } else { note }
+    if absorbed.rewrite.stale { format!("{note}\n{}", t!("absorb-stale")) } else { note }
 }
-
-/// A written rewrite whose working copy could not be checked out.
-const STALE_WORKING_COPY: &str = "The working copy is stale: run jj workspace update-stale.";
 
 /// A path absorb cannot split, and why.
 pub(crate) fn absorb_skipped(path: &str, reason: &str) -> String {
-    format!("Skipped {path}: {reason}")
+    t!("absorb-skipped", path = path, reason = reason)
 }
 
 /// The open dialog's window title on `mode`'s tab.
-pub(crate) fn open_title(mode: Mode) -> &'static str {
+pub(crate) fn open_title(mode: Mode) -> SharedString {
     match mode {
-        Mode::Merge => "Open a merge",
-        Mode::Diff => "Open a diff",
+        Mode::Merge => t!("open-title-merge"),
+        Mode::Diff => t!("open-title-diff"),
     }
 }
 
 /// The name of `mode`'s tab in the open dialog.
-pub(crate) fn mode_name(mode: Mode) -> &'static str {
+pub(crate) fn mode_name(mode: Mode) -> SharedString {
     match mode {
-        Mode::Merge => "Merge",
-        Mode::Diff => "Diff",
+        Mode::Merge => t!("mode-merge"),
+        Mode::Diff => t!("mode-diff"),
     }
 }
 
 /// The open dialog's start button on `mode`'s tab, named for what it does.
-pub(crate) fn start(mode: Mode) -> &'static str {
+pub(crate) fn start(mode: Mode) -> SharedString {
     match mode {
-        Mode::Merge => "Merge",
-        Mode::Diff => "Compare",
+        Mode::Merge => t!("start-merge"),
+        Mode::Diff => t!("start-diff"),
     }
 }
 
 /// A slot's name in the open dialog.
-pub(crate) fn slot_name(slot: Slot) -> &'static str {
+pub(crate) fn slot_name(slot: Slot) -> SharedString {
     match slot {
-        Slot::Base => "Base",
-        Slot::Left => "Left",
-        Slot::Right => "Right",
-        Slot::Output => "Output",
+        Slot::Base => t!("slot-base"),
+        Slot::Left => t!("slot-left"),
+        Slot::Right => t!("slot-right"),
+        Slot::Output => t!("slot-output"),
     }
 }
 
 /// The accessible label of a slot's Choose button.
-pub(crate) fn choose_label(slot: Slot) -> String {
-    format!("Choose the {} file", slot_name(slot).to_lowercase())
+pub(crate) fn choose_label(slot: Slot) -> SharedString {
+    match slot {
+        Slot::Base => t!("choose-base"),
+        Slot::Left => t!("choose-left"),
+        Slot::Right => t!("choose-right"),
+        Slot::Output => t!("choose-output"),
+    }
 }
 
 /// Why the open dialog cannot start: `slot` is empty.
 pub(crate) fn missing_slot(slot: Slot) -> String {
-    format!("Choose a file for {}.", slot_name(slot))
+    t!("missing-slot", slot = &slot_name(slot))
 }
 
 /// Menu and menu item names, in the platform's title case.
 pub(crate) mod menu {
-    pub(crate) const SETTINGS: &str = "Settings…";
-    pub(crate) const SAVE: &str = "Save";
-    pub(crate) const SAVE_AND_EXIT: &str = "Save & Exit";
-    pub(crate) const SAVE_COPY_AS: &str = "Save Copy As…";
-    pub(crate) const CANCEL: &str = "Cancel";
-    pub(crate) const EDIT: &str = "Edit";
-    pub(crate) const MERGE: &str = "Merge";
-    pub(crate) const GO: &str = "Go";
-    pub(crate) const VIEW: &str = "View";
-    pub(crate) const UNDO: &str = "Undo";
-    pub(crate) const REDO: &str = "Redo";
-    pub(crate) const FIND: &str = "Find…";
-    pub(crate) const GO_TO_LINE: &str = "Go to Line…";
-    pub(crate) const TOGGLE_LEFT: &str = "Toggle Left";
-    pub(crate) const TOGGLE_BASE: &str = "Toggle Base";
-    pub(crate) const TOGGLE_RIGHT: &str = "Toggle Right";
-    pub(crate) const CLEAR_CHOICE: &str = "Clear Choice";
-    pub(crate) const TAKE_BASE: &str = "Take Base";
-    pub(crate) const TAKE_LEFT: &str = "Take Left";
-    pub(crate) const TAKE_RIGHT: &str = "Take Right";
-    pub(crate) const TAKE_LEFT_THEN_RIGHT: &str = "Take Left then Right";
-    pub(crate) const TAKE_RIGHT_THEN_LEFT: &str = "Take Right then Left";
-    pub(crate) const TAKE_SORTED_UNION: &str = "Take Sorted Union";
-    pub(crate) const TAKE_LEFT_ALL_UNRESOLVED: &str = "Take Left for All Unresolved";
-    pub(crate) const TAKE_RIGHT_ALL_UNRESOLVED: &str = "Take Right for All Unresolved";
-    pub(crate) const TAKE_WHOLE_LEFT: &str = "Take Whole Left File";
-    pub(crate) const TAKE_WHOLE_RIGHT: &str = "Take Whole Right File";
-    pub(crate) const CARRY_MOVED_EDIT: &str = "Carry Edit to Moved Block";
-    pub(crate) const DROP_DUPLICATE: &str = "Drop Duplicate";
-    pub(crate) const NEXT_DIFFERENCE: &str = "Next Difference";
-    pub(crate) const PREVIOUS_DIFFERENCE: &str = "Previous Difference";
-    pub(crate) const NEXT_CONFLICT: &str = "Next Conflict";
-    pub(crate) const PREVIOUS_CONFLICT: &str = "Previous Conflict";
-    pub(crate) const GO_TO_MOVE_END: &str = "Go to Other End of Move";
-    pub(crate) const BASE_PANE: &str = "Base Pane";
-    pub(crate) const BLAME: &str = "Blame";
-    pub(crate) const SYNTAX: &str = "Syntax Highlighting";
-    pub(crate) const SOFT_WRAP: &str = "Soft Wrap";
-    pub(crate) const WHITESPACE: &str = "Show Whitespace";
-    pub(crate) const COLLAPSE_UNCHANGED: &str = "Collapse Unchanged";
-    pub(crate) const SCROLL_SYNC: &str = "Sync Result Scrolling";
+    use gpui_kit::SharedString;
+
+    use crate::i18n::t;
+
+    texts! {
+        settings = "menu-settings";
+        save = "menu-save";
+        save_and_exit = "menu-save-and-exit";
+        save_copy_as = "menu-save-copy-as";
+        cancel = "menu-cancel";
+        edit = "menu-edit";
+        merge = "menu-merge";
+        go = "menu-go";
+        view = "menu-view";
+        undo = "menu-undo";
+        redo = "menu-redo";
+        find = "menu-find";
+        go_to_line = "menu-go-to-line";
+        toggle_left = "menu-toggle-left";
+        toggle_base = "menu-toggle-base";
+        toggle_right = "menu-toggle-right";
+        clear_choice = "menu-clear-choice";
+        take_base = "menu-take-base";
+        take_left = "menu-take-left";
+        take_right = "menu-take-right";
+        take_left_then_right = "menu-take-left-then-right";
+        take_right_then_left = "menu-take-right-then-left";
+        take_sorted_union = "menu-take-sorted-union";
+        take_left_all_unresolved = "menu-take-left-all-unresolved";
+        take_right_all_unresolved = "menu-take-right-all-unresolved";
+        take_whole_left = "menu-take-whole-left";
+        take_whole_right = "menu-take-whole-right";
+        carry_moved_edit = "menu-carry-moved-edit";
+        drop_duplicate = "menu-drop-duplicate";
+        next_difference = "menu-next-difference";
+        previous_difference = "menu-previous-difference";
+        next_conflict = "menu-next-conflict";
+        previous_conflict = "menu-previous-conflict";
+        go_to_move_end = "menu-go-to-move-end";
+        base_pane = "menu-base-pane";
+        blame = "menu-blame";
+        syntax = "menu-syntax";
+        soft_wrap = "menu-soft-wrap";
+        whitespace = "menu-whitespace";
+        collapse_unchanged = "menu-collapse-unchanged";
+        scroll_sync = "menu-scroll-sync";
+    }
 }
 
 /// A toolbar button's text.
-pub(crate) fn tool_label(tool: Tool) -> Option<&'static str> {
-    match tool {
-        Tool::PreviousDifference => Some("Difference"),
-        Tool::PreviousConflict => Some("Conflict"),
-        Tool::Left => Some("Left"),
-        Tool::Right => Some("Right"),
+pub(crate) fn tool_label(tool: Tool) -> Option<SharedString> {
+    tool_label_in(i18n::current(), tool).map(i18n::shared)
+}
+
+/// A toolbar button's text in `locale`.
+pub(crate) fn tool_label_in(locale: Locale, tool: Tool) -> Option<Cow<'static, str>> {
+    let id = match tool {
+        Tool::PreviousDifference => "tool-label-difference",
+        Tool::PreviousConflict => "tool-label-conflict",
+        Tool::Left => "tool-label-left",
+        Tool::Right => "tool-label-right",
         Tool::Base
         | Tool::LeftThenRight
         | Tool::Clear
@@ -584,41 +621,48 @@ pub(crate) fn tool_label(tool: Tool) -> Option<&'static str> {
         | Tool::GoToLine
         | Tool::Syntax
         | Tool::SoftWrap
-        | Tool::Whitespace => None,
-    }
+        | Tool::Whitespace => return None,
+    };
+    Some(i18n::format_in(locale, id, &[]))
 }
 
-/// The More button's label, and the accessible label and tooltip of it and its menu.
-pub(crate) const MORE: &str = "More";
-pub(crate) const MORE_MENU: &str = "More picks";
+/// The More button's label in `locale`.
+pub(crate) fn more_in(locale: Locale) -> Cow<'static, str> {
+    i18n::format_in(locale, "more", &[])
+}
 
-/// The rows of the More menu.
-pub(crate) const BASE: &str = "Base";
-pub(crate) const LEFT_THEN_RIGHT: &str = "Left then right";
-pub(crate) const RIGHT_THEN_LEFT: &str = "Right then left";
-pub(crate) const NONE: &str = "None";
+texts! {
+    /// The More button's label, and the accessible label and tooltip of it and its menu.
+    more = "more";
+    more_menu = "more-menu";
+    /// The rows of the More menu.
+    base = "more-base";
+    left_then_right = "more-left-then-right";
+    right_then_left = "more-right-then-left";
+    none = "more-none";
+}
 
 /// A toolbar button's accessible label and tooltip.
-pub(crate) fn tool_name(tool: Tool) -> &'static str {
+pub(crate) fn tool_name(tool: Tool) -> SharedString {
     match tool {
-        Tool::PreviousDifference => "Previous difference",
-        Tool::NextDifference => "Next difference",
-        Tool::PreviousConflict => "Previous conflict",
-        Tool::NextConflict => "Next conflict",
-        Tool::Left => "Toggle left in the current region",
-        Tool::Base => "Toggle base in the current region",
-        Tool::Right => "Toggle right in the current region",
-        Tool::LeftThenRight => "Take left then right in the current region",
-        Tool::RightThenLeft => "Take right then left in the current region",
-        Tool::Clear => "Clear the current region's choice",
-        Tool::Undo => "Undo",
-        Tool::Redo => "Redo",
-        Tool::BasePane => "Show or hide the base pane",
-        Tool::Find => "Find",
-        Tool::GoToLine => "Go to a line in the result",
-        Tool::Syntax => "Turn syntax colours on or off",
-        Tool::SoftWrap => "Turn soft wrap on or off",
-        Tool::Whitespace => "Show or hide whitespace",
+        Tool::PreviousDifference => t!("tool-previous-difference"),
+        Tool::NextDifference => t!("tool-next-difference"),
+        Tool::PreviousConflict => t!("tool-previous-conflict"),
+        Tool::NextConflict => t!("tool-next-conflict"),
+        Tool::Left => t!("tool-left"),
+        Tool::Base => t!("tool-base"),
+        Tool::Right => t!("tool-right"),
+        Tool::LeftThenRight => t!("tool-left-then-right"),
+        Tool::RightThenLeft => t!("tool-right-then-left"),
+        Tool::Clear => t!("tool-clear"),
+        Tool::Undo => t!("tool-undo"),
+        Tool::Redo => t!("tool-redo"),
+        Tool::BasePane => t!("tool-base-pane"),
+        Tool::Find => t!("tool-find"),
+        Tool::GoToLine => t!("tool-go-to-line"),
+        Tool::Syntax => t!("tool-syntax"),
+        Tool::SoftWrap => t!("tool-soft-wrap"),
+        Tool::Whitespace => t!("tool-whitespace"),
     }
 }
 
@@ -631,11 +675,11 @@ pub(crate) fn pick_label(
     regions: usize,
     unresolved: bool,
 ) -> String {
-    let n = region.next();
+    let region = region.next().get();
     if unresolved {
-        format!("{title} in region {n} of {regions}, unresolved")
+        t!("pick-label-unresolved", title = title, region = region, regions = regions)
     } else {
-        format!("{title} in region {n} of {regions}")
+        t!("pick-label", title = title, region = region, regions = regions)
     }
 }
 
@@ -648,16 +692,40 @@ pub(crate) fn conflict_badge(
     sides: Option<Sides>,
 ) -> Option<String> {
     let Status { conflicts, unresolved, .. } = *status;
-    let sides =
-        sides.map_or_else(String::new, |Sides { kept, of }| format!(" · {kept} of {of} sides"));
     match (conflicts, unresolved, number) {
         (0, _, _) => None,
-        (all, 0, Some(n)) => Some(format!("Conflict {n} of {all}{sides} · all resolved")),
-        (all, left, Some(n)) => Some(format!("Conflict {n} of {all}{sides} · {left} unresolved")),
-        (1, 0, None) => Some("Conflict resolved".to_owned()),
-        (all, 0, None) => Some(format!("All {all} resolved")),
-        (all, left, None) => Some(format!("{left} of {all} unresolved")),
+        (all, left, Some(number)) => {
+            Some(current_conflict_badge(i18n::current(), number, all, sides, left))
+        }
+        (1, 0, None) => Some(t!("badge-resolved-one").to_string()),
+        (all, 0, None) => Some(t!("badge-resolved-all", count = all)),
+        (all, left, None) => Some(t!("badge-unresolved-of", unresolved = left, count = all)),
     }
+}
+
+/// The conflict badge in `locale` while the caret is in conflict `number` of `all`, which
+/// keeps `sides`, with `unresolved` conflicts left.
+pub(crate) fn current_conflict_badge(
+    locale: Locale,
+    number: usize,
+    all: usize,
+    sides: Option<Sides>,
+    unresolved: usize,
+) -> String {
+    let current = i18n::format_in(
+        locale,
+        "badge-conflict",
+        &[("number", number.into()), ("count", all.into())],
+    );
+    let sides = sides.map(|Sides { kept, of }| {
+        i18n::format_in(locale, "badge-sides", &[("kept", kept.into()), ("sides", of.into())])
+    });
+    let left = if unresolved == 0 {
+        i18n::format_in(locale, "badge-all-resolved", &[])
+    } else {
+        i18n::format_in(locale, "unresolved", &[("count", unresolved.into())])
+    };
+    [Some(current), sides, Some(left)].into_iter().flatten().collect::<Vec<_>>().join(ITEMS)
 }
 
 /// A side-pane cell's accessible label: its pane, its line number and its text, or that the
@@ -668,9 +736,38 @@ pub(crate) fn cell_label(
     deleted: Option<usize>,
 ) -> String {
     match (line, deleted) {
-        (Some((n, text)), _) => format!("{title}, line {}: {text}", n + 1),
-        (None, None) => format!("{title}, no line"),
-        (None, Some(lines)) => format!("{title}, no line: {}", deleted_label(lines)),
+        (Some((n, text)), _) => t!("cell-line", title = title, line = n + 1, text = text),
+        (None, None) => t!("cell-no-line", title = title),
+        (None, Some(lines)) => {
+            t!("cell-no-line-deleted", title = title, deleted = &deleted_label(lines))
+        }
+    }
+}
+
+/// A pane's role: the chip beside a file name, or the title of a pane without one.
+/// A diff side's title at `left`'s revision, marked when the file does not exist there.
+pub(crate) fn revision_title(left: &LeftAt) -> String {
+    let name = match &left.revision {
+        Revision::Named(name) => Cow::Borrowed(name.as_str()),
+        Revision::Operation(short) => Cow::Owned(t!("at-operation", operation = short)),
+    };
+    if left.exists { name.into_owned() } else { no_file(&name) }
+}
+
+/// The title `name` marked as a side where the file does not exist.
+pub(crate) fn no_file(name: &str) -> String {
+    t!("no-file", name = name)
+}
+
+pub(crate) fn role(role: Role) -> Cow<'static, str> {
+    let locale = i18n::current();
+    match role {
+        Role::Left => i18n::format_in(locale, "role-left", &[]),
+        Role::Right => i18n::format_in(locale, "role-right", &[]),
+        Role::Base => i18n::format_in(locale, "role-base", &[]),
+        Role::Side(n) => i18n::format_in(locale, "role-side", &[("number", n.into())]),
+        Role::BaseOf(n) => i18n::format_in(locale, "role-base-of", &[("number", n.into())]),
+        Role::Result => i18n::format_in(locale, "role-result", &[]),
     }
 }
 
@@ -681,60 +778,59 @@ pub(crate) fn placeholder_label<'a>(
     roles: impl IntoIterator<Item = &'a str>,
 ) -> String {
     let roles = roles.into_iter().collect::<Vec<_>>().join(", ");
-    let lines = count(lines, "line", "lines");
     if roles.is_empty() {
-        format!("Nothing picked ({lines} dropped)")
+        t!("placeholder-nothing", count = lines)
     } else {
-        format!("{lines} deleted ({roles})")
+        t!("placeholder-deleted", count = lines, roles = &roles)
     }
 }
 
 /// The note on the first filler row of a side that deleted `lines` base lines.
 pub(crate) fn deleted_label(lines: usize) -> String {
-    format!("{} deleted", count(lines, "line", "lines"))
+    t!("lines-deleted", count = lines)
 }
 
 /// The previous-match button of the input pane titled `title`.
 pub(crate) fn previous_match(title: &str) -> String {
-    format!("Previous match in {title}")
+    t!("previous-match", title = title)
 }
 
 /// The next-match button of the input pane titled `title`.
 pub(crate) fn next_match(title: &str) -> String {
-    format!("Next match in {title}")
+    t!("next-match", title = title)
 }
 
 /// An input pane's match count: match `n` of `total`.
 pub(crate) fn match_count(n: usize, total: usize) -> String {
-    format!("{n} of {total}")
+    t!("match-count", number = n, count = total)
 }
 
 /// The go-to-line field's prompt, for a result of `lines` lines.
 pub(crate) fn go_to_line_prompt(lines: usize) -> String {
-    format!("Go to line (1–{}):", lines.max(1))
+    t!("go-to-line-prompt", last = lines.max(1))
 }
 
 /// Go to Line's help while its field names no line: the caret's line, from 1, of `lines`.
 pub(crate) fn go_to_line_current(line: usize, lines: usize) -> String {
-    format!("Current line {line} of {}", lines.max(1))
+    t!("go-to-line-current", line = line, last = lines.max(1))
 }
 
 /// Go to Line's help while its field names a line: the line Enter goes to, from 1.
 pub(crate) fn go_to_line_target(line: usize) -> String {
-    format!("Go to line {line}")
+    t!("go-to-line-target", line = line)
 }
 
-fn encoding(encoding: Encoding) -> &'static str {
+fn encoding(encoding: Encoding) -> SharedString {
     match encoding {
-        Encoding::Utf8 => "UTF-8",
-        Encoding::Utf8Bom => "UTF-8 with BOM",
-        Encoding::Utf16Le => "UTF-16 LE",
-        Encoding::Utf16Be => "UTF-16 BE",
-        Encoding::Windows1252 => "Windows-1252",
+        Encoding::Utf8 => "UTF-8".into(),
+        Encoding::Utf8Bom => t!("encoding-utf8-bom"),
+        Encoding::Utf16Le => "UTF-16 LE".into(),
+        Encoding::Utf16Be => "UTF-16 BE".into(),
+        Encoding::Windows1252 => "Windows-1252".into(),
     }
 }
 
-fn line_ending(ending: LineEnding) -> &'static str {
+const fn line_ending(ending: LineEnding) -> &'static str {
     match ending {
         LineEnding::Lf => "LF",
         LineEnding::CrLf => "CRLF",
@@ -742,13 +838,13 @@ fn line_ending(ending: LineEnding) -> &'static str {
 }
 
 /// The status bar's item for how lines compare. Every whitespace mode drops line endings.
-pub(crate) fn comparison(mode: Comparison<'_>) -> &'static str {
+pub(crate) fn comparison(mode: Comparison<'_>) -> SharedString {
     match (mode.whitespace, mode.line_endings) {
-        (Whitespace::None, LineEndingRule::Compare) => "whitespace significant",
-        (Whitespace::None, LineEndingRule::Ignore) => "line endings ignored",
-        (Whitespace::Trailing, _) => "trailing whitespace ignored",
-        (Whitespace::Amount, _) => "whitespace amount ignored",
-        (Whitespace::All, _) => "all whitespace ignored",
+        (Whitespace::None, LineEndingRule::Compare) => t!("compare-whitespace"),
+        (Whitespace::None, LineEndingRule::Ignore) => t!("compare-line-endings"),
+        (Whitespace::Trailing, _) => t!("compare-trailing"),
+        (Whitespace::Amount, _) => t!("compare-amount"),
+        (Whitespace::All, _) => t!("compare-all"),
     }
 }
 
@@ -758,40 +854,46 @@ pub(crate) fn diff_comparison(options: &DiffOptions) -> String {
     let mode = options.comparison();
     [
         Some(comparison(mode)),
-        (mode.case == CaseRule::Ignore).then_some("case ignored"),
-        (!mode.patterns.is_empty()).then_some("patterns ignored"),
-        (options.blank_lines == BlankLineRule::Ignore).then_some("blank lines ignored"),
+        (mode.case == CaseRule::Ignore).then(|| t!("case-ignored")),
+        (!mode.patterns.is_empty()).then(|| t!("patterns-ignored")),
+        (options.blank_lines == BlankLineRule::Ignore).then(|| t!("blank-lines-ignored")),
     ]
     .into_iter()
     .flatten()
     .collect::<Vec<_>>()
-    .join(" · ")
+    .join(ITEMS)
 }
 
-fn count(n: usize, one: &str, many: &str) -> String {
-    format!("{n} {}", if n == 1 { one } else { many })
+texts! {
+    /// The diff window's banner over copies from `jj diff --tool`.
+    jj_diff_banner = "jj-diff-banner";
+    /// The copy buttons' accessible labels.
+    copy_to_right_label = "copy-to-right";
+    copy_to_left_label = "copy-to-left";
 }
-
-/// The diff window's banner over copies from `jj diff --tool`.
-pub(crate) const JJ_DIFF_BANNER: &str =
-    "These are temporary copies from jj diff --tool. Edits here are lost when the window closes.";
 
 /// The marker after a diff pane's title while it has unsaved edits.
 pub(crate) const MODIFIED: &str = " ●";
 /// The copy buttons between the diff panes: left into right, and right into left.
 pub(crate) const COPY_TO_RIGHT: &str = "→";
 pub(crate) const COPY_TO_LEFT: &str = "←";
-/// The copy buttons' accessible labels.
-pub(crate) const COPY_TO_RIGHT_LABEL: &str = "Copy this difference to the right";
-pub(crate) const COPY_TO_LEFT_LABEL: &str = "Copy this difference to the left";
+
+/// The initial a move pill gives `side`'s pane.
+fn side_initial(side: Side) -> SharedString {
+    match side {
+        Side::Left => t!("initial-left"),
+        Side::Right => t!("initial-right"),
+    }
+}
 
 /// The pill over one end of a moved block in `side`'s pane: the other pane's initial and the
 /// 1-based line its end starts on, with an arrow toward that pane.
 pub(crate) fn move_pill(side: Side, other_line: usize) -> String {
     let line = other_line + 1;
+    let initial = side_initial(side.other());
     match side {
-        Side::Left => format!("R{line} →"),
-        Side::Right => format!("← L{line}"),
+        Side::Left => format!("{initial}{line} →"),
+        Side::Right => format!("← {initial}{line}"),
     }
 }
 
@@ -800,151 +902,145 @@ pub(crate) fn move_pill(side: Side, other_line: usize) -> String {
 pub(crate) fn merge_move_pill(other: Source, other_line: usize, up: bool) -> String {
     let arrow = if up { "↑" } else { "↓" };
     let initial = match other {
-        Source::Base(_) => "B",
-        Source::Side(0) => "L",
-        Source::Side(_) => "R",
+        Source::Base(_) => t!("initial-base"),
+        Source::Side(0) => t!("initial-left"),
+        Source::Side(_) => t!("initial-right"),
     };
     format!("{arrow} {initial}{}", other_line + 1)
 }
 
 /// The accessible label of the pill [`merge_move_pill`] writes.
 pub(crate) fn merge_move_pill_label(other: Source, other_line: usize) -> String {
-    let input = match other {
-        Source::Base(_) => "base",
-        Source::Side(0) => "left",
-        Source::Side(_) => "right",
-    };
-    format!("Moved block: go to its other end, {input} line {}", other_line + 1)
+    let line = other_line + 1;
+    match other {
+        Source::Base(_) => t!("moved-to-base", line = line),
+        Source::Side(0) => t!("moved-to-left", line = line),
+        Source::Side(_) => t!("moved-to-right", line = line),
+    }
 }
 
 /// The accessible label of the pill [`move_pill`] writes.
 pub(crate) fn move_pill_label(side: Side, other_line: usize) -> String {
-    let other = match side.other() {
-        Side::Left => "left",
-        Side::Right => "right",
-    };
-    format!("Moved block: go to its other end, {other} line {}", other_line + 1)
+    let line = other_line + 1;
+    match side.other() {
+        Side::Left => t!("moved-to-left", line = line),
+        Side::Right => t!("moved-to-right", line = line),
+    }
 }
 
 /// A diff pane's accessible label: its side and its file.
 pub(crate) fn diff_pane_label(left: bool, name: &str) -> String {
-    let side = if left { "Left" } else { "Right" };
-    format!("{side}: {name}")
+    if left { t!("diff-pane-left", name = name) } else { t!("diff-pane-right", name = name) }
 }
 
 /// The status bars' first item: the repository the files lie in (spec §5).
-fn repo(kind: Option<RepoKind>) -> &'static str {
+fn repo(kind: Option<RepoKind>) -> SharedString {
     match kind {
-        Some(RepoKind::Git) => "git repo",
-        Some(RepoKind::Jj) => "jj repo",
-        None => "no repo",
+        Some(RepoKind::Git) => t!("repo-git"),
+        Some(RepoKind::Jj) => t!("repo-jj"),
+        None => t!("repo-none"),
     }
 }
 
 /// The text of a fold row, which stands in for `hidden` unchanged lines.
 pub(crate) fn unchanged_lines(hidden: usize) -> String {
-    count(hidden, "unchanged line", "unchanged lines")
+    t!("count-unchanged-lines", count = hidden)
 }
 
 /// The diff window's status bar text.
 pub(crate) fn diff_status(kind: Option<RepoKind>, differences: usize, comparison: &str) -> String {
-    format!("{} · {} · {comparison}", repo(kind), count(differences, "difference", "differences"))
+    [repo(kind).to_string(), t!("count-differences", count = differences), comparison.to_owned()]
+        .join(ITEMS)
 }
 
 /// The status bar's item after the repository: whose merge, and whether it merges words.
-fn mode(status: &Status) -> String {
-    let vcs = match status.semantics {
-        Semantics::Git => "git merge",
-        Semantics::Jj => "jj merge",
-    };
-    match status.hunk_level {
-        HunkLevel::Line => vcs.to_owned(),
-        HunkLevel::Word => format!("{vcs} by word"),
+fn mode(status: &Status) -> SharedString {
+    match (status.semantics, status.hunk_level) {
+        (Semantics::Git, HunkLevel::Line) => t!("mode-git"),
+        (Semantics::Jj, HunkLevel::Line) => t!("mode-jj"),
+        (Semantics::Git, HunkLevel::Word) => t!("mode-git-word"),
+        (Semantics::Jj, HunkLevel::Word) => t!("mode-jj-word"),
     }
 }
 
-fn divergence(divergence: Divergence, semantics: Semantics) -> &'static str {
+fn divergence(divergence: Divergence, semantics: Semantics) -> SharedString {
     match (divergence, semantics) {
-        (Divergence::Whitespace, _) => "whitespace compared unlike jj",
-        (Divergence::Case, Semantics::Git) => "case ignored, unlike git",
-        (Divergence::Case, Semantics::Jj) => "case ignored, unlike jj",
-        (Divergence::Patterns, Semantics::Git) => "patterns ignored, unlike git",
-        (Divergence::Patterns, Semantics::Jj) => "patterns ignored, unlike jj",
-        (Divergence::SameChangeKept, _) => "same changes kept, unlike git",
-        (Divergence::WordLevel, _) => "words merged, unlike git",
-        (Divergence::DeepRefine, Semantics::Git) => "conflicts split inside, unlike git",
-        (Divergence::DeepRefine, Semantics::Jj) => "conflicts split inside, unlike jj",
-        (Divergence::SyntaxBoundaries, Semantics::Git) => "syntax boundaries kept, unlike git",
-        (Divergence::SyntaxBoundaries, Semantics::Jj) => "syntax boundaries kept, unlike jj",
+        (Divergence::Whitespace, _) => t!("diverge-whitespace-jj"),
+        (Divergence::Case, Semantics::Git) => t!("diverge-case-git"),
+        (Divergence::Case, Semantics::Jj) => t!("diverge-case-jj"),
+        (Divergence::Patterns, Semantics::Git) => t!("diverge-patterns-git"),
+        (Divergence::Patterns, Semantics::Jj) => t!("diverge-patterns-jj"),
+        (Divergence::SameChangeKept, _) => t!("diverge-same-change-git"),
+        (Divergence::WordLevel, _) => t!("diverge-word-git"),
+        (Divergence::DeepRefine, Semantics::Git) => t!("diverge-deep-git"),
+        (Divergence::DeepRefine, Semantics::Jj) => t!("diverge-deep-jj"),
+        (Divergence::SyntaxBoundaries, Semantics::Git) => t!("diverge-syntax-git"),
+        (Divergence::SyntaxBoundaries, Semantics::Jj) => t!("diverge-syntax-jj"),
     }
 }
 
-/// The status bar's warning, in the conflict tone, that the saved output mixes line endings.
-pub(crate) const MIXED_ENDINGS: &str = "mixed endings";
+texts! {
+    /// The status bar's warning, in the conflict tone, that the saved output mixes line
+    /// endings.
+    mixed_endings = "mixed-endings";
+}
 
 /// The status bar's note after Save Copy As: how many conflicts the copy holds.
 pub(crate) fn copy_saved(unresolved: usize) -> String {
-    match unresolved {
-        0 => "Copy saved, resolved".to_owned(),
-        1 => "Copy saved with 1 conflict".to_owned(),
-        n => format!("Copy saved with {n} conflicts"),
-    }
+    t!("copy-saved", count = unresolved)
 }
 
 /// The status bar's text (spec §5).
 pub(crate) fn status(kind: Option<RepoKind>, status: &Status) -> String {
-    let mismatch = if status.encoding_mismatch { " (inputs differ)" } else { "" };
-    let word_merged = if status.word_merged > 0 {
-        format!(" · {} word-merged", status.word_merged)
+    let encoding = encoding(status.encoding);
+    let encoding = if status.encoding_mismatch {
+        t!("inputs-differ", encoding = &encoding)
     } else {
-        String::new()
+        encoding.to_string()
     };
-    let duplicated = if status.duplicated > 0 {
-        format!(" · {}", count(status.duplicated, "duplicated block", "duplicated blocks"))
-    } else {
-        String::new()
-    };
-    let divergences = status.divergences().fold(String::new(), |mut all, d| {
-        all.push_str(" · ");
-        all.push_str(divergence(d, status.semantics));
-        all
+    let lead = [repo(kind), mode(status)]
+        .into_iter()
+        .chain(status.divergences().map(|d| divergence(d, status.semantics)))
+        .map(SharedString::into);
+    let counts = [
+        Some(t!("count-differences", count = status.differences)),
+        Some(t!("count-conflicts", count = status.conflicts)),
+        (status.word_merged > 0).then(|| t!("word-merged", count = status.word_merged)),
+        (status.duplicated > 0).then(|| t!("count-duplicated-blocks", count = status.duplicated)),
+        Some(t!("unresolved", count = status.unresolved)),
+    ]
+    .into_iter()
+    .flatten();
+    let comparison = comparison(Comparison {
+        whitespace: status.whitespace,
+        line_endings: status.line_endings,
+        ..Comparison::default()
     });
-    format!(
-        "{} · {}{divergences} · {} · {}{word_merged}{duplicated} · {} unresolved · {}{mismatch} · {} · {}",
-        repo(kind),
-        mode(status),
-        count(status.differences, "difference", "differences"),
-        count(status.conflicts, "conflict", "conflicts"),
-        status.unresolved,
-        encoding(status.encoding),
-        line_ending(status.line_ending),
-        comparison(Comparison {
-            whitespace: status.whitespace,
-            line_endings: status.line_endings,
-            ..Comparison::default()
-        }),
-    )
+    lead.chain(counts)
+        .chain([encoding, line_ending(status.line_ending).to_owned(), comparison.into()])
+        .collect::<Vec<String>>()
+        .join(ITEMS)
 }
 
 /// A choice's item in the result pane's right-click menu.
-pub(crate) fn choice_label(choice: Choice) -> &'static str {
+pub(crate) fn choice_label(choice: Choice) -> SharedString {
     match choice {
-        Choice::Nothing => "None",
-        Choice::Base => "Base",
-        Choice::Left => "Left",
-        Choice::Right => "Right",
-        Choice::LeftThenRight => "Left + Right",
-        Choice::RightThenLeft => "Right + Left",
+        Choice::Nothing => t!("choice-none"),
+        Choice::Base => t!("choice-base"),
+        Choice::Left => t!("choice-left"),
+        Choice::Right => t!("choice-right"),
+        Choice::LeftThenRight => t!("choice-left-then-right"),
+        Choice::RightThenLeft => t!("choice-right-then-left"),
     }
 }
 
 /// An item of the result pane's right-click menu.
-pub(crate) fn menu_label(action: MenuAction) -> &'static str {
+pub(crate) fn menu_label(action: MenuAction) -> SharedString {
     match action {
         MenuAction::Take(choice) => choice_label(choice),
-        MenuAction::SortedUnion => "Sorted Union",
-        MenuAction::CarryEdit { .. } => "Carry Edit to Moved Block",
-        MenuAction::DropDuplicate { .. } => "Drop Duplicate",
+        MenuAction::SortedUnion => t!("action-sorted-union"),
+        MenuAction::CarryEdit { .. } => t!("menu-carry-moved-edit"),
+        MenuAction::DropDuplicate { .. } => t!("menu-drop-duplicate"),
     }
 }
 
@@ -952,11 +1048,11 @@ pub(crate) fn menu_label(action: MenuAction) -> &'static str {
 pub(crate) fn suggested_label(action: MenuAction) -> SharedString {
     match action {
         MenuAction::CarryEdit { from, line } => {
-            format!("Suggested: Carry {}'s Edit to Line {line}", choice_label(from))
+            t!("suggested-carry", from = &choice_label(from), line = line)
         }
-        MenuAction::DropDuplicate { line } => format!("Suggested: Drop Duplicate of Line {line}"),
+        MenuAction::DropDuplicate { line } => t!("suggested-drop", line = line),
         MenuAction::Take(_) | MenuAction::SortedUnion => {
-            format!("Suggested: {}", menu_label(action))
+            t!("suggested", action = &menu_label(action))
         }
     }
     .into()
@@ -964,15 +1060,72 @@ pub(crate) fn suggested_label(action: MenuAction) -> SharedString {
 
 /// The editing items after the choices in the right-click menu.
 pub(crate) mod edit_menu {
-    pub(crate) const CUT: &str = "Cut";
-    pub(crate) const COPY: &str = "Copy";
-    pub(crate) const PASTE: &str = "Paste";
-    pub(crate) const SELECT_ALL: &str = "Select All";
+    use gpui_kit::SharedString;
+
+    use crate::i18n::t;
+
+    texts! {
+        cut = "edit-cut";
+        copy = "edit-copy";
+        paste = "edit-paste";
+        select_all = "edit-select-all";
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The message ids this file names outside its tests: in `t!`, `texts!`, `format_in` (after
+    /// its `locale`) and the match arms that pick an id.
+    fn named_ids() -> std::collections::BTreeSet<&'static str> {
+        const FILE: &str = include_str!("strings.rs");
+        const OPENERS: [&str; 4] = ["t!(", "locale,", " = ", "=> "];
+        let source = &FILE[..FILE.find("#[cfg(test)]").expect("a test module")];
+        let mut ids = std::collections::BTreeSet::new();
+        for opener in OPENERS {
+            for (start, _) in source.match_indices(opener) {
+                let Some(rest) = source[start + opener.len()..].trim_start().strip_prefix('"')
+                else {
+                    continue;
+                };
+                let id = &rest[..rest.find('"').expect("a closing quote")];
+                let is_id = !id.is_empty()
+                    && id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+                // A `texts!` entry is `name = "id";` on its own line; a constant is not one.
+                let line = &source[source[..start].rfind('\n').map_or(0, |end| end + 1)..start];
+                let in_texts = opener != " = "
+                    || (rest[id.len()..].starts_with("\";")
+                        && line.trim_start().chars().all(|c| c.is_ascii_lowercase() || c == '_'));
+                if is_id && in_texts {
+                    ids.insert(id);
+                }
+            }
+        }
+        ids
+    }
+
+    #[test]
+    fn every_message_this_file_names_is_in_the_english_catalogue_and_none_is_unused() {
+        const ENGLISH: &str = include_str!("../locales/en.ftl");
+        let english: std::collections::BTreeSet<&str> = ENGLISH
+            .lines()
+            .filter(|line| line.starts_with(|c: char| c.is_ascii_lowercase()))
+            .filter_map(|line| line.split_once(" =").map(|(id, _)| id))
+            .collect();
+        assert!(english.len() > 200, "{}", english.len());
+        let named = named_ids();
+        assert_eq!(
+            named.difference(&english).collect::<Vec<_>>(),
+            Vec::<&&str>::new(),
+            "unknown ids"
+        );
+        assert_eq!(
+            english.difference(&named).collect::<Vec<_>>(),
+            Vec::<&&str>::new(),
+            "unused ids"
+        );
+    }
 
     #[test]
     fn a_merge_move_pill_points_up_or_down_at_the_other_ends_line() {
@@ -1905,6 +2058,29 @@ mod tests {
             suggested_label(MenuAction::DropDuplicate { line: 8 }).as_ref(),
             "Suggested: Drop Duplicate of Line 8"
         );
+    }
+
+    #[test]
+    fn a_revision_title_names_the_revision_and_marks_a_missing_file() {
+        let at = |revision, exists| revision_title(&LeftAt { revision, exists });
+        let named = |name: &str| Revision::Named(name.to_owned());
+        let operation = || Revision::Operation("0123456789ab".to_owned());
+        assert_eq!(at(named("main"), true), "main");
+        assert_eq!(at(named("HEAD~1"), false), "HEAD~1 (no file)");
+        assert_eq!(at(operation(), true), "@ at operation 0123456789ab");
+        assert_eq!(at(operation(), false), "@ at operation 0123456789ab (no file)");
+        assert_eq!(no_file("gone.txt"), "gone.txt (no file)");
+    }
+
+    #[test]
+    fn each_role_has_its_english_name() {
+        let roles =
+            [Role::Left, Role::Right, Role::Base, Role::Side(3), Role::BaseOf(2), Role::Result];
+        assert_eq!(
+            roles.map(role),
+            ["Left", "Right", "Base", "Side 3", "Base 2", "Result"].map(Cow::Borrowed)
+        );
+        assert_eq!(roles.map(role), roles.map(Role::english), "the view model's names agree");
     }
 
     #[test]

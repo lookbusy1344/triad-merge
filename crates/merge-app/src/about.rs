@@ -63,7 +63,7 @@ fn open(cx: &mut App) -> anyhow::Result<AnyWindowHandle> {
         ..crate::menu_bar::plain_options()
     };
     let (window, _) = gpui_kit::open_window(options, cx, |window, cx| {
-        window.set_window_title(strings::ABOUT_TITLE);
+        window.set_window_title(&strings::about_title());
         let focus = cx.focus_handle();
         focus.focus(window, cx);
         cx.new(|_| AboutWindow { focus, build })
@@ -120,12 +120,8 @@ impl Render for AboutWindow {
             .child(
                 v_flex()
                     .items_center()
-                    .child(small_line(
-                        DESCRIPTION_ID,
-                        strings::DESCRIPTION.into(),
-                        theme.foreground,
-                    ))
-                    .child(small_line(VCS_ID, strings::VCS_SUPPORT.into(), theme.foreground)),
+                    .child(small_line(DESCRIPTION_ID, strings::description(), theme.foreground))
+                    .child(small_line(VCS_ID, strings::vcs_support(), theme.foreground)),
             )
     }
 }

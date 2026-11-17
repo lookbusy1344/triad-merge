@@ -187,7 +187,7 @@ impl Found {
     pub(crate) fn count(&self, pane: usize) -> Option<String> {
         let hits = self.panes.get(pane)?;
         Some(hits.current.map_or_else(
-            || strings::NO_MATCHES.to_owned(),
+            || strings::no_matches().to_string(),
             |current| strings::match_count(current + 1, hits.hits.len()),
         ))
     }

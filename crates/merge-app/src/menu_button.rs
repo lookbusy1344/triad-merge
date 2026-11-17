@@ -46,7 +46,7 @@ pub(crate) fn init(cx: &mut App) {
 /// A menu row.
 pub(crate) struct Item {
     pub icon: IconName,
-    pub label: &'static str,
+    pub label: SharedString,
     pub action: Box<dyn Action>,
     /// A row that toggles a state shows a tick while it is on; `None` for a plain row.
     pub checked: Option<bool>,
@@ -71,7 +71,7 @@ fn previous(selected: Option<usize>, len: usize) -> usize {
 pub(crate) struct MenuButton {
     id: &'static str,
     trigger: Button,
-    label: &'static str,
+    label: SharedString,
     key_context: &'static str,
     text_size: Pixels,
     items: Rc<[Item]>,
@@ -86,7 +86,7 @@ impl MenuButton {
     pub(crate) fn new(
         id: &'static str,
         trigger: Button,
-        label: &'static str,
+        label: SharedString,
         key_context: &'static str,
         text_size: Pixels,
         items: impl IntoIterator<Item = Item>,
@@ -157,7 +157,7 @@ impl gpui_kit::RenderOnce for MenuButton {
 
 /// An open menu.
 struct Menu {
-    label: &'static str,
+    label: SharedString,
     key_context: &'static str,
     text_size: Pixels,
     items: Rc<[Item]>,
@@ -217,7 +217,7 @@ impl Menu {
                 .id(ix)
                 .test_support()
                 .role(role)
-                .aria_label(item.label)
+                .aria_label(item.label.clone())
                 .when_some(item.checked, |row, on| {
                     row.aria_toggled(if on { Toggled::True } else { Toggled::False })
                 })
@@ -229,7 +229,7 @@ impl Menu {
                 .when(current == Some(ix), |row| row.bg(accent).text_color(accent_text))
                 .hover(|style| style.bg(accent).text_color(accent_text))
                 .child(Icon::new(item.icon).xsmall())
-                .child(div().flex_1().child(item.label))
+                .child(div().flex_1().child(item.label.clone()))
                 .children(item.checked.map(|on| {
                     div()
                         .w(CHECK_WIDTH)
@@ -282,7 +282,7 @@ mod tests {
             let builds = Rc::clone(&self.builds);
             let item = Item {
                 icon: IconName::Check,
-                label: "Row",
+                label: "Row".into(),
                 action: Box::new(Activate),
                 checked: None,
             };
@@ -290,7 +290,7 @@ mod tests {
                 MenuButton::new(
                     ID,
                     Button::new(ID).label("Menu"),
-                    "Menu",
+                    "Menu".into(),
                     "Probe",
                     px(12.),
                     [item],

@@ -564,6 +564,7 @@ Every key is optional:
 | `show-origin-column` | `true`, `false`: the line origin column (View → Blame) shows when a window's origins load (§5, §7.3) | `false` |
 | `revision-id` | `change`, `commit`: the ID that names a jj revision in the origin column and the pane headings (§5). git names commits under either | `change` |
 | `theme` | `system`, `light`, `dark`: `system` follows the system's appearance when triad starts | `system` |
+| `ui-language` | `auto`, `en`, `es`, `zh-CN`, `ja`, `de`, `fr`, `pt-BR`, `ru`, `nl`: the language of the windows' text (§6.5). `auto` takes the system's preferred language when triad starts, by its language subtag alone, and English for a language triad lacks | `auto` |
 | `line-height` | 1–3, a multiple of the text size | 1.5 |
 | `color-left` | a colour | `light:#2273c3,dark:#67a6e4` |
 | `color-right` | a colour | `light:#c32273,dark:#e467a6` |
@@ -609,7 +610,8 @@ The command line takes five settings: `--merge-semantics`, `--same-change`, `--h
   - the jj banner and the open dialog's error are alerts.
 - Status changes are not announced, and region bands and gutter marks are not exposed. GPUI has the means for both; `PLAN.md` part J adds them (`docs/gpui-kit-issues.md`).
 - Region kinds use a gutter letter as well as a colour, so colour is never the only signal.
-- English only for release 1. All UI strings go through one module so translation can come later.
+- The windows show their text in English, Spanish, simplified Chinese, Japanese, German, French, Brazilian Portuguese, Russian or Dutch, as `ui-language` sets (§6.4). Counts take each language's plural forms. Every Chinese locale reads the simplified text and every Portuguese one the Brazilian. Product, VCS and command names, file names, IDs, encodings and line endings read the same in every language.
+- The command line, its output, the config file and its errors, the JSON of `inspect`, and error details that come from the repository or the file system stay in English, so scripts and bug reports read the same everywhere.
 - No telemetry and no network access.
 
 ## 7. VCS integration

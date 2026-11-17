@@ -18,15 +18,27 @@ use crate::repository::RunRepository;
 pub struct NativeDiff {
     /// The file at the revision; empty when the file does not exist there.
     pub left: Text,
-    /// The left pane's title: the VCS's label for the revision, such as git's branch or
-    /// `index`, or else the revision itself, then [`NO_FILE`] when the file does not exist
-    /// there.
-    pub left_title: String,
+    /// The revision the left side shows, which the caller names in its own words.
+    pub left_at: LeftAt,
     pub right: PathBuf,
 }
 
-/// Ends the left title when the file does not exist at the revision.
-pub const NO_FILE: &str = "(no file)";
+/// The revision a [`NativeDiff`]'s left side shows, and whether the file exists there.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LeftAt {
+    pub revision: Revision,
+    pub exists: bool,
+}
+
+/// A revision as a window names it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Revision {
+    /// The VCS's label for the revision, such as git's branch or `index`, or else the
+    /// revision as given.
+    Named(String),
+    /// The working copy at a jj operation, by the operation's short ID.
+    Operation(String),
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum NativeError {
@@ -39,12 +51,6 @@ pub enum NativeError {
     /// A jj-native option outside a jj repository (spec §1.2).
     #[error("{0} needs a jj repository")]
     NeedsJj(&'static str),
-}
-
-/// The left title's revision for `diff --op`: the working copy at operation `short`.
-#[must_use]
-pub fn operation_title(short: &str) -> String {
-    format!("@ at operation {short}")
 }
 
 /// The repository holding `start`, as [`nearest_repo`] finds it from `start` made canonical,
@@ -168,7 +174,7 @@ pub fn load(
             .unwrap_or_else(|| parent.rev.to_string());
         (parent.rev, title)
     };
-    read_left(repo, relative, &spec, &title, path)
+    read_left(repo, relative, &spec, Revision::Named(title), path)
 }
 
 /// Load `path` against the working-copy commit at the jj operation `op` names (`diff
@@ -194,28 +200,28 @@ pub fn load_at_operation(
         .map_err(|_| VcsError::OutsideRepository(absolute.clone()))?;
     let (short, commit) = JjRepository::discover(repo.root())?.working_copy_at(op)?;
     let spec = RevSpec::Expr(commit.as_str().to_owned());
-    let diff = read_left(repo, relative, &spec, &operation_title(&short), path)?;
+    let diff = read_left(repo, relative, &spec, Revision::Operation(short), path)?;
     Ok((diff, commit))
 }
 
-/// `relative` at `spec` on the left, titled `title`, against the working-copy file `path`.
+/// `relative` at `spec` on the left, shown as `revision`, against the working-copy file
+/// `path`.
 fn read_left(
     repo: &dyn Repository,
     relative: &Utf8Path,
     spec: &RevSpec,
-    title: &str,
+    revision: Revision,
     path: &Path,
 ) -> Result<NativeDiff, NativeError> {
-    let (bytes, left_title) = match repo.file_at(relative, spec)? {
-        Some(bytes) => (bytes, title.to_owned()),
-        None => (Vec::new(), format!("{title} {NO_FILE}")),
-    };
+    let found = repo.file_at(relative, spec)?;
+    let left_at = LeftAt { revision, exists: found.is_some() };
+    let bytes = found.unwrap_or_default();
     let left = Text::decode(bytes).map_err(|source| NativeError::Decode {
         path: relative.to_owned(),
         rev: spec.to_string(),
         source,
     })?;
-    Ok(NativeDiff { left, left_title, right: path.to_owned() })
+    Ok(NativeDiff { left, left_at, right: path.to_owned() })
 }
 
 /// The working copy's changed files, as `diff` with no path lists them (spec §6.1).
@@ -360,7 +366,8 @@ pub fn load_listed(
     right: &Path,
 ) -> Result<NativeDiff, NativeError> {
     let path = Utf8Path::from_path(left).ok_or_else(|| VcsError::NotUtf8(left.to_owned()))?;
-    read_left(repo.require()?, path, &against.pinned, &against.rev, &against.root.join(right))
+    let revision = Revision::Named(against.rev.clone());
+    read_left(repo.require()?, path, &against.pinned, revision, &against.root.join(right))
 }
 
 /// The parent revisions [`changed_files`] compares with by default.

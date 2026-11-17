@@ -19,7 +19,7 @@ use merge_core::diff::DiffOptions;
 use merge_core::text::Text;
 use merge_session::dir_diff::{self, Change, ChangedFile};
 use merge_session::jj_config::ConfigEnv;
-use merge_session::native::{self, Against, Listing, NO_FILE};
+use merge_session::native::{self, Against, Listing};
 use merge_session::repository::{Handoff, RunRepository};
 
 use crate::diff_window::{self, DiffFile, DiffLookup, DiffSettings};
@@ -116,7 +116,7 @@ pub fn start(
     let exit: Rc<ExitFn> = Rc::new(exit);
     let (window, view) = gpui_kit::open_window(options, cx, |window, cx| {
         let title = start.title.as_deref().filter(|title| !title.is_empty());
-        window.set_window_title(title.unwrap_or(strings::DIRS_TITLE));
+        window.set_window_title(title.unwrap_or(&strings::dirs_title()));
         let focus = cx.focus_handle();
         focus.focus(window, cx);
         let view = cx.new(|_| DirWindow {
@@ -208,8 +208,8 @@ fn load_changed(
     let (left, right) = match file.change {
         Change::Deleted => {
             let empty = Text::decode(Vec::new()).map_err(to_string)?;
-            let left = DiffFile::revision(loaded.left, loaded.left_title);
-            (left, DiffFile::revision(empty, format!("{shown} {NO_FILE}")))
+            let left = DiffFile::revision(loaded.left, strings::revision_title(&loaded.left_at));
+            (left, DiffFile::revision(empty, strings::no_file(&shown)))
         }
         Change::Added | Change::Modified | Change::Renamed { .. } | Change::Copied { .. } => {
             crate::run::native_sides(loaded).map_err(to_string)?
@@ -230,7 +230,7 @@ fn load_file(
     cwd: PathBuf,
 ) -> Result<ToolDiff, String> {
     let shown = file.display_path();
-    let absent = || Some(format!("{shown} {NO_FILE}"));
+    let absent = || Some(strings::no_file(&shown));
     let (absent, from) = match &file.change {
         Change::Added => ([absent(), None], &file.path),
         Change::Deleted => ([None, absent()], &file.path),
@@ -469,7 +469,7 @@ impl Render for DirWindow {
         });
         let empty = (self.files.as_ref().is_some_and(Vec::is_empty)
             && self.listing == ListJob::Idle)
-            .then(|| pick_list::note(EMPTY_ID, strings::DIRS_EMPTY, muted));
+            .then(|| pick_list::note(EMPTY_ID, strings::dirs_empty(), muted));
         let refresh = tool_window::refresh_button(REFRESH_ID, self.listing != ListJob::Idle, cx)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.refresh(cx)));
         let this = cx.entity().downgrade();

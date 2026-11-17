@@ -170,13 +170,14 @@ pub struct PaneHeading<'a> {
     pub tone: Tone,
 }
 
-/// Each pane's heading. The title is its input's label, or its file name, or Left, Base and
-/// Right in a three-way merge, or Side n and Base n with more sides.
+/// Each pane's heading. The title is its input's label, or its file name, or its role's name,
+/// which `name` gives in the windows' language.
 #[must_use]
 pub fn pane_headings<'a>(
     doc: &'a MergeDocument,
     panes: PaneSet,
     names: &'a FileNames,
+    name: impl Fn(Role) -> Cow<'static, str>,
 ) -> SmallVec<[PaneHeading<'a>; PANES]> {
     let labels = doc.labels();
     panes
@@ -187,7 +188,7 @@ pub fn pane_headings<'a>(
                 Source::Side(i) => labels.side(i),
                 Source::Base(i) => labels.base(i),
             };
-            let role = role_name(doc, source);
+            let role = name(Role::of(doc, source));
             let (title, role) = match label.or_else(|| names.of(source)) {
                 Some(title) if !title.eq_ignore_ascii_case(&role) => {
                     (Cow::Borrowed(title), Some(role))
@@ -200,45 +201,66 @@ pub fn pane_headings<'a>(
         .collect()
 }
 
-/// The result pane's role.
-pub const RESULT_ROLE: &str = "Result";
-
 /// The result pane's heading: the output's file name, or the whole path when it has none,
-/// with the role in a chip; without an output, the role alone.
+/// with the role, named by `name`, in a chip; without an output, the role alone.
 #[must_use]
-pub fn result_heading(output: Option<&Path>) -> PaneHeading<'static> {
+pub fn result_heading(
+    output: Option<&Path>,
+    name: impl Fn(Role) -> Cow<'static, str>,
+) -> PaneHeading<'static> {
+    let role = name(Role::Result);
     let (title, role) = match output.map(file_name) {
-        Some(name) if !name.eq_ignore_ascii_case(RESULT_ROLE) => {
-            (Cow::Owned(name), Some(Cow::Borrowed(RESULT_ROLE)))
-        }
-        Some(name) => (Cow::Owned(name), None),
-        None => (Cow::Borrowed(RESULT_ROLE), None),
+        Some(title) if !title.eq_ignore_ascii_case(&role) => (Cow::Owned(title), Some(role)),
+        Some(title) => (Cow::Owned(title), None),
+        None => (role, None),
     };
     PaneHeading { title, role, tone: Tone::Edited }
 }
 
-/// The name of `source`'s role: Left, Base and Right in a three-way merge, or Side n and
-/// Base n with more sides.
-#[must_use]
-pub fn role_name(doc: &MergeDocument, source: Source) -> Cow<'static, str> {
-    let three_way = doc.inputs().is_three_way();
-    match (source, three_way) {
-        (Source::Side(0), true) => Cow::Borrowed("Left"),
-        (Source::Side(_), true) => Cow::Borrowed("Right"),
-        (Source::Base(_), true) => Cow::Borrowed("Base"),
-        (Source::Side(i), false) => Cow::Owned(format!("Side {}", i + 1)),
-        (Source::Base(i), false) => Cow::Owned(format!("Base {}", i + 1)),
-    }
+/// What a pane holds. A front end names it in its own language.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    /// The left side of a three-way merge.
+    Left,
+    /// The right side of a three-way merge.
+    Right,
+    /// The base of a three-way merge.
+    Base,
+    /// Side `n`, from 1, of a merge of more than two sides.
+    Side(usize),
+    /// Base `n`, from 1, of a merge of more than two sides.
+    BaseOf(usize),
+    /// The merge's output.
+    Result,
 }
 
-/// Each pane's title, as [`pane_headings`] gives it.
-#[must_use]
-pub fn pane_titles<'a>(
-    doc: &'a MergeDocument,
-    panes: PaneSet,
-    names: &'a FileNames,
-) -> SmallVec<[Cow<'a, str>; PANES]> {
-    pane_headings(doc, panes, names).into_iter().map(|heading| heading.title).collect()
+impl Role {
+    /// `source`'s role: Left, Base and Right in a three-way merge, or Side n and Base n with
+    /// more sides.
+    #[must_use]
+    pub fn of(doc: &MergeDocument, source: Source) -> Self {
+        let three_way = doc.inputs().is_three_way();
+        match (source, three_way) {
+            (Source::Side(0), true) => Self::Left,
+            (Source::Side(_), true) => Self::Right,
+            (Source::Base(_), true) => Self::Base,
+            (Source::Side(i), false) => Self::Side(i + 1),
+            (Source::Base(i), false) => Self::BaseOf(i + 1),
+        }
+    }
+
+    /// The role's English name.
+    #[must_use]
+    pub fn english(self) -> Cow<'static, str> {
+        match self {
+            Self::Left => Cow::Borrowed("Left"),
+            Self::Right => Cow::Borrowed("Right"),
+            Self::Base => Cow::Borrowed("Base"),
+            Self::Side(n) => Cow::Owned(format!("Side {n}")),
+            Self::BaseOf(n) => Cow::Owned(format!("Base {n}")),
+            Self::Result => Cow::Borrowed("Result"),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -251,6 +273,18 @@ mod tests {
     use merge_core::text::Text;
 
     use super::*;
+
+    /// Each pane's title, as [`pane_headings`] gives it in English.
+    fn pane_titles<'a>(
+        doc: &'a MergeDocument,
+        panes: PaneSet,
+        names: &'a FileNames,
+    ) -> SmallVec<[Cow<'a, str>; PANES]> {
+        pane_headings(doc, panes, names, Role::english)
+            .into_iter()
+            .map(|heading| heading.title)
+            .collect()
+    }
 
     /// The status of `doc` saved with each line's own ending.
     fn status(doc: &MergeDocument) -> Status {
@@ -631,10 +665,10 @@ mod tests {
     #[test]
     fn file_name_titles_carry_their_role() {
         let (d, names) = (three("a\n", "a\n", "a\n"), git_names());
-        let headings = pane_headings(&d, PaneSet::LeftBaseRight, &names);
+        let headings = pane_headings(&d, PaneSet::LeftBaseRight, &names, Role::english);
         assert_eq!(roles(&headings), [Some("Left"), Some("Base"), Some("Right")]);
         assert_eq!(tones(&headings), [Tone::Left, Tone::Base, Tone::Right]);
-        let two = pane_headings(&d, PaneSet::LeftRight, &names);
+        let two = pane_headings(&d, PaneSet::LeftRight, &names, Role::english);
         assert_eq!(roles(&two), [Some("Left"), Some("Right")]);
         assert_eq!(tones(&two), [Tone::Left, Tone::Right]);
     }
@@ -642,7 +676,7 @@ mod tests {
     #[test]
     fn a_title_that_names_its_role_has_no_role() {
         let (d, names) = (three("a\n", "a\n", "a\n"), FileNames::default());
-        let headings = pane_headings(&d, PaneSet::LeftBaseRight, &names);
+        let headings = pane_headings(&d, PaneSet::LeftBaseRight, &names, Role::english);
         assert_eq!(roles(&headings), [None, None, None]);
         let labelled = with(
             b"a\n",
@@ -651,13 +685,33 @@ mod tests {
             MergeOptions::default(),
             Labels::three_way("LEFT", "", "theirs"),
         );
-        let headings = pane_headings(&labelled, PaneSet::LeftBaseRight, &names);
+        let headings = pane_headings(&labelled, PaneSet::LeftBaseRight, &names, Role::english);
         assert_eq!(roles(&headings), [None, None, Some("Right")]);
     }
 
     #[test]
+    fn the_caller_names_each_role() {
+        let d = three("a\n", "a\n", "a\n");
+        let marked = |role: Role| Cow::Owned(format!("<{}>", role.english()));
+        let (named, unnamed) = (git_names(), FileNames::default());
+        let headings = pane_headings(&d, PaneSet::LeftBaseRight, &named, marked);
+        assert_eq!(roles(&headings), [Some("<Left>"), Some("<Base>"), Some("<Right>")]);
+        let untitled = pane_headings(&d, PaneSet::LeftRight, &unnamed, marked);
+        let titles: Vec<_> = untitled.iter().map(|h| h.title.as_ref()).collect();
+        assert_eq!(titles, ["<Left>", "<Right>"]);
+        assert_eq!(result_heading(None, marked).title, "<Result>");
+        // A file named for the role in the caller's language needs no chip.
+        let german = |_: Role| Cow::Borrowed("Ergebnis");
+        assert_eq!(result_heading(Some(Path::new("out/ergebnis")), german).role, None);
+        assert_eq!(
+            result_heading(Some(Path::new("out/Result")), german).role.as_deref(),
+            Some("Ergebnis")
+        );
+    }
+
+    #[test]
     fn the_result_heading_names_the_output_file() {
-        let heading = result_heading(Some(Path::new("/repo/src/foo.c")));
+        let heading = result_heading(Some(Path::new("/repo/src/foo.c")), Role::english);
         assert_eq!(heading.title, "foo.c");
         assert_eq!(heading.role.as_deref(), Some("Result"));
         assert_eq!(heading.tone, Tone::Edited);
@@ -665,7 +719,7 @@ mod tests {
 
     #[test]
     fn the_result_heading_without_an_output_is_its_role() {
-        let heading = result_heading(None);
+        let heading = result_heading(None, Role::english);
         assert_eq!(heading.title, "Result");
         assert_eq!(heading.role, None);
         assert_eq!(heading.tone, Tone::Edited);
@@ -673,14 +727,14 @@ mod tests {
 
     #[test]
     fn a_result_file_named_for_its_role_has_no_role() {
-        let heading = result_heading(Some(Path::new("out/RESULT")));
+        let heading = result_heading(Some(Path::new("out/RESULT")), Role::english);
         assert_eq!(heading.title, "RESULT");
         assert_eq!(heading.role, None);
     }
 
     #[test]
     fn a_result_path_without_a_file_name_shows_whole() {
-        let heading = result_heading(Some(Path::new("..")));
+        let heading = result_heading(Some(Path::new("..")), Role::english);
         assert_eq!(heading.title, "..");
         assert_eq!(heading.role.as_deref(), Some("Result"));
     }
@@ -695,7 +749,7 @@ mod tests {
         let d =
             MergeDocument::new(inputs, MergeOptions::default(), Labels::none()).expect("no labels");
         let names = git_names();
-        let headings = pane_headings(&d, PaneSet::Sides(3), &names);
+        let headings = pane_headings(&d, PaneSet::Sides(3), &names, Role::english);
         assert_eq!(roles(&headings), [Some("Side 1"), Some("Side 2"), None]);
         assert_eq!(tones(&headings), [Tone::Left, Tone::Right, Tone::Right]);
     }

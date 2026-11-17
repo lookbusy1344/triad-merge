@@ -1,5 +1,6 @@
 //! The toolbar (spec §5, §6.3): a button for each window action, in groups.
 
+use std::borrow::Cow;
 use std::rc::Rc;
 
 use gpui_kit::assets::IconName;
@@ -7,11 +8,13 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{Selectable as _, Sizable as _, Theme, h_flex};
 use gpui_kit::{
     Action, AnyElement, ClickEvent, Div, ElementId, InteractiveElement as _, IntoElement,
-    ParentElement, Pixels, Role, Stateful, StatefulInteractiveElement as _, Styled,
+    ParentElement, Pixels, Role, SharedString, Stateful, StatefulInteractiveElement as _, Styled,
     TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px,
 };
 use merge_core::merge3::{LEFT, RIGHT, Source};
+use merge_view::nav::Sides;
 
+use crate::i18n::{self, Locale};
 use crate::menu_button::{Item, MenuButton};
 use crate::window::TOOLBAR_ID;
 use crate::{
@@ -54,26 +57,29 @@ pub use crate::menu_button::POPUP_MENU_ID;
 /// The More button's icon.
 pub(crate) const MORE_ICON: IconName = IconName::SquareMenu;
 /// The picks the More menu offers, at their positions in the menu.
-const MORE_MENU: [(Tool, &str); 4] = [
-    (Tool::Base, strings::BASE),
-    (Tool::LeftThenRight, strings::LEFT_THEN_RIGHT),
-    (Tool::RightThenLeft, strings::RIGHT_THEN_LEFT),
-    (Tool::Clear, strings::NONE),
-];
+fn more_menu() -> [(Tool, SharedString); 4] {
+    [
+        (Tool::Base, strings::base()),
+        (Tool::LeftThenRight, strings::left_then_right()),
+        (Tool::RightThenLeft, strings::right_then_left()),
+        (Tool::Clear, strings::none()),
+    ]
+}
 pub const MORE_MENU_BASE: usize = 0;
 pub const MORE_MENU_LEFT_THEN_RIGHT: usize = 1;
 pub const MORE_MENU_RIGHT_THEN_LEFT: usize = 2;
 pub const MORE_MENU_NONE: usize = 3;
 
-/// The narrowest window whose merge toolbar shows its labels at the default text size; a
-/// narrower one shows icons alone. It fits [`REFERENCE_BADGE`].
+/// The narrowest window whose merge toolbar shows its English labels at the default text
+/// size; a narrower one shows icons alone. It fits the English reference badge.
 pub const LABELS_MIN_WIDTH: Pixels = px(1080.);
 /// The narrowest window whose merge toolbar fits without its labels, at the default text size.
 pub const COMPACT_MIN_WIDTH: Pixels = px(816.);
-/// The longest conflict badge at two-digit counts, which the label threshold makes room for.
-const REFERENCE_BADGE: &str = "Conflict 10 of 12 · 12 unresolved";
-/// [`REFERENCE_BADGE`] in a merge of more than two sides, with the sides a conflict keeps.
-const REFERENCE_BADGE_SIDES: &str = "Conflict 10 of 12 · 3 of 3 sides · 12 unresolved";
+/// The longest conflict badge at two-digit counts, which the label threshold makes room for:
+/// conflict 10 of 12 with 12 unresolved, and in a merge of more than two sides, 3 of 3 sides.
+const REFERENCE_CONFLICT: usize = 10;
+const REFERENCE_CONFLICTS: usize = 12;
+const REFERENCE_SIDES: Sides = Sides { kept: 3, of: 3 };
 
 /// What the conflict badge shows, which sets the room the toolbar keeps for it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,11 +91,17 @@ pub enum Badge {
 }
 
 impl Badge {
-    const fn reference(self) -> &'static str {
-        match self {
-            Self::Counts => REFERENCE_BADGE,
-            Self::Sides => REFERENCE_BADGE_SIDES,
-        }
+    /// The reference badge in `locale`.
+    fn reference(self, locale: Locale) -> Cow<'static, str> {
+        let sides = (self == Self::Sides).then_some(REFERENCE_SIDES);
+        strings::current_conflict_badge(
+            locale,
+            REFERENCE_CONFLICT,
+            REFERENCE_CONFLICTS,
+            sides,
+            REFERENCE_CONFLICTS,
+        )
+        .into()
     }
 }
 
@@ -105,11 +117,11 @@ pub(crate) enum Control {
 }
 
 impl Control {
-    /// The label the control shows, when labels show.
-    fn label(self) -> Option<&'static str> {
+    /// The label the control shows in `locale`, when labels show.
+    fn label_in(self, locale: Locale) -> Option<Cow<'static, str>> {
         match self {
-            Self::Button(tool) | Self::Pair(tool, _) => strings::tool_label(tool),
-            Self::More => Some(strings::MORE),
+            Self::Button(tool) | Self::Pair(tool, _) => strings::tool_label_in(locale, tool),
+            Self::More => Some(strings::more_in(locale)),
         }
     }
 
@@ -119,7 +131,7 @@ impl Control {
         match self {
             Self::Button(tool) => vec![tool],
             Self::Pair(previous, next) => vec![previous, next],
-            Self::More => MORE_MENU.map(|(tool, _)| tool).to_vec(),
+            Self::More => more_menu().map(|(tool, _)| tool).to_vec(),
         }
     }
 }
@@ -185,25 +197,26 @@ pub(crate) const DIFF_GROUPS: [&[Control]; 4] = [
 ];
 
 /// The narrowest window whose merge toolbar shows its labels in text of `text_size` with
-/// `badge`: [`LABELS_MIN_WIDTH`], less the labels' and [`REFERENCE_BADGE`]'s text at the
-/// default size, plus the labels' and `badge`'s reference text at `text_size`. The buttons,
-/// gaps and padding stay the same.
+/// `badge`: [`LABELS_MIN_WIDTH`], less the English labels' and reference badge's text at the
+/// default size, plus the labels' and `badge`'s reference text in the run's language at
+/// `text_size`. The buttons, gaps and padding stay the same.
 #[must_use]
 pub fn labels_min_width(text_size: Pixels, badge: Badge, window: &Window) -> Pixels {
     let style = window.text_style();
-    let width = |badge: Badge, size| {
+    let width = |locale: Locale, badge: Badge, size| {
         GROUPS
             .iter()
             .flat_map(|group| group.iter())
-            .filter_map(|&control| control.label())
-            .chain([badge.reference()])
+            .filter_map(|&control| control.label_in(locale))
+            .chain([badge.reference(locale)])
             .map(|text| {
                 let run = style.to_run(text.len());
-                window.text_system().shape_line(text.into(), size, &[run], None).width
+                window.text_system().shape_line(i18n::shared(text), size, &[run], None).width
             })
             .fold(Pixels::ZERO, |total, width| total + width)
     };
-    LABELS_MIN_WIDTH + width(badge, text_size) - width(Badge::Counts, crate::TOOLBAR_FONT_SIZE)
+    LABELS_MIN_WIDTH + width(i18n::current(), badge, text_size)
+        - width(Locale::En, Badge::Counts, crate::TOOLBAR_FONT_SIZE)
 }
 
 /// Every tool `groups` runs, in order.
@@ -218,15 +231,15 @@ pub(crate) fn mark(dark: bool) -> Stateful<Div> {
         .ghost()
         .small()
         .child(logo::mark(dark))
-        .accessibility_label(strings::ABOUT_TITLE)
+        .accessibility_label(strings::about_title())
         .on_click(|_: &ClickEvent, window, cx| window.dispatch_action(Box::new(About), cx));
-    tooltip::wrap(MARK_ID, button, tooltip::build(strings::ABOUT_TITLE))
+    tooltip::wrap(MARK_ID, button, tooltip::build(strings::about_title()))
 }
 
 /// A toolbar of `groups`, labelled `label`, whose tooltips show the keys in `context`, with
 /// text of `text_size`. The toggles in `pressed` show pressed.
 pub(crate) fn bar(
-    label: &'static str,
+    label: SharedString,
     groups: &[&[Control]],
     context: &'static str,
     theme: &Theme,
@@ -281,17 +294,17 @@ fn render(
         Control::More => MenuButton::new(
             MORE_ID,
             more_trigger(labels, text_size),
-            strings::MORE_MENU,
+            strings::more_menu(),
             context,
             text_size,
-            MORE_MENU.iter().map(|&(tool, label)| Item {
+            more_menu().into_iter().map(|(tool, label)| Item {
                 icon: tool.icon(),
                 label,
                 action: tool.action(),
                 checked: tool.toggles().then(|| pressed.contains(&tool)),
             }),
         )
-        .tooltip(Rc::new(tooltip::build(strings::MORE_MENU)))
+        .tooltip(Rc::new(tooltip::build(strings::more_menu())))
         .into_any_element(),
     }
 }
@@ -303,13 +316,13 @@ fn more_trigger(labels: Labels, text_size: Pixels) -> Button {
         .small()
         .icon(MORE_ICON)
         .children((labels == Labels::Shown).then(|| {
-            div().id(MORE_LABEL_ID).test_support().text_size(text_size).child(strings::MORE)
+            div().id(MORE_LABEL_ID).test_support().text_size(text_size).child(strings::more())
         }))
-        .accessibility_label(strings::MORE_MENU)
+        .accessibility_label(strings::more_menu())
 }
 
 /// A tool's text label, in the toolbar's text.
-fn label(tool: Tool, text: &'static str, text_size: Pixels) -> impl IntoElement {
+fn label(tool: Tool, text: SharedString, text_size: Pixels) -> impl IntoElement {
     div().id(tool.label_id()).test_support().text_size(text_size).child(text)
 }
 
@@ -442,7 +455,8 @@ mod tests {
     fn the_toolbar_takes_the_ui_font() {
         let theme =
             Theme { font_family: "UI".into(), mono_font_family: "Mono".into(), ..Theme::default() };
-        let mut bar = bar("Toolbar", &DIFF_GROUPS, "Diff", &theme, Labels::Shown, px(8.4), &[]);
+        let mut bar =
+            bar("Toolbar".into(), &DIFF_GROUPS, "Diff", &theme, Labels::Shown, px(8.4), &[]);
         assert_eq!(bar.style().text.font_family, Some("UI".into()));
     }
 

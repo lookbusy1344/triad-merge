@@ -192,7 +192,7 @@ pub fn open(
         ..crate::menu_bar::plain_options()
     };
     Ok(gpui_kit::open_window(options, cx, |window, cx| {
-        window.set_window_title(strings::open_title(Mode::default()));
+        window.set_window_title(&strings::open_title(Mode::default()));
         // Closing the dialog cancels: nothing is written.
         window.on_window_should_close(cx, |_, cx| {
             finish(ExitCode::Cancelled, cx);
@@ -247,7 +247,7 @@ impl OpenDialog {
     fn select(&mut self, mode: Mode, window: &mut Window, cx: &mut Context<Self>) {
         self.mode = mode;
         self.error = None;
-        window.set_window_title(strings::open_title(mode));
+        window.set_window_title(&strings::open_title(mode));
         cx.notify();
     }
 
@@ -365,7 +365,7 @@ impl OpenDialog {
                     .flex_none()
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
-                    .child(name),
+                    .child(name.clone()),
             )
             .child(div().flex_1().child(
                 Input::new(&self.fields[slot.index()]).id(slot.id()).aria_label(name).small(),
@@ -396,7 +396,7 @@ impl OpenDialog {
                 let label = strings::mode_name(mode);
                 Tab::new(mode.id())
                     .selected(selected)
-                    .accessibility_label(label)
+                    .accessibility_label(label.clone())
                     .set_position(ix + 1, MODES.len())
                     .h(TAB_HEIGHT)
                     .px_3()

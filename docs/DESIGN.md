@@ -697,6 +697,21 @@ Each bad line is reported as `PATH:LINE: message`, and its key keeps the value b
 - The command line takes only the five merge options; every other setting is in the file only, so `--help` stays short and a caller cannot change how the window looks. Tests set `TRIAD_CONFIG`.
 - One table in `merge_config::settings` holds each key's description and drives `show-config --docs`, the file Settings… writes, and spec §6.4's table.
 
+#### E3.6 Languages
+
+The windows' text lives in Project Fluent catalogues, one per language: `crates/merge-app/locales/<tag>.ftl`. `include_str!` builds them into the binary, so a run reads no files and a missing catalogue fails the build. `strings.rs` stays the only place that names a message; `i18n.rs` formats it with `fluent-bundle`'s concurrent bundle, parsed on first use. Fluent gives each language its CLDR plural rules: Russian has three forms, Japanese and Chinese one, French and Portuguese count 0 as singular. Isolation marks are off: no catalogue is right to left, and they would show as stray characters.
+
+- A run fixes its language once, before its first window, from `ui-language`; `auto` reads `sys-locale` and matches the language subtag alone. Tests never set it, so they run in English.
+- A message missing from a catalogue, or one that fails to format, falls back to English and logs a warning; a message missing from English shows its id and logs an error. Tests keep both from happening: every catalogue parses, holds English's messages with English's variables, and formats each message at the counts 0, 1, 2, 5, 21 and 22; every id `strings.rs` names is in English, and every English message is named.
+- A message with no arguments borrows from its catalogue: the bundle is `'static`, so the text reaches GPUI as a static `SharedString` without a copy.
+- The crates below the app name no language for text the windows show. `merge-view`'s pane headings carry a `Role`, which the caller names: `strings::role` in the app, `Role::english` in the view's tests. `merge-session`'s `diff` sides carry a `LeftAt`, the revision and whether the file exists there, which `strings::revision_title` names.
+- gpui-component's search panel shows its Replace and Replace All buttons in English. Its `rust-i18n` catalogue holds them in English alone, and triad cannot add to it (`docs/gpui-kit-issues.md`).
+- Prompt buttons are built as `PromptButton::ok` and `PromptButton::cancel` by kind. GPUI's conversion from `&str` decides the kind from the English words OK and Cancel.
+- The toolbar shows its labels from `LABELS_MIN_WIDTH`, measured with the English labels. The threshold adds the width of the labels and the reference badge in the run's language and takes away their English width, so a longer language moves it out.
+- English stays where text is read by scripts or matches the command line: CLI output, `inspect` JSON, config errors, the absorb trail, which prints as `absorb --list` does, and error details from `merge-session`, `vcs` and the file system.
+
+Adding a language: copy `en.ftl` to `<tag>.ftl` and translate it, add the tag to `Locale` in `i18n.rs` and to `UiLanguage` in `merge_config::settings`, and add the language subtag to `Locale::of_system`. The catalogue tests then check it.
+
 #### E3.8 Appearance and save keys
 
 Spec §6.4 lists the keys. The default colours are `tones.rs`'s hues as `#rrggbb`: HSL saturation 0.7 and lightness 0.45 in the light theme, 0.65 in the dark; the current region's 88° at 0.85/0.4 light and 0.75/0.55 dark. `merge-app::tones` builds a `Palette` from the settings when a window opens. `conflict-style` applies under git semantics, defaulting to git's `merge.conflictStyle` read through gix; `zdiff3` reads as `diff3`, since refinement is `refine-conflicts`'s job.

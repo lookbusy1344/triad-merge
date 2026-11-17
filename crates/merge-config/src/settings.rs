@@ -133,6 +133,8 @@ pub struct Settings {
     pub revision_id: RevisionId,
     /// The windows' light or dark appearance.
     pub theme: Theme,
+    /// The language of the windows' text (spec §6.5).
+    pub ui_language: UiLanguage,
     /// Line height as a multiple of the text size.
     pub line_height: f32,
     /// The tones' colours and the bands' opacity.
@@ -309,6 +311,34 @@ pub enum Theme {
     Dark,
 }
 
+/// The language of the windows' text: the system's, or one held by its BCP 47 tag. The
+/// command line and the config file stay in English (spec §6.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, VariantArray, IntoStaticStr, EnumMessage)]
+pub enum UiLanguage {
+    /// The system's preferred language, else English.
+    #[default]
+    #[strum(serialize = "auto")]
+    Auto,
+    #[strum(serialize = "en")]
+    En,
+    #[strum(serialize = "es")]
+    Es,
+    #[strum(serialize = "zh-CN")]
+    ZhCn,
+    #[strum(serialize = "ja")]
+    Ja,
+    #[strum(serialize = "de")]
+    De,
+    #[strum(serialize = "fr")]
+    Fr,
+    #[strum(serialize = "pt-BR")]
+    PtBr,
+    #[strum(serialize = "ru")]
+    Ru,
+    #[strum(serialize = "nl")]
+    Nl,
+}
+
 /// When the panes show their scrollbars.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, VariantArray, IntoStaticStr, EnumMessage)]
 #[strum(serialize_all = "kebab-case")]
@@ -356,6 +386,7 @@ impl Default for Settings {
             origin_column: false,
             revision_id: RevisionId::Change,
             theme: Theme::System,
+            ui_language: UiLanguage::Auto,
             line_height: DEFAULT_LINE_HEIGHT,
             colours: DEFAULT_COLOURS,
             conflict_style: None,
@@ -945,6 +976,11 @@ const KEYS: &[Key] = &[
         "The windows' appearance: system follows the system, or light or dark.",
         theme = Theme::default()
     ),
+    named_key!(
+        "ui-language",
+        "The language of the windows' text: auto follows the system, or en, es, zh-CN, ja, de, fr, pt-BR, ru or nl.",
+        ui_language = UiLanguage::default()
+    ),
     key!(
         "line-height",
         ["Line height as a multiple of the text size,", LINE_HEIGHTS, "."],
@@ -1373,6 +1409,7 @@ mod tests {
                 origin_column: false,
                 revision_id: RevisionId::Change,
                 theme: Theme::System,
+                ui_language: UiLanguage::Auto,
                 line_height: 1.5,
                 colours: DEFAULT_COLOURS,
                 conflict_style: None,
@@ -1468,6 +1505,7 @@ mod tests {
                 origin_column: true,
                 revision_id: RevisionId::Commit,
                 theme: Theme::Light,
+                ui_language: UiLanguage::Auto,
                 line_height: 2.,
                 colours: Colours {
                     left: Themed::both(Colour::rgb(0x01_02_03)),
@@ -1684,6 +1722,32 @@ mod tests {
         assert_eq!(
             problem("revision-id = hash"),
             (1, invalid("revision-id", "hash", "change or commit"))
+        );
+    }
+
+    #[test]
+    fn the_ui_language_is_auto_or_a_language_tag() {
+        assert_eq!(Settings::default().ui_language, UiLanguage::Auto);
+        assert_eq!(settings("ui-language = ja").ui_language, UiLanguage::Ja);
+        assert_eq!(settings("ui-language = zh-CN").ui_language, UiLanguage::ZhCn);
+        assert_eq!(settings("ui-language = pt-BR").ui_language, UiLanguage::PtBr);
+        assert_eq!(settings("ui-language = nl").ui_language, UiLanguage::Nl);
+        assert_eq!(
+            settings("ui-language = de\nui-language =").ui_language,
+            UiLanguage::Auto,
+            "an empty value gives the default"
+        );
+        assert_eq!(
+            problem("ui-language = zh-cn"),
+            (
+                1,
+                invalid("ui-language", "zh-cn", "auto, en, es, zh-CN, ja, de, fr, pt-BR, ru or nl")
+            ),
+            "tags compare case-sensitively, as every name does"
+        );
+        assert_eq!(
+            problem("ui-language = it"),
+            (1, invalid("ui-language", "it", "auto, en, es, zh-CN, ja, de, fr, pt-BR, ru or nl"))
         );
     }
 
@@ -2350,6 +2414,7 @@ show-base-pane = false
 show-origin-column = false
 revision-id = change
 theme = system
+ui-language = auto
 line-height = 1.5
 color-left = light:#2273c3,dark:#67a6e4
 color-right = light:#c32273,dark:#e467a6
@@ -2451,6 +2516,7 @@ context-lines = 3
             origin_column: true,
             revision_id: RevisionId::Commit,
             theme: Theme::Dark,
+            ui_language: UiLanguage::Ja,
             line_height: 2.25,
             colours: Colours {
                 left: Themed::both(Colour::rgb(0xab_cd_ef)),
@@ -2519,6 +2585,7 @@ show-base-pane = true
 show-origin-column = true
 revision-id = commit
 theme = dark
+ui-language = ja
 line-height = 2.25
 color-left = #abcdef
 color-right = light:#010203,dark:#fefdfc
