@@ -460,6 +460,41 @@ b
  c
 ```
 
+Under jj's rules the conflict's last three lines, `a`, `b` and ` c`, are the same on both sides. triad splits them off as a `both-same` region, which the window shows apart from the conflict (spec §4.3). The saved markers take them back in, since jj reads text outside markers into every term (spec §4.4). The output matches jj's own merge of these files:
+
+```sh
+triad-merge --headless --merge-semantics jj b l r -o out; echo $?; cat out
+```
+
+```
+1
+<<<<<<<
+a
+b
+ a
+a
+b
+ c
+|||||||
+a
+b
+c
+a
+b
+c
+a
+b
+c
+=======
+a 
+b
+c
+a
+b
+ c
+>>>>>>>
+```
+
 In a jj repository triad uses jj's rules only (§7.6).
 
 ## 7. Resolve conflicts in the jj working copy
