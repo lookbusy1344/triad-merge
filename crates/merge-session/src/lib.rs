@@ -201,6 +201,10 @@ pub fn load(
 /// Why a save of a conflict the VCS holds failed (spec §6.2, §7.4).
 #[derive(Debug, thiserror::Error)]
 pub enum SaveError {
+    /// The output encoding cannot hold a character of the result: nothing was written, and
+    /// nothing recorded.
+    #[error(transparent)]
+    Encode(#[from] EncodeError),
     /// Nothing was written, and nothing recorded.
     #[error(transparent)]
     Write(#[from] WriteError),

@@ -4,7 +4,7 @@ Where the project stands and what comes next. [SPEC.md](SPEC.md) sets the behavi
 
 ## 1. Status
 
-As of 2026-11-16.
+As of 2026-11-17.
 
 | Milestone | State | Part |
 |---|---|---|
@@ -51,7 +51,7 @@ In order. Each is one or more commits.
 | Windows ARM64 in CI (`windows-11-arm`), before version 1.0 | — | `.github/workflows/triad.yml` |
 | Windows CI: find why jj repository tests run about 40 times slower than on Linux. First check: fixtures on D: through `TMP` and `TEMP`; next, jj-lib's file lock under parallel tests | A CI run per check | §1, `.github/workflows/triad.yml` |
 | Per-command scans in `MergeWindow::refresh`: bands, placeholders, status counts; a pick at 1M costs 4.4 / 6.3 ms mean / max | A measurement that calls for them | §A6.7 |
-| Whole-text copies: `Recompute::run`, `MergeDocument::output`, 8-byte line starts | A measurement that calls for them | §A6.7 |
+| Whole-text copies: `Recompute::run`, `MergeDocument::output` (both off the UI thread), 8-byte line starts | A measurement that calls for them | §A6.7 |
 | `DiffScroll`: the diff window's eight scroll fields in one component, as `PaneScroll` | A diff scroll bug | §A13.3 |
 | The two-way diff under histogram on a line repeated on every few lines, such as `}`: 2.1 s at 100k lines against Myers's 29 ms (`diff-load-braced`) | — | §A4.7 |
 | A histogram diff that gives git's hunks faster: 1.5 s against jj's 70 ms on the 100k-line `deep` triple | — | §B6 |

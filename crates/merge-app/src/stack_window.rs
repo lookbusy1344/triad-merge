@@ -326,14 +326,8 @@ impl StackWindow {
         let Some(view) = self.open.as_ref().and_then(|open| open.view.upgrade()) else {
             return;
         };
-        let job = match view.read(cx).preview_job() {
-            Ok(Some(job)) => job,
-            Ok(None) => return,
-            Err(error) => {
-                self.preview = Some(Preview::Failed(error.to_string()));
-                cx.notify();
-                return;
-            }
+        let Some(job) = view.read(cx).preview_job() else {
+            return;
         };
         self.preview = Some(Preview::Running);
         let previewed = cx.background_spawn(async move { job.run() });

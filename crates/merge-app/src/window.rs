@@ -42,10 +42,10 @@ use merge_core::index::{ByteOffset, Line, RegionIx};
 use merge_core::journal::{Journal, RestoreError};
 use merge_core::merge3::{Inputs, Kind, LEFT, RIGHT, Source};
 use merge_core::suggest::{self, EditSuggestion};
-use merge_core::text::{EncodeError, Text};
+use merge_core::text::Text;
 use merge_core::unusual::Unusual;
+use merge_session::SaveError;
 use merge_session::ending::{self, Closing, Next, SaveFailed, Undone, UnresolvedSave};
-use merge_session::io::WriteError;
 use merge_session::jj_native::CommitEffect;
 use merge_session::origin::{self, find_merge};
 use merge_session::repository::Handoff;
@@ -998,11 +998,8 @@ impl MergeWindow {
 
     /// A dry run of Save & Exit into the jj commit the merge came from, as it stands; none
     /// for a merge whose saves go to no commit (spec §7.5.1).
-    ///
-    /// # Errors
-    ///
-    /// [`EncodeError`] when the output encoding cannot hold the result.
-    pub fn preview_job(&self) -> Result<Option<PreviewJob>, EncodeError> {
+    #[must_use]
+    pub fn preview_job(&self) -> Option<PreviewJob> {
         self.session.preview()
     }
 
@@ -2225,6 +2222,11 @@ impl MergeWindow {
                 self.write_journal(cx);
                 Self::save_failed(undone, detail, window, cx);
             }
+            Next::Refused { detail } => {
+                // Nothing is written and the merge goes on, so its journal does too.
+                self.schedule_journal(cx);
+                alert(prompt::CANNOT_WRITE, &detail, window, cx);
+            }
             Next::Finish { code, journal } => {
                 self.journal.cancel();
                 self.session.finish_journal(journal);
@@ -2278,17 +2280,14 @@ impl MergeWindow {
     /// OUTPUT, the exit code and the journal are unchanged. A failure shows an alert.
     pub fn save_copy(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
         self.send_edits(window, cx);
-        let (encoded, unresolved) = match self.session.copy() {
-            Ok(copy) => copy,
-            Err(error) => return alert(prompt::CANNOT_WRITE_COPY, &error.to_string(), window, cx),
-        };
+        let (pending, unresolved) = self.session.copy();
         let path = path.to_owned();
         let before = self.copying.take();
         self.copying = Some(cx.spawn_in(window, async move |this, cx| {
             if let Some(before) = before {
                 before.await;
             }
-            let written = cx.background_spawn(async move { encoded.write(&path) }).await;
+            let written = cx.background_spawn(async move { pending.write(&path) }).await;
             ignore_closed_view(this.update_in(cx, |this, window, cx| {
                 this.copy_written(written, unresolved, window, cx);
             }));
@@ -2297,7 +2296,7 @@ impl MergeWindow {
 
     fn copy_written(
         &mut self,
-        written: Result<ExitCode, WriteError>,
+        written: Result<ExitCode, SaveError>,
         unresolved: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -2331,8 +2330,7 @@ impl MergeWindow {
         if self.save_task.is_some() {
             return;
         }
-        // An output the encoding cannot hold: the save meets the same refusal and reports it.
-        let Ok(Some(job)) = self.session.preview() else {
+        let Some(job) = self.session.preview() else {
             return self.write_and_finish(window, cx);
         };
         self.set_saving(true, cx);
@@ -2348,7 +2346,7 @@ impl MergeWindow {
                         .filter(|effect| effect.before != effect.after)
                         .collect(),
                     Err(error) => {
-                        // The save meets the same refusal and reports it.
+                        // The save meets the same refusal, or an encoding's, and reports it.
                         tracing::warn!(%error, "cannot preview the save into the commit");
                         Vec::new()
                     }
@@ -2390,11 +2388,6 @@ impl MergeWindow {
             Ok(job) => self.save_in_background(job, window, cx),
             Err(CannotSave::NoOutput) => Self::fail(prompt::NO_OUTPUT, window, cx),
             Err(CannotSave::Saving) => {}
-            Err(CannotSave::Unencodable(error)) => {
-                // Nothing is written and the merge goes on, so its journal does too.
-                self.schedule_journal(cx);
-                alert(prompt::CANNOT_WRITE, &error.to_string(), window, cx);
-            }
         }
     }
 

@@ -34,9 +34,46 @@ pub enum CannotSave {
     NoOutput,
     #[error("a save is running")]
     Saving,
-    /// The output encoding cannot hold a character of the result: nothing is written.
+}
+
+/// Why a preview of a save into a jj commit gave no report.
+#[derive(Debug, thiserror::Error)]
+pub enum PreviewError {
+    /// The output encoding cannot hold a character of the result.
     #[error(transparent)]
-    Unencodable(#[from] EncodeError),
+    Encode(#[from] EncodeError),
+    #[error(transparent)]
+    Vcs(#[from] VcsError),
+}
+
+/// The output of the document as it stood, to build and encode on a thread of its own: at
+/// 1M lines that takes 18 ms, 52 ms with line endings made. It holds no borrow of the
+/// session.
+pub struct PendingOutput {
+    /// Boxed: a document is 1 KB, and the jobs that carry it move it between threads.
+    doc: Box<MergeDocument>,
+    ending: OutputEnding,
+}
+
+impl PendingOutput {
+    /// Build and encode the output.
+    ///
+    /// # Errors
+    ///
+    /// [`EncodeError`] when the output encoding cannot hold a character of the result.
+    pub fn encode(&self) -> Result<EncodedOutput, EncodeError> {
+        EncodedOutput::new(&self.doc, self.ending)
+    }
+
+    /// Build, encode and write the output to `path` atomically, and nothing else.
+    ///
+    /// # Errors
+    ///
+    /// [`SaveError::Encode`] when the output encoding cannot hold the result, and
+    /// [`SaveError::Write`] when `path` cannot be written. `path` is then unchanged.
+    pub fn write(&self, path: &Path) -> Result<ExitCode, SaveError> {
+        Ok(self.encode()?.write(path)?)
+    }
 }
 
 /// What a session saves to and how.
@@ -68,8 +105,8 @@ pub struct SaveJob {
 }
 
 enum SaveWork {
-    /// Write the output, then record it.
-    Write { encoded: EncodedOutput, output: PathBuf, record: Option<Record> },
+    /// Build and write the output, then record it.
+    Write { pending: PendingOutput, output: PathBuf, record: Option<Record> },
     /// Record again a save written with `code`, without writing it again.
     Record { record: Option<Record>, code: ExitCode },
 }
@@ -103,9 +140,10 @@ impl SaveJob {
             recovery
         });
         let outcome = match self.work {
-            SaveWork::Write { encoded, output, record } => {
-                encoded.save(&output, record.as_ref(), None)
-            }
+            SaveWork::Write { pending, output, record } => pending
+                .encode()
+                .map_err(SaveError::from)
+                .and_then(|encoded| encoded.save(&output, record.as_ref(), None)),
             SaveWork::Record { record, code } => {
                 record.as_ref().map_or(Ok(code), |record| record.resave(code))
             }
@@ -117,7 +155,7 @@ impl SaveJob {
 /// A dry run of a save into a jj commit ([`Session::preview`]). It holds no borrow of the
 /// session.
 pub struct PreviewJob {
-    encoded: EncodedOutput,
+    pending: PendingOutput,
     commit: InCommit,
 }
 
@@ -126,9 +164,11 @@ impl PreviewJob {
     ///
     /// # Errors
     ///
-    /// [`VcsError`] when the repository refuses the write.
-    pub fn run(self) -> Result<Rewrite, VcsError> {
-        self.commit.preview(self.encoded.bytes())
+    /// [`PreviewError::Encode`] when the output encoding cannot hold the result, and
+    /// [`PreviewError::Vcs`] when the repository refuses the write.
+    pub fn run(self) -> Result<Rewrite, PreviewError> {
+        let encoded = self.pending.encode()?;
+        Ok(self.commit.preview(encoded.bytes())?)
     }
 }
 
@@ -259,15 +299,15 @@ impl Session {
     ///
     /// # Errors
     ///
-    /// [`CannotSave::NoOutput`] without an output, [`CannotSave::Saving`] while a save runs,
-    /// and [`CannotSave::Unencodable`] when the output encoding cannot hold the result. The
-    /// session is then unchanged.
+    /// [`CannotSave::NoOutput`] without an output, and [`CannotSave::Saving`] while a save
+    /// runs. The session is then unchanged. An output the encoding cannot hold fails in the
+    /// job, with [`SaveError::Encode`].
     pub fn start_save(&mut self) -> Result<SaveJob, CannotSave> {
         if self.saving {
             return Err(CannotSave::Saving);
         }
         let output = self.target.output.clone().ok_or(CannotSave::NoOutput)?;
-        let encoded = EncodedOutput::new(&self.doc, self.target.line_ending)?;
+        let pending = self.pending_output();
         self.saving = true;
         let journal = self.recovery.take().map(|recovery| JournalFlush {
             recovery,
@@ -275,7 +315,7 @@ impl Session {
             inputs: self.doc.inputs().clone(),
             start: self.doc.start(),
         });
-        let work = SaveWork::Write { encoded, output, record: self.target.record.clone() };
+        let work = SaveWork::Write { pending, output, record: self.target.record.clone() };
         Ok(SaveJob { work, journal })
     }
 
@@ -308,25 +348,21 @@ impl Session {
     /// What a save would write into the jj commit `resolve -r` opened, to run on a thread of
     /// its own: the save's output and its record. None for a merge whose saves go to no
     /// commit (spec §7.5.1).
-    ///
-    /// # Errors
-    ///
-    /// [`EncodeError`] when the output encoding cannot hold the result.
-    pub fn preview(&self) -> Result<Option<PreviewJob>, EncodeError> {
-        let Some(commit) = self.target.record.as_ref().and_then(Record::in_commit) else {
-            return Ok(None);
-        };
-        let encoded = EncodedOutput::new(&self.doc, self.target.line_ending)?;
-        Ok(Some(PreviewJob { encoded, commit: commit.clone() }))
+    #[must_use]
+    pub fn preview(&self) -> Option<PreviewJob> {
+        let commit = self.target.record.as_ref().and_then(Record::in_commit)?;
+        Some(PreviewJob { pending: self.pending_output(), commit: commit.clone() })
     }
 
     /// The output as Save Copy As writes it, and the conflicts it holds as markers.
-    ///
-    /// # Errors
-    ///
-    /// [`EncodeError`] when the output encoding cannot hold the result.
-    pub fn copy(&self) -> Result<(EncodedOutput, usize), EncodeError> {
-        Ok((EncodedOutput::new(&self.doc, self.target.line_ending)?, self.doc.unresolved()))
+    #[must_use]
+    pub fn copy(&self) -> (PendingOutput, usize) {
+        (self.pending_output(), self.doc.unresolved())
+    }
+
+    /// The output as a save writes it now, to build off the UI thread.
+    fn pending_output(&self) -> PendingOutput {
+        PendingOutput { doc: Box::new(self.doc.snapshot()), ending: self.target.line_ending }
     }
 }
 
@@ -368,7 +404,7 @@ mod tests {
     #[test]
     fn a_merge_saved_to_no_commit_has_no_preview() {
         let session = Session::new(conflict(), SaveTarget::default(), None);
-        assert!(matches!(session.preview(), Ok(None)));
+        assert!(session.preview().is_none());
     }
 
     fn journal_commands(session: &Session) -> usize {
@@ -569,14 +605,81 @@ mod tests {
     fn a_copy_holds_the_current_merge_and_counts_its_conflicts() {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut session = journalled(dir.path());
-        let (copy, unresolved) = session.copy().unwrap();
+        let (copy, unresolved) = session.copy();
         assert_eq!(unresolved, 1);
-        assert_eq!(copy.code(), ExitCode::Conflicts);
+        assert_eq!(copy.encode().expect("encodes").code(), ExitCode::Conflicts);
         session.apply(pick_left()).expect("applies");
-        let (copy, unresolved) = session.copy().unwrap();
+        let (copy, unresolved) = session.copy();
         assert_eq!(unresolved, 0);
         let path = dir.path().join("copy");
         assert_eq!(copy.write(&path).expect("writes"), ExitCode::Resolved);
         assert_eq!(std::fs::read_to_string(path).expect("written"), "a\nL\nc\n");
+    }
+
+    #[test]
+    fn a_copy_writes_the_merge_as_it_stood_when_taken() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut session = journalled(dir.path());
+        let (copy, _) = session.copy();
+        session.apply(pick_left()).expect("applies");
+        let path = dir.path().join("copy");
+        assert_eq!(copy.write(&path).expect("writes"), ExitCode::Conflicts);
+        assert_eq!(std::fs::read_to_string(path).expect("written"), MARKERS);
+    }
+
+    /// A clean merge of Windows-1252 inputs with `ł` typed at the start of line 1:
+    /// Windows-1252 has no byte for it.
+    fn unencodable() -> MergeDocument {
+        use merge_core::document::{Labels, MergeOptions};
+        use merge_core::edit::{EditBatch, TextPatch};
+        use merge_core::text::Text;
+        let text = || Text::decode(b"caf\xe9\n".to_vec()).expect("Windows-1252 decodes");
+        let inputs = Inputs::three_way(text(), text(), text());
+        let mut doc = MergeDocument::new(inputs, MergeOptions::default(), Labels::none())
+            .expect("no labels fit");
+        let typed = TextPatch { range: 0..0, text: "ł".to_owned() };
+        doc.apply(Command::Edit(EditBatch(vec![typed]))).expect("the edit applies");
+        doc
+    }
+
+    const UNENCODABLE: EncodeError =
+        EncodeError { encoding: merge_core::text::Encoding::Windows1252, character: 'ł', line: 1 };
+
+    #[test]
+    fn a_save_the_encoding_cannot_hold_writes_nothing_and_the_merge_goes_on() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut recovery = Recovery::new(dir.path().join("journal"), Some(dir.path().join("out")));
+        let doc = unencodable();
+        recovery.hashed(input_hashes(doc.inputs()), doc.start());
+        let target = target(Some(dir.path().join("out")), UnresolvedSave::Write);
+        let mut session = Session::new(doc, target, Some(recovery));
+        let saved = session.start_save().expect("starts").run();
+        assert!(
+            matches!(saved.outcome(), Err(SaveError::Encode(error)) if *error == UNENCODABLE),
+            "{:?}",
+            saved.outcome()
+        );
+        assert!(!dir.path().join("out").exists());
+        assert_eq!(
+            session.saved(saved),
+            Next::Refused { detail: "Windows-1252 cannot hold 'ł' (U+0142) on line 1".to_owned() }
+        );
+        assert!(!session.saving());
+        assert!(session.recovery().is_some(), "the journal goes on");
+        session.apply(Command::Undo).expect("applies after the refusal");
+    }
+
+    #[test]
+    fn a_copy_the_encoding_cannot_hold_writes_nothing() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let session = Session::new(unencodable(), SaveTarget::default(), None);
+        let path = dir.path().join("copy");
+        let (copy, _) = session.copy();
+        let written = copy.write(&path);
+        assert!(
+            matches!(written, Err(SaveError::Encode(error)) if error == UNENCODABLE),
+            "{written:?}"
+        );
+        assert!(!path.exists());
     }
 }

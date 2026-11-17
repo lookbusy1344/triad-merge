@@ -49,7 +49,7 @@ impl Undone {
     #[must_use]
     pub fn of(error: &SaveError) -> Self {
         match error {
-            SaveError::Write(_) => Self::Write,
+            SaveError::Encode(_) | SaveError::Write(_) => Self::Write,
             SaveError::Record { code, .. } => Self::Record(*code),
         }
     }
@@ -109,6 +109,9 @@ pub enum Next {
     /// Write the journal, then say the save failed, why in `detail`, and offer
     /// [`Undone::answers`].
     Failed { undone: Undone, detail: String },
+    /// Say why the output cannot be written, in `detail`: its encoding cannot hold a
+    /// character of the result. Nothing is written, and the merge and its journal go on.
+    Refused { detail: String },
     /// End the session with `code`, the journal as `journal` says.
     Finish { code: ExitCode, journal: Journal },
 }
@@ -164,6 +167,7 @@ pub fn saved(outcome: &Result<ExitCode, SaveError>) -> Next {
             Next::Finish { code: ExitCode::Resolved, journal: Journal::Remove }
         }
         Ok(code) => Next::Finish { code: *code, journal: Journal::Flush },
+        Err(error @ SaveError::Encode(_)) => Next::Refused { detail: error.to_string() },
         Err(error) => Next::Failed { undone: Undone::of(error), detail: error.to_string() },
     }
 }
@@ -187,6 +191,7 @@ pub fn failure_answered(answer: Option<SaveFailed>, undone: Undone) -> Next {
 mod tests {
     use super::*;
     use crate::io::WriteError;
+    use merge_core::text::{EncodeError, Encoding};
     use vcs::VcsError;
 
     const FINISH_ERROR: Next = Next::Finish { code: ExitCode::Error, journal: Journal::Keep };
@@ -272,6 +277,19 @@ mod tests {
                     "a.txt is written, but the repository did not record the save: jj has no index"
                         .to_owned()
             }
+        );
+    }
+
+    #[test]
+    fn an_output_the_encoding_cannot_hold_refuses_the_save_with_the_reason() {
+        let error = SaveError::Encode(EncodeError {
+            encoding: Encoding::Windows1252,
+            character: 'ł',
+            line: 3,
+        });
+        assert_eq!(
+            saved(&Err(error)),
+            Next::Refused { detail: "Windows-1252 cannot hold 'ł' (U+0142) on line 3".to_owned() }
         );
     }
 
