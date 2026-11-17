@@ -37,7 +37,7 @@ Before the first VCS command, run `jj --ignore-working-copy root` on its own. Th
 
 ## Commit gate
 
-jj has no commit hooks. Run the gate before `jj commit`, `jj describe` (finalising) and `jj squash`:
+Each gate runs once per commit and once per push. jj has no commit hooks, so nothing else runs this gate: run it by hand before `jj commit`, `jj describe` (finalising) and `jj squash`. In a git checkout with the hook installed, `git commit` runs it; do not run it by hand first.
 
 ```sh
 script/pre-commit              # from the repo root
@@ -73,7 +73,7 @@ cargo deny check                  # when a manifest, Cargo.lock or deny.toml cha
 
 ## Push
 
-Push only on explicit request. Before `jj git push` or moving a shared bookmark, run `script/pre-push`. It does nothing when there is no unpushed revision.
+Push only on explicit request. Before `jj git push` or moving a shared bookmark, run `script/pre-push`. It does nothing when there is no unpushed revision. In Claude Code the hook below runs it on the push: never run it by hand first. In a git checkout with git's `pre-push` hook installed, `git push` from Claude Code runs the check twice, once from each hook.
 
 - Default: formats `**/*.rs` outside `vendor/` in the tip (head of the non-empty mutable revisions; a merge counts as non-empty) with `jj fix`, then runs `script/checks` on it with the full suite.
 - `--full`: formats every mutable revision in `::@` and checks each in its own checkout through `jj run`.
