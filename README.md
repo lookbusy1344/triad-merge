@@ -193,6 +193,7 @@ On macOS, Gatekeeper scans each newly linked binary on its first run, so the fir
 | `docs/scroll-debugging.md` | Trackpad scrolling: failure modes and how to reproduce them |
 | `docs/residue.md` | Files triad and its scripts leave behind |
 | `docs/test-repos.md` | Scripts that build test repositories, and what they check |
+| `docs/human-testing.md` | Testing by hand, step by step: diff, merge and the jj features, with the output to expect |
 | `fixtures/demo/README.md`, `fixtures/conflict-repo/README.md` | Inputs for trying triad by hand |
 
 ## Licence
