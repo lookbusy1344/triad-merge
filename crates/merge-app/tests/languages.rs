@@ -9,6 +9,7 @@ use gpui_kit::test::TestWindowExt;
 use gpui_kit::{AnyWindowHandle, Entity, TestAppContext};
 use merge_app::About;
 use merge_app::about::{BUILD_ID, DESCRIPTION_ID, VCS_ID, VERSION_ID};
+use merge_app::open_dialog::Slot;
 use merge_app::toolbar::{Badge, LABELS_MIN_WIDTH, Tool, labels_min_width};
 use merge_app::window::CONFLICT_BADGE_ID;
 use merge_app::{MergeWindow, WindowSettings};
@@ -257,4 +258,54 @@ fn the_polish_search_panel_replaces_in_polish(cx: &mut TestAppContext) {
         replace_buttons(cx),
         [Some("Zamień".to_owned()), Some("Zamień wszystko".to_owned())]
     );
+}
+
+/// The open dialog in the run's language, rendered.
+fn open_dialog(cx: &mut TestAppContext) -> AnyWindowHandle {
+    let (window, _) = cx.update(|cx| {
+        gpui_kit::init(cx);
+        merge_app::init(cx);
+        merge_app::open_dialog::open(WindowSettings::default(), false, cx)
+            .expect("the dialog opens")
+    });
+    act(cx, window, TestWindowExt::render_frame);
+    window
+}
+
+/// Each slot's name, at the labels' size, fits its column and ends before its field starts.
+fn assert_slot_names_fit(cx: &mut TestAppContext, window: AnyWindowHandle) {
+    act(cx, window, |window, _| {
+        let style = window.text_style();
+        let size = gpui_kit::rems(LABEL_REMS).to_pixels(window.rem_size());
+        for slot in [Slot::Base, Slot::Left, Slot::Right, Slot::Output] {
+            let label = window.find(slot.label_id());
+            let name = label.label().expect("the label names its slot").to_owned();
+            let run = style.to_run(name.len());
+            let text = window.text_system().shape_line(name.clone().into(), size, &[run], None);
+            let (label, field) = (label.bounds(), window.find(slot.id()).bounds());
+            assert!(label.size.width >= text.width, "{name}: {label:?} against {:?}", text.width);
+            assert!(label.right() <= field.left(), "{name}: {label:?} against {field:?}");
+        }
+    });
+}
+
+/// The labels' text size, `text_xs`.
+const LABEL_REMS: f32 = 0.75;
+
+#[gpui_kit::test]
+fn the_russian_open_dialog_widens_its_labels_for_its_longest_name(cx: &mut TestAppContext) {
+    speak(UiLanguage::Ru);
+    let window = open_dialog(cx);
+    act(cx, window, |window, _| {
+        let output = window.find(Slot::Output.label_id());
+        assert_eq!(output.label(), Some("Результат"));
+    });
+    assert_slot_names_fit(cx, window);
+}
+
+#[gpui_kit::test]
+fn the_spanish_open_dialog_fits_izquierda(cx: &mut TestAppContext) {
+    speak(UiLanguage::Es);
+    let window = open_dialog(cx);
+    assert_slot_names_fit(cx, window);
 }

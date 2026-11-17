@@ -12,10 +12,10 @@ use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::{ActiveTheme as _, Sizable as _, h_flex, v_flex};
 use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, Bounds, ClickEvent, Context, ElementId, Entity,
-    InteractiveElement as _, IntoElement, ParentElement as _, PathPromptOptions, Pixels, Render,
-    Role, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Task,
+    InteractiveElement as _, IntoElement, ParentElement as _, PathPromptOptions, Pixels, Rems,
+    Render, Role, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Task,
     TestSupportExt as _, Window, WindowBounds, WindowOptions, div, prelude::FluentBuilder as _, px,
-    size,
+    rems, size,
 };
 use merge_core::document::Labels;
 use merge_session::invocation::MergeFiles;
@@ -32,7 +32,10 @@ const WINDOW_WIDTH: Pixels = px(440.);
 const WINDOW_HEIGHT: Pixels = px(236.);
 /// The lines of error the dialog shows before the error scrolls.
 const ERROR_LINES: f32 = 1.;
+/// The slot names' column at its narrowest; a language with a longer name widens it.
 const LABEL_WIDTH: Pixels = px(52.);
+/// The slot names' text size, `text_xs`.
+const LABEL_TEXT: Rems = rems(0.75);
 /// The room around a tab inside the tab strip, and between two tabs.
 const TAB_INSET: Pixels = px(2.);
 const TAB_HEIGHT: Pixels = px(22.);
@@ -63,6 +66,12 @@ impl Slot {
         ElementId::Name(format!("slot-{self:?}").into())
     }
 
+    /// The slot's name beside its field.
+    #[must_use]
+    pub fn label_id(self) -> ElementId {
+        ElementId::Name(format!("label-{self:?}").into())
+    }
+
     /// The slot's button that opens the platform's file picker.
     #[must_use]
     pub fn choose_id(self) -> ElementId {
@@ -72,6 +81,22 @@ impl Slot {
     fn index(self) -> usize {
         self as usize
     }
+}
+
+/// The slot names' column: as wide as the longest name in the run's language, rounded up to a
+/// whole pixel, and never narrower than [`LABEL_WIDTH`]. Every mode shares it, so the fields
+/// stay put when the tab changes.
+fn label_width(window: &Window) -> Pixels {
+    let style = window.text_style();
+    let size = LABEL_TEXT.to_pixels(window.rem_size());
+    SLOTS
+        .map(|slot| {
+            let name = strings::slot_name(slot);
+            let run = style.to_run(name.len());
+            window.text_system().shape_line(name, size, &[run], None).width.ceil()
+        })
+        .into_iter()
+        .fold(LABEL_WIDTH, Pixels::max)
 }
 
 /// What the dialog opens: a three-way merge or a two-way diff. Each has a tab.
@@ -355,7 +380,12 @@ impl OpenDialog {
             .unwrap_or_default()
     }
 
-    fn render_slot(&self, slot: Slot, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    fn render_slot(
+        &self,
+        slot: Slot,
+        label_width: Pixels,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
         let name = strings::slot_name(slot);
         let choose = strings::choose_label(slot);
         h_flex()
@@ -363,7 +393,10 @@ impl OpenDialog {
             .gap_2()
             .child(
                 div()
-                    .w(LABEL_WIDTH)
+                    .id(slot.label_id())
+                    .test_support()
+                    .aria_label(name.clone())
+                    .w(label_width)
                     .flex_none()
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
@@ -424,7 +457,8 @@ impl OpenDialog {
 }
 
 impl Render for OpenDialog {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let label_width = label_width(window);
         let danger = cx.theme().danger;
         let dark = cx.theme().is_dark();
         v_flex()
@@ -441,7 +475,7 @@ impl Render for OpenDialog {
                     .child(toolbar::mark(dark))
                     .child(self.render_tabs(cx)),
             )
-            .children(self.mode.slots().iter().map(|&slot| self.render_slot(slot, cx)))
+            .children(self.mode.slots().iter().map(|&slot| self.render_slot(slot, label_width, cx)))
             // The error keeps `ERROR_LINES` and takes any height left over; a longer one
             // scrolls, so the start button stays in view.
             .child(
