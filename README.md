@@ -10,32 +10,32 @@
 [![Audit](https://github.com/lookbusy1344/triad-merge/actions/workflows/audit.yml/badge.svg)](https://github.com/lookbusy1344/triad-merge/actions/workflows/audit.yml)
 [![crates.io](https://img.shields.io/crates/v/triad-merge.svg)](https://crates.io/crates/triad-merge)
 
-triad is a native three-way merge and two-way diff tool, written in Rust and GPUI, built for [Jujutsu](https://github.com/jj-vcs/jj) with full Git support. It opens a million-line merge in under a second, merges as your VCS does, and resolves conflicts straight from the repository. The binary is `triad-merge`.
+triad is a native 3-way merge and 2-way diff tool, written in Rust and GPUI, built for [Jujutsu](https://www.jj-vcs.dev/latest/) with full Git support. It runs on macOS, Linux and Windows. It opens a million-line merge in under a second, merges as your VCS does, and resolves conflicts straight from the repository. The binary is `triad-merge`.
 
 ![The triad merge window: left and right inputs above, the result below, with conflict 1 of 20 selected](images/merge.png)
 
-## Platforms
+## Status
 
 triad 0.1 is an early beta, tested on macOS 27 on Apple Silicon. [Releases](https://github.com/lookbusy1344/triad-merge/releases) also carry Linux x64 and Windows x64 builds; they pass CI but are untested on real desktops.
 
 ## Why triad
 
-- **jj first.** In a jj repository triad merges with jj's rules: jj's diff, its trivial resolution, `merge.same-change`, `merge.hunk-level`, and conflicts of any number of sides.
-- **Git parity.** In a git repository triad merges as `git merge-file` does, byte for byte, and reads conflicts from git's index. Every feature git can support works in both.
-- **Built on what jj records.** Resolve a conflict in any commit, walk a file through the operation log, absorb edits into the commits that wrote the lines (§ jj-enabled features).
-- **Checked semantics.** Two oracle corpora pin the engine: about 1,950 triples from `git merge-file` and 1,970 merges from jj-lib.
+- **Jujutsu first.** In a Jujutsu (jj) repository triad merges with jj's rules.
+- **Git parity.** In a git repository triad merges as `git merge-file` does, byte for byte. Every feature git can support works in both.
+- **Enhanced Jujutsu features.** Resolve a conflict in any commit, walk a file through the operation log, absorb edits into the commits that wrote the lines (§ Jujutsu-enabled features).
+- **Checked semantics.** Two oracle corpora pin the engine: about 1,970 merges from jj-lib and 1,950 triples from `git merge-file`.
 - **Fast on large files.** Panes draw only the rows on screen; scrolling holds the display's refresh rate at 1M lines.
-- **No git or jj binaries.** triad reads and writes repositories in-process through gix and jj-lib.
+- **No jj or git binaries.** triad reads and writes repositories in-process through jj-lib and gix.
 - **Scriptable.** A headless mode and `--json` output expose the merge model to scripts, tests and agents.
 - **No unsafe code.** The workspace forbids it.
 
 ## Features
 
-**Merge window.** Left and right sit side by side, each showing its changes from base; the editable result sits below. Changes on one side, or the same change on both, apply on their own. Resolve each conflict by picking sources in order (left, base, right, or several), by clicking a block's `!` in the result's gutter to keep that block's side alone, by typing in the result, or by taking one side for every conflict left. One undo history covers picks and edits.
+**3-way merge.** Left and right sit side by side, each showing its changes from base; the editable result sits below. Changes on one side, or the same change on both, apply on their own. Resolve each conflict by picking sources in order (left, base, right, or several), by clicking a block's `!` in the result's gutter to keep that block's side alone, by typing in the result, or by taking one side for every conflict left. One undo history covers picks and edits.
 
 **Moved and duplicated code.** A block a side moved shows teal at both ends, with a pill that jumps to the other end. When both sides add the same block in different places, the merge holds it twice without a conflict; triad counts and outlines both copies and offers to drop one.
 
-**Diff window.** Two editable, aligned panes with copy to the other side. Moved blocks show at both ends. `triad-merge diff PATH` compares a working-copy file with its parent revision and saves edits to the working copy.
+**File diff.** Two editable, aligned panes with copy to the other side. Moved blocks show at both ends. `triad-merge diff PATH` compares a working-copy file with its parent revision and saves edits to the working copy.
 
 **Directory diff.** Two directories, a revision against the working copy, `jj diff --tool` or `git difftool -d` open a list of the files that differ, with renames and copies paired as jj pairs them. Each opens in the diff window.
 
@@ -51,15 +51,15 @@ triad 0.1 is an early beta, tested on macOS 27 on Apple Silicon. [Releases](http
 - Syntax boundaries keep refinements from cutting inside a syntax node.
 - Suggestions offer, never apply, resolutions for common shapes: both sides inserting, sorted lists, a block moved on one side and edited on the other, a duplicated block.
 
-**Editor.** Syntax highlighting for Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS, C and C++. Overview ruler, search and replace, soft wrap, scroll sync, collapsed unchanged regions, visible whitespace in every pane (⌘E or the toolbar), comparison that ignores whitespace or case, ignore patterns, line-ending control, recovery journals and a plain-text config file.
+**Editor.** Syntax highlighting for Rust, Go, C, C++, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML and CSS. Overview ruler, search and replace, soft wrap, scroll sync, collapsed unchanged regions, visible whitespace in every pane, comparison that ignores whitespace or case, ignore patterns, line-ending control, recovery journals and a plain-text config file.
 
-**Languages.** The windows read in English, Spanish, simplified Chinese, traditional Chinese, Japanese, Korean, German, French, Brazilian Portuguese, Russian, Ukrainian, Polish, Dutch or Swedish. They follow the system's language; `ui-language` in the config file holds one. The command line stays in English.
+**14 languages.** English, Spanish, simplified Chinese, traditional Chinese, Japanese, Korean, German, French, Brazilian Portuguese, Ukrainian, Polish, Dutch, Swedish and Russian. The windows follow the system's language, or `ui-language` in the config file. The command line stays in English.
 
-**Text.** UTF-8 and UTF-16 with a BOM; any other text reads as Windows-1252 and saves back byte for byte. Invisible and bidirectional characters show as code-point badges, so a Trojan Source trick reads in its true order.
+**Text.** UTF-8, and UTF-16 with a BOM; any other text reads as Windows-1252 and saves back byte for byte. Invisible and bidirectional characters show as code-point badges, so a Trojan Source trick reads in its true order.
 
-## jj-enabled features
+## Jujutsu-enabled features
 
-These rest on what jj records, so git has no form of them; in a git repository each exits 3. [`docs/USER-GUIDE.md`](docs/USER-GUIDE.md) §3 shows each command.
+These rely on jj features missing from git; in a git repository each exits 3. [`docs/USER-GUIDE.md`](docs/USER-GUIDE.md) §3 shows each command.
 
 - **Conflicts in any commit.** `triad-merge stack` lists the conflicted mutable commits in a window; open any conflicted path from there. `resolve PATH -r REV` resolves in that commit without `jj edit`. A save rewrites the commit and rebases its descendants, and triad asks first when that changes a descendant's conflicts.
 - **File history from the operation log.** `triad-merge history PATH` lists each version of a file across jj's snapshots. Open one against the working copy and copy back what you overwrote.
@@ -69,7 +69,7 @@ Each has a form for scripts: `--list`, `--json` or `--headless`.
 
 ## Performance
 
-Release build on an M4 Pro, 120 Hz display, plain text. Spec §9 holds the targets; `script/measure-app` and the benchmarks check them.
+Release build on a Mac M4 Pro, 120 Hz display, plain text. Spec §9 holds the targets; `script/measure-app` and the benchmarks check them.
 
 | Operation | 100k lines | 1M lines | Target, 100k / 1M |
 |---|---|---|---|
@@ -84,17 +84,17 @@ An idle window draws nothing.
 
 ## Install
 
-The [crates.io package](https://crates.io/crates/triad-merge) only holds the name: `cargo install triad-merge` does not install triad.
+The crates.io package only holds the name; `cargo install triad-merge` does not install triad.
 
 ### From a release
 
-Download the archive for your platform from [Releases](https://github.com/lookbusy1344/triad-merge/releases), which lists each file's SHA-256 digest.
+Download the archive for your platform from [Releases](https://github.com/lookbusy1344/triad-merge/releases).
 
-- **macOS:** `triad-merge-VERSION-aarch64-apple-darwin.zip` holds `triad.app`, signed ad hoc and not notarised. Clear the quarantine before the first run, `xattr -dr com.apple.quarantine triad.app`, then copy it to `/Applications` and register it as below.
-- **Linux:** an AppImage and a `.tar.gz`, for glibc 2.35 or later.
-- **Windows:** a zip with `triad-merge.exe`, the console binary that tools call, and `triad-merge-gui.exe`. Neither is signed, so SmartScreen warns on the first run.
+- **macOS:** `triad.app`, signed ad hoc and not notarised. Clear the quarantine with `xattr -dr com.apple.quarantine triad.app`, copy it to `/Applications`, then run the `install` and `ln` lines below.
+- **Linux:** an AppImage or a `.tar.gz`, for glibc 2.35 or later.
+- **Windows:** `triad-merge.exe`, which tools call, and `triad-merge-gui.exe`. Both are unsigned, so SmartScreen warns on the first run.
 
-### From source on macOS
+### From source (macOS)
 
 You need an Apple Silicon Mac on macOS 27 or later, the Xcode Command Line Tools and `rustup`. From the repository root:
 
@@ -132,35 +132,7 @@ Exit codes: 0 all conflicts resolved, 1 conflicts left, 2 cancelled, 3 error.
 
 `fixtures/demo` holds merges and directories to try by hand (`fixtures/demo/README.md`).
 
-### Settings
-
-`~/.config/triad/config.triad`, one `key = value` per line; Settings… (⌘,) opens it. `triad-merge show-config --default --docs` lists every key. `ui-language = ko` holds the windows to Korean; the tags are `en`, `es`, `zh-CN`, `zh-TW`, `ja`, `ko`, `de`, `fr`, `pt-BR`, `ru`, `uk`, `pl`, `nl` and `sv`.
-
-### Known limits
-
-- Under `git mergetool`, a save that leaves conflicts exits 1 and git restores its own copy. Run `git mergetool` again; triad offers to restore the session.
-- VoiceOver support is unchecked by ear.
-
-## Report a problem
-
-Rerun with `TRIAD_LOG=debug` and send the command and what you expected, `triad-merge --version`, your OS version, the day's log, and the input files if you can share them. Logs sit in `~/Library/Caches/triad/logs/` on macOS, `~/.cache/triad/logs/` on Linux and `%LOCALAPPDATA%\triad\cache\logs` on Windows. The log names files and paths and holds none of their text.
-
-## Build and test
-
-```sh
-cargo build --workspace                                         # target/debug/triad-merge
-cargo nextest run --workspace --no-run                          # build the tests
-cargo nextest run --workspace -E 'package(merge-core) & test(merge3)'   # filtered; never plain `cargo test`
-script/pre-commit                                               # the gate before each commit; under 35 s warm
-script/checks                                                   # everything CI runs, with the full suite
-script/macos-app dist                                           # target/dist/triad.app, fat LTO, as a release builds it
-```
-
-A tag `vX.Y.Z` that matches the workspace version runs `.github/workflows/release.yml`, which builds and publishes the three platforms' packages.
-
-`script/gen-conflict-repo` and `script/gen-jj-repo SCENARIO` build disposable jj repositories to try triad in; `script/test-jj-repos` checks triad in each (`docs/test-repos.md`).
-
-### Code size
+## Code size
 
 About 87,000 lines of Rust in `crates/`, blank lines and comments excluded, as `script/code-size` counts them. Tests make up more than half.
 
@@ -172,13 +144,12 @@ About 87,000 lines of Rust in `crates/`, blank lines and comments excluded, as `
 
 The GPUI shell, `merge-app`, holds 15,000 lines of product code; `merge-core` holds 5,000. `vendor/gpui-base` is left out.
 
-On macOS, Gatekeeper scans each newly linked binary on its first run, so the first test run after a rebuild can stall before any test starts, with `syspolicyd` at full CPU. Add your terminal and IDE under System Settings → Privacy & Security → Developer Tools and restart them. `spctl developer-mode enable-terminal` shows that pane if it is missing.
-
 ## Documents
 
 | File | Contents |
 |---|---|
 | `docs/USER-GUIDE.md` | How to use triad, jj then git |
+| `docs/DEVELOPMENT.md` | How to build and test triad |
 | `docs/SPEC.md` | Behaviour |
 | `docs/PLAN.md` | Status, next steps and open work |
 | `docs/DESIGN.md` | Design: reasons, decisions, measurements |

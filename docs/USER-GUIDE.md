@@ -14,6 +14,7 @@ Keys are macOS keys. On Linux and Windows, ⌘ is Ctrl and ⌥ is Alt.
 6. [Scripts and agents](#6-scripts-and-agents)
 7. [Settings](#7-settings)
 8. [Exit codes](#8-exit-codes)
+9. [Report a problem](#9-report-a-problem)
 
 ## 1. Set up
 
@@ -391,3 +392,7 @@ The windows follow the system's language. `ui-language = ja` holds them to Japan
 | 1 | Conflicts left | Different | Conflicted commits listed or left | — |
 | 2 | Cancelled | — | — | — |
 | 3 | Error, or a jj-enabled command in git | Error | Error | Error |
+
+## 9. Report a problem
+
+Rerun with `TRIAD_LOG=debug`. Send the command, what you expected, `triad-merge --version`, your OS version, the day's log, and the input files if you can share them. Logs sit in `~/Library/Caches/triad/logs/` on macOS, `~/.cache/triad/logs/` on Linux and `%LOCALAPPDATA%\triad\cache\logs` on Windows. The log names files and paths and holds none of their text.

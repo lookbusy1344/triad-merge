@@ -46,7 +46,7 @@ Skip the commit when `cargo update` changed nothing.
 
 1. Set `version` in `[workspace.package]` of the root `Cargo.toml`.
 2. `cargo update --workspace` writes the new version into `Cargo.lock` and moves nothing else. The gate reads the lock file with `--locked`, so do this before it runs.
-3. Update the docs that name the release: README § Platforms names the minor version; `docs/PLAN.md` §1 names the latest release.
+3. Update the docs that name the release: README § Status names the minor version; `docs/PLAN.md` §1 names the latest release.
 4. Run `script/code-size` and update README § Code size from its output: the total, the three parts and the product code of `merge-app` and `merge-core`, each rounded to the nearest thousand.
 5. Add a section to the top of `CHANGELOG.md`, headed `## X.Y.Z — YYYY-MM-DD`: a short list of what changed for users since the last tag, new features first, then fixes. Leave out refactors, tests, CI and docs. `jj log -r 'tags()..main'` lists the commits; `feat` and `fix` commits are the place to start. The release notes take this section (§6).
 6. Commit:
