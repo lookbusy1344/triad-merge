@@ -67,6 +67,8 @@ In order. Each is one or more commits.
 | Fuzzing | After release 1; `cargo-fuzz` needs nightly | spec §8.9 |
 | Screen-reader support: status announcements, conflict regions, scrolling the row table, the accessibility tree in headless tests, a keyboard and contrast audit | §J1 needs the owner at the machine | J |
 | gpui-kit 0.9: build, rebase the patch, measure | — | `docs/gpui-kit-issues.md` |
+| Move the `gpui-base` patch from `vendor/` to a fork of gpui-kit, as a branch named by `rev` in `[patch.crates-io]`, at the gpui-kit 0.9 rebase. The vendored copy is 108k lines; the patch touches 22 of its 199 files. The fork moves the vendor tests to its CI, needs a git source allowed in `deny.toml`, and splits each editor change into two commits | Owner's choice; the patch settling | `vendor/gpui-base/PATCHES.md` |
+| Offer upstream the patch's generic fixes, to shrink it to triad's features (spacers, gutter marks, line labels, hidden lines, char marks): tab stops, the search anchor, the double line-tree build, the idle cursor, the README test | The owner; triad's rules forbid agent reports upstream | `vendor/gpui-base/PATCHES.md` |
 | Merge window folds: the untouched lines of an unchanged region whose result is edited | A line diff of the region | §G2 |
 | Ruler marks with folds: the marks keep their place in the whole file while the thumb follows display rows | A choice between the two | §G2 |
 | A key that opens the fold next to the caret | — | §G2 |
