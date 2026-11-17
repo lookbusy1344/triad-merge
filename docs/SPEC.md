@@ -48,7 +48,7 @@ Later:
 | Item | Choice |
 |---|---|
 | Licence | MIT. Every crate sets `license = "MIT"`. |
-| Language | Rust edition 2024 on the stable toolchain. `rust-toolchain.toml` names channel `stable`; `rust-version = "1.99"` in the workspace sets the minimum. |
+| Language | Rust edition 2024 on the stable toolchain. `rust-toolchain.toml` names channel `stable`; `rust-version = "1.100"` in the workspace sets the minimum. |
 | UI | GPUI through `gpui-kit` 0.8.1 from crates.io, with triad's patched `gpui-base` in `vendor/` |
 | Build | `cargo` only. Scripts build each platform's package. No Xcode project and no Xcode GUI. |
 | Tests | `cargo nextest run` is the test runner, locally and in CI. `.config/nextest.toml` sets `slow-timeout` with `terminate-after`, so a hung test fails instead of stalling the run. It also defines a `ci` profile with JUnit output and a `quick` profile for the commit gate. nextest cannot run doctests, so `script/checks` and CI also run `cargo test --doc --workspace`. |
