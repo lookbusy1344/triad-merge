@@ -101,6 +101,7 @@ unicase = "2.10"
 # panes parse with it directly, in chunks (docs/DESIGN.md §F6.3); the grammars test that.
 tree-sitter = "=0.26.13"
 tree-sitter-rust = "=0.24.2"
+tree-sitter-c = "=0.24.2"
 tree-sitter-c-sharp = "=0.23.5"
 tree-sitter-swift = "=0.7.4"
 # The versions gpui-component 0.8.1 links, so each grammar builds once.

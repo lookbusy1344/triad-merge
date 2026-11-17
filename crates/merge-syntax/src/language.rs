@@ -24,10 +24,11 @@ pub enum Language {
     Yaml,
     Toml,
     Css,
+    C,
 }
 
 /// Each language's file extensions, in lowercase.
-const EXTENSIONS: [(&str, Language); 22] = [
+const EXTENSIONS: [(&str, Language); 23] = [
     ("rs", Language::Rust),
     ("go", Language::Go),
     ("cs", Language::CSharp),
@@ -50,6 +51,7 @@ const EXTENSIONS: [(&str, Language); 22] = [
     ("yml", Language::Yaml),
     ("toml", Language::Toml),
     ("css", Language::Css),
+    ("c", Language::C),
 ];
 
 impl Language {
@@ -70,6 +72,7 @@ impl Language {
             Self::Yaml => tree_sitter_yaml::LANGUAGE,
             Self::Toml => tree_sitter_toml_ng::LANGUAGE,
             Self::Css => tree_sitter_css::LANGUAGE,
+            Self::C => tree_sitter_c::LANGUAGE,
         }
         .into()
     }
@@ -134,6 +137,7 @@ mod tests {
         assert_eq!(of("Cargo.toml"), Some(Language::Toml));
         assert_eq!(of("rust-toolchain.toml"), Some(Language::Toml));
         assert_eq!(of("style.css"), Some(Language::Css));
+        assert_eq!(of("src/main.c"), Some(Language::C));
     }
 
     #[test]
@@ -153,6 +157,7 @@ mod tests {
         assert_eq!(of("b.Yml"), Some(Language::Yaml));
         assert_eq!(of("CARGO.TOML"), Some(Language::Toml));
         assert_eq!(of("STYLE.CSS"), Some(Language::Css));
+        assert_eq!(of("MAIN.C"), Some(Language::C));
     }
 
     #[test]
@@ -189,6 +194,8 @@ mod tests {
             "a.scss",
             "a.less",
             "a.css.map",
+            "a.c.orig",
+            "a.cl",
         ] {
             assert_eq!(of(name), None, "{name}");
         }
@@ -220,7 +227,7 @@ mod tests {
     }
 
     /// Each language's sample, and the kind of its tree's root.
-    const SAMPLES: [(Language, &str, &str); 13] = [
+    const SAMPLES: [(Language, &str, &str); 14] = [
         (Language::Rust, "fn a() -> u8 { 1 }\n", "source_file"),
         (Language::Go, "package a\nfunc b() {}\n", "source_file"),
         (Language::CSharp, "class A { void B() {} }\n", "compilation_unit"),
@@ -234,6 +241,7 @@ mod tests {
         (Language::Yaml, "# c\na: [1, true]\nb:\n  - c\n", "stream"),
         (Language::Toml, "# c\n[a]\nb = [1, true]\n", "document"),
         (Language::Css, "/* c */\na > b { color: #fff; }\n", "stylesheet"),
+        (Language::C, "// c\nstatic int a(void) { return 1; }\n", "translation_unit"),
     ];
 
     fn root_kind(language: Language, source: &str) -> (String, bool) {

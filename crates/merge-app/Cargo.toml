@@ -29,6 +29,7 @@ gpui-kit = { workspace = true, features = [
     "tree-sitter-yaml",
     "tree-sitter-toml",
     "tree-sitter-css",
+    "tree-sitter-c",
 ] }
 merge-config.workspace = true
 merge-session.workspace = true

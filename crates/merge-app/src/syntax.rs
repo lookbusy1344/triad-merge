@@ -33,6 +33,7 @@ pub(crate) const fn registry_name(language: Language) -> &'static str {
         Language::Tsx => "tsx",
         Language::Json => "json",
         Language::Css => "css",
+        Language::C => "c",
         Language::Toml => "toml",
         Language::Yaml => "yaml",
     }
@@ -431,7 +432,7 @@ mod tests {
         bytes
     }
 
-    const LANGUAGES: [Language; 13] = [
+    const LANGUAGES: [Language; 14] = [
         Language::Rust,
         Language::Go,
         Language::CSharp,
@@ -445,6 +446,7 @@ mod tests {
         Language::Yaml,
         Language::Toml,
         Language::Css,
+        Language::C,
     ];
     /// Chunks that cut the Go and C# samples only before top-level lines: no shorter than
     /// their longest run of lines without one (34 in Go, 56 in C#), shorter than the sample.
@@ -470,6 +472,7 @@ mod tests {
         assert_eq!(registry_name(Language::Yaml), "yaml");
         assert_eq!(registry_name(Language::Toml), "toml");
         assert_eq!(registry_name(Language::Css), "css");
+        assert_eq!(registry_name(Language::C), "c");
     }
 
     #[test]
@@ -584,6 +587,11 @@ mod tests {
             (
                 Language::Css,
                 include_str!("../../../fixtures/syntax/sample.css"),
+                &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
+            ),
+            (
+                Language::C,
+                include_str!("../../../fixtures/syntax/sample.c"),
                 &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
             ),
         ];
