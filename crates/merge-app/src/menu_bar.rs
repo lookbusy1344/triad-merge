@@ -2,19 +2,19 @@
 //! the global bar.
 
 use gpui_kit::component::menu::AppMenuBar;
-use gpui_kit::component::{GlobalState, TitleBar, h_flex};
+use gpui_kit::component::{GlobalState, TitleBar, h_flex, v_flex};
 use gpui_kit::{
-    App, Entity, IntoElement, Menu, ParentElement as _, Styled as _, Window, WindowOptions,
+    AnyElement, App, Entity, IntoElement, Menu, ParentElement as _, Pixels, Styled as _, Window,
+    WindowOptions, prelude::FluentBuilder as _,
 };
 
 use crate::{Cancel, ViewTicks, strings, toolbar};
 
 pub(crate) const IN_WINDOW: bool = !cfg!(target_os = "macos");
 
-/// The window options a window with a menu bar starts from.
+/// The window options a window with a toolbar starts from: it draws its own title bar.
 pub(crate) fn window_options() -> WindowOptions {
-    let options = if IN_WINDOW { TitleBar::window_options() } else { WindowOptions::default() };
-    WindowOptions { app_id: Some(strings::PROGRAM.to_owned()), ..options }
+    WindowOptions { app_id: Some(strings::PROGRAM.to_owned()), ..TitleBar::window_options() }
 }
 
 /// The window options of a window without a menu bar.
@@ -66,21 +66,38 @@ impl WindowMenu {
     }
 }
 
-/// The title bar that holds the mark and `bar`. Its close button cancels, as the key does, so
-/// that unsaved work is asked about.
+/// The top of a window with a toolbar: the title bar, then `tools`. On Linux and Windows the
+/// title bar holds the mark and the menus `bar`, and its close button cancels, as the key
+/// does, so that unsaved work is asked about. On macOS, where `bar` is none, it holds `tools`
+/// beside the traffic lights; in full screen, which hides them, it gives up their room.
 pub(crate) fn render(
     bar: Option<&Entity<AppMenuBar>>,
+    tools: impl IntoElement,
     dark: bool,
-) -> Option<impl IntoElement + use<>> {
-    bar.cloned().map(|bar| {
-        TitleBar::new()
-            .on_close_window(|_, window, cx| window.dispatch_action(Box::new(Cancel), cx))
-            .child(h_flex().gap_2().child(toolbar::mark(dark)).child(bar))
-    })
+    full_screen: bool,
+) -> AnyElement {
+    match bar.cloned() {
+        Some(bar) => v_flex()
+            .w_full()
+            .flex_none()
+            .child(
+                TitleBar::new()
+                    .on_close_window(|_, window, cx| window.dispatch_action(Box::new(Cancel), cx))
+                    .child(h_flex().gap_2().child(toolbar::mark(dark)).child(bar)),
+            )
+            .child(tools)
+            .into_any_element(),
+        None => TitleBar::new()
+            .when(full_screen, |bar| bar.pl(Pixels::ZERO))
+            .child(tools)
+            .into_any_element(),
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use gpui_kit::px;
+
     use super::*;
 
     /// The name of `packaging/linux/triad-merge.desktop`, which a desktop matches to the window.
@@ -90,5 +107,16 @@ mod tests {
     fn every_window_names_the_desktop_entry() {
         assert_eq!(window_options().app_id.as_deref(), Some(DESKTOP_ENTRY));
         assert_eq!(plain_options().app_id.as_deref(), Some(DESKTOP_ENTRY));
+    }
+
+    /// Zed's title bar: the system's is hidden, the traffic lights sit 9 px in from the top
+    /// left, and the app moves the window.
+    #[test]
+    fn a_window_with_a_toolbar_draws_its_own_title_bar() {
+        let options = window_options();
+        let titlebar = options.titlebar.expect("title bar options");
+        assert!(titlebar.appears_transparent);
+        assert_eq!(titlebar.traffic_light_position, Some(gpui_kit::point(px(9.), px(9.))));
+        assert!(options.app_owns_titlebar_drag);
     }
 }

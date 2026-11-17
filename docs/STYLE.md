@@ -32,7 +32,7 @@ One rem is the theme's `font_size`, 16 px; gpui-component's `Root` sets it on ev
 | Toolbar labels, the conflict badge, and the menus the toolbar opens | the `toolbar-font-size` setting, 8.4 by default | `Typography::toolbar_size` |
 | Editor and pane text | the `font-size` setting, 10 by default (spec §6.4) | `Typography` |
 
-Zed's scale is 14, 12 and 10 px; triad's chrome takes 12 px. Two settings size text: `font-size` the editors and panes, `toolbar-font-size` the toolbar, its badge and its menus, which take one value so they change together. Other chrome sizes are constants. Secondary text, such as field labels, takes `muted_foreground`. Text is normal weight. Semibold marks a heading: a pane's heading, a prompt's message, a list's group heading. Italic marks deletion notes and spacer notes.
+Chrome takes the theme's UI font, as Zed's does: the toolbar, the headings, the status bar, the dialogs and the tool windows. The panes and editors take the `font` setting, else the theme's monospace font (`Typography::editor_font`); so do commit IDs. Zed's scale is 14, 12 and 10 px; triad's chrome takes 12 px. Two settings size text: `font-size` the editors and panes, `toolbar-font-size` the toolbar, its badge and its menus, which take one value so they change together. Other chrome sizes are constants. Secondary text, such as field labels, takes `muted_foreground`. Text is normal weight. Semibold marks a heading: a pane's heading, a prompt's message, a list's group heading. Italic marks deletion notes and spacer notes.
 
 ## Controls
 
@@ -40,13 +40,13 @@ Zed's scale is 14, 12 and 10 px; triad's chrome takes 12 px. Two settings size t
 - The button that finishes a dialog or writes from a tool window, which Enter takes in a prompt, is `button::default_action`: the outlined button on a light grey fill, `muted` at rest, `secondary` on hover and `secondary_active` while pressed, with the label in the text colour. Zed tints a prompt's default action in its accent; triad keeps it grey, as the accent reads too strong on a small dialog. A dialog or tool window has at most one. A button that only shows something, such as Preview Save, is outlined.
 - An icon button and a toolbar button are `.ghost()` and `.small()`: transparent, with the theme's `accent` on hover, as Zed's `IconButton`s are subtle. Every `Input` is `.small()`.
 - A pill over one end of a moved block is a `move_pill::move_pill`; § Moved blocks gives where it goes.
-- A menu is a `menu_button::MenuButton`: 20 px rows, a 12 px icon, the label and the action's key, in the text size it is given. A row that toggles a state is a checkbox row, with a tick after its label while the state is on. gpui-component's `PopupMenu` has 26 px rows with 14 px text, which triad cannot shrink (`docs/gpui-kit-issues.md`).
+- A menu is a `menu_button::MenuButton`: 20 px rows, a 12 px icon, the label and the action's key, in the text size it is given. A row that toggles a state is a checkbox row, with a tick after its label while the state is on. gpui-component's `PopupMenu` has 26 px rows with 14 px text, which triad cannot shrink (`docs/gpui-kit-issues.md`). Its tooltip goes through `MenuButton::tooltip`, which hides it while the menu is open, as Zed does.
 - Heights: a text button 22 px, an icon button or input 24 px, a list row 24 px, a tool window header 32 px, a menu row 20 px, a tab 22 px inside a 2 px inset.
 - Button icons take the button's size.
 - A tooltip is `tooltip::tooltip`, after Zed's: 12 px text on 16 px lines, 4 px above and below, 8 px at the sides, at most 384 px wide, on gpui-kit's popover surface with its border and shadow. Zed stops at 288 px; triad's widest line is a full commit ID. An element takes it through `tooltip::build`, or `build_with_action` to show an action's keys. A gpui-kit button builds its own tooltip, which cannot be styled (`docs/gpui-kit-issues.md`), so a button with a tooltip sits in `tooltip::wrap` and never calls `Button::tooltip`.
 - A heading whose text stands in for missing content, such as `(no description set)`, shows it muted at normal weight.
 - A heading's mark, such as the stack window's `@`, sits before its lead on `pick_list::MARKED_BAND`, lime at 35 % strength, with 4 px either side and the theme's radius. The rest of the row stays plain.
-- Corners take `theme.radius`, 4 px, Zed's `rounded_sm` on its buttons, list items and inputs. `corners::install` writes it into both theme files, over gpui-component's 6 px. Dialogs and popovers take `theme.radius_lg`, 8 px, Zed's `rounded_lg`. An element inside a rounded one takes the outer radius less the inset.
+- Corners take `theme.radius`, 4 px, Zed's `rounded_sm` on its buttons, list items and inputs. `corners::install` writes it into both theme files, over gpui-component's 6 px. Dialogs, menus and other raised surfaces take `theme.radius_lg`, 8 px, Zed's `rounded_lg` (§ Elevation). An element inside a rounded one takes the outer radius less the inset: a menu row, 4 px inside the menu's edge, takes 4 px.
 
 ## Tool windows
 
@@ -61,6 +61,30 @@ The directory, stack, history and absorb windows are built from `tool_window` an
 - **Status icons.** 12 px, Zed's squares in the theme's status colours: added `SquarePlus` in `success`, modified `SquareDot` in `warning`, renamed `SquareArrowRight` in `info`, copied as added, since Zed's git panel has no copy state, deleted `SquareMinus` in `danger`, conflicted `TriangleAlert` in `danger`. The row's accessible name says the state in words.
 - **Footer.** A result that belongs to the whole window, such as Preview Save's, sits under the lists over a 1 px `border`, laid out as the status line.
 - **Empty list.** One muted line where the first row would be: `No files differ.`
+
+## Elevation
+
+A surface raised over the window is `elevation::surface`, after Zed's `ElevationIndex`: the popover's fill and text, a 1 px `border`, `theme.radius_lg` and a shadow for its height. `Elevation::Raised`, Zed's `ElevatedSurface`, holds a surface that leaves the rest of the window working: a menu, Go to Line. `Elevation::Modal`, Zed's `ModalSurface`, holds a dialog that takes the window until it closes: a prompt, over a scrim of black at 20 %. The shadows are Zed's figures, in `elevation.rs`. Inline parts, such as the toolbar, the headings and the status bar, sit flat.
+
+## Go to Line
+
+After Zed's go-to-line modal: a raised card 384 px wide, 8 px under the top of the result and centred over it, so the text does not move. The field sits over a 1 px `border`, then one muted line: `Current line 5 of 1018` while the field names no line, `Go to line 120` once it does. Both are 12 px chrome text, 8 px in from the card's sides with 4 px above and below; the field draws no frame of its own.
+
+## Find
+
+The result's search panel is gpui-component's, laid out as Zed's buffer search bar: the query with a case toggle, the replace toggle, previous and next, the match count and a close button. triad cannot style it (`docs/gpui-kit-issues.md`).
+
+## Current region and ruler
+
+The current region's frame in an editor is 1 px (`blink::BORDER`), so it reads as an outline beside the blocks' own borders. The overview ruler paints a change's mark at 60 % of its tone (`ruler::SOFT_MARK`) and the conflict tone at full strength, as Zed's scrollbar markers stay faint beside the thumb.
+
+## Title bar
+
+The merge and diff windows draw their own title bar, gpui-component's `TitleBar`, as Zed does (`menu_bar::render`): 34 px tall over a 1 px border, the system's title hidden. On macOS it holds the toolbar beside the traffic lights, which sit 9 px in from the top left; it keeps 80 px for them, and 12 px in full screen, which hides them. A drag on its empty space moves the window, and a double click zooms it. On Linux and Windows it holds the mark and the menus over the toolbar. The tool windows keep the system's title bar.
+
+## Status bar
+
+The merge and diff windows end in `status_bar::bar`, after Zed's `StatusBar`: 24 px tall under a 1 px `border` outside its height, across the window, on `secondary`. Its text is 12 px on 16 px lines in the UI font, muted, 8 px in from the sides, its items 8 px apart. An item that warns, such as mixed line endings, takes its own colour.
 
 ## Spacing
 

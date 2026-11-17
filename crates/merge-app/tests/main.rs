@@ -9,6 +9,7 @@ mod a11y;
 mod about;
 mod absorb;
 mod choices;
+mod chrome;
 mod collapse;
 mod common;
 mod diff;

@@ -3,23 +3,30 @@
 //! does. Escape takes the button that keeps the user's work, and no other: `Start Over` throws
 //! a recovery journal away.
 
-use gpui_kit::component::{ActiveTheme as _, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, Theme, h_flex, v_flex};
 use gpui_kit::{
-    App, AppContext as _, Context, EventEmitter, FocusHandle, Focusable, InteractiveElement as _,
-    IntoElement, KeyDownEvent, ParentElement as _, Pixels, PromptButton, PromptHandle, PromptLevel,
-    PromptResponse, Render, RenderablePromptHandle, Role, SharedString,
-    StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div, opaque_grey,
-    px,
+    App, AppContext as _, Context, Div, EventEmitter, FocusHandle, Focusable,
+    InteractiveElement as _, IntoElement, KeyDownEvent, ParentElement as _, Pixels, PromptButton,
+    PromptHandle, PromptLevel, PromptResponse, Render, RenderablePromptHandle, Role, SharedString,
+    StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, black, div, px,
 };
 
+use crate::elevation::{self, Elevation};
 use crate::strings::prompt;
 
 const ENTER: &str = "enter";
 const ESCAPE: &str = "escape";
 const ID: &str = "prompt";
 const WIDTH: Pixels = px(380.);
-const SCRIM_GREY: f32 = 0.2;
-const SCRIM_ALPHA: f32 = 0.5;
+/// A dialog's edge and its content (`docs/STYLE.md` § Spacing).
+const PADDING: Pixels = px(12.);
+/// Rows of a dialog (`docs/STYLE.md` § Spacing).
+const GAP: Pixels = px(8.);
+/// Dialog text (`docs/STYLE.md` § Type) on Zed's 16 px lines.
+const TEXT_SIZE: Pixels = px(12.);
+const LINE_HEIGHT: Pixels = px(16.);
+/// Zed's scrim under a prompt: black at 20 %.
+const SCRIM_ALPHA: f32 = 0.2;
 
 /// Use these prompts in place of GPUI's fallback, on the platform that needs them. Headless
 /// tests answer the test platform's prompts, so `run` calls this and `init` does not.
@@ -89,8 +96,7 @@ impl Focusable for PromptView {
 impl Render for PromptView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
-        let (surface, text, muted, border) =
-            (theme.popover, theme.popover_foreground, theme.muted_foreground, theme.border);
+        let muted = theme.muted_foreground;
         let buttons = self.buttons.iter().enumerate().map(|(index, button)| {
             let label = button.label().clone();
             let button = if index == 0 {
@@ -103,39 +109,59 @@ impl Render for PromptView {
                 cx.stop_propagation();
             }))
         });
-        let card = v_flex()
+        let card = card(theme)
             .id(ID)
             .test_support()
             .role(Role::AlertDialog)
             .aria_label(self.message.clone())
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::on_key_down))
-            .w(WIDTH)
-            .p_4()
-            .gap_2()
-            .rounded_lg()
-            .border_1()
-            .border_color(border)
-            .bg(surface)
-            .text_color(text)
             .child(div().font_weight(gpui_kit::FontWeight::SEMIBOLD).child(self.message.clone()))
-            .children(
-                self.detail.clone().map(|detail| div().text_sm().text_color(muted).child(detail)),
-            )
+            .children(self.detail.clone().map(|detail| div().text_color(muted).child(detail)))
             .child(h_flex().pt_2().gap_2().justify_end().flex_wrap().children(buttons));
         div()
             .size_full()
             .flex()
             .items_center()
             .justify_center()
-            .bg(opaque_grey(SCRIM_GREY, SCRIM_ALPHA))
+            .bg(black().opacity(SCRIM_ALPHA))
             .child(card)
     }
 }
 
+/// The dialog's card: dialog text in the UI font, on a modal surface.
+fn card(theme: &Theme) -> Div {
+    let card = v_flex()
+        .w(WIDTH)
+        .p(PADDING)
+        .gap(GAP)
+        .font_family(theme.font_family.clone())
+        .text_size(TEXT_SIZE)
+        .line_height(LINE_HEIGHT);
+    elevation::surface(card, Elevation::Modal, theme)
+}
+
 #[cfg(test)]
 mod tests {
+    use gpui_kit::{AbsoluteLength, DefiniteLength};
+
     use super::*;
+
+    #[test]
+    fn the_card_takes_dialog_spacing_and_text_on_a_modal_surface() {
+        let theme = Theme { font_family: "UI".into(), ..Theme::default() };
+        let mut card = card(&theme);
+        let style = card.style();
+        let twelve = Some(DefiniteLength::Absolute(AbsoluteLength::Pixels(px(12.))));
+        assert_eq!((style.padding.top, style.padding.left), (twelve, twelve));
+        assert_eq!(
+            style.gap.height,
+            Some(DefiniteLength::Absolute(AbsoluteLength::Pixels(px(8.))))
+        );
+        assert_eq!(style.text.font_size, Some(AbsoluteLength::Pixels(px(12.))));
+        assert_eq!(style.text.font_family, Some("UI".into()));
+        assert_eq!(style.box_shadow, Some(Elevation::Modal.shadow(false)));
+    }
 
     fn buttons(labels: &[&'static str]) -> Vec<PromptButton> {
         labels.iter().map(|&label| PromptButton::new(label)).collect()

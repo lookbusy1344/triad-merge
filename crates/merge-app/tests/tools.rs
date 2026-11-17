@@ -7,7 +7,7 @@ use merge_view::rows::RowIx;
 
 use std::fmt::Write as _;
 
-use common::{act, caret, doc, open, set_caret, texts};
+use common::{act, bounds, caret, doc, label, open, set_caret, texts};
 use gpui_kit::test::TestWindowExt;
 use gpui_kit::{AnyWindowHandle, Entity, OwnedMenuItem, TestAppContext};
 use merge_app::toolbar::{
@@ -15,7 +15,9 @@ use merge_app::toolbar::{
     MORE_MENU_LEFT_THEN_RIGHT, MORE_MENU_NONE, MORE_MENU_RIGHT_THEN_LEFT, POPUP_MENU_ID, Tool,
     labels_min_width,
 };
-use merge_app::window::{CONFLICT_BADGE_ID, GO_TO_LINE_ID, RESULT_ID, TOOLBAR_ID, cell_id};
+use merge_app::window::{
+    CONFLICT_BADGE_ID, GO_TO_LINE_HELP_ID, GO_TO_LINE_ID, RESULT_ID, TOOLBAR_ID, cell_id,
+};
 use merge_app::{Find, MergeWindow, Typography, WindowSettings};
 use merge_core::document::{Labels, MergeDocument, MergeOptions, Resolution};
 use merge_core::merge3::{Inputs, Source};
@@ -88,6 +90,39 @@ fn go_to_line_moves_the_caret_inside_a_merged_region(cx: &mut TestAppContext) {
     let (editor, core) = texts(cx, &view);
     assert_eq!(core, "a\nB\nxC\nd\n");
     assert_eq!(editor, core);
+}
+
+/// Go to Line's card (`docs/STYLE.md` § Go to Line): 384 px wide, as Zed's, 8 px under the
+/// top of the result and centred over it.
+const GO_TO_LINE_WIDTH: gpui_kit::Pixels = gpui_kit::px(384.);
+const GO_TO_LINE_INSET: gpui_kit::Pixels = gpui_kit::px(8.);
+
+#[gpui_kit::test]
+fn go_to_line_floats_over_the_top_of_the_result(cx: &mut TestAppContext) {
+    let (window, _) = in_result(cx, two_line_region());
+    let result = bounds(cx, window, RESULT_ID);
+    press(cx, window, "secondary-l");
+    let card = bounds(cx, window, GO_TO_LINE_ID);
+    assert_eq!(card.size.width, GO_TO_LINE_WIDTH);
+    assert_eq!(card.top(), result.top() + GO_TO_LINE_INSET);
+    assert_eq!(card.center().x, result.center().x);
+    assert_eq!(bounds(cx, window, RESULT_ID), result, "the result does not move");
+}
+
+#[gpui_kit::test]
+fn go_to_line_names_the_current_line_then_the_line_it_goes_to(cx: &mut TestAppContext) {
+    let (window, view) = in_result(cx, two_line_region());
+    // Byte 2 is line 2, B, of four.
+    set_caret(cx, &view, 2);
+    press(cx, window, "secondary-l");
+    assert_eq!(label(cx, window, GO_TO_LINE_HELP_ID), "Current line 2 of 4");
+    type_text(cx, window, "3");
+    assert_eq!(label(cx, window, GO_TO_LINE_HELP_ID), "Go to line 3");
+    // 30 is past the end: Enter goes to the last line.
+    type_text(cx, window, "0");
+    assert_eq!(label(cx, window, GO_TO_LINE_HELP_ID), "Go to line 4");
+    type_text(cx, window, "x");
+    assert_eq!(label(cx, window, GO_TO_LINE_HELP_ID), "Current line 2 of 4");
 }
 
 #[gpui_kit::test]

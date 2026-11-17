@@ -177,24 +177,38 @@ impl Heights {
     /// The display row position at item position `position`: a share of an item is the same
     /// share of its rows. The end of the items is the end of the rows.
     #[must_use]
-    pub fn to_rows(&self, position: f32) -> f32 {
+    pub fn to_rows(&self, position: f64) -> f64 {
         let Some((item, share)) = split(position, self.items()) else {
-            return to_f32(self.rows());
+            return to_f64(self.rows());
         };
         let rows = self.of(item);
-        to_f32(rows.start) + share * to_f32(rows.len())
+        to_f64(rows.start) + share * to_f64(rows.len())
     }
 
     /// The item position at display row position `row`: the inverse of [`Self::to_rows`].
     #[must_use]
-    pub fn to_items(&self, row: f32) -> f32 {
+    pub fn to_items(&self, row: f64) -> f64 {
         let Some(((item, within), share)) =
             split(row, self.rows()).and_then(|(whole, share)| Some((self.at(whole)?, share)))
         else {
-            return to_f32(self.items());
+            return to_f64(self.items());
         };
         let rows = self.of(item).len();
-        to_f32(item) + (to_f32(within) + share) / to_f32(rows)
+        to_f64(item) + (to_f64(within) + share) / to_f64(rows)
+    }
+
+    /// The scroll top, in pixels, that keeps at the top the item position that `old` shows
+    /// at scroll top `top`, display rows `row_h` high in both.
+    #[must_use]
+    pub fn keep_top(&self, old: &Self, top: f32, row_h: f32) -> f32 {
+        let row_h = f64::from(row_h);
+        let item = old.to_items(f64::from(top) / row_h);
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a scroll offset lies far inside f32's range; it rounds once, here"
+        )]
+        let top = (self.to_rows(item) * row_h) as f32;
+        top
     }
 
     fn start(&self, item: usize) -> usize {
@@ -207,9 +221,9 @@ impl Heights {
 }
 
 /// The whole and fractional parts of `position`, at least 0; `None` at or past `count`.
-fn split(position: f32, count: usize) -> Option<(usize, f32)> {
+fn split(position: f64, count: usize) -> Option<(usize, f64)> {
     let position = position.max(0.0);
-    if position >= to_f32(count) {
+    if position >= to_f64(count) {
         return None;
     }
     let whole = position.floor();
@@ -222,12 +236,9 @@ fn split(position: f32, count: usize) -> Option<(usize, f32)> {
     Some((index, position - whole))
 }
 
-#[expect(
-    clippy::cast_precision_loss,
-    reason = "row counts stay far below 2^24 in practice; pixels need no more"
-)]
-fn to_f32(n: usize) -> f32 {
-    n as f32
+#[expect(clippy::cast_precision_loss, reason = "row counts stay far below 2^53")]
+fn to_f64(n: usize) -> f64 {
+    n as f64
 }
 
 #[cfg(test)]
@@ -284,6 +295,17 @@ mod tests {
         assert_eq!(heights.to_rows(3.0), 6.0);
         assert_eq!(heights.to_rows(-1.0), 0.0);
         assert_eq!(heights.to_rows(9.0), 6.0);
+    }
+
+    #[test]
+    fn keep_top_holds_the_item_at_the_top_across_new_heights() {
+        // 15 px rows. Top 22.5 px is item 1.5; item 1 now takes rows 1-2, so its middle is
+        // row 2, 30 px.
+        let new = Heights::from_rows([1, 2, 1, 1]);
+        assert_eq!(new.keep_top(&Heights::Uniform(4), 22.5, 15.0), 30.0);
+        // Unchanged heights keep the top to the pixel, though 497 / 15 has no exact f32.
+        let same = Heights::Uniform(200);
+        assert_eq!(same.keep_top(&same, 497.0, 15.0), 497.0);
     }
 
     #[test]
