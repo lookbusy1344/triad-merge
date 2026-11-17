@@ -281,7 +281,7 @@ impl AbsorbWindow {
                 self.highlighted = None;
                 self.listed = Some(listed);
             }
-            Err(error) => self.note = Some(Note::Error(error.to_string().into())),
+            Err(error) => self.note = Some(Note::Error(crate::error_text::describe(&error).into())),
         }
         cx.notify();
     }

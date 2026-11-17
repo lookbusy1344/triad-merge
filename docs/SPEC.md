@@ -611,7 +611,8 @@ The command line takes five settings: `--merge-semantics`, `--same-change`, `--h
 - Status changes are not announced, and region bands and gutter marks are not exposed. GPUI has the means for both; `PLAN.md` part J adds them (`docs/gpui-kit-issues.md`).
 - Region kinds use a gutter letter as well as a colour, so colour is never the only signal.
 - The windows show their text in English, Spanish, simplified Chinese, traditional Chinese, Japanese, Korean, German, French, Brazilian Portuguese, Russian, Ukrainian, Polish, Dutch or Swedish, as `ui-language` sets (§6.4). Counts take each language's plural forms. A Chinese locale reads the traditional text when its script is Hant, or when it has no script and its region is Taiwan, Hong Kong or Macau; every other Chinese locale reads the simplified text. Every Portuguese locale reads the Brazilian text. Product, VCS and command names, file names, IDs, encodings and line endings read the same in every language.
-- The command line, its output, the config file and its errors, the JSON of `inspect`, and error details that come from the repository or the file system stay in English, so scripts and bug reports read the same everywhere.
+- Error details in the windows read in the windows' language. Text that jj, git or the system supplies inside a detail stays in English, as does an error that marks a bug in triad. On macOS the system's own controls, such as file dialogs, follow the system's language.
+- The command line, its output, the config file and its errors, and the JSON of `inspect` stay in English, so scripts and bug reports read the same everywhere.
 - No telemetry and no network access.
 
 ## 7. VCS integration

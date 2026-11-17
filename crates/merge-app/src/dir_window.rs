@@ -176,8 +176,8 @@ fn list(source: &Source, cwd: &Path) -> Listed {
     }
 }
 
-fn to_string(error: impl std::fmt::Display) -> String {
-    error.to_string()
+fn to_string(error: impl std::error::Error + 'static) -> String {
+    crate::error_text::describe(&error)
 }
 
 /// The repository holding `dir`, whose jj snapshots read `jj_config`.
@@ -240,7 +240,7 @@ fn load_file(
     let paths = [left.join(from), right.join(&file.path)];
     let repo = RunRepository::of_diff_tool(Some(&cwd), &paths[1]);
     let pair = ToolPair { paths, absent, readonly, title: Some(shown) };
-    crate::run::tool_diff(pair, repo, cwd).map_err(|error| error.to_string())
+    crate::run::tool_diff(pair, repo, cwd).map_err(|error| crate::error_text::describe(&error))
 }
 
 impl DirWindow {
@@ -378,7 +378,7 @@ impl DirWindow {
                 self.open = Some(window);
                 self.note = None;
             }
-            Err(error) => self.note = Some(Note::Error(error.to_string().into())),
+            Err(error) => self.note = Some(Note::Error(crate::error_text::describe(&error).into())),
         }
         cx.notify();
     }

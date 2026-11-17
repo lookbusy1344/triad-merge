@@ -820,7 +820,7 @@ pub(crate) fn go_to_line_target(line: usize) -> String {
     t!("go-to-line-target", line = line)
 }
 
-fn encoding(encoding: Encoding) -> SharedString {
+pub(crate) fn encoding(encoding: Encoding) -> SharedString {
     match encoding {
         Encoding::Utf8 => "UTF-8".into(),
         Encoding::Utf8Bom => t!("encoding-utf8-bom"),
@@ -1081,6 +1081,7 @@ mod tests {
     fn named_ids() -> std::collections::BTreeSet<&'static str> {
         const FILE: &str = include_str!("strings.rs");
         const OPENERS: [&str; 4] = ["t!(", "locale,", " = ", "=> "];
+        const ERRORS: &str = include_str!("error_text.rs");
         let source = &FILE[..FILE.find("#[cfg(test)]").expect("a test module")];
         let mut ids = std::collections::BTreeSet::new();
         for opener in OPENERS {
@@ -1101,6 +1102,11 @@ mod tests {
                     ids.insert(id);
                 }
             }
+        }
+        let errors = ERRORS.find("#[cfg(test)]").map_or(ERRORS, |end| &ERRORS[..end]);
+        for (start, _) in errors.match_indices("\"err-") {
+            let rest = &errors[start + 1..];
+            ids.insert(&rest[..rest.find('"').expect("a closing quote")]);
         }
         ids
     }

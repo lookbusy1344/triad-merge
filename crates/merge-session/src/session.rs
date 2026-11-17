@@ -342,7 +342,7 @@ impl Session {
         if let Some(recovery) = saved.recovery {
             self.recovery = Some(recovery);
         }
-        ending::saved(&saved.outcome)
+        ending::saved(saved.outcome)
     }
 
     /// What a save would write into the jj commit `resolve -r` opened, to run on a thread of
@@ -660,10 +660,7 @@ mod tests {
             saved.outcome()
         );
         assert!(!dir.path().join("out").exists());
-        assert_eq!(
-            session.saved(saved),
-            Next::Refused { detail: "Windows-1252 cannot hold 'ł' (U+0142) on line 1".to_owned() }
-        );
+        assert_eq!(session.saved(saved), Next::Refused { error: UNENCODABLE });
         assert!(!session.saving());
         assert!(session.recovery().is_some(), "the journal goes on");
         session.apply(Command::Undo).expect("applies after the refusal");

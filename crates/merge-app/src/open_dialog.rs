@@ -128,7 +128,7 @@ impl Load {
                 let language = Language::of_run(files.paths(), Some(&output), None);
                 let doc =
                     merge_session::load(&files, settings.options.clone(), Labels::none(), language)
-                        .map_err(|e| e.to_string())?;
+                        .map_err(|e| crate::error_text::describe(&e))?;
                 let settings = WindowSettings {
                     repo: run::repo_kind(settings.cwd.as_deref(), &output),
                     output: Some(output),
@@ -136,7 +136,9 @@ impl Load {
                     ..settings
                 };
                 Ok(Box::new(move |cx| {
-                    crate::window::open(doc, &settings, cx).map(drop).map_err(|e| e.to_string())
+                    crate::window::open(doc, &settings, cx)
+                        .map(drop)
+                        .map_err(|e| crate::error_text::describe(&e))
                 }))
             }
             Self::Diff { left, right, settings, watch } => {
@@ -152,7 +154,7 @@ impl Load {
                 let read = |path: PathBuf| {
                     merge_session::read_text(&path)
                         .map(|text| DiffFile { origin: Origin::File(path), text, read_only: false })
-                        .map_err(|e| e.to_string())
+                        .map_err(|e| crate::error_text::describe(&e))
                 };
                 let left = read(left)?;
                 let right = read(right)?;
@@ -164,7 +166,7 @@ impl Load {
                 Ok(Box::new(move |cx| {
                     diff_window::open(left, right, &settings, cx)
                         .map(drop)
-                        .map_err(|e| e.to_string())
+                        .map_err(|e| crate::error_text::describe(&e))
                 }))
             }
         }

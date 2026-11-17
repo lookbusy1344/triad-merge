@@ -311,6 +311,29 @@ mod tests {
 
     use super::*;
 
+    /// The macOS bundle names each catalogue's language, so the system's own controls follow
+    /// it. Apple names Chinese by script.
+    #[test]
+    fn the_macos_bundle_lists_every_language() {
+        const SCRIPT: &str = include_str!("../../../script/macos-app");
+        let start = SCRIPT.find("<key>CFBundleLocalizations</key>").expect("the key");
+        let array = &SCRIPT[start..start + SCRIPT[start..].find("</array>").expect("its end")];
+        let listed: BTreeSet<&str> = array
+            .split("<string>")
+            .skip(1)
+            .map(|item| &item[..item.find("</string>").expect("a closed string")])
+            .collect();
+        let expected: BTreeSet<String> = Locale::ALL
+            .map(|locale| match locale {
+                Locale::ZhCn => "zh-Hans".to_owned(),
+                Locale::ZhTw => "zh-Hant".to_owned(),
+                other => other.id().to_string(),
+            })
+            .into_iter()
+            .collect();
+        assert_eq!(listed, expected.iter().map(String::as_str).collect());
+    }
+
     /// Each message's variables, by id.
     fn messages(locale: Locale) -> BTreeMap<String, BTreeSet<String>> {
         let resource = FluentResource::try_new(locale.source().to_owned())

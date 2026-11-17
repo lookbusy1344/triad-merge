@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use merge_core::merge3::{HunkLevel, SameChange};
-pub use vcs_jj::config::ConfigEnv;
-use vcs_jj::config::{self, ConfigError, FileMergeHunkLevel};
+use vcs_jj::config::{self, FileMergeHunkLevel};
+pub use vcs_jj::config::{ConfigEnv, ConfigError};
 
 use crate::env::Env;
 

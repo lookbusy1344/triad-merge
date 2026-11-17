@@ -198,7 +198,7 @@ impl HistoryWindow {
                 let len = self.versions.len();
                 self.selected = self.selected.filter(|&ix| ix < len);
             }
-            Err(error) => self.note = Some(Note::Error(error.to_string().into())),
+            Err(error) => self.note = Some(Note::Error(crate::error_text::describe(&error).into())),
         }
         cx.notify();
     }
@@ -228,8 +228,9 @@ impl HistoryWindow {
                 None => repo,
             };
             let (native, commit) = merge_session::native::load_at_operation(&mut repo, &file, &op)
-                .map_err(|e| e.to_string())?;
-            let (left, right) = crate::run::native_sides(native).map_err(|e| e.to_string())?;
+                .map_err(|e| crate::error_text::describe(&e))?;
+            let (left, right) =
+                crate::run::native_sides(native).map_err(|e| crate::error_text::describe(&e))?;
             let commit = commit.as_str().to_owned();
             Ok::<_, String>(Loaded { left, right, file, commit, repo })
         });
@@ -269,7 +270,7 @@ impl HistoryWindow {
                 self.open = Some(window);
                 self.note = None;
             }
-            Err(error) => self.note = Some(Note::Error(error.to_string().into())),
+            Err(error) => self.note = Some(Note::Error(crate::error_text::describe(&error).into())),
         }
         cx.notify();
     }

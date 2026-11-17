@@ -13,6 +13,7 @@ pub mod dir_window;
 mod editor_sync;
 mod editor_syntax;
 mod elevation;
+mod error_text;
 mod go_to_line;
 pub mod history_window;
 mod i18n;

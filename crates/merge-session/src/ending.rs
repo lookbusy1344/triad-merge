@@ -2,6 +2,10 @@
 //! to the alerts on the way. Each function takes what the window knows and gives the
 //! [`Next`] step; the window asks, writes and finishes as that step says. No GUI.
 
+use std::sync::Arc;
+
+use merge_core::text::EncodeError;
+
 use crate::{ExitCode, SaveError};
 
 /// What Save & Exit does while conflicts are unresolved (spec §6.2).
@@ -106,12 +110,12 @@ pub enum Next {
     Record(ExitCode),
     /// Ask for a path and write a copy there.
     SaveCopyAs,
-    /// Write the journal, then say the save failed, why in `detail`, and offer
+    /// Write the journal, then say the save failed with `error`, and offer
     /// [`Undone::answers`].
-    Failed { undone: Undone, detail: String },
-    /// Say why the output cannot be written, in `detail`: its encoding cannot hold a
-    /// character of the result. Nothing is written, and the merge and its journal go on.
-    Refused { detail: String },
+    Failed { undone: Undone, error: SaveFault },
+    /// Say why the output cannot be written: its encoding cannot hold a character of the
+    /// result, as `error` says. Nothing is written, and the merge and its journal go on.
+    Refused { error: EncodeError },
     /// End the session with `code`, the journal as `journal` says.
     Finish { code: ExitCode, journal: Journal },
 }
@@ -157,18 +161,40 @@ fn discard() -> Next {
     Next::Finish { code: ExitCode::Cancelled, journal: Journal::Remove }
 }
 
+/// A failed save's error, shared with the window that names it. Two are equal when they
+/// read the same.
+#[derive(Debug, Clone)]
+pub struct SaveFault(Arc<SaveError>);
+
+impl SaveFault {
+    #[must_use]
+    pub fn error(&self) -> &SaveError {
+        &self.0
+    }
+}
+
+impl PartialEq for SaveFault {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.to_string() == other.0.to_string()
+    }
+}
+
+impl Eq for SaveFault {}
+
 /// The outcome of a save. A resolved save removes the journal. A save with conflicts keeps
 /// it, since `git mergetool` puts back its own file after one (spec §6.2). A failure keeps
 /// the latest work in it and leaves the window open.
 #[must_use]
-pub fn saved(outcome: &Result<ExitCode, SaveError>) -> Next {
+pub fn saved(outcome: Result<ExitCode, SaveError>) -> Next {
     match outcome {
         Ok(ExitCode::Resolved) => {
             Next::Finish { code: ExitCode::Resolved, journal: Journal::Remove }
         }
-        Ok(code) => Next::Finish { code: *code, journal: Journal::Flush },
-        Err(error @ SaveError::Encode(_)) => Next::Refused { detail: error.to_string() },
-        Err(error) => Next::Failed { undone: Undone::of(error), detail: error.to_string() },
+        Ok(code) => Next::Finish { code, journal: Journal::Flush },
+        Err(SaveError::Encode(error)) => Next::Refused { error },
+        Err(error) => {
+            Next::Failed { undone: Undone::of(&error), error: SaveFault(Arc::new(error)) }
+        }
     }
 }
 
@@ -251,46 +277,39 @@ mod tests {
     #[test]
     fn a_resolved_save_removes_the_journal_and_a_conflicted_one_keeps_it() {
         assert_eq!(
-            saved(&Ok(ExitCode::Resolved)),
+            saved(Ok(ExitCode::Resolved)),
             Next::Finish { code: ExitCode::Resolved, journal: Journal::Remove }
         );
         assert_eq!(
-            saved(&Ok(ExitCode::Conflicts)),
+            saved(Ok(ExitCode::Conflicts)),
             Next::Finish { code: ExitCode::Conflicts, journal: Journal::Flush }
         );
     }
 
     #[test]
     fn a_failed_save_names_what_it_left_undone() {
+        let failed = |next| match next {
+            Next::Failed { undone, error } => (undone, error.error().to_string()),
+            other => panic!("not a failure: {other:?}"),
+        };
         assert_eq!(
-            saved(&Err(write_error())),
-            Next::Failed {
-                undone: Undone::Write,
-                detail: "cannot write out.txt: permission denied".to_owned()
-            }
+            failed(saved(Err(write_error()))),
+            (Undone::Write, "cannot write out.txt: permission denied".to_owned())
         );
         assert_eq!(
-            saved(&Err(record_error(ExitCode::Conflicts))),
-            Next::Failed {
-                undone: Undone::Record(ExitCode::Conflicts),
-                detail:
-                    "a.txt is written, but the repository did not record the save: jj has no index"
-                        .to_owned()
-            }
+            failed(saved(Err(record_error(ExitCode::Conflicts)))),
+            (
+                Undone::Record(ExitCode::Conflicts),
+                "a.txt is written, but the repository did not record the save: jj has no index"
+                    .to_owned()
+            )
         );
     }
 
     #[test]
     fn an_output_the_encoding_cannot_hold_refuses_the_save_with_the_reason() {
-        let error = SaveError::Encode(EncodeError {
-            encoding: Encoding::Windows1252,
-            character: 'ł',
-            line: 3,
-        });
-        assert_eq!(
-            saved(&Err(error)),
-            Next::Refused { detail: "Windows-1252 cannot hold 'ł' (U+0142) on line 3".to_owned() }
-        );
+        let error = EncodeError { encoding: Encoding::Windows1252, character: 'ł', line: 3 };
+        assert_eq!(saved(Err(SaveError::Encode(error))), Next::Refused { error });
     }
 
     #[test]

@@ -1428,7 +1428,7 @@ impl DiffWindow {
                 Err(error) => {
                     all_saved = false;
                     self.pane_mut(write.side).writes.ended(write.changes, false);
-                    let detail = error.to_string();
+                    let detail = crate::error_text::describe(&error);
                     let answer = window.prompt(
                         PromptLevel::Critical,
                         &prompt::cannot_save(),

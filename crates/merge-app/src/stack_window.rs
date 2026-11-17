@@ -218,7 +218,7 @@ impl StackWindow {
                 let len = self.path_count();
                 self.selected = self.selected.filter(|&ix| ix < len);
             }
-            Err(error) => self.note = Some(Note::Error(error.to_string().into())),
+            Err(error) => self.note = Some(Note::Error(crate::error_text::describe(&error).into())),
         }
         if self.end_if_closing(cx) {
             if let Some(note) = self.note.as_ref().map(Note::text) {
@@ -257,8 +257,8 @@ impl StackWindow {
         let loaded = cx.background_spawn(async move {
             let loaded =
                 merge_session::resolve::load_at_commit(&root, &rev, &load_path, config.clone())
-                    .map_err(|e| e.to_string())?;
-            let opened = loaded.open(options).map_err(|e| e.to_string())?;
+                    .map_err(|e| crate::error_text::describe(&e))?;
+            let opened = loaded.open(options).map_err(|e| crate::error_text::describe(&e))?;
             let repo = RunRepository::find([root.as_path()]);
             let repo = match config {
                 Some(config) => repo.with_jj_config(config),
@@ -303,7 +303,7 @@ impl StackWindow {
                 self.open = Some(OpenMerge { window, view: view.downgrade(), change, path });
                 self.note = None;
             }
-            Err(error) => self.note = Some(Note::Error(error.to_string().into())),
+            Err(error) => self.note = Some(Note::Error(crate::error_text::describe(&error).into())),
         }
         cx.notify();
     }
@@ -339,7 +339,7 @@ impl StackWindow {
             ignore_closed_view(this.update(cx, |this, cx| {
                 this.preview = Some(match previewed {
                     Ok(rewrite) => Preview::Done(rewrite),
-                    Err(error) => Preview::Failed(error.to_string()),
+                    Err(error) => Preview::Failed(crate::error_text::describe(&error)),
                 });
                 cx.notify();
             }));

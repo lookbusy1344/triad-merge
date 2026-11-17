@@ -430,6 +430,16 @@ enum RebuildError {
     Panes(#[from] PaneError),
 }
 
+impl RebuildError {
+    /// The error in the run's language. Label and pane counts mark a bug, and stay English.
+    fn describe(&self) -> String {
+        match self {
+            Self::Restore(error) => crate::error_text::describe(error),
+            Self::Labels(_) | Self::Panes(_) => self.to_string(),
+        }
+    }
+}
+
 /// Log the refusal of `what`: expected while a save runs, a defect otherwise.
 fn log_refused(refused: &Refused, what: &str) {
     match refused {
@@ -1948,7 +1958,7 @@ impl MergeWindow {
             Ok(restored) => restored,
             Err(error) => {
                 tracing::warn!(%error, "cannot restore the journal");
-                let detail = error.to_string();
+                let detail = error.describe();
                 let answer = window.prompt(
                     PromptLevel::Warning,
                     &prompt::cannot_restore(),
@@ -2301,12 +2311,14 @@ impl MergeWindow {
             Next::Write => self.check_descendants(window, cx),
             Next::Record(code) => self.record_again(code, window, cx),
             Next::SaveCopyAs => self.save_copy_as(&SaveCopyAs, window, cx),
-            Next::Failed { undone, detail } => {
+            Next::Failed { undone, error } => {
+                let detail = crate::error_text::describe(error.error());
                 // The save wrote the journal first; a failed write tries again.
                 self.write_journal(cx);
                 Self::save_failed(undone, detail, window, cx);
             }
-            Next::Refused { detail } => {
+            Next::Refused { error } => {
+                let detail = crate::error_text::describe(&error);
                 // Nothing is written and the merge goes on, so its journal does too.
                 self.schedule_journal(cx);
                 alert(&prompt::cannot_write(), &detail, window, cx);
@@ -2393,7 +2405,12 @@ impl MergeWindow {
                 self.copy_note = Some(strings::copy_saved(unresolved).into());
                 cx.notify();
             }
-            Err(error) => alert(&prompt::cannot_write_copy(), &error.to_string(), window, cx),
+            Err(error) => alert(
+                &prompt::cannot_write_copy(),
+                &crate::error_text::describe(&error),
+                window,
+                cx,
+            ),
         }
     }
 
