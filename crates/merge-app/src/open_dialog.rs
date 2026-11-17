@@ -451,10 +451,7 @@ impl Render for OpenDialog {
             )
             .child(
                 h_flex().w_full().flex_none().justify_end().child(
-                    Button::new(START_ID)
-                        .primary()
-                        .small()
-                        .label(strings::start(self.mode))
+                    crate::button::default_action(START_ID, strings::start(self.mode))
                         .loading(self.loading.is_some())
                         .accessibility_label(strings::start(self.mode))
                         .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {

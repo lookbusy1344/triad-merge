@@ -3,7 +3,6 @@
 //! does. Escape takes the button that keeps the user's work, and no other: `Start Over` throws
 //! a recovery journal away.
 
-use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, h_flex, v_flex};
 use gpui_kit::{
     App, AppContext as _, Context, EventEmitter, FocusHandle, Focusable, InteractiveElement as _,
@@ -94,8 +93,11 @@ impl Render for PromptView {
             (theme.popover, theme.popover_foreground, theme.muted_foreground, theme.border);
         let buttons = self.buttons.iter().enumerate().map(|(index, button)| {
             let label = button.label().clone();
-            let button = Button::new(index).label(label);
-            let button = if index == 0 { button.primary() } else { button };
+            let button = if index == 0 {
+                crate::button::default_action(index, label)
+            } else {
+                crate::button::outlined(index, label)
+            };
             button.on_click(cx.listener(move |_, _, _, cx| {
                 cx.emit(PromptResponse(index));
                 cx.stop_propagation();

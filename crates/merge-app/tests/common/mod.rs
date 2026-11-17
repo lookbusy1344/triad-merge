@@ -93,8 +93,8 @@ impl Finished {
 }
 
 /// Sizes of a tool window, from `docs/STYLE.md`: a 32 px header across the top over a 1 px
-/// border, its text and buttons 12 px in from the sides, and the list under it, inset 4 px,
-/// with 24 px rows whose text starts 8 px further in.
+/// border, its text and 22 px buttons 12 px in from the sides, and the list under it, inset
+/// 4 px, with 24 px rows whose text starts 8 px further in.
 pub mod tool_window {
     use gpui_kit::{AnyWindowHandle, ElementId, Pixels, TestAppContext, px};
 
@@ -105,7 +105,8 @@ pub mod tool_window {
     pub const UNDER_HEADER: Pixels = px(32. + 1.);
     pub const SIDE: Pixels = px(12.);
     pub const LIST_INSET: Pixels = px(4.);
-    pub const CONTROL_HEIGHT: Pixels = px(24.);
+    /// A text button, as Zed's `ButtonSize::Default`.
+    pub const BUTTON_HEIGHT: Pixels = px(22.);
     pub const ROW_HEIGHT: Pixels = px(24.);
     /// Where a tool window's list starts: under the header, its border and the list's inset.
     pub const LIST_TOP: Pixels = px(32. + 1. + 4.);
@@ -126,7 +127,7 @@ pub mod tool_window {
         assert_eq!(summary.center().y, middle, "summary centred in the header");
         let button = bounds(cx, window, last_button);
         assert_eq!(button.right(), width - SIDE, "last button at the header's right");
-        assert_eq!(button.size.height, CONTROL_HEIGHT);
+        assert_eq!(button.size.height, BUTTON_HEIGHT);
         assert_eq!(button.center().y, middle, "button centred in the header");
         let row = bounds(cx, window, first_row);
         assert_eq!((row.left(), row.top()), (LIST_INSET, LIST_TOP), "first row's corner");

@@ -5,8 +5,8 @@
 //! window as its close button does.
 
 use gpui_kit::base::ObservedElement;
-use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, h_flex, v_flex};
+use gpui_kit::component::button::Button;
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, h_flex, v_flex};
 use gpui_kit::{
     App, Div, ElementId, InteractiveElement as _, ParentElement as _, Pixels, Role, SharedString,
     Stateful, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div, px,
@@ -14,10 +14,10 @@ use gpui_kit::{
 
 /// The key context of a tool window, in which Cancel binds.
 pub(crate) const CONTEXT: &str = "ToolWindow";
-/// The header: a small control with 4 px above and below (`docs/STYLE.md`).
+/// The header, as tall as Zed's panel headers (`docs/STYLE.md`).
 const HEADER_HEIGHT: Pixels = px(32.);
-/// The height of the header's summary: a small control's, so it lines up with the buttons.
-const SUMMARY_HEIGHT: Pixels = px(24.);
+/// The height of the header's summary: a button's, so it lines up with the buttons.
+const SUMMARY_HEIGHT: Pixels = crate::button::HEIGHT;
 /// The space between the header's or status line's text and the window's sides. With the
 /// list's inset and a row's padding, a row's text lines up with it.
 const SIDE: Pixels = px(12.);
@@ -77,19 +77,19 @@ pub(crate) fn header(
     )
 }
 
-/// The header's button that lists again: ghost, as Zed's panel headers draw theirs.
+/// The header's button that lists again.
 pub(crate) fn refresh_button(id: &'static str, disabled: bool) -> Button {
-    Button::new(id).small().ghost().label(crate::strings::REFRESH).disabled(disabled)
+    button(id, crate::strings::REFRESH, disabled)
 }
 
-/// A header button that changes nothing: ghost.
+/// A header button that changes nothing.
 pub(crate) fn button(id: &'static str, label: &'static str, disabled: bool) -> Button {
-    Button::new(id).small().ghost().label(label).disabled(disabled)
+    crate::button::outlined(id, label).disabled(disabled)
 }
 
-/// The header button that writes: the window's one primary button.
+/// The header button that writes: the window's one default action.
 pub(crate) fn write_button(id: &'static str, label: &'static str, disabled: bool) -> Button {
-    Button::new(id).small().primary().label(label).disabled(disabled)
+    crate::button::default_action(id, label).disabled(disabled)
 }
 
 /// The status line under the header: an outcome or an error, muted, wrapping.

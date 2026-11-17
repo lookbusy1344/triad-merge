@@ -14,7 +14,8 @@ Before building or changing a view, find the Zed view that does the same job and
 | A list row, a heading | `ListItem`, `ListHeader`, the git panel's entries |
 | A file's state | `GitStatusIcon` (`crates/git_ui/src/git_ui.rs`), the git panel's `path_formatted` |
 | A menu | `ContextMenu` |
-| A dialog, a prompt | the modals in `crates/ui/src/components/modal.rs` |
+| A dialog, a prompt | the modals in `crates/ui/src/components/modal.rs`, `crates/ui_prompt` |
+| A button | `Button` and `ButtonLike` (`crates/ui/src/components/button/`), the settings window's buttons (`crates/settings_ui`) |
 | The toolbar | the editor's toolbar items, `crates/editor/src/items.rs` |
 
 ## Units
@@ -34,11 +35,12 @@ Zed's scale is 14, 12 and 10 px; triad's chrome takes 12 px. Two settings size t
 
 ## Controls
 
-- Every `Button` and `Input` is `.small()`.
+- A text button is `button::outlined`, after Zed's `Button` at `ButtonSize::Default` in `ButtonStyle::Outlined` with a `LabelSize::Small` label: 22 px tall, 4 px side padding, a 12 px label, a 1 px `input` border over the background, and `input` at half strength on hover. gpui-kit's default variant at `.xsmall()` gives the colours, label and padding; the module sets the height.
+- The button that finishes a dialog or writes from a tool window, which Enter takes in a prompt, is `button::default_action`: the outlined button in the primary colour, as Zed's prompts tint their default action. A dialog or tool window has at most one. A button that only shows something, such as Preview Save, is outlined.
+- An icon button and a toolbar button are `.ghost()` and `.small()`: transparent, with the theme's `accent` on hover, as Zed's `IconButton`s are subtle. Every `Input` is `.small()`.
 - A pill over one end of a moved block is a `move_pill::move_pill`; § Moved blocks gives where it goes.
 - A menu is a `menu_button::MenuButton`: 20 px rows, a 12 px icon, the label and the action's key, in the text size it is given. A row that toggles a state is a checkbox row, with a tick after its label while the state is on. gpui-component's `PopupMenu` has 26 px rows with 14 px text, which triad cannot shrink (`docs/gpui-kit-issues.md`).
-- Toolbar and header buttons are `.ghost()`. A dialog has one `.primary()` button, the one that finishes it; a tool window has at most one, the one that writes, such as absorb's Apply. A button that only shows something, such as Preview Save, stays ghost.
-- Heights: a small control 24 px, a list row 24 px, a tool window header 32 px, a menu row 20 px, a tab 22 px inside a 2 px inset.
+- Heights: a text button 22 px, an icon button or input 24 px, a list row 24 px, a tool window header 32 px, a menu row 20 px, a tab 22 px inside a 2 px inset.
 - Button icons take the button's size.
 - Corners take `theme.radius`. An element inside a rounded one takes the outer radius less the inset.
 
@@ -47,7 +49,7 @@ Zed's scale is 14, 12 and 10 px; triad's chrome takes 12 px. Two settings size t
 The directory, stack, history and absorb windows are built from `tool_window` and `pick_list`, after Zed's git panel. A new window that lists things uses them too.
 
 - **Frame.** `tool_window::frame` fills the window in the theme's background, at 12 px text, and holds the `ToolWindow` key context. Escape in a list and Cancel (⌘W, ⌘Q) close the window through the same check as its close button.
-- **Header.** 32 px tall over a 1 px `border`, 12 px in from each side. At the left, a muted summary that counts what the list holds: `10 files`, `4 commits`. At the right, the buttons, 4 px apart: Refresh first, then the window's own.
+- **Header.** 32 px tall over a 1 px `border`, 12 px in from each side. At the left, a muted summary that counts what the list holds: `10 files`, `4 commits`. At the right, the buttons, 4 px apart: Refresh first, then the window's own; Refresh and a button that only shows something are outlined, the one that writes is the default action.
 - **Status line.** Under the header, an outcome or an error, muted, 12 px in from the sides with 4 px above and below; it wraps.
 - **Lists.** Fill the space under the header, inset 4 px so a selected row's rounded corners show. Two lists side by side, as in absorb, stand on a 1 px `border` between them. The list takes the focus when its window opens: ↑ and ↓ move the selection, Enter opens the selected row, and the selection scrolls into view.
 - **Rows.** `pick_list::row`: 24 px tall, 8 px side padding, so its text lines up with the header's at 12 px. Then, 8 px apart: a status icon, a muted lead such as IDs, the main text, which ends in an ellipsis, and a muted trail such as a state or a count. A heading under which rows are indented is semibold.

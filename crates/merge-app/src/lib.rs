@@ -4,6 +4,7 @@ pub mod about;
 pub mod absorb_window;
 mod assets;
 mod blink;
+mod button;
 mod choice;
 pub mod diff_window;
 pub mod dir_window;

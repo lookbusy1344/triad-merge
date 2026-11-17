@@ -391,6 +391,16 @@ fn the_mark_heads_the_dialog_beside_the_tabs_as_the_about_button(cx: &mut TestAp
 }
 
 #[gpui_kit::test]
+fn start_is_a_text_button_of_zed_s_default_height(cx: &mut TestAppContext) {
+    use crate::common::tool_window::BUTTON_HEIGHT;
+
+    let (window, _) = opened(cx);
+    let mut start = None;
+    act(cx, window, |window, _| start = Some(window.find(START_ID).bounds()));
+    assert_eq!(start.expect("the window ran").size.height, BUTTON_HEIGHT);
+}
+
+#[gpui_kit::test]
 fn a_click_on_the_mark_opens_the_about_window(cx: &mut TestAppContext) {
     use merge_app::open_dialog::MARK_ID;
 

@@ -5,7 +5,7 @@ mod jj {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use crate::common::tool_window::{LIST_INSET, LIST_TOP, ROW_HEIGHT, SIDE};
+    use crate::common::tool_window::{BUTTON_HEIGHT, LIST_INSET, LIST_TOP, ROW_HEIGHT, SIDE};
     use crate::common::{act, bounds, is_selected, label, viewport_width};
     use gpui_kit::test::TestWindowExt;
     use gpui_kit::{AnyWindowHandle, App, Entity, TestAppContext, VisualTestContext};
@@ -249,6 +249,7 @@ mod jj {
         assert_eq!(summary.left(), SIDE);
         let apply = bounds(cx, started.window, APPLY_ID);
         assert_eq!(apply.right(), width - SIDE);
+        assert_eq!(apply.size.height, BUTTON_HEIGHT);
         assert!(bounds(cx, started.window, REFRESH_ID).right() < apply.left());
         assert_eq!((hunk.left(), hunk.top(), hunk.size.height), (LIST_INSET, LIST_TOP, ROW_HEIGHT));
         let commit = bounds(cx, started.window, destination_id(0));
