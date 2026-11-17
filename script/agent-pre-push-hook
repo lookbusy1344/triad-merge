@@ -1,23 +1,157 @@
 #!/usr/bin/env bash
-# Agent pre-tool hook: run script/pre-push before any push.
+# Agent pre-tool hook: run script/pre-push once before a command that pushes.
 #
 # Called by Claude Code (.claude/settings.json). The
 # PreToolUse call arrives as JSON on stdin with the shell command at
 # .tool_input.command; exit 2 blocks the call with stderr as the reason.
 # On success it prints JSON: systemMessage for the user, additionalContext for
 # the agent. script/pre-push itself skips an empty stack.
+#
+# A command pushes when one of its simple commands is a push: jj git push, jj pmain or
+# git push, after any variable assignments and wrappers such as time or gtimeout, or
+# inside sh -c, without a help or dry-run flag. Quoted text, heredoc bodies and comments never count. When git's own
+# pre-push hook is script/pre-push, git runs the check on git push, so this hook leaves
+# a command whose only pushes are git pushes to it. script/test-agent-pre-push-hook
+# checks all of this.
 
 set -euo pipefail
 
 readonly BLOCK_EXIT_CODE=2
 readonly LOG_TAIL_LINES=60
-readonly PUSH_PATTERN='(^|[^[:alnum:]_-])(jj[[:space:]]+git[[:space:]]+push|jj[[:space:]]+pmain|git[[:space:]]+push)([^[:alnum:]_-]|$)'
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly PROJECT_DIR
 
+# Prints `jj` or `git` for each push in the command $1, one per line.
+pushes() {
+    python3 -I - "$1" <<'PYTHON'
+import os
+import re
+import shlex
+import sys
+
+# A heredoc start, `<<WORD`, `<<-'WORD'`, but not a here-string `<<<`.
+HEREDOC = re.compile(r"(?<!<)<<(?!<)(-?)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
+ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*")
+OPERATOR = re.compile(r"[();<>|&]+")
+WRAPPERS = {"time", "command", "exec", "nohup", "env", "sudo"}
+TIMEOUTS = {"timeout", "gtimeout"}
+SHELLS = {"sh", "bash", "zsh"}
+JJ_VALUE_OPTIONS = {"-R", "--repository", "--at-op", "--at-operation", "--color", "--config", "--config-file"}
+GIT_VALUE_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"}
+JJ_PUSH_ALIASES = {"pmain"}
+# Flags with which a push command prints help or reports what it would push.
+JJ_NO_PUSH = {"-h", "--help", "--dry-run"}
+GIT_NO_PUSH = {"-h", "--help", "-n", "--dry-run"}
+
+
+def strip_heredocs(text):
+    kept, pending = [], []
+    for line in text.split("\n"):
+        if pending:
+            strip_tabs, word = pending[0]
+            if (line.lstrip("\t") if strip_tabs else line) == word:
+                pending.pop(0)
+            continue
+        kept.append(line)
+        pending = [(m[1] == "-", m[3]) for m in HEREDOC.finditer(line)]
+    return "\n".join(kept)
+
+
+def words(text):
+    text = strip_heredocs(text).replace("\\\n", " ").replace("\n", " ; ")
+    lexer = shlex.shlex(text, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    return list(lexer)
+
+
+def simple_commands(tokens):
+    command = []
+    for token in tokens:
+        if OPERATOR.fullmatch(token):
+            if command:
+                yield command
+            command = []
+        else:
+            command.append(token)
+    if command:
+        yield command
+
+
+def positionals(args, value_options):
+    skip = False
+    for arg in args:
+        if skip:
+            skip = False
+        elif arg in value_options:
+            skip = True
+        elif not arg.startswith("-"):
+            yield arg
+
+
+def push_kinds(command):
+    rest = iter(command)
+    for word in rest:
+        if ASSIGNMENT.fullmatch(word) or word in WRAPPERS or word.startswith("-"):
+            continue
+        if word in TIMEOUTS:
+            next((w for w in rest if not w.startswith("-")), None)  # the duration
+            continue
+        break
+    else:
+        return []
+    head, args = os.path.basename(word), list(rest)
+    if head in SHELLS and "-c" in args[:-1]:
+        return find(args[args.index("-c") + 1])
+    if head == "jj" and JJ_NO_PUSH.isdisjoint(args):
+        names = list(positionals(args, JJ_VALUE_OPTIONS))
+        if names[:2] == ["git", "push"] or names[:1] and names[0] in JJ_PUSH_ALIASES:
+            return ["jj"]
+    if (
+        head == "git"
+        and GIT_NO_PUSH.isdisjoint(args)
+        and next(positionals(args, GIT_VALUE_OPTIONS), None) == "push"
+    ):
+        return ["git"]
+    return []
+
+
+def find(text):
+    return [kind for command in simple_commands(words(text)) for kind in push_kinds(command)]
+
+
+try:
+    kinds = find(sys.argv[1])
+except ValueError:
+    # Unbalanced quotes: the shell rejects the command, but check rather than guess.
+    kinds = ["jj"]
+print("\n".join(kinds))
+PYTHON
+}
+
+# True when git runs script/pre-push itself on git push.
+git_runs_check() {
+    local hook
+    hook="$(git -C "${PROJECT_DIR}" rev-parse --git-path hooks/pre-push 2> /dev/null)" || return 1
+    [[ "${hook}" == /* ]] || hook="${PROJECT_DIR}/${hook}"
+    [[ -x "${hook}" ]] && cmp -s "${hook}" "${PROJECT_DIR}/script/pre-push"
+}
+
+report() {
+    jq -n --arg message "$1" '{
+        systemMessage: $message,
+        hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $message}
+    }'
+}
+
 command="$(jq -r '.tool_input.command // empty')"
-grep -Eq "${PUSH_PATTERN}" <<< "${command}" || exit 0
+kinds="$(pushes "${command}")"
+[[ -n "${kinds}" ]] || exit 0
+
+if ! grep -qx jj <<< "${kinds}" && git_runs_check; then
+    report "triad pre-push checks left to git's pre-push hook"
+    exit 0
+fi
 
 log="$(mktemp)"
 trap 'rm -f "${log}"' EXIT
@@ -31,9 +165,4 @@ fi
 # grep exits 1 on no match; the no-op path runs no tests.
 checked="$({ grep -E '^==> (Checking|Nothing to check)' "${log}" || true; } | sed 's/^==> //' | paste -sd ';' -)"
 tests="$({ grep -Eo '[0-9]+ tests run: .*' "${log}" || true; } | tail -n 1)"
-message="triad pre-push checks passed: ${checked}${tests:+ (${tests})}"
-
-jq -n --arg message "${message}" '{
-    systemMessage: $message,
-    hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $message}
-}'
+report "triad pre-push checks passed: ${checked}${tests:+ (${tests})}"

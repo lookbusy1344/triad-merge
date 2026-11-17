@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+# test-agent-pre-push-hook — check that script/agent-pre-push-hook runs the push check
+# once for each command that pushes, and never for one that only mentions a push.
+#
+# Each case builds a git repository in a temporary directory, with the hook copied from
+# this checkout and a stub script/pre-push that counts its runs. The hook reads the
+# command as Claude Code sends it, JSON on stdin.
+#
+# Usage: script/test-agent-pre-push-hook
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+readonly HOOK="$ROOT/script/agent-pre-push-hook"
+readonly PASS=0
+readonly BLOCKED=2
+
+work=$(mktemp -d "${TMPDIR:-/tmp}/triad-test-agent-hook.XXXXXX")
+trap 'rm -rf "$work"' EXIT
+
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+
+failures=0
+case_number=0
+
+# A git repository at $1 with the hook and a stub pre-push. The stub appends a line to
+# $1/runs per run and fails when $1/fail exists.
+make_repo() {
+  local repo=$1
+  mkdir -p "$repo/script"
+  cp "$HOOK" "$repo/script/agent-pre-push-hook"
+  cat >"$repo/script/pre-push" <<'EOF'
+#!/usr/bin/env bash
+root=$(cd "$(dirname "$0")/.." && pwd)
+echo run >>"$root/runs"
+echo "==> Checking tip abc stub"
+echo "3 tests run: 3 passed, 0 skipped"
+[[ ! -e "$root/fail" ]]
+EOF
+  chmod +x "$repo/script/pre-push"
+  git -C "$repo" init --quiet
+}
+
+runs() {
+  [[ -e "$1/runs" ]] && wc -l <"$1/runs" | tr -d ' ' || echo 0
+}
+
+# Run the hook in $repo on command $1; expect exit status $2 and $3 runs of the check.
+expect() {
+  local command=$1 status=$2 count=$3
+  local actual=0
+  jq -n --arg c "$command" '{tool_input: {command: $c}}' \
+    | (cd "$repo" && script/agent-pre-push-hook) >"$repo/out" 2>"$repo/err" || actual=$?
+  local got
+  got=$(runs "$repo")
+  rm -f "$repo/runs"
+  if [[ "$actual" != "$status" || "$got" != "$count" ]]; then
+    echo "FAIL: [$command] exit $actual (want $status), checks run $got (want $count)" >&2
+    failures=$((failures + 1))
+  else
+    echo "ok: [$command]"
+  fi
+}
+
+new_repo() {
+  case_number=$((case_number + 1))
+  repo="$work/repo$case_number"
+  make_repo "$repo"
+}
+
+new_repo
+
+# Commands that push.
+expect 'jj git push --bookmark main' "$PASS" 1
+expect 'jj bookmark set main -r @- && jj git push --bookmark main' "$PASS" 1
+expect 'cd /somewhere && jj git push' "$PASS" 1
+expect 'jj --ignore-working-copy git push' "$PASS" 1
+expect 'jj -R /somewhere git push' "$PASS" 1
+expect 'jj pmain' "$PASS" 1
+expect 'git push origin main' "$PASS" 1
+expect 'git -C /somewhere push' "$PASS" 1
+expect 'git -C /tmp/a@b:c push' "$PASS" 1
+expect 'time jj git push' "$PASS" 1
+expect 'FOO=1 git push' "$PASS" 1
+expect 'gtimeout 600 jj git push' "$PASS" 1
+expect "bash -c 'jj git push'" "$PASS" 1
+expect 'jj log; jj git push' "$PASS" 1
+expect 'jj log
+jj git push' "$PASS" 1
+expect 'jj git push && git push' "$PASS" 1
+
+# The message names what the check covered.
+expect 'jj git push' "$PASS" 1
+want='triad pre-push checks passed: Checking tip abc stub (3 tests run: 3 passed, 0 skipped)'
+got=$(jq -r '.hookSpecificOutput.additionalContext' "$repo/out")
+if [[ "$got" != "$want" ]]; then
+  echo "FAIL: message [$got], want [$want]" >&2
+  failures=$((failures + 1))
+fi
+
+# Commands that only mention a push.
+expect 'jj git fetch' "$PASS" 0
+expect 'git log --grep push' "$PASS" 0
+expect 'jj commit -m "docs: say jj git push runs the check"' "$PASS" 0
+expect "rg -n 'git push' AGENTS.md" "$PASS" 0
+expect 'echo jj git push' "$PASS" 0
+expect "python3 - <<'EOF'
+text = '''
+git push
+jj git push
+'''
+EOF
+jj log" "$PASS" 0
+expect 'cat <<EOF >notes.md
+git push origin main
+EOF' "$PASS" 0
+expect 'jj describe -m "fix: run once
+git push"' "$PASS" 0
+expect 'jj git pushx' "$PASS" 0
+expect 'jj git push --help | rg tag' "$PASS" 0
+expect 'jj git push -h' "$PASS" 0
+expect 'jj git push --dry-run' "$PASS" 0
+expect 'git push --help' "$PASS" 0
+expect 'git push -n origin main' "$PASS" 0
+expect 'git push --dry-run' "$PASS" 0
+expect 'jj git push --bookmark help' "$PASS" 1
+
+# A failing check blocks the push and says why.
+touch "$repo/fail"
+expect 'jj git push' "$BLOCKED" 1
+grep -q '^Push blocked: script/pre-push failed' "$repo/err" \
+  || { echo "FAIL: no block reason on stderr" >&2; failures=$((failures + 1)); }
+rm "$repo/fail"
+
+# git's own pre-push hook, when it is triad's, runs the check on git push.
+new_repo
+ln -s ../../script/pre-push "$repo/.git/hooks/pre-push"
+expect 'git push origin main' "$PASS" 0
+expect 'jj git push' "$PASS" 1
+expect 'git push && jj git push' "$PASS" 1
+
+# So does a copy of it.
+new_repo
+cp "$repo/script/pre-push" "$repo/.git/hooks/pre-push"
+expect 'git push origin main' "$PASS" 0
+
+# Another pre-push hook does not.
+new_repo
+printf '#!/bin/sh\nexit 0\n' >"$repo/.git/hooks/pre-push"
+chmod +x "$repo/.git/hooks/pre-push"
+expect 'git push origin main' "$PASS" 1
+
+# Nor does triad's hook when git cannot run it.
+new_repo
+cp "$repo/script/pre-push" "$repo/.git/hooks/pre-push"
+chmod -x "$repo/.git/hooks/pre-push"
+expect 'git push origin main' "$PASS" 1
+
+if [[ "$failures" -gt 0 ]]; then
+  echo "$failures case(s) failed" >&2
+  exit 1
+fi
+echo "all cases passed"

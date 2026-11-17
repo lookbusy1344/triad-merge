@@ -14,7 +14,8 @@
 # the workspace root, it also runs only the tests of the changed crates and the crates that
 # depend on them, `cargo deny` only when a manifest or the lock file changed, and
 # the vendored crate's tests only when vendor/ changed, script/test-pre-push only
-# when script/pre-push or that test changed, script/test-tip only when script/build-id,
+# when script/pre-push or that test changed, script/test-agent-pre-push-hook only when
+# script/agent-pre-push-hook or that test changed, script/test-tip only when script/build-id,
 # script/pre-push or that test changed, and script/test-jj-repos only when script/gen-jj-repo,
 # that test or the directory demo it builds from changed. A vendor/ change also runs
 # the tests of the crates that depend on gpui-kit, through which the vendored crate
@@ -55,6 +56,7 @@ all_tests=true
 deny=true
 vendor=true
 pre_push=true
+agent_hook=true
 tip=true
 jj_repos=true
 crate_dirs=()
@@ -63,6 +65,7 @@ if [[ "${quick}" == true && ${#changed[@]} -gt 0 ]]; then
     deny=false
     vendor=false
     pre_push=false
+    agent_hook=false
     tip=false
     jj_repos=false
     for path in "${changed[@]}"; do
@@ -81,6 +84,10 @@ if [[ "${quick}" == true && ${#changed[@]} -gt 0 ]]; then
                 ;;
             script/test-pre-push)
                 pre_push=true
+                all_tests=true
+                ;;
+            script/agent-pre-push-hook | script/test-agent-pre-push-hook)
+                agent_hook=true
                 all_tests=true
                 ;;
             script/build-id | script/test-tip)
@@ -161,6 +168,7 @@ fi
 [[ "${quick}" == true ]] || run ${test_prefix[@]+"${test_prefix[@]}"} cargo test --doc --workspace
 [[ "${deny}" == true ]] && run cargo deny check
 [[ "${pre_push}" == true ]] && run script/test-pre-push
+[[ "${agent_hook}" == true ]] && run script/test-agent-pre-push-hook
 [[ "${tip}" == true ]] && run script/test-tip
 # Runs the binary that the build, or nextest's build of the integration tests, leaves.
 [[ "${jj_repos}" == true ]] && run script/test-jj-repos

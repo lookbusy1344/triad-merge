@@ -73,13 +73,13 @@ cargo deny check                  # when a manifest, Cargo.lock or deny.toml cha
 
 ## Push
 
-Push only on explicit request. Before `jj git push` or moving a shared bookmark, run `script/pre-push`. It does nothing when there is no unpushed revision. In Claude Code the hook below runs it on the push: never run it by hand first. In a git checkout with git's `pre-push` hook installed, `git push` from Claude Code runs the check twice, once from each hook.
+Push only on explicit request. Before `jj git push` or moving a shared bookmark, run `script/pre-push`. It does nothing when there is no unpushed revision. In Claude Code the hook below runs it on the push: never run it by hand first.
 
 - Default: formats `**/*.rs` outside `vendor/` in the tip (head of the non-empty mutable revisions; a merge counts as non-empty) with `jj fix`, then runs `script/checks` on it with the full suite.
 - `--full`: formats every mutable revision in `::@` and checks each in its own checkout through `jj run`.
 - Plain git: checks `HEAD` (`--full`: each commit in `@{upstream}..HEAD`), without formatting. Install once: `ln -sf ../../script/pre-push .git/hooks/pre-push`.
 
-`script/agent-pre-push-hook` runs the tip check on every `jj git push` and `git push` and blocks the push on failure. Claude Code calls it as a `PreToolUse` hook from `.claude/settings.json`. It checks the tip of `@`, not the pushed bookmark, so push only the bookmark on `@-`, with an empty `@` above it.
+`script/agent-pre-push-hook` runs the tip check once before a command that pushes, and blocks the push on failure. Claude Code calls it as a `PreToolUse` hook from `.claude/settings.json`. A command pushes when one of its simple commands is `jj git push`, `jj pmain` or `git push` without a help or dry-run flag; quoted text, heredoc bodies and comments never count. When git's `pre-push` hook is `script/pre-push`, git runs the check on `git push` and the agent hook leaves it to git. `script/test-agent-pre-push-hook` checks both; `script/checks` runs it when either script changes. It checks the tip of `@`, not the pushed bookmark, so push only the bookmark on `@-`, with an empty `@` above it.
 
 ## Rules
 
@@ -134,6 +134,7 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | Cost of `resolve`'s repository steps on 10k and 100k files (`DESIGN.md` §D5.5) | `cargo bench -p merge-cli --bench resolve` |
 | Measure the running app against spec §9 (`DESIGN.md` §A6.7) | `script/measure-app` (`docs/release-checklist.md`) |
 | Check that `script/pre-push` removes its git clone on every exit; `script/checks` runs it when either script changes | `script/test-pre-push` |
+| Check that `script/agent-pre-push-hook` runs the push check once per push and never for a command that only mentions one; `script/checks` runs it when either script changes | `script/test-agent-pre-push-hook` |
 | Check the revision `script/build-id` names and `script/pre-push` checks, merges included; `script/checks` runs it when one of the three changes | `script/test-tip` |
 | Linux test machine in OrbStack (`DESIGN.md` §E7.1) | `script/linux/run image` once; then `script/linux/run cargo build -p triad-merge`, `script/linux/run cargo nextest run --workspace --profile linux-emulated`, `script/linux/run script/linux/smoke wayland` or `x11` |
 | Linux CI locally (needs OrbStack running) | `act workflow_dispatch -W .github/workflows/<triad\|bench\|audit>.yml [-j <job>] -P ubuntu-latest=catthehacker/ubuntu:act-latest --container-architecture linux/arm64`; `triad.yml` runs only its Linux matrix entry under act. act runs as root, so the four tests of unreadable or unwritable paths fail there; GitHub's runners do not run as root |
