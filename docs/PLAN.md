@@ -20,6 +20,7 @@ As of 2026-11-17.
 | M7 syntax highlighting | Done: Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS | F |
 | p4merge parity | Done | E |
 | Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; §G6 done: the files that differ between two directories, or between a revision and the working copy (`diff`, `diff --rev`), in the directory window and printed by `diff --inspect`, and from `jj diff --tool` and `git difftool -d`, with renames and copies paired as jj pairs them; text that is not UTF-8 read and saved as Windows-1252 (§G17); invisible characters drawn as code points and odd spaces shaded in every pane, and escaped in terminal output (§A6.8); moved and duplicated blocks in the merge window and `inspect`, with a suggestion to drop a duplicate (§G16), done; the rest open | G |
+| Look after Zed (`docs/STYLE.md`) | Chrome in the UI font and the Zed status bar done; Go to Line and Find as Zed surfaces, the prompt's spacing and shadow, the gutter, current-conflict outline and ruler, and a merged title bar open | §2 |
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
 | jj-native features | Done: conflicts across a stack (`stack`, `resolve -r`), operation-log history (`history`, `diff --op`) and absorb by hunk (`absorb`); the stack window, with a preview of a save's effect on the descendants and a confirmation before a save changes them; the history window; the absorb window, by hunk; these windows and the directory window share one frame after Zed's panels (`docs/STYLE.md`): a header with a count and the buttons, status icons with tooltips that name each state and file-name-first paths, keys for the lists, and Escape and Cancel to close; the conflict badge names the sides a conflict keeps; absorb, `resolve -r` and the default revset aliases checked against jj's CLI (§I5); `stack`, `resolve -r`, `history`, `absorb` and a three-sided save checked through the built binary in scenario repositories (`script/test-jj-repos`) | I |
 
@@ -33,12 +34,13 @@ Build profiles (root `Cargo.toml`): `release` aborts on panic and strips symbols
 
 In order. Each is one or more commits.
 
-1. **Close M3.** Skipped for now by the owner. The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
-2. **Screen-reader support** (part J). Skipped for now by the owner: live status, conflict regions, scrolling the row table, in the order of §J7.
-3. **Review and diff features** (part G): §G7–§G14.
-4. **More grammars,** one commit each: C, C++, Java and Kotlin; then Markdown; then Bash, Ruby, PHP and SQL.
-5. **M4b** (§3) once the owner has the machines and the certificate.
-6. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
+1. **Look after Zed,** one commit each: Go to Line and Find as Zed's floating and docked surfaces, with a § Elevation in `docs/STYLE.md`; the prompt at STYLE.md's 12 px padding and 12 px text, with the popover shadow; the gutter marks as tone bars with muted line numbers, a 1 px current-conflict outline and a fainter ruler (spec §5); the title bar merged with the toolbar.
+2. **Close M3.** Skipped for now by the owner. The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
+3. **Screen-reader support** (part J). Skipped for now by the owner: live status, conflict regions, scrolling the row table, in the order of §J7.
+4. **Review and diff features** (part G): §G7–§G14.
+5. **More grammars,** one commit each: C, C++, Java and Kotlin; then Markdown; then Bash, Ruby, PHP and SQL.
+6. **M4b** (§3) once the owner has the machines and the certificate.
+7. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
 
 ## 3. Outstanding work
 

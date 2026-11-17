@@ -32,7 +32,7 @@ One rem is the theme's `font_size`, 16 px; gpui-component's `Root` sets it on ev
 | Toolbar labels, the conflict badge, and the menus the toolbar opens | the `toolbar-font-size` setting, 8.4 by default | `Typography::toolbar_size` |
 | Editor and pane text | the `font-size` setting, 10 by default (spec §6.4) | `Typography` |
 
-Zed's scale is 14, 12 and 10 px; triad's chrome takes 12 px. Two settings size text: `font-size` the editors and panes, `toolbar-font-size` the toolbar, its badge and its menus, which take one value so they change together. Other chrome sizes are constants. Secondary text, such as field labels, takes `muted_foreground`. Text is normal weight. Semibold marks a heading: a pane's heading, a prompt's message, a list's group heading. Italic marks deletion notes and spacer notes.
+Chrome takes the theme's UI font, as Zed's does: the toolbar, the headings, the status bar, the dialogs and the tool windows. The panes and editors take the `font` setting, else the theme's monospace font (`Typography::editor_font`); so do commit IDs. Zed's scale is 14, 12 and 10 px; triad's chrome takes 12 px. Two settings size text: `font-size` the editors and panes, `toolbar-font-size` the toolbar, its badge and its menus, which take one value so they change together. Other chrome sizes are constants. Secondary text, such as field labels, takes `muted_foreground`. Text is normal weight. Semibold marks a heading: a pane's heading, a prompt's message, a list's group heading. Italic marks deletion notes and spacer notes.
 
 ## Controls
 
@@ -61,6 +61,10 @@ The directory, stack, history and absorb windows are built from `tool_window` an
 - **Status icons.** 12 px, Zed's squares in the theme's status colours: added `SquarePlus` in `success`, modified `SquareDot` in `warning`, renamed `SquareArrowRight` in `info`, copied as added, since Zed's git panel has no copy state, deleted `SquareMinus` in `danger`, conflicted `TriangleAlert` in `danger`. The row's accessible name says the state in words.
 - **Footer.** A result that belongs to the whole window, such as Preview Save's, sits under the lists over a 1 px `border`, laid out as the status line.
 - **Empty list.** One muted line where the first row would be: `No files differ.`
+
+## Status bar
+
+The merge and diff windows end in `status_bar::bar`, after Zed's `StatusBar`: 24 px tall under a 1 px `border` outside its height, across the window, on `secondary`. Its text is 12 px on 16 px lines in the UI font, muted, 8 px in from the sides, its items 8 px apart. An item that warns, such as mixed line endings, takes its own colour.
 
 ## Spacing
 

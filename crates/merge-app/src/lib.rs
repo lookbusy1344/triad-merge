@@ -39,6 +39,7 @@ pub mod settings_banner;
 mod settings_file;
 mod sideways;
 pub mod stack_window;
+mod status_bar;
 mod strings;
 mod syntax;
 mod syntax_colours;
@@ -138,6 +139,12 @@ impl Typography {
     #[must_use]
     pub fn line_height(&self) -> Pixels {
         px((f32::from(self.size) * self.spacing).round())
+    }
+
+    /// The family of the panes' and editors' text: the `font` setting, else the theme's
+    /// monospace font. Chrome takes the theme's UI font (`docs/STYLE.md` § Type).
+    pub(crate) fn editor_font(&self, theme: &gpui_kit::component::Theme) -> SharedString {
+        self.font.clone().unwrap_or_else(|| theme.mono_font_family.clone())
     }
 
     /// The editors' tab size: stops every [`Self::tab_width`] spaces, and the Tab key types
@@ -333,4 +340,26 @@ pub(crate) fn menus(ticks: ViewTicks) -> Vec<Menu> {
             .flatten(),
         ),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui_kit::component::Theme;
+
+    use super::*;
+
+    fn theme() -> Theme {
+        Theme { font_family: "UI".into(), mono_font_family: "Mono".into(), ..Theme::default() }
+    }
+
+    #[test]
+    fn the_editors_take_the_monospace_font_without_a_setting() {
+        assert_eq!(Typography::default().editor_font(&theme()), SharedString::from("Mono"));
+    }
+
+    #[test]
+    fn the_font_setting_names_the_editors_font() {
+        let typography = Typography { font: Some("Set".into()), ..Typography::default() };
+        assert_eq!(typography.editor_font(&theme()), SharedString::from("Set"));
+    }
 }

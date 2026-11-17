@@ -2,10 +2,10 @@
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::{Selectable as _, Sizable as _, h_flex};
+use gpui_kit::component::{Selectable as _, Sizable as _, Theme, h_flex};
 use gpui_kit::{
     Action, AnyElement, ClickEvent, Div, ElementId, InteractiveElement as _, IntoElement,
-    ParentElement, Pixels, Role, Stateful, StatefulInteractiveElement as _, Styled as _,
+    ParentElement, Pixels, Role, Stateful, StatefulInteractiveElement as _, Styled,
     TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px,
 };
 use merge_core::merge3::{LEFT, RIGHT, Source};
@@ -220,13 +220,13 @@ pub(crate) fn bar(
     label: &'static str,
     groups: &[&[Control]],
     context: &'static str,
-    dark: bool,
+    theme: &Theme,
     labels: Labels,
     text_size: Pixels,
     pressed: &[Tool],
-) -> impl IntoElement + ParentElement + use<> {
+) -> impl IntoElement + ParentElement + Styled + use<> {
     // Linux and Windows show the mark in the title bar.
-    let mark = (!menu_bar::IN_WINDOW).then(|| mark(dark));
+    let mark = (!menu_bar::IN_WINDOW).then(|| mark(theme.is_dark()));
     h_flex()
         .id(TOOLBAR_ID)
         .test_support()
@@ -235,6 +235,7 @@ pub(crate) fn bar(
         .w_full()
         .px_2()
         .gap_4()
+        .font_family(theme.font_family.clone())
         .children(mark)
         .children(groups.iter().map(|group| {
             h_flex().gap_1().children(
@@ -423,6 +424,14 @@ mod tests {
 
     /// The number of `Tool` variants.
     const TOOL_COUNT: usize = 17;
+
+    #[test]
+    fn the_toolbar_takes_the_ui_font() {
+        let theme =
+            Theme { font_family: "UI".into(), mono_font_family: "Mono".into(), ..Theme::default() };
+        let mut bar = bar("Toolbar", &DIFF_GROUPS, "Diff", &theme, Labels::Shown, px(8.4), &[]);
+        assert_eq!(bar.style().text.font_family, Some("UI".into()));
+    }
 
     #[test]
     fn every_tool_has_its_own_icon() {

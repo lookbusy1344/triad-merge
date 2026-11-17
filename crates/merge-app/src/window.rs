@@ -93,6 +93,7 @@ use crate::ruler;
 use crate::scrollbars;
 use crate::settings_banner::{self, render as render_banner};
 use crate::sideways;
+use crate::status_bar;
 use crate::strings::prompt;
 use crate::syntax::{self, Colouring, InputSyntax};
 use crate::tones::{Palette, Tones};
@@ -197,6 +198,8 @@ pub const RULER_ID: &str = "ruler";
 pub const ROWS_ID: &str = "rows";
 pub const INPUT_LINES_ID: &str = "input-lines";
 pub const STATUS_ID: &str = "status";
+/// The status bar's main text.
+pub const STATUS_TEXT_ID: &str = "status-text";
 pub const TOOLBAR_ID: &str = "toolbar";
 /// The toolbar's count of unresolved conflicts.
 pub const CONFLICT_BADGE_ID: &str = "conflict-badge";
@@ -1330,9 +1333,7 @@ impl MergeWindow {
     /// soft wrap is on, and hold their sideways scroll within those widths. Runs in prepaint,
     /// after the rows lay out.
     fn fit_rows(&mut self, window: &mut Window, cx: &App) {
-        let family =
-            self.typography.font.clone().unwrap_or_else(|| cx.theme().mono_font_family.clone());
-        let font = gpui_kit::font(family);
+        let font = gpui_kit::font(self.typography.editor_font(cx.theme()));
         self.scroll.sideways_mut().measure(&font, self.typography.size, window);
         let old = self.scroll.heights().clone();
         let changed = if self.scroll.wrap().wraps() {
@@ -2716,7 +2717,7 @@ impl MergeWindow {
                                     .map_or_default(|view| view.read(cx).menu_choices(cx));
                                 choice_menu(menu, &items)
                             })
-                            .when_some(self.typography.font.clone(), gpui_kit::Styled::font_family)
+                            .font_family(self.typography.editor_font(cx.theme()))
                             .text_size(self.typography.size)
                             .line_height(gpui_kit::relative(self.typography.spacing))
                             .bordered(false)
@@ -2788,7 +2789,7 @@ impl MergeWindow {
         window: &Window,
         cx: &App,
     ) -> impl IntoElement + use<> {
-        let (tones, dark) = (self.tones(cx), cx.theme().is_dark());
+        let tones = self.tones(cx);
         let text = strings::conflict_badge(&self.counts, self.conflict_number, self.conflict_sides);
         let badge = text.map(|text| {
             let text = SharedString::from(text);
@@ -2813,7 +2814,7 @@ impl MergeWindow {
             strings::TOOLBAR,
             &GROUPS,
             WINDOW_CONTEXT,
-            dark,
+            cx.theme(),
             Labels::for_width(
                 window.viewport_size().width,
                 toolbar::labels_min_width(self.typography.toolbar_size, self.badge(), window),
@@ -2929,6 +2930,7 @@ impl MergeWindow {
             .on_action(cx.listener(Self::copy_input))
             .on_action(cx.listener(Self::select_all_input))
             .on_scroll(cx.listener(Self::wheel_sideways))
+            .font_family(self.typography.editor_font(cx.theme()))
             .child({
                 // One item per display row: an aligned row takes several while it wraps.
                 let mut list = uniform_list(
@@ -3905,18 +3907,9 @@ fn region_decorations(bands: &[Band], tones: &Tones) -> Vec<RangeDecoration> {
 
 impl MergeWindow {
     /// The status bar: the counts, the copy note and the mixed-endings warning.
-    fn render_status(&self, mixed_tone: Hsla, secondary: Hsla, muted: Hsla) -> impl IntoElement {
-        div()
-            .id(STATUS_ID)
-            .test_support()
-            .role(Role::Status)
-            .aria_label(self.status.clone())
-            .flex()
-            .gap_2()
-            .px_2()
-            .bg(secondary)
-            .text_color(muted)
-            .child(self.status.clone())
+    fn render_status(&self, mixed_tone: Hsla, theme: &Theme) -> impl IntoElement + use<> {
+        status_bar::bar(STATUS_ID, self.status.clone(), theme)
+            .child(status_bar::item(STATUS_TEXT_ID, self.status.clone()))
             .children(self.copy_note.clone().map(|note| {
                 div()
                     .id(COPY_NOTE_ID)
@@ -3953,8 +3946,8 @@ impl Render for MergeWindow {
         let mixed_tone = self.tones(cx).mark(Tone::Conflict);
         let controls = self.input_controls(cx);
         let theme = cx.theme();
-        let (mono, border, secondary, muted) =
-            (theme.mono_font_family.clone(), theme.border, theme.secondary, theme.muted_foreground);
+        let (ui_font, border) = (theme.font_family.clone(), theme.border);
+        let status = self.render_status(mixed_tone, theme);
         let (input_headings, result_heading) = self.render_headings(theme, controls);
         Self::on_merge_actions(v_flex(), cx)
             .size_full()
@@ -3994,7 +3987,7 @@ impl Render for MergeWindow {
             .on_action(cx.listener(Self::save_and_exit))
             .on_action(cx.listener(Self::save_copy_as))
             .on_action(cx.listener(|this, _: &Cancel, window, cx| this.cancel(window, cx)))
-            .font_family(self.typography.font.clone().unwrap_or(mono))
+            .font_family(ui_font)
             .text_size(self.typography.size)
             .children(crate::menu_bar::render(self.menu_bar.bar(), cx.theme().is_dark()))
             .child(self.render_toolbar(ticks, window, cx))
@@ -4027,7 +4020,7 @@ impl Render for MergeWindow {
                 d.child(self.go_to_line.render(self.session.document().line_count(), close))
             })
             .child(self.render_result(cx))
-            .child(self.render_status(mixed_tone, secondary, muted))
+            .child(status)
     }
 }
 

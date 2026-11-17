@@ -63,6 +63,7 @@ use crate::recorder::Recorded;
 use crate::ruler;
 use crate::scrollbars;
 use crate::settings_banner::{self, render as render_banner};
+use crate::status_bar;
 use crate::strings::{self, prompt};
 use crate::syntax::Colouring;
 use crate::tones::{Palette, Tones};
@@ -102,6 +103,8 @@ pub(crate) const PANE_CONTEXT: &str = "DiffPane";
 pub const BANNER_ID: &str = "banner";
 /// The status bar's element id.
 pub const STATUS_ID: &str = "diff-status";
+/// The status bar's text.
+pub const STATUS_TEXT_ID: &str = "diff-status-text";
 /// The overview ruler beside the right pane.
 pub const DIFF_RULER_ID: &str = "diff-ruler";
 
@@ -1962,7 +1965,7 @@ impl DiffWindow {
                                 &pane.origin.name(),
                             ))
                             .readonly(pane.read_only)
-                            .when_some(self.typography.font.clone(), gpui_kit::Styled::font_family)
+                            .font_family(self.typography.editor_font(cx.theme()))
                             .text_size(self.typography.size)
                             .line_height(gpui_kit::relative(self.typography.spacing))
                             .bordered(false)
@@ -2229,13 +2232,10 @@ impl Render for DiffWindow {
         let ticks = self.view_ticks();
         self.menu_bar.show(ticks, window, cx);
         let theme = cx.theme();
-        let (mono, secondary, muted, warning, warning_foreground) = (
-            theme.mono_font_family.clone(),
-            theme.secondary,
-            theme.muted_foreground,
-            theme.warning,
-            theme.warning_foreground,
-        );
+        let (ui_font, warning, warning_foreground) =
+            (theme.font_family.clone(), theme.warning, theme.warning_foreground);
+        let status = status_bar::bar(STATUS_ID, self.status.clone(), theme)
+            .child(status_bar::item(STATUS_TEXT_ID, self.status.clone()));
         Self::on_go_actions(self.on_view_actions(v_flex(), cx), cx)
             .size_full()
             .key_context(DIFF_CONTEXT)
@@ -2246,14 +2246,14 @@ impl Render for DiffWindow {
                 cx.listener(|this, _: &Save, window, cx| this.save(AfterSave::Stay, window, cx)),
             )
             .on_action(cx.listener(|this, _: &Cancel, window, cx| this.close(window, cx)))
-            .font_family(self.typography.font.clone().unwrap_or(mono))
+            .font_family(ui_font)
             .text_size(self.typography.size)
             .children(crate::menu_bar::render(self.menu_bar.bar(), cx.theme().is_dark()))
             .child(toolbar::bar(
                 strings::DIFF_TOOLBAR,
                 &DIFF_GROUPS,
                 DIFF_CONTEXT,
-                cx.theme().is_dark(),
+                cx.theme(),
                 Labels::Shown,
                 self.typography.toolbar_size,
                 &toolbar::views_on(ticks).collect::<Vec<_>>(),
@@ -2312,17 +2312,7 @@ impl Render for DiffWindow {
                     .child(self.render_pane(Side::Right, cx))
                     .child(self.render_ruler(cx)),
             )
-            .child(
-                div()
-                    .id(STATUS_ID)
-                    .test_support()
-                    .role(Role::Status)
-                    .aria_label(self.status.clone())
-                    .px_2()
-                    .bg(secondary)
-                    .text_color(muted)
-                    .child(self.status.clone()),
-            )
+            .child(status)
     }
 }
 
