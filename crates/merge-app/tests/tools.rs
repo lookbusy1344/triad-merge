@@ -64,7 +64,7 @@ fn numbered() -> MergeDocument {
     doc(&text, &text, &text)
 }
 
-fn in_result(
+pub(crate) fn in_result(
     cx: &mut TestAppContext,
     doc: MergeDocument,
 ) -> (AnyWindowHandle, Entity<MergeWindow>) {
@@ -606,7 +606,7 @@ fn the_trigger_closes_an_open_menu(cx: &mut TestAppContext) {
 }
 
 /// Whether `tool` shows its text label.
-fn label_shown(cx: &mut TestAppContext, window: AnyWindowHandle, tool: Tool) -> bool {
+pub(crate) fn label_shown(cx: &mut TestAppContext, window: AnyWindowHandle, tool: Tool) -> bool {
     shown(cx, window, tool.label_id())
 }
 
@@ -657,7 +657,7 @@ fn only_the_choice_tools_show_labels(cx: &mut TestAppContext) {
 }
 
 /// Twelve conflicts, so the badge reads its longest: `Conflict 10 of 12 · 12 unresolved`.
-fn twelve_conflicts() -> MergeDocument {
+pub(crate) fn twelve_conflicts() -> MergeDocument {
     const CONFLICTS: usize = 12;
     let (mut base, mut left, mut right) = (String::new(), String::new(), String::new());
     for n in 0..CONFLICTS {
@@ -673,7 +673,7 @@ const BAR_PADDING: gpui_kit::Pixels = gpui_kit::px(8.);
 
 /// Whether every tool and the badge lie inside the toolbar's padding and the window, in order,
 /// without overlap. A toolbar wider than its window grows past the window's edge.
-fn tools_fit(cx: &mut TestAppContext, window: AnyWindowHandle) -> bool {
+pub(crate) fn tools_fit(cx: &mut TestAppContext, window: AnyWindowHandle) -> bool {
     let mut fits = false;
     act(cx, window, |window, _| {
         let bar = window.find(TOOLBAR_ID).bounds();
@@ -685,14 +685,14 @@ fn tools_fit(cx: &mut TestAppContext, window: AnyWindowHandle) -> bool {
     fits
 }
 
-fn resize(cx: &mut TestAppContext, window: AnyWindowHandle, width: gpui_kit::Pixels) {
+pub(crate) fn resize(cx: &mut TestAppContext, window: AnyWindowHandle, width: gpui_kit::Pixels) {
     cx.simulate_window_resize(window, gpui_kit::size(width, WINDOW_TEST_HEIGHT));
     act(cx, window, TestWindowExt::render_frame);
 }
 
 const WINDOW_TEST_HEIGHT: gpui_kit::Pixels = gpui_kit::px(600.);
 /// Next Conflict presses from the first conflict, which holds the caret, to the tenth.
-const TO_CONFLICT_TEN: usize = 9;
+pub(crate) const TO_CONFLICT_TEN: usize = 9;
 
 #[gpui_kit::test]
 fn the_labelled_toolbar_fits_from_its_minimum_width(cx: &mut TestAppContext) {
@@ -787,7 +787,7 @@ fn a_narrower_window_drops_every_label_and_the_tools_fit(cx: &mut TestAppContext
 /// The largest toolbar text the `toolbar-font-size` setting takes (spec §6.4).
 const LARGE_TOOLBAR_TEXT: gpui_kit::Pixels = gpui_kit::px(12.);
 /// The default toolbar text (spec §6.4).
-const DEFAULT_TOOLBAR_TEXT: gpui_kit::Pixels = gpui_kit::px(8.4);
+pub(crate) const DEFAULT_TOOLBAR_TEXT: gpui_kit::Pixels = gpui_kit::px(8.4);
 /// The conflict badge's padding, both sides (`docs/STYLE.md`).
 const BADGE_PADDING: gpui_kit::Pixels = gpui_kit::px(16.);
 /// Rounding to the pixel grid moves a measured width by at most this.

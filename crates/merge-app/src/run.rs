@@ -23,7 +23,6 @@ use crate::assets::AppAssets;
 use crate::diff_window::{self, DiffFile, DiffLookup, DiffSettings, Origin};
 use crate::dir_window::{self, DirStart, Source};
 use crate::history_window::{self, HistoryStart};
-use crate::i18n::{self, Locale};
 use crate::measure::{self, Measure};
 use crate::resolve_queue::{self, Queue};
 use crate::stack_window::{self, StackStart};
@@ -43,7 +42,7 @@ pub fn run(form: WindowForm) -> ExitCode {
     let started = Instant::now();
     let WindowForm { window, settings: mut stored, settings_errors: errors, cwd, repo } = form;
     let system = sys_locale::get_locale();
-    i18n::set_locale(Locale::choose(stored.ui_language, system.as_deref()));
+    crate::set_language(stored.ui_language, system.as_deref());
     let bindings = std::mem::take(&mut stored.key_bindings);
     let base = WindowSettings { cwd: cwd.clone(), ..window_settings(&stored) };
     let dir = cwd.as_deref();

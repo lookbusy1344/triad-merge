@@ -199,7 +199,8 @@ pub(crate) const DIFF_GROUPS: [&[Control]; 4] = [
 /// The narrowest window whose merge toolbar shows its labels in text of `text_size` with
 /// `badge`: [`LABELS_MIN_WIDTH`], less the English labels' and reference badge's text at the
 /// default size, plus the labels' and `badge`'s reference text in the run's language at
-/// `text_size`. The buttons, gaps and padding stay the same.
+/// `text_size`, rounded up to a whole pixel, as a window's width is. The buttons, gaps and
+/// padding stay the same.
 #[must_use]
 pub fn labels_min_width(text_size: Pixels, badge: Badge, window: &Window) -> Pixels {
     let style = window.text_style();
@@ -215,8 +216,9 @@ pub fn labels_min_width(text_size: Pixels, badge: Badge, window: &Window) -> Pix
             })
             .fold(Pixels::ZERO, |total, width| total + width)
     };
-    LABELS_MIN_WIDTH + width(i18n::current(), badge, text_size)
-        - width(Locale::En, Badge::Counts, crate::TOOLBAR_FONT_SIZE)
+    (LABELS_MIN_WIDTH + width(i18n::current(), badge, text_size)
+        - width(Locale::En, Badge::Counts, crate::TOOLBAR_FONT_SIZE))
+    .ceil()
 }
 
 /// Every tool `groups` runs, in order.

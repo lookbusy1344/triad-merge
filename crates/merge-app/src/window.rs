@@ -1138,6 +1138,19 @@ impl MergeWindow {
         self.headings.iter().map(|heading| &heading.title)
     }
 
+    /// The result heading's role chip, in capitals: none for a heading without one.
+    #[must_use]
+    pub fn result_role(&self) -> Option<&SharedString> {
+        self.result_heading.role.as_ref()
+    }
+
+    /// The role chip of `pane`'s heading, in capitals: none for a pane the window lacks or
+    /// a heading without a chip.
+    #[must_use]
+    pub fn heading_role(&self, pane: usize) -> Option<&SharedString> {
+        self.headings.get(pane)?.role.as_ref()
+    }
+
     /// The result pane's title.
     #[must_use]
     pub fn result_title(&self) -> &SharedString {
