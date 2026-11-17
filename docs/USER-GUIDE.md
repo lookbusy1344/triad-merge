@@ -180,13 +180,13 @@ f09f484b2665 2026-11-13T15:35:02+00:00 add workspace 'default' (absent)
 jj records conflicts in commits, so a rebase never stops halfway. triad resolves them where they sit, without `jj edit`.
 
 ```sh
-triad-merge stack                     # a window of the conflicted mutable commits, parents first
+triad-merge stack                     # a window of the conflicted mutable commits, newest first
 triad-merge stack 'trunk()..@'        # any revset
 triad-merge stack --list              # print the list instead
 triad-merge resolve src/lib.rs -r xyz # resolve in commit xyz; @ stays where it is
 ```
 
-`stack` opens a window that lists each commit's change, commit and summary, then its conflicted paths. `(inherited)` marks a path whose parent holds a conflict there too: resolve the parent first and the child often clears with it. Click a path, or select it with ↑ and ↓ and press Enter, to open its conflict in the merge window, as `resolve -r` does. One merge window is open at a time. Each save lists the commits again and says what it did. With a merge window open, Preview Save shows what saving its result would do to each descendant's conflicts. Like any jj command it snapshots the working copy first; it changes nothing else. Closing the stack window, or Escape or ⌘W, ends the run: 0 when no conflicted commit is left, 1 otherwise. With nothing conflicted, `stack` opens no window and exits 0.
+`stack` opens a window that lists each commit's change, commit and summary, then its conflicted paths. `(inherited)` marks a path whose parent holds a conflict there too: resolve the parent, listed below it, first and the child often clears with it. Click a path, or select it with ↑ and ↓ and press Enter, to open its conflict in the merge window, as `resolve -r` does. One merge window is open at a time. Each save lists the commits again and says what it did. With a merge window open, Preview Save shows what saving its result would do to each descendant's conflicts. Like any jj command it snapshots the working copy first; it changes nothing else. Closing the stack window, or Escape or ⌘W, ends the run: 0 when no conflicted commit is left, 1 otherwise. With nothing conflicted, `stack` opens no window and exits 0.
 
 `stack --list` prints the same list and exits the same way.
 

@@ -38,7 +38,7 @@ pub fn open(
     Ok(JjRepository::discover(&root)?.with_config(config))
 }
 
-/// The conflicted commits `revset` names in the jj repository holding `cwd`, parents first
+/// The conflicted commits `revset` names in the jj repository holding `cwd`, children first
 /// (`stack`); without a revset, the mutable ones.
 ///
 /// # Errors

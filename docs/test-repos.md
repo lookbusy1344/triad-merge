@@ -44,7 +44,7 @@ Bookmarks name every commit but `@`. In each repository, `jj log` shows the hist
 
 `stack-1` to `stack-3` were written on `base` and rebased onto `left`, so `stack-1` conflicts with `left` at a3, and `stack-3` at b5. Try:
 
-- `triad-merge stack`: the window lists the four commits, parents first, with `(inherited)` on each path a parent holds conflicted too. Open `a.txt` under `stack-1`, pick left and use Preview Save: `stack-2` loses its conflict, `stack-3` and `@` keep only `b.txt`. Save & Exit asks first, since the save changes descendants.
+- `triad-merge stack`: the window lists the four commits, newest first as `jj log` shows them, with `(inherited)` on each path a parent holds conflicted too. Open `a.txt` under `stack-1`, pick left and use Preview Save: `stack-2` loses its conflict, `stack-3` and `@` keep only `b.txt`. Save & Exit asks first, since the save changes descendants.
 - `triad-merge resolve a.txt -r stack-1`: the same from the command line.
 - `triad-merge resolve a.txt -r stack-1 --headless --dry-run`: changes nothing.
 - After each write, `jj log`, `jj op log` and `jj st`: jj reads what triad wrote without complaint, and `jj undo` reverts it.

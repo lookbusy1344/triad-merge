@@ -16,7 +16,7 @@ use crate::ExitCode;
 /// What `stack` prints when no commit is conflicted.
 pub const NO_CONFLICTED_COMMITS: &str = "no conflicted commits\n";
 
-/// `stack`'s report: each commit, parents first, with its change, commit and summary on one
+/// `stack`'s report: each commit, children first, with its change, commit and summary on one
 /// line and its conflicted paths below; or as JSON. 0 when nothing is conflicted, else 1.
 ///
 /// # Errors

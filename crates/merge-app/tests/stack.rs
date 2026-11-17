@@ -21,6 +21,8 @@ mod jj {
 
     const SAVE: &str = "Save";
     const SHORT: usize = 8;
+    /// `merge`'s place in the list: the oldest of three commits, listed last.
+    const MERGE: usize = 2;
 
     fn short(id: &str) -> &str {
         &id[..SHORT]
@@ -118,7 +120,7 @@ mod jj {
     }
 
     #[gpui_kit::test]
-    fn the_window_lists_the_conflicted_commits_parents_first(cx: &mut TestAppContext) {
+    fn the_window_lists_the_conflicted_commits_newest_first(cx: &mut TestAppContext) {
         let (fixture, merge, child) = stacked();
         let wc = fixture.working_copy_commit();
         let started = start(cx, &fixture);
@@ -126,9 +128,9 @@ mod jj {
         assert_eq!(
             listed(cx, &started.view),
             [
-                (short(&merge.change_id).to_owned(), a(false)),
-                (short(&child.change_id).to_owned(), a(true)),
                 (short(&wc.change_id).to_owned(), a(true)),
+                (short(&child.change_id).to_owned(), a(true)),
+                (short(&merge.change_id).to_owned(), a(false)),
             ]
         );
         assert_eq!(merge_windows(cx), []);
@@ -138,7 +140,7 @@ mod jj {
     fn a_path_opens_its_conflict_and_a_save_lists_the_commits_again(cx: &mut TestAppContext) {
         let (fixture, merge, _) = stacked();
         let started = start(cx, &fixture);
-        click(cx, started.window, path_id(0, 0));
+        click(cx, started.window, path_id(MERGE, 0));
         let [merging] = merge_windows(cx)[..] else { panic!("one merge window") };
         press(cx, merging, "secondary-alt-down");
         press(cx, merging, "secondary-1");
@@ -188,7 +190,7 @@ mod jj {
         let (fixture, merge, child) = stacked();
         let wc = fixture.working_copy_commit();
         let started = start(cx, &fixture);
-        click(cx, started.window, path_id(0, 0));
+        click(cx, started.window, path_id(MERGE, 0));
         let [merging] = merge_windows(cx)[..] else { panic!("one merge window") };
         press(cx, merging, "secondary-alt-down");
         press(cx, merging, "secondary-1");
@@ -264,7 +266,7 @@ mod jj {
     fn closing_the_window_after_every_conflict_resolves_ends_with_0(cx: &mut TestAppContext) {
         let (fixture, ..) = stacked();
         let started = start(cx, &fixture);
-        click(cx, started.window, path_id(0, 0));
+        click(cx, started.window, path_id(MERGE, 0));
         let [merging] = merge_windows(cx)[..] else { panic!("one merge window") };
         press(cx, merging, "secondary-alt-down");
         press(cx, merging, "secondary-1");

@@ -88,16 +88,16 @@ fn described(fixture: &Fixture, description: &str) -> Committed {
 }
 
 #[test]
-fn the_stack_lists_conflicted_commits_parents_first_marking_inherited_paths() {
+fn the_stack_lists_conflicted_commits_newest_first_marking_inherited_paths() {
     for (Stack { fixture, merge, child, .. }, store) in both_stores() {
         let wc = fixture.working_copy_commit();
         for revset in [Some("conflicts()"), None] {
             let listed = open(&fixture).stack(revset).expect("the stack is listed");
             let ids: Vec<&str> = listed.iter().map(|c| c.id.as_str()).collect();
-            assert_eq!(ids, [&merge.commit, &child.commit, &wc.commit], "{store} {revset:?}");
-            assert_eq!(listed[0].paths, [path("a.txt", false)], "{store}");
+            assert_eq!(ids, [&wc.commit, &child.commit, &merge.commit], "{store} {revset:?}");
+            assert_eq!(listed[0].paths, [path("a.txt", true)], "{store}");
             assert_eq!(listed[1].paths, [path("a.txt", true)], "{store}");
-            assert_eq!(listed[2].paths, [path("a.txt", true)], "{store}");
+            assert_eq!(listed[2].paths, [path("a.txt", false)], "{store}");
             assert_eq!(listed[1].change.summary.as_deref(), Some("child"), "{store}");
         }
     }
@@ -272,7 +272,7 @@ fn mine_in_the_user_s_immutable_heads_names_the_user_s_commits() {
     let listed = as_user("triad@example.com").stack(None).expect("the stack lists");
     assert_eq!(
         listed.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
-        [merge.commit.as_str(), child.commit.as_str(), wc.commit.as_str()]
+        [wc.commit.as_str(), child.commit.as_str(), merge.commit.as_str()]
     );
     let rewrite = as_user("triad@example.com")
         .write_conflict(&id(&merge), a_txt(), MERGED, MARKER_LENGTH, true)
@@ -422,7 +422,7 @@ fn the_stack_snapshots_the_working_copy_first() {
     std::fs::write(fixture.root().join("a.txt"), MERGED).expect("a.txt is written");
     let listed = open(&fixture).stack(None).expect("the stack is listed");
     let ids: Vec<&str> = listed.iter().map(|c| c.id.as_str()).collect();
-    assert_eq!(ids, [&merge.commit, &child.commit]);
+    assert_eq!(ids, [&child.commit, &merge.commit]);
 }
 
 #[test]

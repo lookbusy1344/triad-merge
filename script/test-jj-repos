@@ -79,16 +79,16 @@ test_stack() {
 
   triad stack --list
   same "stack --list exit" "$EXIT_CONFLICTS" "$code"
-  same "stack --list" "$s1 $(commit stack-1) stack 1: change a3
-  a.txt
-$s2 $(commit stack-2) stack 2: change c2
+  same "stack --list" "$wc $(commit @)
   a.txt (inherited)
+  b.txt (inherited)
 $s3 $(commit stack-3) stack 3: change b5
   a.txt (inherited)
   b.txt
-$wc $(commit @)
+$s2 $(commit stack-2) stack 2: change c2
   a.txt (inherited)
-  b.txt (inherited)" "$out"
+$s1 $(commit stack-1) stack 1: change a3
+  a.txt" "$out"
 
   # a.txt's regions: a1–a2 unchanged, the a3 conflict, a4–a8 unchanged. Pick left in region 1.
   local pick="$work/pick-left.jsonl"

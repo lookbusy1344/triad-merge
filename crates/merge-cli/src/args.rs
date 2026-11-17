@@ -53,7 +53,7 @@ pub enum Batch {
 /// A jj-native form that runs without a window (spec §7.5): each refuses a git repository.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JjBatch {
-    /// List the conflicted commits `revset` names, parents first.
+    /// List the conflicted commits `revset` names, children first.
     Stack { revset: Option<String>, json: bool },
     /// The versions of a file across jj's operation log.
     History { path: PathBuf, limit: Option<usize>, json: bool },
@@ -284,7 +284,7 @@ enum Command {
     Resolve(ResolveCli),
     /// Register triad as git's or jj's merge and diff tool.
     Install(InstallCli),
-    /// The conflicted commits, parents first, in a window to resolve them in (jj only).
+    /// The conflicted commits, children first, in a window to resolve them in (jj only).
     Stack {
         /// The commits to list; default `conflicts() & mutable()`.
         #[arg(value_name = "REVSET")]

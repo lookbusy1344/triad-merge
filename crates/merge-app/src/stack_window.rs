@@ -1,4 +1,4 @@
-//! The stack window (spec §7.5.1): the conflicted jj commits a revset names, parents first,
+//! The stack window (spec §7.5.1): the conflicted jj commits a revset names, children first,
 //! each with its conflicted paths. A path opens in the merge window as `resolve -r` opens it;
 //! one merge window at a time. A save refreshes the list. Preview shows what saving the open
 //! merge window's result would do to each descendant's conflicts, and writes nothing.
@@ -163,7 +163,7 @@ pub fn start(
 }
 
 impl StackWindow {
-    /// The commits listed, parents first.
+    /// The commits listed, children first.
     #[must_use]
     pub fn commits(&self) -> &[StackCommit] {
         &self.commits

@@ -130,7 +130,7 @@ impl JjRepository {
         revsets_from(&loaded.settings)
     }
 
-    /// The commits `revset` names that hold conflicts, parents first, with the user's
+    /// The commits `revset` names that hold conflicts, children first, with the user's
     /// aliases, after a snapshot of the working copy, as a jj command takes. Default:
     /// [`DEFAULT_STACK`].
     ///
@@ -142,10 +142,7 @@ impl JjRepository {
     pub fn stack(&mut self, revset: Option<&str>) -> Result<Vec<StackCommit>, VcsError> {
         let revsets = self.revsets()?;
         vcs::Repository::snapshot(self)?;
-        let mut commits =
-            self.evaluate(self.repo.as_ref(), revset.unwrap_or(DEFAULT_STACK), &revsets)?;
-        commits.reverse();
-        commits
+        self.evaluate(self.repo.as_ref(), revset.unwrap_or(DEFAULT_STACK), &revsets)?
             .iter()
             .filter(|commit| commit.has_conflict())
             .map(|commit| {

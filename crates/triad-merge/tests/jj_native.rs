@@ -86,25 +86,27 @@ mod jj {
     }
 
     #[test]
-    fn stack_lists_the_conflicted_commits_parents_first() {
+    fn stack_lists_the_conflicted_commits_newest_first() {
         let (fixture, merge, child) = stacked();
         let wc = fixture.working_copy_commit();
         let (code, out, err) = outcome(&triad(fixture.root(), &["stack", "--list"]));
         let expected = format!(
-            "{} {} merge\n  a.txt\n{} {} child\n  a.txt (inherited)\n{} {}\n  a.txt (inherited)\n",
-            short(&merge.change_id),
-            short(&merge.commit),
-            short(&child.change_id),
-            short(&child.commit),
+            "{} {}\n  a.txt (inherited)\n{} {} child\n  a.txt (inherited)\n{} {} merge\n  a.txt\n",
             short(&wc.change_id),
             short(&wc.commit),
+            short(&child.change_id),
+            short(&child.commit),
+            short(&merge.change_id),
+            short(&merge.commit),
         );
         assert_eq!((code, out, err), (Some(CONFLICTS), expected, String::new()));
         let (code, out, _) = outcome(&triad(fixture.root(), &["stack", "--json"]));
         let listed: serde_json::Value = serde_json::from_str(&out).expect("JSON");
         assert_eq!(code, Some(CONFLICTS));
-        assert_eq!(listed[0]["commit"], merge.commit.as_str());
-        assert_eq!(listed[2]["paths"][0]["inherited"], true);
+        assert_eq!(listed[0]["commit"], wc.commit.as_str());
+        assert_eq!(listed[2]["commit"], merge.commit.as_str());
+        assert_eq!(listed[0]["paths"][0]["inherited"], true);
+        assert_eq!(listed[2]["paths"][0]["inherited"], false);
     }
 
     #[test]
