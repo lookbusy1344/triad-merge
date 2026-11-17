@@ -131,6 +131,7 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | Disposable jj repositories, and the check of triad's jj commands in them; needs the pinned `jj` on `PATH` | `script/gen-conflict-repo`, `script/gen-jj-repo SCENARIO`, `script/test-jj-repos` (`docs/test-repos.md`) |
 | Upgrade jj: pins, oracles, the jj-cli behaviour triad copies, docs and checks | `docs/jj-upgrade.md` |
 | Benchmarks against spec §9 | `cargo bench -p merge-core --bench merge`, `cargo bench -p merge-syntax --bench boundaries`, `cargo bench -p merge-cli --bench memory`, then `script/check-bench` |
+| Lines of Rust, product code and tests apart, for README § Code size | `script/code-size` |
 | Cost of `resolve`'s repository steps on 10k and 100k files (`DESIGN.md` §D5.5) | `cargo bench -p merge-cli --bench resolve` |
 | Measure the running app against spec §9 (`DESIGN.md` §A6.7) | `script/measure-app` (`docs/release-checklist.md`) |
 | Check that `script/pre-push` removes its git clone on every exit; `script/checks` runs it when either script changes | `script/test-pre-push` |

@@ -162,15 +162,15 @@ A tag `vX.Y.Z` that matches the workspace version runs `.github/workflows/releas
 
 ### Code size
 
-About 85,000 lines of Rust in `crates/`, blank lines and comments excluded. Tests make up more than half.
+About 87,000 lines of Rust in `crates/`, blank lines and comments excluded, as `script/code-size` counts them. Tests make up more than half.
 
 | Part | Lines |
 |---|---|
 | Product code | 34,000 |
-| Tests: `tests/`, `#[cfg(test)]` modules and test-support modules | 49,000 |
+| Tests: `tests/`, `#[cfg(test)]` modules and test-support modules | 51,000 |
 | Benchmarks and examples | 2,000 |
 
-The GPUI shell, `merge-app`, holds 14,000 lines of product code; `merge-core` holds 6,000. `vendor/gpui-base` is left out.
+The GPUI shell, `merge-app`, holds 15,000 lines of product code; `merge-core` holds 5,000. `vendor/gpui-base` is left out.
 
 On macOS, Gatekeeper scans each newly linked binary on its first run, so the first test run after a rebuild can stall before any test starts, with `syspolicyd` at full CPU. Add your terminal and IDE under System Settings → Privacy & Security → Developer Tools and restart them. `spctl developer-mode enable-terminal` shows that pane if it is missing.
 

@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Lines of Rust in crates/, blank lines and comments excluded, split as README § Code size shows
+# them. vendor/ is third-party code and is left out.
+# - Tests: files under tests/, the modules a top-level #[cfg(test)] marks, inline or in their own
+#   file, and the test-support modules testing.rs.
+# - Benchmarks and examples: files under benches/ and examples/.
+# - Product code: the rest of src/.
+# Test-only items outside a #[cfg(test)] module count as product code.
+# Usage: script/code-size
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+# Prints "<crate> <kind> <lines>" per file, kind one of product, test, bench.
+count() {
+  awk '
+    function kind_of(path) {
+      if (path ~ /\/(tests|benches|examples)\//) return path ~ /\/tests\// ? "test" : "bench"
+      if (path ~ /\/src\/(.*\/)?testing\.rs$/ || path in test_files) return "test"
+      return "product"
+    }
+    FNR == 1 {
+      split(FILENAME, parts, "/"); crate = parts[2]
+      kind = kind_of(FILENAME); in_test = 0; pending = 0; in_block = 0
+      dir = FILENAME; sub(/\.rs$/, "", dir); sub(/\/(mod|lib|main)$/, "", dir)
+    }
+    {
+      line = $0; sub(/^[ \t]+/, "", line)
+      if (in_block) { if (line ~ /\*\//) in_block = 0; next }
+      if (line ~ /^\/\*/) { if (line !~ /\*\//) in_block = 1; next }
+      if (line == "" || line ~ /^\/\//) next
+      if ($0 ~ /^#\[cfg\(test\)\]/) pending = 1
+      else if (pending && $0 ~ /^(pub(\([a-z]+\))? )?mod [a-z_0-9]+;/) {
+        name = $0; sub(/^.*mod /, "", name); sub(/;.*$/, "", name)
+        test_files[dir "/" name ".rs"]; pending = 0
+      } else if (pending && $0 ~ /^(pub(\([a-z]+\))? )?mod [a-z_0-9]+ \{/) { in_test = 1; pending = 0 }
+      else if ($0 !~ /^(#|\)\]|[ \t])/) pending = 0
+      lines[crate, in_test ? "test" : kind]++
+      if (in_test && $0 ~ /^\}/) in_test = 0
+    }
+    END { for (key in lines) { split(key, k, SUBSEP); print k[1], k[2], lines[key] } }
+  ' "$@"
+}
+
+# Files sorted so a parent module comes before the module file it names.
+files=()
+while IFS= read -r file; do files+=("$file"); done < <(find crates -name '*.rs' -not -path '*/target/*' | LC_ALL=C sort)
+counts=$(count "${files[@]}")
+
+sum() { awk -v want="$1" -v crate="${2:-}" '$2 == want && (crate == "" || $1 == crate) { n += $3 } END { print n + 0 }' <<<"$counts"; }
+
+product=$(sum product)
+tests=$(sum test)
+bench=$(sum bench)
+printf 'Total                     %7d\n' $((product + tests + bench))
+printf 'Product code              %7d\n' "$product"
+printf 'Tests                     %7d\n' "$tests"
+printf 'Benchmarks and examples   %7d\n' "$bench"
+echo
+echo 'Product code per crate'
+for crate in $(awk '{ print $1 }' <<<"$counts" | sort -u); do
+  printf '  %-22s  %7d\n' "$crate" "$(sum product "$crate")"
+done
