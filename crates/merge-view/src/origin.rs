@@ -20,6 +20,13 @@ pub type Shown = SmallVec<[(Source, usize); SHOWN]>;
 /// How the hover card shows an origin's time: the author's local time and offset.
 const HOVER_TIME: &str = "%Y-%m-%d %H:%M %:z";
 
+/// An origin by place: its input, and its index in that input's annotation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OriginKey {
+    pub source: Source,
+    pub index: usize,
+}
+
 /// A source the merge does not have.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("the merge has no {0:?}")]
@@ -66,11 +73,7 @@ impl Origins {
     /// The origin of `line` of `source`.
     #[must_use]
     pub fn line(&self, source: Source, line: usize) -> Option<&LineOrigin> {
-        let annotation = match source {
-            Source::Side(i) => self.sides.get(i),
-            Source::Base(i) => self.bases.get(i),
-        };
-        annotation?.as_ref()?.origin(line)
+        self.annotation(source)?.origin(line)
     }
 
     /// The origin of a top pane's cell; a filler row has none.
@@ -92,6 +95,52 @@ impl Origins {
     #[must_use]
     pub fn result_line(&self, doc: &MergeDocument, line: Line) -> Option<&LineOrigin> {
         shown_from(doc, line).into_iter().find_map(|(source, line)| self.line(source, line))
+    }
+
+    /// The origin `key` names; none when its input has no such origin.
+    #[must_use]
+    pub fn origin(&self, key: OriginKey) -> Option<&LineOrigin> {
+        self.annotation(key.source)?.origins.get(key.index)
+    }
+
+    fn annotation(&self, source: Source) -> Option<&Annotation> {
+        match source {
+            Source::Side(i) => self.sides.get(i),
+            Source::Base(i) => self.bases.get(i),
+        }?
+        .as_ref()
+    }
+
+    /// The key of the origin of `line` of `source`.
+    fn line_key(&self, source: Source, line: usize) -> Option<OriginKey> {
+        let runs = &self.annotation(source)?.runs;
+        let run = runs.get(runs.partition_point(|run| run.lines.end <= line))?;
+        run.lines.contains(&line).then_some(OriginKey { source, index: run.origin })
+    }
+
+    /// The runs of result lines that come from one commit, each with the key of its first
+    /// line's origin, in order: [`commit_runs`] over [`Origins::result_line`], as owned keys
+    /// another thread can hand back. It visits every line: 240 ms at 1M lines.
+    #[must_use]
+    pub fn result_runs(&self, doc: &MergeDocument) -> Vec<(Range<usize>, OriginKey)> {
+        let mut runs: Vec<(Range<usize>, OriginKey, &LineOrigin)> = Vec::new();
+        for line in 0..doc.line_count() {
+            let found = shown_from(doc, Line::new(line))
+                .into_iter()
+                .find_map(|(source, line)| self.line_key(source, line));
+            let Some((key, origin)) = found.and_then(|key| Some((key, self.origin(key)?))) else {
+                continue;
+            };
+            match runs.last_mut() {
+                Some((lines, _, last))
+                    if lines.end == line && last.change.commit == origin.change.commit =>
+                {
+                    lines.end = line + 1;
+                }
+                _ => runs.push((line..line + 1, key, origin)),
+            }
+        }
+        runs.into_iter().map(|(lines, key, _)| (lines, key)).collect()
     }
 
     /// The gutter label of result line `line`: the short ID of `kind` on the first line of
@@ -327,6 +376,62 @@ mod tests {
         assert_eq!(lines, [Some("c1"), Some("c1"), Some("c2"), None]);
         assert_eq!(commit(origins.line(R, 0)), None, "right has no annotation");
         assert_eq!(commit(origins.line(B, 0)), None, "base has no annotation");
+    }
+
+    #[test]
+    fn the_result_runs_name_each_runs_first_origin_by_input_and_index() {
+        // Result: a, L, R, c. `a` and `c` show base; L and R their own sides.
+        let d = doc("a\nb\nc\n", "a\nL\nc\n", "a\nR\nc\n");
+        let origins = origins(&[
+            (B, annotation(&[(0..3, "c0")])),
+            (L, annotation(&[(0..1, "c1"), (1..2, "cL"), (2..3, "c1")])),
+            (R, annotation(&[(0..1, "c1"), (1..2, "cR"), (2..3, "c1")])),
+        ]);
+        let base = OriginKey { source: B, index: 0 };
+        let runs = origins.result_runs(&d);
+        assert_eq!(
+            runs,
+            [
+                (0..1, base),
+                (1..2, OriginKey { source: L, index: 1 }),
+                (2..3, OriginKey { source: R, index: 1 }),
+                (3..4, base),
+            ]
+        );
+        let commits: Vec<_> = runs.iter().map(|(_, key)| commit(origins.origin(*key))).collect();
+        assert_eq!(commits, [Some("c0"), Some("cL"), Some("cR"), Some("c0")]);
+    }
+
+    #[test]
+    fn a_result_run_spans_inputs_while_the_commit_stays() {
+        // Without base's origins, `a` and `c` show left's. Right's line 1 and left's line 2
+        // come from one commit, so result lines 2 and 3 make one run, named by right.
+        let d = doc("a\nb\nc\n", "a\nL\nc\n", "a\nR\nc\n");
+        let origins = origins(&[
+            (L, annotation(&[(0..1, "c1"), (1..2, "cL"), (2..3, "c1")])),
+            (R, annotation(&[(0..3, "c1")])),
+        ]);
+        assert_eq!(
+            origins.result_runs(&d),
+            [
+                (0..1, OriginKey { source: L, index: 0 }),
+                (1..2, OriginKey { source: L, index: 1 }),
+                (2..4, OriginKey { source: R, index: 0 }),
+            ]
+        );
+    }
+
+    #[test]
+    fn edited_lines_and_lines_without_origins_belong_to_no_result_run() {
+        let mut d = doc("a\nb\nc\n", "a\nL\nc\n", "a\nR\nc\n");
+        // Line 1, `L`, typed over: the region is edited and shows no input.
+        let typed = TextPatch { range: 2..3, text: "X".to_owned() };
+        d.apply(Command::Edit(EditBatch(vec![typed]))).expect("applies");
+        let origins = origins(&[(B, annotation(&[(0..1, "c0")]))]);
+        assert_eq!(origins.result_runs(&d), [(0..1, OriginKey { source: B, index: 0 })]);
+        assert_eq!(Origins::new(2, 1).result_runs(&d), []);
+        assert_eq!(origins.origin(OriginKey { source: R, index: 0 }), None);
+        assert_eq!(origins.origin(OriginKey { source: B, index: 1 }), None);
     }
 
     #[test]

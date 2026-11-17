@@ -10,7 +10,7 @@ use merge_app::diff_window::{
     DIFF_DEBOUNCE, DiffFile, DiffLookup, DiffSettings, DiffWindow, Origin as DiffOrigin, pane_id,
 };
 use merge_app::origin_column::{OriginCell, Visibility};
-use merge_app::window::{OriginLookup, WindowSettings};
+use merge_app::window::{ORIGIN_DEBOUNCE, OriginLookup, WindowSettings};
 use merge_app::{MergeWindow, ToggleOriginColumn};
 use std::ops::Range;
 use vcs::IdKind;
@@ -568,18 +568,45 @@ fn the_result_pane_labels_each_run_of_one_commit(cx: &mut TestAppContext) {
 fn an_edited_result_line_loses_its_label(cx: &mut TestAppContext) {
     let (_fixture, window, view) = merge_with_column(cx);
     let (one, right) = (result_label(cx, &view, 1), result_label(cx, &view, 2));
+    let before = result_labels(cx, &view);
     common::set_caret(cx, &view, 0);
     act(cx, window, |window, cx| window.input("x", cx));
     assert_eq!(result_summaries(cx, &view), owned(&[None, Some("one"), Some("right")]));
+    // The gutter follows once commands pause, off the UI thread.
+    cx.run_until_parked();
+    assert_eq!(result_labels(cx, &view), before, "labels wait for the pause");
+    cx.executor().advance_clock(ORIGIN_DEBOUNCE);
+    cx.run_until_parked();
     assert_eq!(result_labels(cx, &view), Some(vec![(1..2, one), (2..3, right)]));
+}
+
+#[gpui_kit::test]
+fn a_command_during_the_pause_restarts_it(cx: &mut TestAppContext) {
+    let (_fixture, window, view) = merge_with_column(cx);
+    let before = result_labels(cx, &view);
+    let right = result_label(cx, &view, 2);
+    common::set_caret(cx, &view, 0);
+    act(cx, window, |window, cx| window.input("x", cx));
+    cx.executor().advance_clock(ORIGIN_DEBOUNCE / 2);
+    common::set_caret(cx, &view, 4);
+    act(cx, window, |window, cx| window.input("y", cx));
+    cx.executor().advance_clock(ORIGIN_DEBOUNCE / 2);
+    cx.run_until_parked();
+    assert_eq!(result_labels(cx, &view), before, "the second edit restarted the pause");
+    cx.executor().advance_clock(ORIGIN_DEBOUNCE / 2);
+    cx.run_until_parked();
+    // Lines 0 and 1 are typed over; line 2 keeps the right's commit.
+    assert_eq!(result_labels(cx, &view), Some(vec![(2..3, right)]));
 }
 
 #[gpui_kit::test]
 fn the_result_pane_shows_labels_only_with_the_column(cx: &mut TestAppContext) {
     let (_fixture, window, view) = merge_with_column(cx);
     toggle(cx, window);
-    assert_eq!(result_labels(cx, &view), None);
+    assert_eq!(result_labels(cx, &view), None, "hiding clears the gutter at once");
     toggle(cx, window);
+    // Showing labels the result off the UI thread, without the pause.
+    cx.run_until_parked();
     assert_eq!(result_labels(cx, &view).map(|labels| labels.len()), Some(3));
 }
 

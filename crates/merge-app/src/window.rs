@@ -143,6 +143,9 @@ const HEADING_PADDING: Pixels = px(3.);
 const ACCENT_HEIGHT: Pixels = px(2.);
 /// How long the journal waits after a command before it is written (spec §6.2).
 pub const JOURNAL_DEBOUNCE: Duration = Duration::from_millis(500);
+/// How long the result's origin column waits after a command before it is labelled again
+/// (spec §7.3).
+pub const ORIGIN_DEBOUNCE: Duration = Duration::from_millis(100);
 /// The index of the answer that goes ahead in every confirmation.
 const GO_AHEAD: usize = 0;
 
@@ -526,6 +529,8 @@ pub struct MergeWindow {
     measurement: Measurement,
     /// The inputs' line origins and their column.
     origin_column: OriginColumn,
+    /// Labels the result's origin column off the UI thread; replacing it cancels it.
+    result_labels: Option<Task<()>>,
     /// The collapsed unchanged regions.
     collapse: Collapse,
     _subscriptions: Vec<Subscription>,
@@ -696,6 +701,8 @@ impl MergeWindow {
         let syntax =
             colouring.language().map_or_default(|language| Self::input_syntax(language, &doc));
         let (sides, bases) = (doc.inputs().sides().len(), doc.inputs().bases().len());
+        let origin_column =
+            OriginColumn::new(sides, bases, settings.origin_column, settings.revision_id);
         let counts = status::status(&doc, settings.line_ending);
         let ruler = merge_view::ruler::marks(&doc).collect();
         let scrollbar_mode = scrollbars::mode(settings.scrollbars);
@@ -760,12 +767,8 @@ impl MergeWindow {
             autoscroll: None,
             pinned: None,
             measurement: Measurement::new(settings.measure),
-            origin_column: OriginColumn::new(
-                sides,
-                bases,
-                settings.origin_column,
-                settings.revision_id,
-            ),
+            origin_column,
+            result_labels: None,
             _subscriptions: subscriptions,
         };
         this.show_folds(cx);
@@ -893,7 +896,7 @@ impl MergeWindow {
         let sources: Vec<Source> = sources().collect();
         self.origin_column.described(sources.iter().copied(), described);
         self.origin_column.annotated(sources, annotations);
-        self.refresh_result_labels(cx);
+        self.refresh_result_labels(None, cx);
         cx.notify();
     }
 
@@ -950,14 +953,32 @@ impl MergeWindow {
         })
     }
 
-    /// Give the result pane's gutter the origins of the current result, while the column
-    /// shows.
-    fn refresh_result_labels(&self, cx: &mut Context<Self>) {
-        let doc = self.session.document();
-        let origins = self.origin_column.origins();
-        let lines = (0..doc.line_count()).map(|line| origins.result_line(doc, Line::new(line)));
-        let labels = self.origin_column.labels(lines, cx.theme().muted_foreground);
-        self.result.update(cx, |state, cx| state.set_line_labels(labels, cx));
+    /// Give the result pane's gutter the origins of the current result after `delay`, while
+    /// the column shows. Finding them visits every line, 240 ms at 1M, so it runs off the UI
+    /// thread on a snapshot; a newer call cancels it. Without the column the gutter clears
+    /// at once.
+    fn refresh_result_labels(&mut self, delay: Option<Duration>, cx: &mut Context<Self>) {
+        if !self.origin_column.shown() {
+            self.result_labels = None;
+            self.result.update(cx, |state, cx| state.set_line_labels(None, cx));
+            return;
+        }
+        self.result_labels = Some(cx.spawn(async move |this, cx| {
+            if let Some(delay) = delay {
+                cx.background_executor().timer(delay).await;
+            }
+            let Ok((doc, origins)) = this.update(cx, |this, _| {
+                (this.session.document().snapshot(), this.origin_column.shared())
+            }) else {
+                return;
+            };
+            let runs = cx.background_spawn(async move { origins.result_runs(&doc) }).await;
+            ignore_closed_view(this.update(cx, |this, cx| {
+                this.result_labels = None;
+                let labels = this.origin_column.run_labels(&runs, cx.theme().muted_foreground);
+                this.result.update(cx, |state, cx| state.set_line_labels(labels, cx));
+            }));
+        }));
     }
 
     /// Whether the panes show the origin column: it is turned on and the origins have
@@ -974,7 +995,7 @@ impl MergeWindow {
         cx: &mut Context<Self>,
     ) {
         self.origin_column.toggle();
-        self.refresh_result_labels(cx);
+        self.refresh_result_labels(None, cx);
         cx.notify();
     }
 
@@ -1968,7 +1989,7 @@ impl MergeWindow {
         }
         self.shown_bands = (bands, tones);
         self.show_folds(cx);
-        self.refresh_result_labels(cx);
+        self.refresh_result_labels(Some(ORIGIN_DEBOUNCE), cx);
         self.counts = status::status(self.session.document(), self.session.line_ending());
         self.ruler = merge_view::ruler::marks(self.session.document()).collect();
         self.follow_caret(cx);

@@ -540,7 +540,7 @@ An input gets origins from a revision only when the file there holds exactly the
 
 #### C5.4 Window
 
-Each input annotates in a background task; a failure is logged and leaves that input without origins. The diff window carries each pane's annotation onto its current text in each recompute's background step (`Recompute::run_with`), so edits, undo and reloads update origins (§C6, decision 3). The editors' gutters show labels through the vendored `EditorState::set_line_labels`. Hover cards are GPUI tooltips, which headless tests do not open; the text each shows is tested.
+Each input annotates in a background task; a failure is logged and leaves that input without origins. The diff window carries each pane's annotation onto its current text in each recompute's background step (`Recompute::run_with`), so edits, undo and reloads update origins (§C6, decision 3). The editors' gutters show labels through the vendored `EditorState::set_line_labels`. The result's labels visit every line, 231 ms at 1M lines, so `Origins::result_runs` runs on the background executor over a `MergeDocument::snapshot` and the shared `Arc<Origins>`, and hands back each run's lines and `OriginKey`. A command starts it once commands pause for 100 ms (`ORIGIN_DEBOUNCE`); the load and the toggle start it at once; a newer start cancels it. Until it lands, the labels stay on their lines. The UI thread turns the runs into labels, 65k runs at 1M lines; each hover card builds its text when it shows. Hover cards are GPUI tooltips, which headless tests do not open; the text each shows is tested.
 
 #### C5.5 Cost
 

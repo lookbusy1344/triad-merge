@@ -2,11 +2,14 @@
 //! the column is turned on, the ID it names a commit by, and the commit each input shows in
 //! its heading.
 
+use std::ops::Range;
+use std::sync::Arc;
+
 use gpui_kit::base::input::{LineLabel, LineLabels};
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::{Hsla, Pixels, SharedString, px};
 use merge_core::merge3::Source;
-use merge_view::origin::{Origins, commit_runs, hover_text, revision_heading, short_id};
+use merge_view::origin::{OriginKey, Origins, commit_runs, hover_text, revision_heading, short_id};
 use vcs::{Annotation, IdKind, LineOrigin, VcsError};
 
 /// The origin column's width.
@@ -72,7 +75,8 @@ pub(crate) type Annotated = Vec<Result<Option<Annotation>, VcsError>>;
 
 /// A window's line origins and how its column shows them.
 pub(crate) struct OriginColumn {
-    origins: Origins,
+    /// Shared with the task that labels the result off the UI thread.
+    origins: Arc<Origins>,
     column: Visibility,
     kind: IdKind,
     /// The commit each input shows, once loaded.
@@ -82,11 +86,16 @@ pub(crate) struct OriginColumn {
 impl OriginColumn {
     /// The column of a window over `sides` sides and `bases` bases, none loaded.
     pub(crate) fn new(sides: usize, bases: usize, column: Visibility, kind: IdKind) -> Self {
-        Self { origins: Origins::new(sides, bases), column, kind, revisions: Vec::new() }
+        Self { origins: Arc::new(Origins::new(sides, bases)), column, kind, revisions: Vec::new() }
     }
 
     pub(crate) fn origins(&self) -> &Origins {
         &self.origins
+    }
+
+    /// The origins, for a task off the UI thread.
+    pub(crate) fn shared(&self) -> Arc<Origins> {
+        Arc::clone(&self.origins)
     }
 
     /// The ID the column and the headings name a commit by.
@@ -107,7 +116,7 @@ impl OriginColumn {
 
     /// Show `annotation` as `source`'s origins. An input the window lacks is a defect, logged.
     pub(crate) fn set(&mut self, source: Source, annotation: Annotation) {
-        if let Err(error) = self.origins.set(source, annotation) {
+        if let Err(error) = Arc::make_mut(&mut self.origins).set(source, annotation) {
             tracing::error!(%error, ?source, "an annotation for an input the window lacks");
         }
     }
@@ -165,6 +174,31 @@ impl OriginColumn {
         colour: Hsla,
     ) -> Option<LineLabels> {
         self.shown().then(|| origin_labels(lines, colour, self.kind))
+    }
+
+    /// An editor gutter's labels for `runs`, from [`Origins::result_runs`], while the column
+    /// shows. A run whose origin is gone gets no label. The hover card's text builds when it
+    /// shows.
+    pub(crate) fn run_labels(
+        &self,
+        runs: &[(Range<usize>, OriginKey)],
+        colour: Hsla,
+    ) -> Option<LineLabels> {
+        self.shown().then(|| {
+            let labels = runs
+                .iter()
+                .filter_map(|(lines, key)| {
+                    let label = short_id(self.origins.origin(*key)?, self.kind).to_owned();
+                    let (origins, key) = (Arc::clone(&self.origins), *key);
+                    let hover = move |window: &mut gpui_kit::Window, cx: &mut gpui_kit::App| {
+                        let text = origins.origin(key).map_or_default(hover_text);
+                        Tooltip::new(text).build(window, cx)
+                    };
+                    Some(LineLabel::new(lines.clone(), label).with_tooltip(hover))
+                })
+                .collect();
+            LineLabels::new(ORIGIN_WIDTH, colour, labels)
+        })
     }
 }
 
