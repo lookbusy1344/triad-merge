@@ -20,7 +20,6 @@ use gpui_kit::component::input::{
     RangeDecorationCollection, RangeDecorationStyle, RopeExt as _,
 };
 use gpui_kit::component::native_menu::NativeMenu;
-use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{ActiveTheme as _, Theme, h_flex, v_flex};
 use gpui_kit::{
     AnyElement, AnyWindowHandle, App, AppContext as _, ClickEvent, ClipboardItem, Context,
@@ -3435,8 +3434,7 @@ fn origin_column_cell(
         .overflow_hidden()
         .text_color(muted)
         .when_some(origin, |d, OriginCell { label, hover }| {
-            d.children(label)
-                .tooltip(move |window, cx| Tooltip::new(hover.clone()).build(window, cx))
+            d.children(label).tooltip(crate::tooltip::build(hover))
         })
 }
 
@@ -3787,7 +3785,7 @@ pub(crate) fn revision_chip_element(
         .text_color(theme.muted_foreground)
         .text_size(text_size * CHIP_TEXT_SCALE)
         .children(label)
-        .tooltip(move |window, cx| Tooltip::new(hover.clone()).build(window, cx))
+        .tooltip(crate::tooltip::build(hover))
 }
 
 /// A pane's heading, as the window draws it.

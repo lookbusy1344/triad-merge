@@ -15,6 +15,7 @@ Before building or changing a view, find the Zed view that does the same job and
 | A file's state | `GitStatusIcon` (`crates/git_ui/src/git_ui.rs`), the git panel's `path_formatted` |
 | A menu | `ContextMenu` |
 | A dialog, a prompt | the modals in `crates/ui/src/components/modal.rs`, `crates/ui_prompt` |
+| A tooltip | `Tooltip` (`crates/ui/src/components/tooltip.rs`) |
 | A button | `Button` and `ButtonLike` (`crates/ui/src/components/button/`), the settings window's buttons (`crates/settings_ui`) |
 | The toolbar | the editor's toolbar items, `crates/editor/src/items.rs` |
 
@@ -42,6 +43,9 @@ Zed's scale is 14, 12 and 10 px; triad's chrome takes 12 px. Two settings size t
 - A menu is a `menu_button::MenuButton`: 20 px rows, a 12 px icon, the label and the action's key, in the text size it is given. A row that toggles a state is a checkbox row, with a tick after its label while the state is on. gpui-component's `PopupMenu` has 26 px rows with 14 px text, which triad cannot shrink (`docs/gpui-kit-issues.md`).
 - Heights: a text button 22 px, an icon button or input 24 px, a list row 24 px, a tool window header 32 px, a menu row 20 px, a tab 22 px inside a 2 px inset.
 - Button icons take the button's size.
+- A tooltip is `tooltip::tooltip`, after Zed's: 12 px text on 16 px lines, 4 px above and below, 8 px at the sides, at most 384 px wide, on gpui-kit's popover surface with its border and shadow. Zed stops at 288 px; triad's widest line is a full commit ID. An element takes it through `tooltip::build`, or `build_with_action` to show an action's keys. A gpui-kit button builds its own tooltip, which cannot be styled (`docs/gpui-kit-issues.md`), so a button with a tooltip sits in `tooltip::wrap` and never calls `Button::tooltip`.
+- A heading whose text stands in for missing content, such as `(no description set)`, shows it muted at normal weight.
+- A heading's mark, such as the stack window's `@`, sits before its lead on `pick_list::MARKED_BAND`, lime at 35 % strength, with 4 px either side and the theme's radius. The rest of the row stays plain.
 - Corners take `theme.radius`. An element inside a rounded one takes the outer radius less the inset.
 
 ## Tool windows

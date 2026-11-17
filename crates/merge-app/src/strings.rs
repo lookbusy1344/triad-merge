@@ -204,11 +204,39 @@ fn change_ids(change: &ChangeInfo) -> SharedString {
 
 /// A listed commit's heading, as `stack --list` prints it: its change, commit and summary.
 pub(crate) fn stack_commit(commit: &StackCommit) -> Row {
+    let ids = change_ids(&commit.change);
+    let text = commit.change.summary.clone().map_or(NO_DESCRIPTION.into(), SharedString::from);
+    let label = commit.working_copy.then(|| format!("{WORKING_COPY} {ids} {text}").into());
     Row {
-        lead: Some(change_ids(&commit.change)),
-        text: commit.change.summary.clone().unwrap_or_default().into(),
+        mark: commit.working_copy.then_some(SharedString::new_static(WORKING_COPY_MARK)),
+        lead: Some(ids),
+        text,
+        label,
+        placeholder: commit.change.summary.is_none(),
+        hover: Some(stack_commit_tooltip(commit).into()),
         ..Row::default()
     }
+}
+
+/// jj's mark for the working-copy commit, as `jj log` draws it.
+const WORKING_COPY_MARK: &str = "@";
+/// The working-copy commit's mark, read aloud.
+const WORKING_COPY: &str = "working copy";
+
+/// jj's text for a commit without a description.
+const NO_DESCRIPTION: &str = "(no description set)";
+
+/// A listed commit's tooltip: its full change and commit IDs, the time `jj log` shows, and
+/// the whole description.
+pub(crate) fn stack_commit_tooltip(commit: &StackCommit) -> String {
+    let description = commit.description.trim_end();
+    let description = if description.is_empty() { NO_DESCRIPTION } else { description };
+    format!(
+        "Change ID: {}\nCommit ID: {}\nDate: {}\n\n{description}",
+        commit.change_id,
+        commit.id.as_str(),
+        merge_view::origin::local_time(commit.time),
+    )
 }
 
 /// A listed path, conflicted, marked when a parent holds a conflict there too.
@@ -1510,21 +1538,65 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_listed_commit_reads_change_commit_and_summary() {
-        let mut commit = StackCommit {
+    /// A listed commit described `merge` with a body, made 2001-02-03T04:05:06Z at UTC+01:00.
+    fn listed_commit() -> StackCommit {
+        StackCommit {
             id: vcs::CommitId::new("1a2b3c4d5e6f".to_owned()),
+            change_id: "qpvuntsmwlqt".to_owned(),
             change: vcs::ChangeInfo {
                 commit: "1a2b3c4d".to_owned(),
                 change_id: Some("qpvuntsm".to_owned()),
                 summary: Some("merge".to_owned()),
             },
+            description: "merge\n\nThe body.\n".to_owned(),
+            time: vcs::Timestamp { seconds: 981_173_106, offset_seconds: 3600 },
+            working_copy: false,
             paths: Vec::new(),
-        };
+        }
+    }
+
+    #[test]
+    fn the_working_copy_commit_carries_jj_s_at_as_its_mark() {
+        let mut commit = listed_commit();
+        assert_eq!(stack_commit(&commit).mark, None);
+        commit.working_copy = true;
+        let row = stack_commit(&commit);
+        assert_eq!(row.mark.as_deref(), Some("@"));
+        assert_eq!(row.lead.as_deref(), Some("qpvuntsm 1a2b3c4d"));
+        assert_eq!(row.label(), "working copy qpvuntsm 1a2b3c4d merge");
+    }
+
+    #[test]
+    fn a_listed_commit_s_tooltip_gives_its_full_ids_time_and_description() {
+        let commit = listed_commit();
+        let expected = "Change ID: qpvuntsmwlqt\nCommit ID: 1a2b3c4d5e6f\n\
+                        Date: 2001-02-03 05:05 +01:00\n\nmerge\n\nThe body.";
+        assert_eq!(stack_commit_tooltip(&commit), expected);
+        assert_eq!(stack_commit(&commit).hover.as_deref(), Some(expected));
+    }
+
+    #[test]
+    fn a_listed_commit_without_a_description_says_so_as_jj_does() {
+        let mut commit = listed_commit();
+        commit.description = String::new();
+        assert_eq!(
+            stack_commit_tooltip(&commit),
+            "Change ID: qpvuntsmwlqt\nCommit ID: 1a2b3c4d5e6f\n\
+             Date: 2001-02-03 05:05 +01:00\n\n(no description set)"
+        );
+    }
+
+    #[test]
+    fn a_listed_commit_reads_change_commit_and_summary() {
+        let mut commit = listed_commit();
         assert_eq!(stack_commit(&commit).label(), "qpvuntsm 1a2b3c4d merge");
         assert_eq!(stack_commit(&commit).text, "merge");
+        assert!(!stack_commit(&commit).placeholder);
+        // jj log's text for a commit without a description, muted in its place.
         commit.change.summary = None;
-        assert_eq!(stack_commit(&commit).label(), "qpvuntsm 1a2b3c4d");
+        assert_eq!(stack_commit(&commit).label(), "qpvuntsm 1a2b3c4d (no description set)");
+        assert_eq!(stack_commit(&commit).text, "(no description set)");
+        assert!(stack_commit(&commit).placeholder);
     }
 
     #[test]

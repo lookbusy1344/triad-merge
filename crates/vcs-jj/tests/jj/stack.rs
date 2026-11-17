@@ -1,5 +1,5 @@
 //! `stack` and `write_conflict` on jj: conflicts in commits other than the working copy's,
-//! listed parents first and resolved in place (spec §7.5.1).
+//! listed children first and resolved in place (spec §7.5.1).
 
 use camino::Utf8Path;
 use vcs::{IdKind, VcsError};
@@ -99,8 +99,26 @@ fn the_stack_lists_conflicted_commits_newest_first_marking_inherited_paths() {
             assert_eq!(listed[1].paths, [path("a.txt", true)], "{store}");
             assert_eq!(listed[2].paths, [path("a.txt", false)], "{store}");
             assert_eq!(listed[1].change.summary.as_deref(), Some("child"), "{store}");
+            let working_copy: Vec<bool> = listed.iter().map(|c| c.working_copy).collect();
+            assert_eq!(working_copy, [true, false, false], "{store}: only @ is the working copy");
         }
     }
+}
+
+/// The fixture's commit time, 2001-02-03T04:05:06 UTC, in seconds since the epoch.
+const FIXTURE_SECONDS: i64 = 981_173_106;
+
+#[test]
+fn each_listed_commit_carries_its_full_description_change_id_and_commit_time() {
+    const DESCRIPTION: &str = "described\n\nA body\nover two lines.\n";
+    let Stack { fixture, merge, .. } = stack(Fixture::new());
+    let described = fixture.commit_merged(&[&merge], DESCRIPTION, &[]);
+    let listed = open(&fixture).stack(Some(&described.commit)).expect("the stack is listed");
+    let [commit] = listed.as_slice() else { panic!("one commit, got {listed:?}") };
+    assert_eq!(commit.description, DESCRIPTION);
+    assert_eq!(commit.change_id, described.change_id);
+    assert_eq!(commit.change.summary.as_deref(), Some("described"));
+    assert_eq!(commit.time, vcs::Timestamp { seconds: FIXTURE_SECONDS, offset_seconds: 0 });
 }
 
 #[test]

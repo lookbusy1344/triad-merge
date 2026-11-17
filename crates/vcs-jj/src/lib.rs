@@ -614,7 +614,7 @@ fn commit_id(id: &jj_lib::backend::CommitId) -> vcs::CommitId {
     vcs::CommitId::new(id.hex())
 }
 
-fn timestamp(time: &jj_lib::backend::Timestamp) -> Timestamp {
+pub(crate) fn timestamp(time: &jj_lib::backend::Timestamp) -> Timestamp {
     Timestamp {
         seconds: time.timestamp.0.div_euclid(MILLIS_PER_SECOND),
         offset_seconds: time.tz_offset * SECONDS_PER_MINUTE,

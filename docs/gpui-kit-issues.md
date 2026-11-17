@@ -114,3 +114,7 @@ GPUI's `FallbackPromptRenderer` cuts off a detail wider than its card, draws a w
 ## The search panel selects its field on every key
 
 `gpui-base` 0.8.1's `set_search_query` writes the session's `anchor_offset`: the top of the viewport when the query changes, `None` when it does not. `gpui-component` 0.8.1's overlay (`src/input/overlay.rs`, `InputOverlayHost::sync`) re-shows the search panel when the anchor changes, which selects the field. The panel calls `set_search_query` on every key and once more on re-show, so the anchor flips each key and each key replaces the one before. triad's patch to `vendor/gpui-base` leaves the anchor to `open_search` (`PATCHES.md`).
+
+## A button's tooltip cannot be styled
+
+`gpui-component` 0.8.1's `Tooltip` draws 14 px text (`text_sm`) on the default line height (`src/tooltip.rs`). `Tooltip` is `Styled`, so a tooltip triad builds takes `merge_app::tooltip`'s style. `Button::tooltip` and `tooltip_with_action` build their own `Tooltip`, and the `tooltip_builder` that would take triad's is private (`src/button/button.rs`). A button with a tooltip sits in `tooltip::wrap`, a box as large as the button that shows triad's tooltip.

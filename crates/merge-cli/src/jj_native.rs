@@ -282,12 +282,20 @@ mod tests {
         vec![
             StackCommit {
                 id: vcs::CommitId::new("aaaa".to_owned()),
+                change_id: "kkkkkkkk".to_owned(),
                 change: change("kkkk", Some("merge")),
+                description: "merge\n".to_owned(),
+                time: vcs::Timestamp { seconds: 0, offset_seconds: 0 },
+                working_copy: false,
                 paths: vec![StackPath { path: "a.txt".into(), inherited: false }],
             },
             StackCommit {
                 id: vcs::CommitId::new("bbbb".to_owned()),
+                change_id: "llllllll".to_owned(),
                 change: change("llll", None),
+                description: String::new(),
+                time: vcs::Timestamp { seconds: 0, offset_seconds: 0 },
+                working_copy: false,
                 paths: vec![
                     StackPath { path: "a.txt".into(), inherited: true },
                     StackPath { path: "b.txt".into(), inherited: false },

@@ -10,7 +10,7 @@ use merge_core::document::{MergeDocument, Resolution};
 use merge_core::index::{ByteOffset, Line};
 use merge_core::merge3::{Inputs, Kind, Region, Source};
 use smallvec::SmallVec;
-use vcs::{Annotation, IdKind, LineOrigin};
+use vcs::{Annotation, IdKind, LineOrigin, Timestamp};
 
 /// Inputs a result line can show at once: every input of a three-way merge.
 const SHOWN: usize = 3;
@@ -300,6 +300,18 @@ pub fn revision_heading<'t, 'o>(
     RevisionHeading { title, id: short_id(origin, kind) }
 }
 
+/// `time` in its own offset, to the minute: `2001-02-03 05:05 +01:00`. A time chrono cannot
+/// represent shows as seconds since the epoch.
+#[must_use]
+pub fn local_time(time: Timestamp) -> String {
+    FixedOffset::east_opt(time.offset_seconds)
+        .zip(DateTime::from_timestamp(time.seconds, 0))
+        .map_or_else(
+            || format!("{} s", time.seconds),
+            |(offset, utc)| utc.with_timezone(&offset).format(HOVER_TIME).to_string(),
+        )
+}
+
 /// The hover card's text for `origin`: the change ID and commit, the author and the author's
 /// local time, then the summary. A time chrono cannot represent shows as seconds since the
 /// epoch.
@@ -310,13 +322,7 @@ pub fn hover_text(origin: &LineOrigin) -> String {
         Some(id) => format!("{id} {}", change.commit),
         None => change.commit.clone(),
     };
-    let time = FixedOffset::east_opt(origin.time.offset_seconds)
-        .zip(DateTime::from_timestamp(origin.time.seconds, 0))
-        .map_or_else(
-            || format!("{} s", origin.time.seconds),
-            |(offset, utc)| utc.with_timezone(&offset).format(HOVER_TIME).to_string(),
-        );
-    let author = format!("{}, {time}", origin.author);
+    let author = format!("{}, {}", origin.author, local_time(origin.time));
     match change.summary.as_deref().filter(|s| !s.is_empty()) {
         Some(summary) => format!("{ids}\n{author}\n{summary}"),
         None => format!("{ids}\n{author}"),

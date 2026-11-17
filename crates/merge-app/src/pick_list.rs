@@ -8,12 +8,12 @@ use crate::strings;
 use gpui_kit::assets::IconName;
 use gpui_kit::base::ObservedElement;
 use gpui_kit::component::list::ListItem;
-use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, Theme};
 use gpui_kit::{
     App, Div, ElementId, FocusHandle, FontWeight, Hsla, InteractiveElement as _, KeyBinding,
     ParentElement as _, Pixels, Role, ScrollHandle, SharedString, Stateful,
-    StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, actions, div, px,
+    StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, actions, div,
+    prelude::FluentBuilder as _, px,
 };
 
 actions!(pick_list, [SelectNext, SelectPrevious, Activate, Leave]);
@@ -24,6 +24,12 @@ const CONTEXT: &str = "PickList";
 const ROW_HEIGHT: Pixels = px(24.);
 /// A row's side padding (`docs/STYLE.md`).
 const ROW_PADDING: Pixels = px(8.);
+/// The space either side of a heading's mark.
+const MARK_PADDING: Pixels = px(4.);
+/// The band behind a heading's mark: lime, as the owner chose for jj's `@`, Tailwind's lime-400
+/// (`#a3e635`) at a strength that keeps the text readable in both themes. The theme has no
+/// lime.
+pub(crate) const MARKED_BAND: Hsla = Hsla { h: 83. / 360., s: 0.78, l: 0.55, a: 0.35 };
 /// The extra left padding of a row under a heading, as Zed's `ListItem` indents a level.
 const INDENT: Pixels = px(12.);
 /// The space between the list's edge and its rows, so a selected row's corners show.
@@ -114,6 +120,13 @@ pub(crate) struct Row {
     pub trail: Option<SharedString>,
     /// The accessible name, where the parts do not read as one.
     pub label: Option<SharedString>,
+    /// A heading's tooltip.
+    pub hover: Option<SharedString>,
+    /// The text stands in for missing content, such as `(no description set)`: a heading
+    /// shows it muted and at normal weight.
+    pub placeholder: bool,
+    /// A heading's mark, before its lead, on [`MARKED_BAND`]: the stack window's `@`.
+    pub mark: Option<SharedString>,
 }
 
 /// `path`'s file name and the directory holding it; none at the top.
@@ -161,9 +174,7 @@ pub(crate) fn row(id: impl Into<ElementId>, content: &Row, state: State, cx: &Ap
             .id(STATUS_ID)
             .flex_none()
             .child(Icon::new(status.icon()).xsmall().text_color(status.colour(theme)))
-            .tooltip(move |window, cx| {
-                Tooltip::new(strings::status_tooltip(status)).build(window, cx)
-            })
+            .tooltip(crate::tooltip::build(strings::status_tooltip(status)))
     });
     ListItem::new(id)
         .role(Role::ListBoxOption)
@@ -224,8 +235,10 @@ pub(crate) fn heading(
 ) -> ObservedElement<Stateful<Div>> {
     let muted = cx.theme().muted_foreground;
     let part = |text: &SharedString| div().flex_none().text_color(muted).child(text.clone());
+    let hover = content.hover.clone();
     div()
         .id(id)
+        .when_some(hover, |heading, text| heading.tooltip(crate::tooltip::build(text)))
         .test_support()
         .role(Role::Heading)
         .aria_label(content.label())
@@ -237,13 +250,27 @@ pub(crate) fn heading(
         .px(ROW_PADDING)
         .gap_2()
         .text_xs()
+        .children(content.mark.as_ref().map(|mark| {
+            div()
+                .flex_none()
+                .px(MARK_PADDING)
+                .bg(MARKED_BAND)
+                .rounded(cx.theme().radius)
+                .child(mark.clone())
+        }))
         .children(content.lead.as_ref().map(part))
         .child(
             div()
                 .flex_1()
                 .min_w_0()
                 .truncate()
-                .font_weight(FontWeight::SEMIBOLD)
+                .map(|text| {
+                    if content.placeholder {
+                        text.text_color(muted)
+                    } else {
+                        text.font_weight(FontWeight::SEMIBOLD)
+                    }
+                })
                 .child(content.text.clone()),
         )
         .children(content.trail.as_ref().map(part))

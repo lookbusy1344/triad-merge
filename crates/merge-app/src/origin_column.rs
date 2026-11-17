@@ -6,7 +6,6 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use gpui_kit::base::input::{LineLabel, LineLabels};
-use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::{Hsla, Pixels, SharedString, px};
 use merge_core::merge3::Source;
 use merge_view::origin::{OriginKey, Origins, hover_text, revision_heading, short_id};
@@ -182,7 +181,7 @@ impl OriginColumn {
                     let (annotation, index) = (Arc::clone(annotation), key.index);
                     let hover = move |window: &mut gpui_kit::Window, cx: &mut gpui_kit::App| {
                         let text = annotation.origins.get(index).map_or_default(hover_text);
-                        Tooltip::new(text).build(window, cx)
+                        crate::tooltip::tooltip(text).build(window, cx)
                     };
                     Some(LineLabel::new(lines, label).with_tooltip(hover))
                 })

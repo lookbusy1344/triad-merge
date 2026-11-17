@@ -7,9 +7,9 @@ use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{Disableable as _, Sizable as _, h_flex};
 use gpui_kit::{
-    App, ClickEvent, ElementId, InteractiveElement as _, IntoElement, ParentElement as _, Pixels,
-    Role, SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window,
-    div, px,
+    App, ClickEvent, Div, ElementId, InteractiveElement as _, IntoElement, ParentElement as _,
+    Pixels, Role, SharedString, Stateful, StatefulInteractiveElement as _, Styled as _,
+    TestSupportExt as _, Window, div, px,
 };
 use merge_core::merge3::Source;
 use merge_view::rows::RowIx;
@@ -228,27 +228,17 @@ where
 {
     let count = SharedString::from(found.count(pane)?);
     let stepping = found.has_hits(pane);
-    let button = |id, icon, label: String| {
-        Button::new(id)
-            .ghost()
-            .with_size(STEP_BUTTON)
-            .icon(icon)
-            .disabled(!stepping)
-            .accessibility_label(label.clone())
-            .tooltip(label)
-    };
     Some(
         h_flex()
             .flex_none()
             .ml_auto()
-            .child(
-                button(
-                    input_match_previous_id(pane),
-                    IconName::ChevronUp,
-                    strings::previous_match(title),
-                )
-                .on_click(previous),
-            )
+            .child(step_button(
+                input_match_previous_id(pane),
+                IconName::ChevronUp,
+                strings::previous_match(title),
+                stepping,
+                previous,
+            ))
             .child(
                 div()
                     .id(input_match_count_id(pane))
@@ -260,15 +250,33 @@ where
                     .font_weight(gpui_kit::FontWeight::NORMAL)
                     .child(count),
             )
-            .child(
-                button(
-                    input_match_next_id(pane),
-                    IconName::ChevronDown,
-                    strings::next_match(title),
-                )
-                .on_click(next),
-            ),
+            .child(step_button(
+                input_match_next_id(pane),
+                IconName::ChevronDown,
+                strings::next_match(title),
+                stepping,
+                next,
+            )),
     )
+}
+
+/// A button that steps to the previous or next match, named and tooltipped `label`, enabled
+/// while `stepping`.
+fn step_button(
+    id: ElementId,
+    icon: IconName,
+    label: String,
+    stepping: bool,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> Stateful<Div> {
+    let button = Button::new(id.clone())
+        .ghost()
+        .with_size(STEP_BUTTON)
+        .icon(icon)
+        .disabled(!stepping)
+        .accessibility_label(label.clone())
+        .on_click(on_click);
+    crate::tooltip::wrap(id, button, crate::tooltip::build(label))
 }
 
 #[cfg(test)]

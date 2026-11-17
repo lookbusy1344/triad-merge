@@ -367,17 +367,18 @@ impl OpenDialog {
             .child(div().flex_1().child(
                 Input::new(&self.fields[slot.index()]).id(slot.id()).aria_label(name).small(),
             ))
-            .child(
+            .child(crate::tooltip::wrap(
+                slot.choose_id(),
                 Button::new(slot.choose_id())
                     .ghost()
                     .small()
                     .icon(IconName::FolderOpen)
-                    .tooltip(choose.clone())
-                    .accessibility_label(choose)
+                    .accessibility_label(choose.clone())
                     .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                         this.choose(slot, window, cx);
                     })),
-            )
+                crate::tooltip::build(choose),
+            ))
     }
 
     /// The Merge and Diff tabs, as one strip with the chosen tab raised.

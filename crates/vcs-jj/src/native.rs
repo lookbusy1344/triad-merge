@@ -61,7 +61,15 @@ pub const DEFAULT_STACK: &str = "conflicts() & mutable()";
 pub struct StackCommit {
     /// The commit's full ID.
     pub id: vcs::CommitId,
+    /// The change's full ID, in jj's reverse hex.
+    pub change_id: String,
     pub change: ChangeInfo,
+    /// The whole description, as jj stores it.
+    pub description: String,
+    /// The committer's time, which `jj log` shows.
+    pub time: vcs::Timestamp,
+    /// The workspace's working-copy commit: jj's `@`.
+    pub working_copy: bool,
     /// The conflicted paths, in path order.
     pub paths: Vec<StackPath>,
 }
@@ -142,6 +150,7 @@ impl JjRepository {
     pub fn stack(&mut self, revset: Option<&str>) -> Result<Vec<StackCommit>, VcsError> {
         let revsets = self.revsets()?;
         vcs::Repository::snapshot(self)?;
+        let working_copy = self.repo.view().get_wc_commit_id(&self.workspace).cloned();
         self.evaluate(self.repo.as_ref(), revset.unwrap_or(DEFAULT_STACK), &revsets)?
             .iter()
             .filter(|commit| commit.has_conflict())
@@ -173,7 +182,11 @@ impl JjRepository {
                     .collect::<Result<_, VcsError>>()?;
                 Ok(StackCommit {
                     id: crate::commit_id(commit.id()),
+                    change_id: commit.change_id().reverse_hex(),
                     change: self.change_info(commit)?,
+                    description: commit.description().to_owned(),
+                    time: crate::timestamp(&commit.committer().timestamp),
+                    working_copy: working_copy.as_ref() == Some(commit.id()),
                     paths,
                 })
             })

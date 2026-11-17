@@ -44,6 +44,7 @@ mod syntax_colours;
 mod tones;
 mod tool_window;
 pub mod toolbar;
+mod tooltip;
 pub mod window;
 mod wrap;
 

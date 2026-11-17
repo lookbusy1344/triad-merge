@@ -4,9 +4,9 @@ use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{Selectable as _, Sizable as _, h_flex};
 use gpui_kit::{
-    Action, AnyElement, ClickEvent, ElementId, InteractiveElement as _, IntoElement, ParentElement,
-    Pixels, Role, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div,
-    prelude::FluentBuilder as _, px,
+    Action, AnyElement, ClickEvent, Div, ElementId, InteractiveElement as _, IntoElement,
+    ParentElement, Pixels, Role, Stateful, StatefulInteractiveElement as _, Styled as _,
+    TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px,
 };
 use merge_core::merge3::{LEFT, RIGHT, Source};
 
@@ -17,7 +17,7 @@ use crate::{
     PreviousDifference, Redo, TakeLeftThenRight, TakeRightThenLeft, ToggleBase, ToggleBasePane,
     ToggleLeft, ToggleRight, ToggleSoftWrap, ToggleSyntax, Undo,
 };
-use crate::{ViewTicks, logo, menu_bar, strings};
+use crate::{ViewTicks, logo, menu_bar, strings, tooltip};
 
 /// A toolbar button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -204,14 +204,14 @@ pub(crate) fn tools(groups: &[&[Control]]) -> impl Iterator<Item = Tool> {
 }
 
 /// The mark, as the button that opens the About window.
-pub(crate) fn mark(dark: bool) -> Button {
-    Button::new(MARK_ID)
+pub(crate) fn mark(dark: bool) -> Stateful<Div> {
+    let button = Button::new(MARK_ID)
         .ghost()
         .small()
         .child(logo::mark(dark))
         .accessibility_label(strings::ABOUT_TITLE)
-        .tooltip(strings::ABOUT_TITLE)
-        .on_click(|_: &ClickEvent, window, cx| window.dispatch_action(Box::new(About), cx))
+        .on_click(|_: &ClickEvent, window, cx| window.dispatch_action(Box::new(About), cx));
+    tooltip::wrap(MARK_ID, button, tooltip::build(strings::ABOUT_TITLE))
 }
 
 /// A toolbar of `groups`, labelled `label`, whose tooltips show the keys in `context`, with
@@ -251,35 +251,40 @@ fn render(
     pressed: &[Tool],
 ) -> AnyElement {
     match control {
-        Control::Button(tool) => tool
-            .button(context, labels, text_size)
-            .when(tool.toggles(), |button| {
+        Control::Button(tool) => {
+            let button = tool.button(labels, text_size).when(tool.toggles(), |button| {
                 let on = pressed.contains(&tool);
                 button.selected(on).toggled(on)
-            })
-            .into_any_element(),
+            });
+            tool.with_tooltip(button, context).into_any_element()
+        }
         Control::Pair(previous, next) => h_flex()
-            .child(previous.button(context, Labels::Hidden, text_size))
+            .child(previous.with_tooltip(previous.button(Labels::Hidden, text_size), context))
             .children(
                 strings::tool_label(previous)
                     .filter(|_| labels == Labels::Shown)
                     .map(|text| label(previous, text, text_size)),
             )
-            .child(next.button(context, Labels::Hidden, text_size))
+            .child(next.with_tooltip(next.button(Labels::Hidden, text_size), context))
             .into_any_element(),
         // The menu's text matches the toolbar's labels. Base ticks while the region takes it.
-        Control::More => MenuButton::new(
+        // The menu takes a gpui-kit button as its trigger, so the tooltip goes round the menu.
+        Control::More => tooltip::wrap(
             MORE_ID,
-            more_trigger(labels, text_size),
-            strings::MORE_MENU,
-            context,
-            text_size,
-            MORE_MENU.iter().map(|&(tool, label)| Item {
-                icon: tool.icon(),
-                label,
-                action: tool.action(),
-                checked: tool.toggles().then(|| pressed.contains(&tool)),
-            }),
+            MenuButton::new(
+                MORE_ID,
+                more_trigger(labels, text_size),
+                strings::MORE_MENU,
+                context,
+                text_size,
+                MORE_MENU.iter().map(|&(tool, label)| Item {
+                    icon: tool.icon(),
+                    label,
+                    action: tool.action(),
+                    checked: tool.toggles().then(|| pressed.contains(&tool)),
+                }),
+            ),
+            tooltip::build(strings::MORE_MENU),
         )
         .into_any_element(),
     }
@@ -295,7 +300,6 @@ fn more_trigger(labels: Labels, text_size: Pixels) -> Button {
             div().id(MORE_LABEL_ID).test_support().text_size(text_size).child(strings::MORE)
         }))
         .accessibility_label(strings::MORE_MENU)
-        .tooltip(strings::MORE_MENU)
 }
 
 /// A tool's text label, in the toolbar's text.
@@ -316,11 +320,17 @@ impl Tool {
         ElementId::Name(format!("tool-label-{self:?}").into())
     }
 
+    /// `button` with the tool's tooltip, which shows the keys bound in `context`.
+    fn with_tooltip(self, button: Button, context: &'static str) -> Stateful<Div> {
+        let build = tooltip::build_with_action(strings::tool_name(self), self.action(), context);
+        tooltip::wrap(self.id(), button, build)
+    }
+
     /// The button: its icon, and its label when it has one and `labels` shows it. A click
     /// leaves the focus where it was.
-    fn button(self, context: &'static str, labels: Labels, text_size: Pixels) -> Button {
+    fn button(self, labels: Labels, text_size: Pixels) -> Button {
         let action = self.action();
-        let tooltip = strings::tool_name(self);
+        let name = strings::tool_name(self);
         Button::new(self.id())
             .ghost()
             .small()
@@ -331,8 +341,7 @@ impl Tool {
                     .filter(|_| labels == Labels::Shown)
                     .map(|text| label(self, text, text_size)),
             )
-            .accessibility_label(tooltip)
-            .tooltip_with_action(tooltip, action.as_ref(), Some(context))
+            .accessibility_label(name)
             .on_click(move |_: &ClickEvent, window, cx| {
                 window.dispatch_action(action.boxed_clone(), cx);
             })
