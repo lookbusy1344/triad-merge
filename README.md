@@ -51,7 +51,7 @@ triad 0.1 is an early beta, tested on macOS 27 on Apple Silicon. [Releases](http
 - Syntax boundaries keep refinements from cutting inside a syntax node.
 - Suggestions offer, never apply, resolutions for common shapes: both sides inserting, sorted lists, a block moved on one side and edited on the other, a duplicated block.
 
-**Editor.** Syntax highlighting for Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS and C. Overview ruler, search and replace, soft wrap, scroll sync, collapsed unchanged regions, whitespace modes, case-insensitive comparison, ignore patterns, line-ending control, recovery journals and a plain-text config file.
+**Editor.** Syntax highlighting for Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS, C and C++. Overview ruler, search and replace, soft wrap, scroll sync, collapsed unchanged regions, whitespace modes, case-insensitive comparison, ignore patterns, line-ending control, recovery journals and a plain-text config file.
 
 **Text.** UTF-8 and UTF-16 with a BOM; any other text reads as Windows-1252 and saves back byte for byte. Invisible and bidirectional characters show as code-point badges, so a Trojan Source trick reads in its true order.
 

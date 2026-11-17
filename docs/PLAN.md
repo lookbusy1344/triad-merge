@@ -17,7 +17,7 @@ As of 2026-11-17.
 | Merge semantics | Done: jj's merge, word level, refinements, syntax-aware boundaries | B |
 | M5 chunk origin | Done, with revision chips | C |
 | M6 native resolution | Done: git stages a resolved save; jj snapshots before the read and after each save | D |
-| M7 syntax highlighting | Done: Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS, C | F |
+| M7 syntax highlighting | Done: Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS, C, C++ | F |
 | p4merge parity | Done | E |
 | Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; §G6 done: the files that differ between two directories, or between a revision and the working copy (`diff`, `diff --rev`), in the directory window and printed by `diff --inspect`, and from `jj diff --tool` and `git difftool -d`, with renames and copies paired as jj pairs them; text that is not UTF-8 read and saved as Windows-1252 (§G17); invisible characters drawn as code points and odd spaces shaded in every pane, and escaped in terminal output (§A6.8); moved and duplicated blocks in the merge window and `inspect`, with a suggestion to drop a duplicate (§G16), done; visible whitespace in every pane (§G10) done; the rest open | G |
 | Look after Zed | Done: chrome in the UI font, the Zed status bar, raised surfaces (Go to Line as Zed's card, the menus, the prompt), a 1 px current-region frame, a softer ruler, and on macOS the toolbar in the title bar | `docs/STYLE.md` |
@@ -37,7 +37,7 @@ In order. Each is one or more commits.
 1. **Close M3.** Skipped for now by the owner. The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
 2. **Screen-reader support** (part J). Skipped for now by the owner: live status, conflict regions, scrolling the row table, in the order of §J7.
 3. **Review and diff features** (part G): §G7–§G9, §G11–§G14.
-4. **More grammars,** one commit each: C++, Java and Kotlin; then Markdown; then Bash, Ruby, PHP and SQL.
+4. **More grammars,** one commit each: Java and Kotlin; then Markdown; then Bash, Ruby, PHP and SQL.
 5. **M4b** (§3) once the owner has the machines and the certificate.
 6. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
 

@@ -34,6 +34,7 @@ pub(crate) const fn registry_name(language: Language) -> &'static str {
         Language::Json => "json",
         Language::Css => "css",
         Language::C => "c",
+        Language::Cpp => "cpp",
         Language::Toml => "toml",
         Language::Yaml => "yaml",
     }
@@ -117,14 +118,19 @@ impl Colouring {
 
 /// Register the highlight queries gpui-component leaves out (`docs/gpui-kit-issues.md`). Its
 /// C# and Swift grammars come with empty queries, which colour nothing. C# has no
-/// injections; Swift's inject only grammars triad does not build. Its TSX grammar comes with
+/// injections; Swift's inject only grammars triad does not build. Its C++ grammar comes with
+/// only the lines `tree-sitter-cpp` adds to C's query, so C++ takes C's query, then its own,
+/// in the order `tree-sitter-cpp` lists them; its raw-string injections name a grammar by
+/// the string's delimiter, which triad leaves plain. Its TSX grammar comes with
 /// only the lines `tree-sitter-typescript` adds to JavaScript's query, so TSX takes
 /// TypeScript's whole query and JavaScript's injections, as TypeScript has them.
 pub(crate) fn register_queries() {
     let registry = LanguageRegistry::singleton();
+    let cpp = [tree_sitter_c::HIGHLIGHT_QUERY, tree_sitter_cpp::HIGHLIGHT_QUERY].concat();
     let queries = [
         (Language::CSharp, tree_sitter_c_sharp::HIGHLIGHTS_QUERY),
         (Language::Swift, tree_sitter_swift::HIGHLIGHTS_QUERY),
+        (Language::Cpp, cpp.as_str()),
     ];
     for (language, highlights) in queries {
         let name = registry_name(language);
@@ -432,7 +438,7 @@ mod tests {
         bytes
     }
 
-    const LANGUAGES: [Language; 14] = [
+    const LANGUAGES: [Language; 15] = [
         Language::Rust,
         Language::Go,
         Language::CSharp,
@@ -447,6 +453,7 @@ mod tests {
         Language::Toml,
         Language::Css,
         Language::C,
+        Language::Cpp,
     ];
     /// Chunks that cut the Go and C# samples only before top-level lines: no shorter than
     /// their longest run of lines without one (34 in Go, 56 in C#), shorter than the sample.
@@ -473,6 +480,7 @@ mod tests {
         assert_eq!(registry_name(Language::Toml), "toml");
         assert_eq!(registry_name(Language::Css), "css");
         assert_eq!(registry_name(Language::C), "c");
+        assert_eq!(registry_name(Language::Cpp), "cpp");
     }
 
     #[test]
@@ -594,6 +602,11 @@ mod tests {
                 include_str!("../../../fixtures/syntax/sample.c"),
                 &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
             ),
+            (
+                Language::Cpp,
+                include_str!("../../../fixtures/syntax/sample.cpp"),
+                &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
+            ),
         ];
         for (language, source, chunks) in samples {
             // Each sample opens with a line comment, so a grammar that styles nothing fails.
@@ -626,6 +639,24 @@ mod tests {
             line.contains(&(color, style(&theme, "property"))),
             "`color` is a CSS property: {line:?}"
         );
+    }
+
+    #[test]
+    fn cpp_takes_the_c_captures_and_its_own() {
+        register_queries();
+        let theme = HighlightTheme::default_light();
+        let source = "// c\nint a() { return ns::f(nullptr); }\nclass B {};\n";
+        let syntax = chunked(Language::Cpp, Source::Base(0), &text(source), syntax::CHUNK_LINES);
+        let bytes = |line: usize, length: usize| {
+            per_byte(length, &syntax.line(Source::Base(0), line, &theme))
+        };
+        let call = bytes(1, "int a() { return ns::f(nullptr); }".len());
+        // `return` is in C's query only; the qualified call and `nullptr` in C++'s only.
+        assert_eq!(call[10..16], [style(&theme, "keyword"); 6], "return: {call:?}");
+        assert_eq!(call[21..22], [style(&theme, "function")], "f: {call:?}");
+        assert_eq!(call[23..30], [style(&theme, "constant"); 7], "nullptr: {call:?}");
+        let class = bytes(2, "class B {};".len());
+        assert_eq!(class[0..5], [style(&theme, "keyword"); 5], "class: {class:?}");
     }
 
     #[test]

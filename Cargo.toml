@@ -102,6 +102,7 @@ unicase = "2.10"
 tree-sitter = "=0.26.13"
 tree-sitter-rust = "=0.24.2"
 tree-sitter-c = "=0.24.2"
+tree-sitter-cpp = "=0.23.4"
 tree-sitter-c-sharp = "=0.23.5"
 tree-sitter-swift = "=0.7.4"
 # The versions gpui-component 0.8.1 links, so each grammar builds once.

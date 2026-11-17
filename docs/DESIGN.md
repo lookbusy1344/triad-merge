@@ -747,7 +747,7 @@ The console and GUI binaries forward as §A4.13 gives. `images/triad.ico` goes i
 ### F1 Goal
 
 - Every pane colours its text by syntax; bands draw under the colours, intra-line marks over them (spec §5).
-- Grammars: Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS, C.
+- Grammars: Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS, C, C++.
 - The window never waits for a parse.
 
 Not covered: Razor, which has no grammar that covers its code blocks; styles inside JavaScript templates tagged `sql` or `graphql`, whose grammars triad does not build.
@@ -755,7 +755,7 @@ Not covered: Razor, which has no grammar that covers its code blocks; styles ins
 ### F2 What gpui-component gives
 
 - Grammars as cargo features through `gpui-kit`, each building its C sources. JSON comes with the base `tree-sitter` feature. `LanguageRegistry::register` takes grammars from other crates.
-- C# and Swift come without a highlight query; triad registers them again with their grammar crates' queries. TSX comes with only the lines TypeScript adds to JavaScript's query; triad registers it with gpui-component's TypeScript query and injections.
+- C# and Swift come without a highlight query; triad registers them again with their grammar crates' queries. TSX comes with only the lines TypeScript adds to JavaScript's query; triad registers it with gpui-component's TypeScript query and injections. C++ comes with only the lines `tree-sitter-cpp` adds to C's query; triad registers it with C's query followed by C++'s. `.h` takes C++, whose grammar parses C headers too, as in Zed.
 - The editors' query puts locals before highlights, so an unstyled local capture (`@local.reference` on a JavaScript identifier) draws plain. The top panes take the same query.
 - The editor's tree-sitter highlighter is crate-private: it parses within 2 ms on the UI thread, else in the background after 150 ms, and always in the background over 256 KiB. `SyntaxHighlighter` is public and `Send`.
 - `HighlightTheme::default_light()` and `default_dark()` resolve capture names to colours.

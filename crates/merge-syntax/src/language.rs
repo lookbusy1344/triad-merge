@@ -25,10 +25,11 @@ pub enum Language {
     Toml,
     Css,
     C,
+    Cpp,
 }
 
 /// Each language's file extensions, in lowercase.
-const EXTENSIONS: [(&str, Language); 23] = [
+const EXTENSIONS: [(&str, Language); 34] = [
     ("rs", Language::Rust),
     ("go", Language::Go),
     ("cs", Language::CSharp),
@@ -52,6 +53,18 @@ const EXTENSIONS: [(&str, Language); 23] = [
     ("toml", Language::Toml),
     ("css", Language::Css),
     ("c", Language::C),
+    // C++'s grammar parses C headers too, so `.h` takes C++, as in Zed.
+    ("cc", Language::Cpp),
+    ("cpp", Language::Cpp),
+    ("cxx", Language::Cpp),
+    ("c++", Language::Cpp),
+    ("h", Language::Cpp),
+    ("hh", Language::Cpp),
+    ("hpp", Language::Cpp),
+    ("hxx", Language::Cpp),
+    ("h++", Language::Cpp),
+    ("inl", Language::Cpp),
+    ("ipp", Language::Cpp),
 ];
 
 impl Language {
@@ -73,6 +86,7 @@ impl Language {
             Self::Toml => tree_sitter_toml_ng::LANGUAGE,
             Self::Css => tree_sitter_css::LANGUAGE,
             Self::C => tree_sitter_c::LANGUAGE,
+            Self::Cpp => tree_sitter_cpp::LANGUAGE,
         }
         .into()
     }
@@ -138,6 +152,12 @@ mod tests {
         assert_eq!(of("rust-toolchain.toml"), Some(Language::Toml));
         assert_eq!(of("style.css"), Some(Language::Css));
         assert_eq!(of("src/main.c"), Some(Language::C));
+        for name in [
+            "a.cc", "a.cpp", "a.cxx", "a.c++", "a.h", "a.hh", "a.hpp", "a.hxx", "a.h++", "a.inl",
+            "a.ipp",
+        ] {
+            assert_eq!(of(name), Some(Language::Cpp), "{name}");
+        }
     }
 
     #[test]
@@ -158,6 +178,8 @@ mod tests {
         assert_eq!(of("CARGO.TOML"), Some(Language::Toml));
         assert_eq!(of("STYLE.CSS"), Some(Language::Css));
         assert_eq!(of("MAIN.C"), Some(Language::C));
+        assert_eq!(of("A.CPP"), Some(Language::Cpp));
+        assert_eq!(of("A.H"), Some(Language::Cpp));
     }
 
     #[test]
@@ -196,6 +218,9 @@ mod tests {
             "a.css.map",
             "a.c.orig",
             "a.cl",
+            "a.cp",
+            "a.hpp.orig",
+            "a.c+",
         ] {
             assert_eq!(of(name), None, "{name}");
         }
@@ -227,7 +252,7 @@ mod tests {
     }
 
     /// Each language's sample, and the kind of its tree's root.
-    const SAMPLES: [(Language, &str, &str); 14] = [
+    const SAMPLES: [(Language, &str, &str); 15] = [
         (Language::Rust, "fn a() -> u8 { 1 }\n", "source_file"),
         (Language::Go, "package a\nfunc b() {}\n", "source_file"),
         (Language::CSharp, "class A { void B() {} }\n", "compilation_unit"),
@@ -242,6 +267,7 @@ mod tests {
         (Language::Toml, "# c\n[a]\nb = [1, true]\n", "document"),
         (Language::Css, "/* c */\na > b { color: #fff; }\n", "stylesheet"),
         (Language::C, "// c\nstatic int a(void) { return 1; }\n", "translation_unit"),
+        (Language::Cpp, "// c\nclass A { int b() const; };\n", "translation_unit"),
     ];
 
     fn root_kind(language: Language, source: &str) -> (String, bool) {

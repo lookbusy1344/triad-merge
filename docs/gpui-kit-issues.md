@@ -87,11 +87,13 @@ Facts about GPUI and the editor that are easy to trip over. Each was checked aga
 
 `gpui-kit` 0.9 pins `gpui-pre` 0.3.11. triad has not built or measured it.
 
-## The C# and Swift grammars have no highlight query; TSX has part of one
+## The C# and Swift grammars have no highlight query; TSX and C++ have part of one
 
 gpui-component 0.8.1 registers `csharp` with `tree_sitter_c_sharp::LANGUAGE` and empty highlight, injection and locals queries (`src/highlighter/languages.rs`). Every C# editor parses its text and colours nothing. `tree-sitter-c-sharp` 0.23.5 ships `HIGHLIGHTS_QUERY` (MIT). triad registers `csharp` again with that query at start-up (`merge-app` `syntax::register_queries`). `swift` is the same: empty queries in gpui-component, `HIGHLIGHTS_QUERY` (MIT) in `tree-sitter-swift` 0.7.4, registered again at start-up.
 
 `tsx` comes with `tree_sitter_typescript::HIGHLIGHTS_QUERY` alone: the 35 lines that `tree-sitter-typescript` layers over JavaScript's query. Comments, strings and most keywords colour nothing. triad registers `tsx` again at start-up with the highlights and injections gpui-component gives `typescript`.
+
+`cpp` is the same: `tree_sitter_cpp::HIGHLIGHT_QUERY` alone holds the 70 lines `tree-sitter-cpp` 0.23.4 layers over C's query, as its `tree-sitter.json` lists them. Comments, strings and C's keywords colour nothing. triad registers `cpp` again at start-up with `tree_sitter_c::HIGHLIGHT_QUERY` (MIT) followed by C++'s.
 
 The editor's highlighter builds one query from the injections, locals and highlights, and disables only the injection patterns (`build_for_language`). The locals patterns stay on and capture before the highlights, so a JavaScript or TypeScript identifier takes `@local.reference`, which the theme leaves unstyled, in place of `@variable`. triad's top panes run the same query, so the panes match the editors.
 

@@ -30,6 +30,7 @@ gpui-kit = { workspace = true, features = [
     "tree-sitter-toml",
     "tree-sitter-css",
     "tree-sitter-c",
+    "tree-sitter-cpp",
 ] }
 merge-config.workspace = true
 merge-session.workspace = true
@@ -42,7 +43,9 @@ ropey.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 # C#'s and Swift's highlight queries, which gpui-component registers empty.
+tree-sitter-c.workspace = true
 tree-sitter-c-sharp.workspace = true
+tree-sitter-cpp.workspace = true
 tree-sitter-swift.workspace = true
 tracing.workspace = true
 # The line origin types.
