@@ -1,5 +1,6 @@
 // Modified for Triad: adds `RangeDecorationStyle::FullLine`, gutter marks,
-// full-line borders with their widths, line labels and spacer notes.
+// full-line borders with their widths, line labels, spacer notes and
+// clickable gutter marks.
 // See PATCHES.md.
 use crate::input::EditorMode;
 use std::{collections::BTreeMap, fmt, ops::Range, rc::Rc};
@@ -108,6 +109,7 @@ impl SpacerNote {
 pub struct GutterMark {
     label: SharedString,
     color: Hsla,
+    clickable: bool,
 }
 
 impl GutterMark {
@@ -116,7 +118,21 @@ impl GutterMark {
         Self {
             label: label.into(),
             color,
+            clickable: false,
         }
+    }
+
+    /// Show a pointing hand over the mark on a range decoration's rows: a press
+    /// there acts. A press anywhere in the column emits
+    /// `InputEvent::GutterMarkClick` whatever this says.
+    pub fn clickable(mut self) -> Self {
+        self.clickable = true;
+        self
+    }
+
+    /// Whether the mark shows a pointing hand.
+    pub fn is_clickable(&self) -> bool {
+        self.clickable
     }
 
     /// The text drawn on the first visible row.

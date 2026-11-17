@@ -32,6 +32,15 @@ pub struct Mark {
     pub tone: Tone,
 }
 
+impl Mark {
+    /// Whether a press on the mark acts: on an unresolved block's `!`, it picks the block
+    /// (spec §5, Gutters).
+    #[must_use]
+    pub fn takes_press(self) -> bool {
+        self == UNRESOLVED
+    }
+}
+
 const LEFT: Mark = Mark { label: "L", tone: Tone::Left };
 const RIGHT: Mark = Mark { label: "R", tone: Tone::Right };
 const BASE: Mark = Mark { label: "B", tone: Tone::Base };
@@ -240,6 +249,16 @@ mod tests {
     use merge_core::testing::{text, three};
 
     use super::*;
+
+    #[test]
+    fn only_an_unresolved_blocks_mark_takes_a_press() {
+        // Spec §5, Gutters: a press on a block's `!` picks it; one on any other mark does nothing.
+        assert!(UNRESOLVED.takes_press());
+        for mark in [LEFT, RIGHT, BASE, SAME, SEVERAL, EDITED, CLEARED, WORD_MERGED] {
+            assert!(!mark.takes_press(), "{mark:?}");
+        }
+        assert!(!Mark { label: SIDE_NUMBERS[0], tone: Tone::Left }.takes_press());
+    }
 
     fn doc(inputs: Inputs) -> MergeDocument {
         MergeDocument::new(inputs, MergeOptions::default(), Labels::none()).expect("no labels")

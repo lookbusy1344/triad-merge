@@ -3994,10 +3994,12 @@ fn region_decorations(bands: &[Band], tones: &Tones) -> Vec<RangeDecoration> {
     bands
         .iter()
         .map(|band| {
+            let mark = GutterMark::new(band.mark.label, tones.mark(band.mark.tone));
+            let mark = if band.mark.takes_press() { mark.clickable() } else { mark };
             let decoration = RangeDecoration::new(band.bytes.clone())
                 .with_style(RangeDecorationStyle::FullLine)
                 .with_color(tones.band(band.tone))
-                .with_gutter_mark(GutterMark::new(band.mark.label, tones.mark(band.mark.tone)));
+                .with_gutter_mark(mark);
             match band.border {
                 Some(tone) => decoration.with_border(tones.mark(tone)),
                 None => decoration,
@@ -4148,6 +4150,31 @@ fn alert(title: &str, detail: &str, window: &mut Window, cx: &mut App) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_an_unresolved_blocks_mark_shows_a_pointing_hand() {
+        use merge_core::merge3::Inputs;
+        use merge_core::testing::text;
+        // Left changes b, right changes d, both change f alike, and they conflict over h.
+        let doc = MergeDocument::new(
+            Inputs::three_way(
+                text("a\nb\nc\nd\ne\nf\ng\nh\ni\n"),
+                text("a\nB\nc\nd\ne\nF\ng\nH\ni\n"),
+                text("a\nb\nc\nD\ne\nF\ng\nX\ni\n"),
+            ),
+            MergeOptions::default(),
+            merge_core::document::Labels::none(),
+        )
+        .expect("no labels");
+        let decorations = region_decorations(&marks::bands(&doc), Palette::default().tones(false));
+        let marks: Vec<_> = decorations
+            .iter()
+            .filter_map(RangeDecoration::gutter_mark)
+            .map(|mark| (mark.label().as_ref(), mark.is_clickable()))
+            .collect();
+        // Spec §5, Gutters: a press on a block's `!` picks it; one on any other mark does nothing.
+        assert_eq!(marks, [("L", false), ("R", false), ("=", false), ("!", true), ("!", true)]);
+    }
 
     #[test]
     fn closing_offers_save_and_exit_first_then_discard_then_keep_editing() {

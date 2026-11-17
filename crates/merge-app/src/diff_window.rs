@@ -2233,8 +2233,9 @@ fn bands(doc: &DiffDocument, side: Side, tones: &Tones) -> Vec<RangeDecoration> 
                 .with_style(RangeDecorationStyle::FullLine)
                 .with_color(tones.band(band.tone));
             match band.other_end {
-                Some(_) => decoration
-                    .with_gutter_mark(GutterMark::new(MOVE_MARK.label, tones.mark(MOVE_MARK.tone))),
+                Some(_) => decoration.with_gutter_mark(
+                    GutterMark::new(MOVE_MARK.label, tones.mark(MOVE_MARK.tone)).clickable(),
+                ),
                 None => decoration,
             }
         })

@@ -2,7 +2,7 @@
 // spacer rows and their notes, line labels, tests of hidden lines, the spacer
 // click and the gutter mark click, tests of the editor's tab stops, and
 // characters drawn as badges and shades, and whitespace symbols drawn from the
-// text, with line endings. See PATCHES.md.
+// text, with line endings, and the gutter's pointers. See PATCHES.md.
 use crate::input::char_marks::{
     CARRIAGE_RETURN_SYMBOL, NO_NEWLINE_SYMBOL, SPACE_SYMBOL, TAB_SYMBOL,
 };
@@ -10,7 +10,7 @@ use crate::input::{InputExtras as _, InputModeKind};
 use gpui::Corners;
 use gpui::Half;
 use gpui::{
-    AnyElement, App, Bounds, Edges, Element, ElementId, ElementInputHandler, Entity,
+    AnyElement, App, Bounds, CursorStyle, Edges, Element, ElementId, ElementInputHandler, Entity,
     GlobalElementId,
 };
 use gpui::{
@@ -964,6 +964,7 @@ impl<M: InputModeKind> TextElement<M> {
             if let Some((mark, column_left)) = note.gutter_mark().zip(mark_column_left) {
                 let label = shape_gutter_mark_label(mark, &text_style, text_size, window);
                 layout.gutter_marks.push(GutterMarkLayout {
+                    click_area: None,
                     strip: Bounds::new(
                         point(column_left + GUTTER_MARK_LABEL_WIDTH, band.top()),
                         size(GUTTER_MARK_STRIP_WIDTH, band.size.height),
@@ -1009,6 +1010,9 @@ impl<M: InputModeKind> TextElement<M> {
             if let Some((mark, column_left)) = mark {
                 let label = shape_gutter_mark_label(mark, &text_style, text_size, window);
                 layout.gutter_marks.push(GutterMarkLayout {
+                    click_area: mark.is_clickable().then(|| {
+                        Bounds::new(point(column_left, top), size(GUTTER_MARK_WIDTH, height))
+                    }),
                     strip: Bounds::new(
                         point(column_left + GUTTER_MARK_LABEL_WIDTH, top),
                         size(GUTTER_MARK_STRIP_WIDTH, height),
@@ -1813,6 +1817,7 @@ impl<M: InputModeKind> TextElement<M> {
             let mut icon = gpui::div()
                 .id(("fold", ix))
                 .size(FOLD_ICON_WIDTH)
+                .cursor_pointer()
                 .child(child)
                 .on_mouse_down(MouseButton::Left, {
                     let state = self.state.clone();
@@ -2834,6 +2839,31 @@ fn visible_decoration_spans(last_layout: &LastLayout) -> Vec<Range<usize>> {
     visible_spans
 }
 
+/// Triad: the pointer over each part of the gutter, later entries over earlier
+/// ones. The gutter takes no text, so it shows an arrow in place of the
+/// input's I-beam; a mark that takes clicks shows a pointing hand.
+fn gutter_cursors(
+    input_bounds: &Bounds<Pixels>,
+    line_number_width: Pixels,
+    marks: &[GutterMarkLayout],
+) -> Vec<(Bounds<Pixels>, CursorStyle)> {
+    if line_number_width <= px(0.) {
+        return Vec::new();
+    }
+    let gutter = Bounds::new(
+        input_bounds.origin,
+        size(line_number_width, input_bounds.size.height),
+    );
+    std::iter::once((gutter, CursorStyle::Arrow))
+        .chain(
+            marks
+                .iter()
+                .filter_map(|mark| mark.click_area)
+                .map(|area| (area, CursorStyle::PointingHand)),
+        )
+        .collect()
+}
+
 /// The left edge of the gutter mark column, relative to the gutter. The column
 /// sits between the line numbers and the fold icons.
 pub(super) fn gutter_mark_column_left(line_number_width: Pixels, folding: bool) -> Pixels {
@@ -2900,6 +2930,9 @@ struct LineLabelLayout {
 }
 
 struct GutterMarkLayout {
+    /// The mark column over the mark's rows, when a press there acts: a
+    /// clickable mark on a range decoration. A spacer note's mark never acts.
+    click_area: Option<Bounds<Pixels>>,
     strip: Bounds<Pixels>,
     color: Hsla,
     label: ShapedLine,
@@ -2931,6 +2964,8 @@ pub(super) struct PrepaintState {
     /// Triad: the line labels' elements, prepainted.
     line_label_elements: Vec<AnyElement>,
     hover_definition_hitbox: Option<Hitbox>,
+    /// Triad: the gutter's pointers, from [`gutter_cursors`].
+    gutter_cursor_hitboxes: Vec<(Hitbox, CursorStyle)>,
     indent_guides_path: Option<Path<Pixels>>,
     /// The whole input, for deciding whether a long press started in it.
     hitbox: Hitbox,
@@ -3666,6 +3701,14 @@ impl<M: InputModeKind> Element for TextElement<M> {
         let fold_icon_layout =
             self.layout_fold_icons(original_x, &bounds, &last_layout, window, cx);
         let hitbox = window.insert_hitbox(input_bounds, HitboxBehavior::Normal);
+        let gutter_cursor_hitboxes = gutter_cursors(
+            &input_bounds,
+            last_layout.line_number_width,
+            &line_decorations.gutter_marks,
+        )
+        .into_iter()
+        .map(|(area, style)| (window.insert_hitbox(area, HitboxBehavior::Normal), style))
+        .collect();
         self.request_reveal(
             input_bounds,
             &cursor_infos,
@@ -3697,6 +3740,7 @@ impl<M: InputModeKind> Element for TextElement<M> {
             search_match_paths,
             hover_highlight_path,
             hover_definition_hitbox,
+            gutter_cursor_hitboxes,
             document_color_paths,
             range_decoration_fills,
             range_decoration_frames,
@@ -4045,6 +4089,11 @@ impl<M: InputModeKind> Element for TextElement<M> {
                     offset_y += prepaint.ghost_lines_height;
                 }
             }
+        }
+
+        // Triad: set before the fold icons paint, so their pointer wins.
+        for (hitbox, style) in &prepaint.gutter_cursor_hitboxes {
+            window.set_cursor_style(*style, hitbox);
         }
 
         // Gutter marks sit above the gutter background.
@@ -6802,6 +6851,71 @@ mod tests {
                 [("L".to_owned(), green, band.top(), layout.line_height)]
             );
         });
+    }
+
+    // Triad: gutter cursors.
+
+    #[gpui::test]
+    fn the_gutter_shows_an_arrow_and_a_clickable_mark_a_pointing_hand(cx: &mut TestAppContext) {
+        let (editor, window) = line_decoration_editor(cx, "a\nb\nc", false, true);
+        let mut cx = VisualTestContext::from_window(window.into(), cx);
+        cx.update(|window, cx| {
+            editor.update(cx, |state, cx| {
+                // Line b's mark takes clicks; line a's does not. A spacer note's
+                // mark never does: a press on a spacer row is a spacer click.
+                state.create_range_decorations_collection(
+                    vec![
+                        RangeDecoration::new(0..2)
+                            .with_gutter_mark(GutterMark::new("L", gpui::blue())),
+                        RangeDecoration::new(2..4)
+                            .with_gutter_mark(GutterMark::new("!", gpui::red()).clickable()),
+                    ],
+                    cx,
+                );
+                state.set_spacers(vec![(2, 1)], cx);
+                state.set_spacer_notes(
+                    vec![
+                        SpacerNote::new(2, "note", gpui::red())
+                            .with_gutter_mark(GutterMark::new("L", gpui::green()).clickable()),
+                    ],
+                    cx,
+                );
+            });
+            window.draw(cx).clear(cx);
+            let state = editor.read(cx);
+            let layout = state.last_layout.as_ref().unwrap();
+            let bounds = state.input_bounds;
+            let lines = TextElement::new(editor.clone())
+                .layout_line_decorations(layout, &bounds, &bounds, window, cx);
+            let column_left = bounds.left() + layout.line_number_width
+                - LINE_NUMBER_RIGHT_MARGIN
+                - FOLD_ICON_HITBOX_WIDTH
+                - GUTTER_MARK_WIDTH;
+            // a, b, the spacer, c.
+            let line_b_top = bounds.top() + layout.visible_top + layout.line_height;
+            assert_eq!(
+                gutter_cursors(&bounds, layout.line_number_width, &lines.gutter_marks),
+                [
+                    (
+                        Bounds::new(bounds.origin, size(layout.line_number_width, bounds.size.height)),
+                        CursorStyle::Arrow,
+                    ),
+                    (
+                        Bounds::new(
+                            point(column_left, line_b_top),
+                            size(GUTTER_MARK_WIDTH, layout.line_height),
+                        ),
+                        CursorStyle::PointingHand,
+                    ),
+                ]
+            );
+        });
+    }
+
+    #[test]
+    fn an_input_without_a_gutter_has_no_gutter_cursor() {
+        let bounds = Bounds::new(point(px(10.), px(20.)), size(px(100.), px(40.)));
+        assert_eq!(gutter_cursors(&bounds, px(0.), &[]), []);
     }
 
     #[gpui::test]
