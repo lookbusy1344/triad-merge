@@ -1,4 +1,5 @@
-// Triad: new file. Unusual characters as badges and shaded spaces. See PATCHES.md.
+// Triad: new file. Unusual characters as badges and shaded spaces, and where whitespace
+// symbols sit. See PATCHES.md.
 //! Characters an application marks: a badge character draws as a box showing its code point,
 //! `U+202E`, and a shaded one draws on a grey background.
 //!
@@ -189,6 +190,76 @@ pub(crate) fn widened(
         .map_or(layout, Arc::new)
 }
 
+/// What a space draws as with whitespace shown.
+pub const SPACE_SYMBOL: &str = "·";
+/// What a tab starts with, with whitespace shown.
+pub const TAB_SYMBOL: &str = "→";
+/// What a carriage return that ends a line draws as, with whitespace shown.
+pub const CARRIAGE_RETURN_SYMBOL: &str = "␍";
+/// What follows a last line without a newline, with whitespace shown.
+pub const NO_NEWLINE_SYMBOL: &str = "∅";
+
+/// A whitespace symbol an editor paints with whitespace shown.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Symbol {
+    Space,
+    Tab,
+    /// A carriage return that ends the line.
+    CarriageReturn,
+    /// The end of a last line without a newline.
+    NoNewline,
+}
+
+/// How a visual line's text ends.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LineEnd {
+    /// The line goes on on the next visual line.
+    Wrapped,
+    /// The line ends in a newline, or is an editor's only line.
+    Newline,
+    /// The line is the text's last and has no newline.
+    NoNewline,
+}
+
+/// The whitespace symbols of `text`, laid out from its [`masked`] text with `x_for_index`
+/// giving the x of each byte: each symbol and the x of its left edge. A space's symbol, `space_width` wide, sits in the
+/// middle of the space; a tab's and a carriage return's at their start. The no-newline
+/// symbol follows the text, and the carriage return's symbol, `return_width` wide, when one
+/// ends it. A carriage return inside the line is a badge, not whitespace.
+pub(crate) fn whitespace_symbols(
+    x_for_index: impl Fn(usize) -> Pixels,
+    text: &str,
+    end: LineEnd,
+    space_width: Pixels,
+    return_width: Pixels,
+) -> Vec<(Symbol, Pixels)> {
+    let body = marked_part(text, end != LineEnd::Wrapped);
+    let mut symbols: Vec<_> = body
+        .char_indices()
+        .filter_map(|(ix, c)| {
+            let start = x_for_index(ix);
+            match c {
+                ' ' => {
+                    let end = x_for_index(ix + c.len_utf8());
+                    Some((Symbol::Space, (start + end - space_width) / 2.))
+                }
+                '\t' => Some((Symbol::Tab, start)),
+                _ => None,
+            }
+        })
+        .collect();
+    let mut after = x_for_index(text.len());
+    if body.len() < text.len() {
+        let x = x_for_index(body.len());
+        symbols.push((Symbol::CarriageReturn, x));
+        after = after.max(x + return_width);
+    }
+    if end == LineEnd::NoNewline {
+        symbols.push((Symbol::NoNewline, after));
+    }
+    symbols
+}
+
 /// A marked character as it paints on one visual line.
 #[derive(Clone)]
 pub(crate) struct MarkPaint {
@@ -366,6 +437,55 @@ mod tests {
         // The badge spans 10..74; 20 is nearer its start, 70 nearer its end.
         assert_eq!(widened.closest_index_for_x(px(20.)), 1);
         assert_eq!(widened.closest_index_for_x(px(70.)), 4);
+    }
+
+    // Triad: whitespace symbols.
+
+    /// Symbols 4 px wide: a space's sits 3 px into its 10 px.
+    const SYMBOL: f32 = 4.;
+
+    fn symbols(text: &str, end: LineEnd) -> Vec<(Symbol, f32)> {
+        let shaped = layout(&masked(text, Some(marker), end != LineEnd::Wrapped));
+        whitespace_symbols(|ix| shaped.x_for_index(ix), text, end, px(SYMBOL), px(SYMBOL))
+            .into_iter()
+            .map(|(symbol, x)| (symbol, f32::from(x)))
+            .collect()
+    }
+
+    #[test]
+    fn a_space_symbol_sits_in_the_middle_of_its_space_and_a_tab_symbol_at_its_start() {
+        assert_eq!(
+            symbols("a b\tc", LineEnd::Newline),
+            [(Symbol::Space, 13.), (Symbol::Tab, 30.)]
+        );
+    }
+
+    #[test]
+    fn a_badge_shaped_as_spaces_shows_no_space_symbols() {
+        assert_eq!(symbols(&format!("{RLO} "), LineEnd::Newline), [(Symbol::Space, 33.)]);
+    }
+
+    #[test]
+    fn a_carriage_return_that_ends_the_line_shows_its_symbol() {
+        assert_eq!(symbols("ab\r", LineEnd::Newline), [(Symbol::CarriageReturn, 20.)]);
+        // On a visual line that wraps, the `\r` is not the line's end.
+        assert!(symbols("ab\r", LineEnd::Wrapped).is_empty());
+    }
+
+    #[test]
+    fn the_no_newline_symbol_follows_the_text_and_its_carriage_return() {
+        assert_eq!(symbols("ab", LineEnd::NoNewline), [(Symbol::NoNewline, 20.)]);
+        // The `\r` is 10 px at 20; its symbol ends at 24, inside it, so the mark follows the
+        // `\r` at 30.
+        assert_eq!(
+            symbols("ab\r", LineEnd::NoNewline),
+            [(Symbol::CarriageReturn, 20.), (Symbol::NoNewline, 30.)]
+        );
+        assert!(symbols("ab", LineEnd::Newline).is_empty());
+        // A carriage return symbol wider than the `\r` pushes the mark past it.
+        let shaped = layout("ab\r");
+        let wide = whitespace_symbols(|ix| shaped.x_for_index(ix), "ab\r", LineEnd::NoNewline, px(SYMBOL), px(15.));
+        assert_eq!(wide.last(), Some(&(Symbol::NoNewline, px(35.))));
     }
 
     #[test]

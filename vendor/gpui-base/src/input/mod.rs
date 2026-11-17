@@ -76,7 +76,10 @@ mod state;
 mod tab_stops;
 #[path = "base/char_marks.rs"]
 mod char_marks;
-pub use char_marks::{CharMark, CharMarker, char_mark_colours};
+pub use char_marks::{
+    CARRIAGE_RETURN_SYMBOL, CharMark, CharMarker, NO_NEWLINE_SYMBOL, SPACE_SYMBOL, TAB_SYMBOL,
+    char_mark_colours,
+};
 mod textarea;
 pub use scrollbar_presentation::{EditorScrollbarContext, EditorScrollbarRenderer};
 #[path = "base/touch.rs"]

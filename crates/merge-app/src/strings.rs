@@ -559,6 +559,7 @@ pub(crate) mod menu {
     pub(crate) const BLAME: &str = "Blame";
     pub(crate) const SYNTAX: &str = "Syntax Highlighting";
     pub(crate) const SOFT_WRAP: &str = "Soft Wrap";
+    pub(crate) const WHITESPACE: &str = "Show Whitespace";
     pub(crate) const COLLAPSE_UNCHANGED: &str = "Collapse Unchanged";
     pub(crate) const SCROLL_SYNC: &str = "Sync Result Scrolling";
 }

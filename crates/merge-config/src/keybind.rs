@@ -68,6 +68,7 @@ const DEFAULT_BINDINGS: &[(&str, KeyAction)] = &[
     ("cmd+i", KeyAction::ToggleOriginColumn),
     ("cmd+y", KeyAction::ToggleSyntax),
     ("cmd+r", KeyAction::ToggleSoftWrap),
+    ("cmd+e", KeyAction::ToggleWhitespace),
     ("cmd+u", KeyAction::ToggleCollapseUnchanged),
     ("cmd+k", KeyAction::ToggleScrollSync),
     ("cmd+f", KeyAction::Find),
@@ -147,6 +148,7 @@ pub enum KeyAction {
     ToggleOriginColumn,
     ToggleSyntax,
     ToggleSoftWrap,
+    ToggleWhitespace,
     ToggleCollapseUnchanged,
     ToggleScrollSync,
     Find,
@@ -180,6 +182,7 @@ impl KeyAction {
                 | Self::ToggleOriginColumn
                 | Self::ToggleSyntax
                 | Self::ToggleSoftWrap
+                | Self::ToggleWhitespace
                 | Self::ToggleCollapseUnchanged
                 | Self::Save
                 | Self::Cancel
@@ -617,6 +620,7 @@ mod tests {
             ("take-left-then-right", KeyAction::TakeLeftThenRight),
             ("toggle-origin-column", KeyAction::ToggleOriginColumn),
             ("toggle-soft-wrap", KeyAction::ToggleSoftWrap),
+            ("toggle-whitespace", KeyAction::ToggleWhitespace),
             ("toggle-collapse-unchanged", KeyAction::ToggleCollapseUnchanged),
             ("go-to-move-end", KeyAction::GoToMoveEnd),
         ] {
@@ -639,6 +643,7 @@ mod tests {
         );
         assert_eq!(actions_of(&bindings, "cmd+down"), [KeyAction::NextDifference]);
         assert_eq!(actions_of(&bindings, "cmd+r"), [KeyAction::ToggleSoftWrap]);
+        assert_eq!(windows_of(&bindings, "cmd+e"), [(KeyAction::ToggleWhitespace, BOTH)]);
         assert_eq!(actions_of(&bindings, "cmd+y"), [KeyAction::ToggleSyntax]);
         assert_eq!(actions_of(&bindings, "cmd+i"), [KeyAction::ToggleOriginColumn]);
         assert_eq!(actions_of(&bindings, "cmd+k"), [KeyAction::ToggleScrollSync]);
@@ -647,7 +652,7 @@ mod tests {
         assert_eq!(actions_of(&bindings, "cmd+s"), [KeyAction::SaveAndExit, KeyAction::Save]);
         assert_eq!(actions_of(&bindings, "cmd+u"), [KeyAction::ToggleCollapseUnchanged]);
         assert_eq!(windows_of(&bindings, "cmd+shift+m"), [(KeyAction::GoToMoveEnd, BOTH)]);
-        assert_eq!(bindings.bound().len(), 31);
+        assert_eq!(bindings.bound().len(), 32);
         assert_eq!(bindings.unbound().count(), 0);
     }
 

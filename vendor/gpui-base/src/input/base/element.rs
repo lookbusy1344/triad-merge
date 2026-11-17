@@ -1,7 +1,11 @@
 // Modified for Triad: full-line fills and gutter marks for range decorations,
 // spacer rows and their notes, line labels, tests of hidden lines, the spacer
 // click and the gutter mark click, tests of the editor's tab stops, and
-// characters drawn as badges and shades. See PATCHES.md.
+// characters drawn as badges and shades, and whitespace symbols drawn from the
+// text, with line endings. See PATCHES.md.
+use crate::input::char_marks::{
+    CARRIAGE_RETURN_SYMBOL, NO_NEWLINE_SYMBOL, SPACE_SYMBOL, TAB_SYMBOL,
+};
 use crate::input::{InputExtras as _, InputModeKind};
 use gpui::Corners;
 use gpui::Half;
@@ -1561,59 +1565,47 @@ impl<M: InputModeKind> TextElement<M> {
         (line_number_width, line_number_len)
     }
 
-    /// Layout shaped lines for whitespace indicators (space and tab).
+    /// Layout shaped lines for whitespace indicators.
     ///
-    /// Returns `WhitespaceIndicators` with shaped lines for space and tab characters.
+    /// Triad: a space draws as a middle dot at the text size, as the application's other
+    /// panes draw it, and a line's carriage return and a missing final newline have symbols.
+    /// The symbols take the theme's muted text colour, as the badges' labels and the
+    /// application's other panes do, in place of `editor_invisible`.
     fn layout_whitespace_indicators(
         state: &InputBaseState<M>,
         text_size: Pixels,
         style: &TextStyle,
         window: &mut Window,
-        _cx: &App,
+        cx: &App,
     ) -> Option<WhitespaceIndicators> {
         if !state.show_whitespaces {
             return None;
         }
 
-        let invisible_color = state
-            .editor_style
-            .editor_invisible
-            .unwrap_or(state.editor_style.muted_foreground);
+        let invisible_color = char_marks::char_mark_colours(cx).1;
 
-        let space_font_size = text_size.half();
-        let tab_font_size = text_size;
+        let shape = |symbol: &'static str, window: &mut Window| {
+            let text = SharedString::new_static(symbol);
+            window.text_system().shape_line(
+                text.clone(),
+                text_size,
+                &[TextRun {
+                    len: text.len(),
+                    font: style.font(),
+                    color: invisible_color,
+                    background_color: None,
+                    underline: None,
+                    strikethrough: None,
+                }],
+                None,
+            )
+        };
+        let space = shape(SPACE_SYMBOL, window);
+        let tab = shape(TAB_SYMBOL, window);
+        let carriage_return = shape(CARRIAGE_RETURN_SYMBOL, window);
+        let no_newline = shape(NO_NEWLINE_SYMBOL, window);
 
-        let space_text = SharedString::new_static("•");
-        let space = window.text_system().shape_line(
-            space_text.clone(),
-            space_font_size,
-            &[TextRun {
-                len: space_text.len(),
-                font: style.font(),
-                color: invisible_color,
-                background_color: None,
-                underline: None,
-                strikethrough: None,
-            }],
-            None,
-        );
-
-        let tab_text = SharedString::new_static("→");
-        let tab = window.text_system().shape_line(
-            tab_text.clone(),
-            tab_font_size,
-            &[TextRun {
-                len: tab_text.len(),
-                font: style.font(),
-                color: invisible_color,
-                background_color: None,
-                underline: None,
-                strikethrough: None,
-            }],
-            None,
-        );
-
-        Some(WhitespaceIndicators { space, tab })
+        Some(WhitespaceIndicators { space, tab, carriage_return, no_newline })
     }
 
     /// Compute inline completion ghost lines for rendering.
@@ -2543,7 +2535,7 @@ impl<M: InputModeKind> TextElement<M> {
             let line_layout = LineLayout::new()
                 .lines(smallvec::smallvec![shaped_line])
                 .with_background(has_background(line_runs))
-                .with_whitespaces(whitespace_indicators)
+                .with_whitespaces(whitespace_indicators, &[&original], false)
                 .with_char_marks(marks);
             return vec![line_layout];
         }
@@ -2569,7 +2561,7 @@ impl<M: InputModeKind> TextElement<M> {
             let line_layout = LineLayout::new()
                 .lines(placeholder_lines)
                 .with_background(line_has_background)
-                .with_whitespaces(whitespace_indicators);
+                .with_whitespaces(whitespace_indicators, &[], false);
             return vec![line_layout];
         }
 
@@ -2591,6 +2583,8 @@ impl<M: InputModeKind> TextElement<M> {
             let mut wrapped_lines: SmallVec<[ShapedLine; 1]> = SmallVec::with_capacity(1);
             let mut line_has_background = false;
             let mut marks = Vec::new();
+            // Triad: each visual line's own text, for its whitespace symbols.
+            let mut originals: SmallVec<[&str; 1]> = SmallVec::with_capacity(1);
 
             for range in &line_item.wrapped_lines {
                 let line_runs = runs_for_range(runs, run_offset, &range);
@@ -2605,6 +2599,7 @@ impl<M: InputModeKind> TextElement<M> {
                 };
 
                 let original = &line_text[range.clone()];
+                originals.push(original);
                 let ends_line = range.end == line_text.len();
                 let sub_line: SharedString =
                     char_marks::masked(original, marker, ends_line).into_owned().into();
@@ -2640,11 +2635,14 @@ impl<M: InputModeKind> TextElement<M> {
                 px(0.)
             };
 
+            // Triad: the last line of a text that does not end in a newline.
+            let no_newline = !line_text.is_empty()
+                && state.text.line_start_offset(buffer_line) + line_text.len() == state.text.len();
             let line_layout = LineLayout::new()
                 .lines(wrapped_lines)
                 .wrap_indent(wrap_indent)
                 .with_background(line_has_background)
-                .with_whitespaces(whitespace_indicators.clone())
+                .with_whitespaces(whitespace_indicators.clone(), &originals, no_newline)
                 .with_char_marks(marks);
             lines.push(line_layout);
 
@@ -7369,6 +7367,70 @@ mod tests {
                 .collect();
             // Line 0 `a\r`, line 1 `b\rc\r`, and the empty last line.
             assert_eq!(labels, [0, 1, 0]);
+        });
+    }
+
+    // Triad: whitespace symbols.
+
+    fn whitespace_editor(
+        cx: &mut TestAppContext,
+        text: &str,
+    ) -> (Entity<EditorState>, gpui::WindowHandle<DecorationHarness>) {
+        cx.update(crate::init);
+        let mut editor = None;
+        let window = cx.open_window(size(px(240.), px(140.)), |window, cx| {
+            let state = cx.new(|cx| {
+                EditorState::new(window, cx)
+                    .char_marks(marker)
+                    .show_whitespaces(true)
+                    .default_value(text)
+            });
+            editor = Some(state.clone());
+            DecorationHarness(state)
+        });
+        (editor.unwrap(), window)
+    }
+
+    /// The whitespace symbols each laid-out line paints.
+    fn symbols_by_line(state: &EditorState) -> Vec<Vec<crate::input::char_marks::Symbol>> {
+        state.last_layout.as_ref().unwrap().lines.iter()
+            .map(|line| line.whitespace_chars.iter().map(|&(_, _, symbol)| symbol).collect())
+            .collect()
+    }
+
+    #[gpui::test]
+    fn whitespace_symbols_come_from_the_text_with_its_line_endings(cx: &mut TestAppContext) {
+        use crate::input::char_marks::Symbol::*;
+        // A badge shapes as spaces, which show no symbol; the last line has no newline.
+        let (editor, window) = whitespace_editor(cx, "a \tb\r\n\u{202E}\r\nc d");
+        let mut cx = VisualTestContext::from_window(window.into(), cx);
+        cx.update(|window, cx| {
+            window.draw(cx).clear(cx);
+            assert_eq!(
+                symbols_by_line(editor.read(cx)),
+                [vec![Space, Tab, CarriageReturn], vec![CarriageReturn], vec![Space, NoNewline]]
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn a_text_ending_in_a_newline_has_no_no_newline_symbol(cx: &mut TestAppContext) {
+        let (editor, window) = whitespace_editor(cx, "a\n");
+        let mut cx = VisualTestContext::from_window(window.into(), cx);
+        cx.update(|window, cx| {
+            window.draw(cx).clear(cx);
+            assert_eq!(symbols_by_line(editor.read(cx)), [vec![], vec![]]);
+        });
+    }
+
+    #[gpui::test]
+    fn hidden_whitespace_has_no_symbols(cx: &mut TestAppContext) {
+        let (editor, window) = whitespace_editor(cx, "a b");
+        let mut cx = VisualTestContext::from_window(window.into(), cx);
+        cx.update(|window, cx| {
+            editor.update(cx, |state, cx| state.set_show_whitespaces(false, window, cx));
+            window.draw(cx).clear(cx);
+            assert_eq!(symbols_by_line(editor.read(cx)), [vec![]]);
         });
     }
 }

@@ -12,13 +12,16 @@ use merge_view::rows::PaneSet;
 /// Where a wrapped cell's continuation rows start, in its tab-expanded text.
 type Breaks = Vec<usize>;
 
-/// What the rows were wrapped for. Another width, pane set or row map wraps them again.
+/// What the rows were wrapped for. Another width, pane set, row map or whitespace setting
+/// wraps them again.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Fit {
     /// Each shown pane's text width.
     pub widths: Vec<Pixels>,
     pub panes: PaneSet,
     pub rows: usize,
+    /// The panes show their whitespace, which adds the line endings' symbols.
+    pub whitespace: bool,
 }
 
 pub(crate) struct RowWrap {
@@ -159,7 +162,7 @@ mod tests {
     }
 
     fn fit(rows: usize) -> Fit {
-        Fit { widths: vec![WIDTH, WIDTH], panes: PaneSet::LeftRight, rows }
+        Fit { widths: vec![WIDTH, WIDTH], panes: PaneSet::LeftRight, rows, whitespace: false }
     }
 
     /// Two panes: row 0 is 5 and 12 bytes, row 1 a filler and 9, row 2 is 3 and 3.
@@ -198,6 +201,20 @@ mod tests {
         assert!(wrap.fit(wider, cells, every(6)));
         // Row 0: 1 and 2 segments; row 1: 2; row 2: 1.
         assert_eq!(wrap.heights(), &Heights::Starts(vec![0, 2, 4, 5]));
+    }
+
+    #[test]
+    fn showing_whitespace_wraps_again() {
+        let mut wrap = RowWrap::new(3);
+        wrap.fit(fit(3), cells, every(4));
+        let mut calls = 0;
+        let counting = |text: &str, width| {
+            calls += 1;
+            every(4)(text, width)
+        };
+        wrap.fit(Fit { whitespace: true, ..fit(3) }, cells, counting);
+        // Five cells, row 1's filler aside.
+        assert_eq!(calls, 5);
     }
 
     #[test]

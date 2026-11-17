@@ -14,7 +14,7 @@ use vcs::{Annotation, IdKind, LineOrigin, VcsError};
 /// The origin column's width.
 pub(crate) const ORIGIN_WIDTH: Pixels = px(72.);
 
-/// Whether a column shows.
+/// Whether a column or a view shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Visibility {
     #[default]

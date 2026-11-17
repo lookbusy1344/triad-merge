@@ -4,7 +4,7 @@
 use std::borrow::Cow;
 use std::ops::Range;
 
-use merge_core::unusual::Unusual;
+use crate::tabs::{Drawing, Mark};
 
 use crate::highlight::CellSpans;
 use crate::tabs;
@@ -21,8 +21,9 @@ pub struct Run<S> {
     pub matched: Option<Matched>,
     /// The run lies in the pane's selection.
     pub selected: bool,
-    /// The run is an unusual character: an invisible one's code point, or an odd space.
-    pub unusual: Option<Unusual>,
+    /// The run is an unusual character, an invisible one's code point or an odd space, or a
+    /// whitespace symbol.
+    pub mark: Option<Mark>,
 }
 
 /// Which search match a run lies in.
@@ -44,14 +45,14 @@ pub fn runs<S: Copy>(
     layered(syntax, changed, matched, None, &[])
 }
 
-/// [`runs`] with the bytes of `selected` as a fourth layer and the unusual characters as a
+/// [`runs`] with the bytes of `selected` as a fourth layer and the marked characters as a
 /// fifth, sorted and disjoint.
 fn layered<S: Copy>(
     syntax: &[(Range<usize>, S)],
     changed: &[Range<usize>],
     matched: &[(Range<usize>, Matched)],
     selected: Option<Range<usize>>,
-    unusual: &[(Range<usize>, Unusual)],
+    marked: &[(Range<usize>, Mark)],
 ) -> Vec<Run<S>> {
     let selected = selected.filter(|range| !range.is_empty());
     let mut bounds: Vec<usize> = syntax
@@ -60,7 +61,7 @@ fn layered<S: Copy>(
         .chain(changed)
         .chain(matched.iter().map(|(range, _)| range))
         .chain(&selected)
-        .chain(unusual.iter().map(|(range, _)| range))
+        .chain(marked.iter().map(|(range, _)| range))
         .filter(|range| !range.is_empty())
         .flat_map(|range| [range.start, range.end])
         .collect();
@@ -69,7 +70,7 @@ fn layered<S: Copy>(
     let mut styles = syntax.iter().peekable();
     let mut marks = changed.iter().peekable();
     let mut found = matched.iter().peekable();
-    let mut odd = unusual.iter().peekable();
+    let mut odd = marked.iter().peekable();
     bounds
         .windows(2)
         .filter_map(|pair| {
@@ -78,23 +79,24 @@ fn layered<S: Copy>(
             let changed = covering(&mut marks, |r| r, range.start).is_some();
             let matched = covering(&mut found, |(r, _)| r, range.start).map(|&(_, m)| m);
             let selected = selected.as_ref().is_some_and(|s| s.contains(&range.start));
-            let unusual = covering(&mut odd, |(r, _)| r, range.start).map(|&(_, u)| u);
-            let marked = changed || matched.is_some() || selected || unusual.is_some();
+            let mark = covering(&mut odd, |(r, _)| r, range.start).map(|&(_, m)| m);
+            let marked = changed || matched.is_some() || selected || mark.is_some();
             (style.is_some() || marked).then_some(Run {
                 range,
                 style,
                 changed,
                 matched,
                 selected,
-                unusual,
+                mark,
             })
         })
         .collect()
 }
 
-/// A cell's text as it draws, and its runs in bytes of that text: the line without its
-/// terminator as [`tabs::expand`] draws it, with its unusual characters marked and `syntax`, `spans`, `matched` and `selected`
-/// (all in bytes of the line) moved onto the expanded text. Ranges past the line stop at its end.
+/// A cell's text as it draws, and its runs in bytes of that text: the line as
+/// [`tabs::expand`] draws it for `drawing`, with its marks, and `syntax`, `spans`, `matched`
+/// and `selected` (all in bytes of the line) moved onto the expanded text. Ranges past the
+/// line's text stop at its end.
 #[must_use]
 pub fn cell<'a, S: Copy>(
     line: &'a str,
@@ -102,11 +104,11 @@ pub fn cell<'a, S: Copy>(
     syntax: &[(Range<usize>, S)],
     matched: &[(Range<usize>, Matched)],
     selected: Option<Range<usize>>,
-    tab_width: usize,
+    drawing: Drawing,
 ) -> (Cow<'a, str>, Vec<Run<S>>) {
-    let line = line.trim_end_matches(['\n', '\r']);
-    let expanded = tabs::expand(line, tab_width);
-    let at = |offset: usize| expanded.offset(offset.min(line.len()));
+    let text_len = line.trim_end_matches(['\n', '\r']).len();
+    let expanded = tabs::expand(line, drawing);
+    let at = |offset: usize| expanded.offset(offset.min(text_len));
     let syntax: Vec<_> =
         syntax.iter().map(|(range, style)| (at(range.start)..at(range.end), *style)).collect();
     let changed: Vec<_> = match spans {
@@ -140,6 +142,9 @@ fn covering<'a, T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use merge_core::unusual::Unusual;
+
+    const PLAIN: Drawing = Drawing { tab_width: 4, whitespace: false };
 
     const K: char = 'k';
     const S: char = 's';
@@ -150,29 +155,49 @@ mod tests {
     }
 
     fn run(range: Range<usize>, style: Option<char>, changed: bool) -> Run<char> {
-        Run { range, style, changed, matched: None, selected: false, unusual: None }
+        Run { range, style, changed, matched: None, selected: false, mark: None }
     }
 
     #[test]
     fn an_invisible_characters_code_point_is_its_own_run() {
         // a, RLO (bytes 1..4), b: the code point U+202E draws at 1..7.
-        let (text, runs) = cell("a\u{202E}b\n", &CellSpans::None, &[(0..5, K)], &[], None, 4);
+        let (text, runs) = cell("a\u{202E}b\n", &CellSpans::None, &[(0..5, K)], &[], None, PLAIN);
         assert_eq!(text, "aU+202Eb");
         assert_eq!(
             runs,
             [
                 run(0..1, Some(K), false),
-                Run { unusual: Some(Unusual::Invisible), ..run(1..7, Some(K), false) },
+                Run { mark: Some(Mark::Unusual(Unusual::Invisible)), ..run(1..7, Some(K), false) },
                 run(7..8, Some(K), false),
             ]
         );
     }
 
     #[test]
+    fn a_whitespace_symbol_is_its_own_run_under_the_syntax() {
+        // a, the dot at 1..3, b at 3, then ␍ at 4..7.
+        let shown = Drawing { whitespace: true, ..PLAIN };
+        let (text, runs) = cell("a b\r\n", &CellSpans::None, &[(0..3, K)], &[], None, shown);
+        assert_eq!(text, "a·b␍");
+        assert_eq!(
+            runs,
+            [
+                run(0..1, Some(K), false),
+                Run { mark: Some(Mark::Whitespace), ..run(1..3, Some(K), false) },
+                run(3..4, Some(K), false),
+                Run { mark: Some(Mark::Whitespace), ..run(4..7, None, false) },
+            ]
+        );
+    }
+
+    #[test]
     fn an_odd_space_without_a_span_is_a_run() {
-        let (text, runs) = cell("a\u{3000}b", &CellSpans::None, &[], &[], None, 4);
+        let (text, runs) = cell("a\u{3000}b", &CellSpans::None, &[], &[], None, PLAIN);
         assert_eq!(text, "a\u{3000}b");
-        assert_eq!(runs, [Run { unusual: Some(Unusual::Space), ..run(1..4, None, false) }]);
+        assert_eq!(
+            runs,
+            [Run { mark: Some(Mark::Unusual(Unusual::Space)), ..run(1..4, None, false) }]
+        );
     }
 
     fn found(run: Run<char>, matched: Matched) -> Run<char> {
@@ -241,11 +266,9 @@ mod tests {
         );
     }
 
-    const TAB_WIDTH: usize = 4;
-
     /// A cell's text and the ranges its marks cover, without syntax.
     fn marks<'a>(line: &'a str, spans: &CellSpans) -> (Cow<'a, str>, Vec<Range<usize>>) {
-        let (text, runs) = cell::<()>(line, spans, &[], &[], None, TAB_WIDTH);
+        let (text, runs) = cell::<()>(line, spans, &[], &[], None, PLAIN);
         assert!(runs.iter().all(|run| run.changed && run.style.is_none()));
         (text, runs.into_iter().map(|run| run.range).collect())
     }
@@ -254,7 +277,7 @@ mod tests {
     fn syntax_after_a_tab_moves_with_the_text() {
         // `"b"` is bytes 2..5 of the line, 4..7 once the tab runs to column 4.
         let syntax = [(0..1, K), (2..5, S)];
-        let (text, runs) = cell("a\t\"b\"\n", &CellSpans::None, &syntax, &[], None, TAB_WIDTH);
+        let (text, runs) = cell("a\t\"b\"\n", &CellSpans::None, &syntax, &[], None, PLAIN);
         assert_eq!(text, "a   \"b\"");
         assert_eq!(runs, [run(0..1, Some(K), false), run(4..7, Some(S), false)]);
     }
@@ -262,7 +285,7 @@ mod tests {
     #[test]
     fn a_mark_splits_the_syntax_under_it() {
         let spans = CellSpans::Ranges(one(1..3).to_vec());
-        let (_, runs) = cell("abcd\n", &spans, &[(0..4, K)], &[], None, TAB_WIDTH);
+        let (_, runs) = cell("abcd\n", &spans, &[(0..4, K)], &[], None, PLAIN);
         assert_eq!(
             runs,
             [run(0..1, Some(K), false), run(1..3, Some(K), true), run(3..4, Some(K), false),]
@@ -271,7 +294,7 @@ mod tests {
 
     #[test]
     fn syntax_past_the_line_stops_at_its_end() {
-        let (_, runs) = cell("ab\r\n", &CellSpans::None, &[(0..4, K)], &[], None, TAB_WIDTH);
+        let (_, runs) = cell("ab\r\n", &CellSpans::None, &[(0..4, K)], &[], None, PLAIN);
         assert_eq!(runs, [run(0..2, Some(K), false)]);
     }
 
@@ -331,8 +354,7 @@ mod tests {
 
     #[test]
     fn a_selection_splits_the_runs_under_it_and_covers_plain_text() {
-        let (_, runs) =
-            cell("abcdef\n", &CellSpans::None, &[(0..2, K)], &[], Some(1..4), TAB_WIDTH);
+        let (_, runs) = cell("abcdef\n", &CellSpans::None, &[(0..2, K)], &[], Some(1..4), PLAIN);
         assert_eq!(
             runs,
             [
@@ -347,7 +369,7 @@ mod tests {
     fn a_selection_keeps_the_match_under_it() {
         let matched = [(2..4, Matched::Other)];
         let (_, runs) =
-            cell::<char>("abcdef\n", &CellSpans::None, &[], &matched, Some(3..5), TAB_WIDTH);
+            cell::<char>("abcdef\n", &CellSpans::None, &[], &matched, Some(3..5), PLAIN);
         assert_eq!(
             runs,
             [
@@ -361,13 +383,13 @@ mod tests {
     #[test]
     fn a_selection_after_a_tab_moves_with_the_text_and_takes_the_tabs_spaces() {
         // The tab at byte 1 runs over 1..4; `b` is byte 2, 4 once expanded.
-        let (_, runs) = cell::<char>("a\tb\n", &CellSpans::None, &[], &[], Some(1..3), TAB_WIDTH);
+        let (_, runs) = cell::<char>("a\tb\n", &CellSpans::None, &[], &[], Some(1..3), PLAIN);
         assert_eq!(runs, [selected(run(1..5, None, false))]);
     }
 
     #[test]
     fn a_selection_past_the_line_stops_at_its_end() {
-        let (_, runs) = cell::<char>("ab\n", &CellSpans::None, &[], &[], Some(1..9), TAB_WIDTH);
+        let (_, runs) = cell::<char>("ab\n", &CellSpans::None, &[], &[], Some(1..9), PLAIN);
         assert_eq!(runs, [selected(run(1..2, None, false))]);
     }
 
@@ -375,8 +397,7 @@ mod tests {
     fn a_match_after_a_tab_moves_with_the_text_and_stops_at_the_line_end() {
         // `b` is byte 2 of the line, 4 once the tab runs to column 4; `c\n` stops at `c`.
         let matched = [(2..3, Matched::Current), (3..5, Matched::Other)];
-        let (text, runs) =
-            cell::<char>("a\tbc\n", &CellSpans::None, &[], &matched, None, TAB_WIDTH);
+        let (text, runs) = cell::<char>("a\tbc\n", &CellSpans::None, &[], &matched, None, PLAIN);
         assert_eq!(text, "a   bc");
         assert_eq!(
             runs,

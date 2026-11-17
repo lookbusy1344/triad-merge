@@ -9,17 +9,17 @@ use gpui_kit::{Bounds, IntoElement, Pixels, Styled as _, Window, canvas, px};
 use merge_core::merge3::Source;
 use merge_core::text::Text;
 use merge_view::scroll::clamp_left;
-use merge_view::tabs;
+use merge_view::tabs::{self, Drawing};
 
 /// The character whose advance sets a column's width. The panes draw in a monospace font.
 const ADVANCE_CHAR: char = 'm';
 
-/// The widest line of each input, in columns, tabs expanded.
+/// The widest line of each input, in columns, as the top panes draw it.
 pub(crate) type Widest = Vec<(Source, usize)>;
 
 /// Count the widest line of each of `texts`. Runs off the UI thread: it reads every line.
-pub(crate) fn widest(texts: &[(Source, Text)], tab_width: usize) -> Widest {
-    texts.iter().map(|(source, text)| (*source, tabs::widest(text.lines(), tab_width))).collect()
+pub(crate) fn widest(texts: &[(Source, Text)], drawing: Drawing) -> Widest {
+    texts.iter().map(|(source, text)| (*source, tabs::widest(text.lines(), drawing))).collect()
 }
 
 #[derive(Default)]

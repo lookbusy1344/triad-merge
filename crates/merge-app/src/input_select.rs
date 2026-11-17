@@ -12,7 +12,7 @@ use merge_core::document::MergeDocument;
 use merge_core::merge3::Source;
 use merge_view::rows::{RowIx, RowMap};
 use merge_view::selection::{self, InputSelection};
-use merge_view::tabs;
+use merge_view::tabs::{self, Drawing};
 
 /// The key context of the top panes, where ⌘C and ⌘A act on their selection.
 pub const INPUT_PANES_CONTEXT: &str = "InputPanes";
@@ -50,7 +50,7 @@ pub(crate) struct CellHit {
 pub(crate) struct Inputs<'a> {
     pub doc: &'a MergeDocument,
     pub rows: &'a RowMap,
-    pub tab_width: usize,
+    pub drawing: Drawing,
 }
 
 impl InputSelect {
@@ -226,7 +226,7 @@ fn column(
         return 0;
     };
     let text = inputs.doc.inputs().text(hit.source).line(line);
-    let expanded = tabs::expand(text.trim_end_matches(['\n', '\r']), inputs.tab_width);
+    let expanded = tabs::expand(text, inputs.drawing);
     expanded.line_offset(hit.segment_start + drawn_index(layout, position, pick))
 }
 

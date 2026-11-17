@@ -37,5 +37,6 @@ mod stack;
 mod syntax;
 mod tools;
 mod unusual;
+mod whitespace;
 mod window;
 mod wrap;

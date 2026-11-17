@@ -1,3 +1,5 @@
+// Modified for Triad: a row keeps no copy of its text; whitespace symbols come from the
+// buffer. See PATCHES.md.
 //! A visual row whose offsets remain in source UTF-8 bytes.
 use gpui::{App, Pixels, Point, ShapedLine, SharedString, TextAlign, Window, point, px};
 use std::ops::Range;
@@ -12,7 +14,6 @@ pub(crate) struct InlineFragment {
 pub(crate) struct InputLine {
     pub(crate) len: usize,
     pub(crate) width: Pixels,
-    pub(crate) text: SharedString,
     content: Content,
 }
 // Keep the ordinary shaped row inline: boxing it would add an allocation to
@@ -27,7 +28,6 @@ impl From<ShapedLine> for InputLine {
         Self {
             len: line.len,
             width: line.width,
-            text: line.text.clone(),
             content: Content::Text(line),
         }
     }
@@ -37,7 +37,6 @@ impl InputLine {
         let width = fragments.last().map_or(px(0.), |f| f.x + f.width);
         Self {
             len: text.len(),
-            text,
             width,
             content: Content::Inline(fragments),
         }

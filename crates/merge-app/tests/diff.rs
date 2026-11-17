@@ -2441,20 +2441,21 @@ fn the_view_menu_ticks_what_the_diff_window_shows(cx: &mut TestAppContext) {
     act(cx, o.window, |window, _| window.activate_window());
     cx.run_until_parked();
     act(cx, o.window, TestWindowExt::render_frame);
-    let ticks = |syntax, wrap| {
+    let ticks = |syntax, wrap, whitespace| {
         // The diff window has no base pane and no result, and these files have no origins,
         // so no Blame item.
         [
             ("Base Pane", false),
             ("Syntax Highlighting", syntax),
             ("Soft Wrap", wrap),
+            ("Show Whitespace", whitespace),
             ("Collapse Unchanged", false),
             ("Sync Result Scrolling", false),
         ]
         .map(|(name, ticked)| (name.to_owned(), ticked))
         .to_vec()
     };
-    assert_eq!(view_ticks(cx), ticks(true, false));
+    assert_eq!(view_ticks(cx), ticks(true, false, false));
     let toggle = |cx: &mut TestAppContext, action: &dyn gpui_kit::Action| {
         act(cx, o.window, |window, cx| {
             window.dispatch_action(action.boxed_clone(), cx);
@@ -2462,11 +2463,21 @@ fn the_view_menu_ticks_what_the_diff_window_shows(cx: &mut TestAppContext) {
         act(cx, o.window, TestWindowExt::render_frame);
     };
     toggle(cx, &merge_app::ToggleOriginColumn);
-    assert_eq!(view_ticks(cx), ticks(true, false));
+    assert_eq!(view_ticks(cx), ticks(true, false, false));
     toggle(cx, &merge_app::ToggleSyntax);
-    assert_eq!(view_ticks(cx), ticks(false, false));
+    assert_eq!(view_ticks(cx), ticks(false, false, false));
     toggle(cx, &merge_app::ToggleSoftWrap);
-    assert_eq!(view_ticks(cx), ticks(false, true));
+    assert_eq!(view_ticks(cx), ticks(false, true, false));
+    toggle(cx, &merge_app::ToggleWhitespace);
+    assert_eq!(view_ticks(cx), ticks(false, true, true));
+    let shown = |cx: &mut TestAppContext| {
+        cx.read(|cx| {
+            SIDES_OF_TEST.map(|side| o.view.read(cx).editor(side).read(cx).shows_whitespaces())
+        })
+    };
+    assert_eq!(shown(cx), [true, true]);
+    toggle(cx, &merge_app::ToggleWhitespace);
+    assert_eq!(shown(cx), [false, false]);
 }
 
 /// `side`'s display row of buffer line `line`, and its display row count.

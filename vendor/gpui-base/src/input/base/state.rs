@@ -1,5 +1,5 @@
 // Modified for Triad: adds the `gutter_marks` switch and the gutter mark click, spacer rows, the spacer click, hidden
-// lines, line labels, the char marker and the edit observer, with a test that rounding does not stretch the
+// lines, line labels, the char marker, the edit observer and a read of the whitespace setting, with a test that rounding does not stretch the
 // scroll edge. See PATCHES.md.
 //! A text input field that allows the user to enter text.
 //!
@@ -1559,6 +1559,11 @@ impl<M: InputModeKind> InputBaseState<M> {
     pub fn set_show_whitespaces(&mut self, show: bool, _: &mut Window, cx: &mut Context<Self>) {
         self.show_whitespaces = show;
         cx.notify();
+    }
+
+    /// Triad: whether the editor shows its whitespace.
+    pub fn shows_whitespaces(&self) -> bool {
+        self.show_whitespaces
     }
 
     /// Empty rows reserved below the last line of content ("scroll

@@ -1,4 +1,5 @@
-// Modified for Triad: spacer rows above lines. See PATCHES.md.
+// Modified for Triad: spacer rows above lines; whitespace symbols for line endings. See
+// PATCHES.md.
 use std::{ops::Range, rc::Rc};
 
 use gpui::{Bounds, Half, Pixels, ShapedLine, TextAlign, px};
@@ -9,6 +10,23 @@ use super::{WrappingIndent, display_map::LineLayout};
 pub(crate) struct WhitespaceIndicators {
     pub(crate) space: ShapedLine,
     pub(crate) tab: ShapedLine,
+    /// Triad: a carriage return that ends a line.
+    pub(crate) carriage_return: ShapedLine,
+    /// Triad: the end of a last line without a newline.
+    pub(crate) no_newline: ShapedLine,
+}
+
+impl WhitespaceIndicators {
+    /// Triad: the shaped symbol of `symbol`.
+    pub(crate) fn of(&self, symbol: crate::input::char_marks::Symbol) -> &ShapedLine {
+        use crate::input::char_marks::Symbol;
+        match symbol {
+            Symbol::Space => &self.space,
+            Symbol::Tab => &self.tab,
+            Symbol::CarriageReturn => &self.carriage_return,
+            Symbol::NoNewline => &self.no_newline,
+        }
+    }
 }
 
 #[derive(Clone)]

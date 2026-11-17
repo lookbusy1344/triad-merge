@@ -69,7 +69,7 @@ use merge_view::scroll::{Displayed, Geometry, ResultRows};
 use merge_view::search::{Case, Hit, InputMatches};
 use merge_view::selection::InputSelection;
 use merge_view::status::{FileNames, Status};
-use merge_view::tabs;
+use merge_view::tabs::{self, Drawing, Mark};
 use merge_view::{scroll, status};
 use vcs::{IdKind, RepoKind, VcsError};
 
@@ -105,8 +105,8 @@ use crate::{
     Redo, SaveAndExit, SaveCopyAs, SelectAllInput, TakeBase, TakeLeft, TakeLeftAllUnresolved,
     TakeLeftThenRight, TakeRight, TakeRightAllUnresolved, TakeRightThenLeft, TakeSortedUnion,
     TakeWholeLeft, TakeWholeRight, ToggleBase, ToggleBasePane, ToggleCollapseUnchanged, ToggleLeft,
-    ToggleOriginColumn, ToggleRight, ToggleScrollSync, ToggleSoftWrap, ToggleSyntax, Typography,
-    Undo, finish, go_to_line, ignore_closed_view, strings,
+    ToggleOriginColumn, ToggleRight, ToggleScrollSync, ToggleSoftWrap, ToggleSyntax,
+    ToggleWhitespace, Typography, Undo, finish, go_to_line, ignore_closed_view, strings,
 };
 use merge_session::recovery::{FoundJournal, Locator, Recovery, WriteMode, Written, prune};
 use merge_session::session::{CannotSave, PreviewJob, Refused, SaveJob, SaveTarget, Session};
@@ -320,6 +320,8 @@ pub struct WindowSettings {
     pub title: Option<String>,
     /// The result opens with soft wrap, for inputs of up to [`SOFT_WRAP_MAX_LINES`] lines.
     pub soft_wrap: bool,
+    /// Whether every pane opens with its whitespace shown (spec §5).
+    pub whitespace: Visibility,
     /// Whether the diff window opens with its unchanged regions collapsed (spec §5).
     pub collapsing: crate::diff_window::Collapsing,
     /// Where Save & Exit writes (spec §6.2).
@@ -378,6 +380,7 @@ impl Default for WindowSettings {
         Self {
             title: None,
             soft_wrap: false,
+            whitespace: Visibility::Hidden,
             collapsing: crate::diff_window::Collapsing::default(),
             output: None,
             record: None,
@@ -509,6 +512,8 @@ pub struct MergeWindow {
     /// The region of each result placeholder, in order, for scroll sync's result rows.
     placeholders: Vec<RegionIx>,
     typography: Typography,
+    /// Whether every pane shows its whitespace (spec §5).
+    whitespace: Visibility,
     /// The config file's bad lines, which the settings banner shows.
     settings_errors: Option<SharedString>,
     /// What the last Save Copy As wrote, until the merge next changes.
@@ -649,6 +654,7 @@ fn result_editor(
             .soft_wrap(wrap.wraps())
             .gutter_marks(true)
             .char_marks(char_mark)
+            .show_whitespaces(settings.whitespace.shown())
             .searchable(true)
             .tab_size(settings.typography.tab_size())
             .default_value(text);
@@ -662,6 +668,11 @@ fn result_editor(
 }
 
 impl MergeWindow {
+    /// How the top panes draw a line.
+    fn drawing(&self) -> Drawing {
+        drawing(&self.typography, self.whitespace.shown())
+    }
+
     /// The colours of the window's theme.
     fn tones(&self, cx: &App) -> &Tones {
         self.palette.tones(cx.theme().is_dark())
@@ -699,7 +710,7 @@ impl MergeWindow {
         if let Some(lookup) = settings.origins.clone() {
             Self::load_origins(lookup, &doc, window, cx);
         }
-        Self::count_widest(&doc, settings.typography.tab_width, cx);
+        Self::count_widest(&doc, drawing(&settings.typography, settings.whitespace.shown()), cx);
         let syntax =
             colouring.language().map_or_default(|language| Self::input_syntax(language, &doc));
         let (sides, bases) = (doc.inputs().sides().len(), doc.inputs().bases().len());
@@ -758,6 +769,7 @@ impl MergeWindow {
             recorded,
             placeholders: Vec::new(),
             typography: settings.typography.clone(),
+            whitespace: settings.whitespace,
             palette,
             settings_errors: None,
             copy_note: None,
@@ -816,7 +828,7 @@ impl MergeWindow {
     }
 
     /// Count each input's widest line off the UI thread, for the top panes' sideways scroll.
-    fn count_widest(doc: &MergeDocument, tab_width: usize, cx: &mut Context<Self>) {
+    fn count_widest(doc: &MergeDocument, drawing: Drawing, cx: &mut Context<Self>) {
         let inputs = doc.inputs();
         let sides = (0..inputs.sides().len()).map(Source::Side);
         let bases = (0..inputs.bases().len()).map(Source::Base);
@@ -825,7 +837,7 @@ impl MergeWindow {
             sides.chain(bases).map(|source| (source, inputs.text(source).clone())).collect();
         cx.spawn(async move |this, cx| {
             let widest =
-                cx.background_spawn(async move { sideways::widest(&texts, tab_width) }).await;
+                cx.background_spawn(async move { sideways::widest(&texts, drawing) }).await;
             ignore_closed_view(this.update(cx, |this, cx| {
                 this.scroll.sideways_mut().set_widest(widest);
                 cx.notify();
@@ -1053,15 +1065,15 @@ impl MergeWindow {
         let syntax = self.colouring.line(&self.syntax, source, line, &cx.theme().highlight_theme);
         let matched: Vec<_> = self.input_find.in_cell(row, pane).collect();
         let fills = self.match_fills(pane, cx);
+        let drawing = self.drawing();
         let spans = self.highlights.row(self.session.document(), &self.rows, row).get(pane)?;
-        let tab_width = self.typography.tab_width;
         let selected = self.input_select.in_line(self.session.document(), source, line);
         let paint = CellPaint {
             changed,
             fills,
             selected: cx.theme().selection,
             unusual: UnusualPaint::of(cx),
-            tab_width,
+            drawing,
         };
         Some(line_highlights(text.line(line), spans, &syntax, &matched, selected, paint))
     }
@@ -1083,7 +1095,7 @@ impl MergeWindow {
         let inputs = input_select::Inputs {
             doc: self.session.document(),
             rows: &self.rows,
-            tab_width: self.typography.tab_width,
+            drawing: self.drawing(),
         };
         self.input_select.press(inputs, hit, event);
         tracing::debug!(selection = ?self.input_select.selection(), "top pane press");
@@ -1094,7 +1106,7 @@ impl MergeWindow {
         let inputs = input_select::Inputs {
             doc: self.session.document(),
             rows: &self.rows,
-            tab_width: self.typography.tab_width,
+            drawing: self.drawing(),
         };
         if self.input_select.drag(inputs, hit, event) {
             cx.notify();
@@ -1360,9 +1372,14 @@ impl MergeWindow {
             // Not laid out yet.
             return false;
         };
-        let fit = Fit { widths, panes: self.panes, rows: self.rows.row_count() };
+        let fit = Fit {
+            widths,
+            panes: self.panes,
+            rows: self.rows.row_count(),
+            whitespace: self.whitespace.shown(),
+        };
         let (doc, rows, sources) = (self.session.document(), &self.rows, self.panes.sources());
-        let tab_width = self.typography.tab_width;
+        let drawing = self.drawing();
         let cells = |row: usize| {
             let cells = rows.row(doc, RowIx::new(row)).cells;
             sources
@@ -1370,8 +1387,7 @@ impl MergeWindow {
                 .zip(cells)
                 .map(|(&source, line)| {
                     line.map(|n| {
-                        let text = doc.inputs().text(source).line(n);
-                        tabs::expand(text.trim_end_matches(['\n', '\r']), tab_width).into_text()
+                        tabs::expand(doc.inputs().text(source).line(n), drawing).into_text()
                     })
                 })
                 .collect::<Vec<_>>()
@@ -1428,6 +1444,21 @@ impl MergeWindow {
         }
         self.result.update(cx, |state, cx| state.set_soft_wrap(wrap.wraps(), window, cx));
         // The top panes wrap at the next prepaint.
+        cx.notify();
+    }
+
+    /// Show or hide the whitespace in every pane (spec §5). The sideways extent counts the
+    /// line endings' symbols, so it counts again.
+    fn toggle_whitespace(
+        &mut self,
+        _: &ToggleWhitespace,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.whitespace = self.whitespace.toggled();
+        let shown = self.whitespace.shown();
+        self.result.update(cx, |state, cx| state.set_show_whitespaces(shown, window, cx));
+        Self::count_widest(self.session.document(), self.drawing(), cx);
         cx.notify();
     }
 
@@ -1557,6 +1588,7 @@ impl MergeWindow {
             origins_loaded: self.origin_column.origins().loaded(),
             syntax: self.colouring.shown(),
             soft_wrap: self.scroll.wrap().wraps(),
+            whitespace: self.whitespace.shown(),
             collapse_unchanged: self.collapse.on,
             scroll_sync: self.scroll.syncing(),
         }
@@ -2917,7 +2949,7 @@ impl MergeWindow {
                 fills: self.match_fills(pane, cx),
                 selected: cx.theme().selection,
                 unusual: UnusualPaint::of(cx),
-                tab_width: self.typography.tab_width,
+                drawing: self.drawing(),
             })
             .collect()
     }
@@ -3055,7 +3087,7 @@ impl MergeWindow {
         let inputs = input_select::Inputs {
             doc: self.session.document(),
             rows: &self.rows,
-            tab_width: self.typography.tab_width,
+            drawing: self.drawing(),
         };
         self.input_select.drag_to_row(inputs, row, down);
         cx.notify();
@@ -3519,7 +3551,7 @@ fn pick_target(
         }))
 }
 
-/// How a cell paints its marks and matches, and how wide its tabs run.
+/// How a cell paints its marks and matches, and how it draws its line.
 #[derive(Clone, Copy)]
 struct CellPaint {
     /// The background of the characters that differ.
@@ -3528,7 +3560,7 @@ struct CellPaint {
     /// The background of the selected characters.
     selected: Hsla,
     unusual: UnusualPaint,
-    tab_width: usize,
+    drawing: Drawing,
 }
 
 /// How an unusual character paints (spec §5): an invisible one's code point in `text` on
@@ -3637,15 +3669,15 @@ fn line_highlights(
     selected: Option<Range<usize>>,
     paint: CellPaint,
 ) -> (SharedString, CellHighlights) {
-    let (text, runs) = runs::cell(line, spans, syntax, matched, selected, paint.tab_width);
+    let (text, runs) = runs::cell(line, spans, syntax, matched, selected, paint.drawing);
     (
         SharedString::from(text.into_owned()),
         runs.into_iter()
             .map(|run| {
                 let style = match_style(
-                    unusual_style(
+                    mark_style(
                         run_style(run.style, run.changed, paint.changed),
-                        run.unusual,
+                        run.mark,
                         paint.unusual,
                     ),
                     run.matched,
@@ -3662,20 +3694,24 @@ fn line_highlights(
     )
 }
 
-/// A run's style with the grey of the unusual character it shows: an invisible character's
-/// code point also takes the muted text colour.
-fn unusual_style(
-    style: HighlightStyle,
-    unusual: Option<Unusual>,
-    paint: UnusualPaint,
-) -> HighlightStyle {
-    match unusual {
+/// A run's style with the mark it shows: an odd space on grey, an invisible character's code
+/// point in the muted text colour on grey, a whitespace symbol in the muted text colour.
+fn mark_style(style: HighlightStyle, mark: Option<Mark>, paint: UnusualPaint) -> HighlightStyle {
+    match mark {
         None => style,
-        Some(Unusual::Space) => HighlightStyle { background_color: Some(paint.fill), ..style },
-        Some(Unusual::Invisible) => {
+        Some(Mark::Unusual(Unusual::Space)) => {
+            HighlightStyle { background_color: Some(paint.fill), ..style }
+        }
+        Some(Mark::Unusual(Unusual::Invisible)) => {
             HighlightStyle { color: Some(paint.text), background_color: Some(paint.fill), ..style }
         }
+        Some(Mark::Whitespace) => HighlightStyle { color: Some(paint.text), ..style },
     }
+}
+
+/// How the top panes draw a line under `typography`, with whitespace shown or not.
+fn drawing(typography: &Typography, whitespace: bool) -> Drawing {
+    Drawing { tab_width: typography.tab_width, whitespace }
 }
 
 /// A run's style with the fill of the search match it lies in.
@@ -3986,6 +4022,7 @@ impl Render for MergeWindow {
             .on_action(cx.listener(Self::toggle_syntax))
             .on_action(cx.listener(Self::toggle_soft_wrap))
             .on_action(cx.listener(Self::toggle_collapse_unchanged))
+            .on_action(cx.listener(Self::toggle_whitespace))
             .on_action(cx.listener(Self::toggle_scroll_sync))
             // Without origins there is nothing to blame, so the Blame key does nothing.
             .when(self.origin_column.origins().loaded(), |root| {

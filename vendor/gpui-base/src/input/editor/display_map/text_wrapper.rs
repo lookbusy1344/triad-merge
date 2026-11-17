@@ -1,8 +1,8 @@
 // Modified for Triad: test layouts carry spacer heights; lines are read in one pass, unwrapped
 // lines by their lengths alone, and a change of font, indent or tab size rebuilds them only
-// when they wrap; marked characters measure and paint as badges and shades. See PATCHES.md.
+// when they wrap; marked characters measure and paint as badges and shades; whitespace
+// symbols come from the text, with line endings. See PATCHES.md.
 use super::inline_line::InputLine;
-use gpui::Half;
 use std::borrow::Cow;
 use std::ops::Range;
 use std::rc::Rc;
@@ -17,7 +17,7 @@ use unicode_segmentation::UnicodeSegmentation as _;
 
 use crate::input::{
     Point as TreeSitterPoint, RopeExt, TabSize,
-    char_marks::{self, CharMarker, MarkPaint},
+    char_marks::{self, CharMarker, LineEnd, MarkPaint, Symbol},
     layout::{LastLayout, WhitespaceIndicators},
     tab_stops::{expanded_width, tab_stop_width},
 };
@@ -866,8 +866,8 @@ pub(crate) struct LineLayout {
     pub(crate) wrap_indent: Pixels,
     pub(crate) longest_width: Pixels,
     pub(crate) whitespace_indicators: Option<WhitespaceIndicators>,
-    /// Whitespace indicators: (line_index, x_position, is_tab)
-    pub(crate) whitespace_chars: Vec<(usize, Pixels, bool)>,
+    /// Whitespace indicators: (line_index, x_position, symbol)
+    pub(crate) whitespace_chars: Vec<(usize, Pixels, Symbol)>,
     /// Whether any run of this line carries a background color, so [`Self::paint_background`]
     /// can skip the glyph walk for the common case of a line without highlights.
     has_background: bool,
@@ -956,30 +956,36 @@ impl LineLayout {
         self
     }
 
-    pub(crate) fn with_whitespaces(mut self, indicators: Option<WhitespaceIndicators>) -> Self {
+    /// Triad: the whitespace symbols of each visual line, from `texts`, the visual lines'
+    /// own text: the shaped text has each badge character as spaces. `no_newline` says the
+    /// line is the text's last and has no newline.
+    pub(crate) fn with_whitespaces(
+        mut self,
+        indicators: Option<WhitespaceIndicators>,
+        texts: &[&str],
+        no_newline: bool,
+    ) -> Self {
         self.whitespace_indicators = indicators;
         let Some(indicators) = self.whitespace_indicators.as_ref() else {
             return self;
         };
-
-        let space_indicator_offset = indicators.space.width.half();
-
-        for (line_index, wrapped_line) in self.wrapped_lines.iter().enumerate() {
-            for (relative_offset, c) in wrapped_line.text.char_indices() {
-                if matches!(c, ' ' | '\t') {
-                    let is_tab = c == '\t';
-                    let start_x = wrapped_line.x_for_index(relative_offset);
-                    let end_x = wrapped_line.x_for_index(relative_offset + c.len_utf8());
-                    // Center the indicator in the actual character's space
-                    let x_position = if c == ' ' {
-                        (start_x + end_x).half() - space_indicator_offset
-                    } else {
-                        start_x
-                    };
-
-                    self.whitespace_chars.push((line_index, x_position, is_tab));
-                }
-            }
+        let last = self.wrapped_lines.len().saturating_sub(1);
+        for (line_index, (wrapped_line, text)) in self.wrapped_lines.iter().zip(texts).enumerate()
+        {
+            let end = match (line_index == last, no_newline) {
+                (false, _) => LineEnd::Wrapped,
+                (true, false) => LineEnd::Newline,
+                (true, true) => LineEnd::NoNewline,
+            };
+            let symbols = char_marks::whitespace_symbols(
+                |ix| wrapped_line.x_for_index(ix),
+                text,
+                end,
+                indicators.space.width,
+                indicators.carriage_return.width,
+            );
+            self.whitespace_chars
+                .extend(symbols.into_iter().map(|(symbol, x)| (line_index, x, symbol)));
         }
         self
     }
@@ -1221,12 +1227,8 @@ impl LineLayout {
 
         // Paint whitespace indicators
         if let Some(indicators) = self.whitespace_indicators.as_ref() {
-            for (line_index, x_position, is_tab) in &self.whitespace_chars {
-                let invisible = if *is_tab {
-                    indicators.tab.clone()
-                } else {
-                    indicators.space.clone()
-                };
+            for (line_index, x_position, symbol) in &self.whitespace_chars {
+                let invisible = indicators.of(*symbol);
 
                 let origin = point(
                     pos.x + *x_position + self.line_indent(*line_index),

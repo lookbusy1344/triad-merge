@@ -197,6 +197,7 @@ commands!(
     ToggleOriginColumn,
     ToggleSyntax,
     ToggleSoftWrap,
+    ToggleWhitespace,
     ToggleCollapseUnchanged,
     ToggleScrollSync,
     Find,
@@ -266,6 +267,7 @@ pub(crate) struct ViewTicks {
     pub origins_loaded: bool,
     pub syntax: bool,
     pub soft_wrap: bool,
+    pub whitespace: bool,
     pub collapse_unchanged: bool,
     pub scroll_sync: bool,
 }
@@ -328,6 +330,9 @@ pub(crate) fn menus(ticks: ViewTicks) -> Vec<Menu> {
                 }),
                 Some(MenuItem::action(menu::SYNTAX, ToggleSyntax).checked(ticks.syntax)),
                 Some(MenuItem::action(menu::SOFT_WRAP, ToggleSoftWrap).checked(ticks.soft_wrap)),
+                Some(
+                    MenuItem::action(menu::WHITESPACE, ToggleWhitespace).checked(ticks.whitespace),
+                ),
                 Some(
                     MenuItem::action(menu::COLLAPSE_UNCHANGED, ToggleCollapseUnchanged)
                         .checked(ticks.collapse_unchanged),

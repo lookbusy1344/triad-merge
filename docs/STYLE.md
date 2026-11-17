@@ -118,6 +118,10 @@ One look marks a moved block wherever triad shows one (spec §4.3, §4.6, §5). 
 - The pill names the other end's input and line; the accessible name spells both out: `Moved block: go to its other end, left line 40`.
 - The status bar counts duplicates, never moves.
 
+## Visible whitespace
+
+Zed's editor draws `→` for a tab and `•` at half the text size for a space, in `editor_invisible`. triad draws `·` at the text size, which looks the same and fits the top panes, whose symbols are part of their text, and adds `␍` for a carriage return that ends a line and `∅` after a last line without a newline. Every symbol takes the muted text colour, as the badges' labels do, so it reads as chrome on every band. Odd spaces keep their grey and take no symbol.
+
 ## Constants
 
 A size that the helpers above do not cover is a named `Pixels` or `Rems` constant at the top of its module, such as `open_dialog::TAB_HEIGHT`. A test that checks a size takes its expected value from this file.

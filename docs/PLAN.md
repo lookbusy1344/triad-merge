@@ -19,7 +19,7 @@ As of 2026-11-17.
 | M6 native resolution | Done: git stages a resolved save; jj snapshots before the read and after each save | D |
 | M7 syntax highlighting | Done: Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS | F |
 | p4merge parity | Done | E |
-| Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; §G6 done: the files that differ between two directories, or between a revision and the working copy (`diff`, `diff --rev`), in the directory window and printed by `diff --inspect`, and from `jj diff --tool` and `git difftool -d`, with renames and copies paired as jj pairs them; text that is not UTF-8 read and saved as Windows-1252 (§G17); invisible characters drawn as code points and odd spaces shaded in every pane, and escaped in terminal output (§A6.8); moved and duplicated blocks in the merge window and `inspect`, with a suggestion to drop a duplicate (§G16), done; the rest open | G |
+| Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; §G6 done: the files that differ between two directories, or between a revision and the working copy (`diff`, `diff --rev`), in the directory window and printed by `diff --inspect`, and from `jj diff --tool` and `git difftool -d`, with renames and copies paired as jj pairs them; text that is not UTF-8 read and saved as Windows-1252 (§G17); invisible characters drawn as code points and odd spaces shaded in every pane, and escaped in terminal output (§A6.8); moved and duplicated blocks in the merge window and `inspect`, with a suggestion to drop a duplicate (§G16), done; visible whitespace in every pane (§G10) done; the rest open | G |
 | Look after Zed | Done: chrome in the UI font, the Zed status bar, raised surfaces (Go to Line as Zed's card, the menus, the prompt), a 1 px current-region frame, a softer ruler, and on macOS the toolbar in the title bar | `docs/STYLE.md` |
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
 | jj-native features | Done: conflicts across a stack (`stack`, `resolve -r`), operation-log history (`history`, `diff --op`) and absorb by hunk (`absorb`); the stack window, with a preview of a save's effect on the descendants and a confirmation before a save changes them; the history window; the absorb window, by hunk; these windows and the directory window share one frame after Zed's panels (`docs/STYLE.md`): a header with a count and the buttons, status icons with tooltips that name each state and file-name-first paths, keys for the lists, and Escape and Cancel to close; the conflict badge names the sides a conflict keeps; absorb, `resolve -r` and the default revset aliases checked against jj's CLI (§I5); `stack`, `resolve -r`, `history`, `absorb` and a three-sided save checked through the built binary in scenario repositories (`script/test-jj-repos`) | I |
@@ -36,7 +36,7 @@ In order. Each is one or more commits.
 
 1. **Close M3.** Skipped for now by the owner. The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
 2. **Screen-reader support** (part J). Skipped for now by the owner: live status, conflict regions, scrolling the row table, in the order of §J7.
-3. **Review and diff features** (part G): §G7–§G14.
+3. **Review and diff features** (part G): §G7–§G9, §G11–§G14.
 4. **More grammars,** one commit each: C, C++, Java and Kotlin; then Markdown; then Bash, Ruby, PHP and SQL.
 5. **M4b** (§3) once the owner has the machines and the certificate.
 6. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
@@ -71,13 +71,14 @@ In order. Each is one or more commits.
 | Ruler marks with folds: the marks keep their place in the whole file while the thumb follows display rows | A choice between the two | §G2 |
 | A key that opens the fold next to the caret | — | §G2 |
 | A `fallback-encoding` setting to turn the Windows-1252 fallback off | Someone who needs it off | §G17 |
-| Review and diff features: blank lines in a merge (§G4), §G7–§G14 | Owner's choices on §G15's open points for §G4 and §G8 | G |
+| Review and diff features: blank lines in a merge (§G4), §G7–§G9, §G11–§G14 | Owner's choices on §G15's open points for §G4 and §G8 | G |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
 | The absorb oracle's generator builds text files only: no renames, executable bits, symlinks, conflicted inputs or immutable commits | — | §I5 |
 | jj-cli's config defaults other than the revset aliases: none checked for whether triad depends on one | — | §I5 |
 | Absorb: split one hunk between commits | Part H's line selection (§H6) | §I4 |
 | Internal jj repositories: a jj command that commits between triad's load and its commit leaves two operation heads, which triad refuses until jj's next command merges them | — | §D5.5 |
 | The stack, history and absorb windows checked on screen: layout, keys, focus and the accessibility tree; their tests run headless only. `script/gen-jj-repo` builds a repository for each (`docs/test-repos.md`) | — | §I2, §I3, §I4 |
+| Visible whitespace checked on screen: the symbols' fonts and places in the editors and the top panes | The owner at the machine | §G10 |
 | The directory window checked on screen, from `jj diff --tool`, `git difftool -d` and `triad-merge diff`: layout, keys, focus and the accessibility tree | The owner at the machine | §G6 |
 
 ## 4. Risks
@@ -158,7 +159,7 @@ View → Unified: one read-only pane, deleted and inserted lines interleaved, wi
 
 ### G10 Visible whitespace
 
-View → Show Whitespace, setting `show-whitespace`: tabs as `→`, spaces as `·`, `\r` as `␍`, and a mark for a missing final newline, in every pane. Check whether gpui-base draws these or needs a patch (§A6.1).
+Done: View → Show Whitespace (⌘E) and `show-whitespace`, in every pane (spec §5, `DESIGN.md` §A6.10).
 
 ### G11 Patch export
 

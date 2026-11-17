@@ -74,8 +74,8 @@ use crate::window::{
 use crate::wrap::Wrap;
 use crate::{
     Cancel, ExitCode, Find, GoToMoveEnd, NextDifference, PreviousDifference, Redo, Save,
-    ToggleCollapseUnchanged, ToggleOriginColumn, ToggleSoftWrap, ToggleSyntax, Typography, Undo,
-    finish, ignore_closed_view,
+    ToggleCollapseUnchanged, ToggleOriginColumn, ToggleSoftWrap, ToggleSyntax, ToggleWhitespace,
+    Typography, Undo, finish, ignore_closed_view,
 };
 
 /// How long edits must pause before the regions are recomputed (spec §4.6).
@@ -232,6 +232,8 @@ pub struct DiffSettings {
     pub syntax_max_lines: usize,
     /// The panes open with soft wrap, for sides of up to [`SOFT_WRAP_MAX_LINES`] lines.
     pub soft_wrap: bool,
+    /// Whether the panes open with their whitespace shown (spec §5).
+    pub whitespace: Visibility,
     /// Whether the panes open with their unchanged regions collapsed (spec §5).
     pub collapsing: Collapsing,
     /// When the panes show their scrollbars (spec §6.4).
@@ -258,6 +260,7 @@ impl Default for DiffSettings {
             syntax: Syntax::Highlighted,
             syntax_max_lines: merge_config::settings::DEFAULT_SYNTAX_MAX_LINES,
             soft_wrap: false,
+            whitespace: Visibility::Hidden,
             collapsing: Collapsing::default(),
             scrollbars: Scrollbars::Always,
             cwd: None,
@@ -384,6 +387,8 @@ pub struct DiffWindow {
     ruler_drag: ruler::Dragging,
     /// Whether the panes wrap long lines.
     wrap: Wrap,
+    /// Whether both panes show their whitespace (spec §5).
+    whitespace: Visibility,
     /// What the wrapped panes' spacers were levelled for; `None` until they are, and after
     /// the regions change.
     wrap_fit: Option<WrapFit>,
@@ -522,6 +527,28 @@ pub fn open(
 }
 
 impl DiffWindow {
+    /// Follow `side`'s editor: its edits, spacer and gutter clicks, and search steps.
+    fn subscribe_pane(
+        editor: &Entity<EditorState>,
+        side: Side,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> [Subscription; 2] {
+        [
+            cx.subscribe_in(editor, window, move |this, _, event: &InputEvent, window, cx| {
+                match event {
+                    InputEvent::Change => this.send_edits(side, window, cx),
+                    InputEvent::SpacerClick { line } => this.open_fold_above(side, *line, cx),
+                    InputEvent::GutterMarkClick { line } => {
+                        this.go_to_other_end(side, *line, window, cx);
+                    }
+                    InputEvent::PressEnter { .. } | InputEvent::Focus | InputEvent::Blur => {}
+                }
+            }),
+            cx.observe(editor, move |this, _, cx| this.follow_search_step(side, cx)),
+        ]
+    }
+
     fn new(
         files: [DiffFile; 2],
         settings: &DiffSettings,
@@ -548,6 +575,7 @@ impl DiffWindow {
         let ruler_feed = scrollbars::Feed::default();
         let look = Look {
             soft_wrap: wrap.wraps(),
+            whitespace: settings.whitespace.shown(),
             scrollbars: scrollbars::mode(settings.scrollbars),
             ruler_feed: &ruler_feed,
             typography: &settings.typography,
@@ -555,27 +583,12 @@ impl DiffWindow {
             language: colouring.editor_language(),
             chunked: colouring.chunked_factory(left.text.line_count().max(right.text.line_count())),
         };
-        let chunked = look.chunked.is_some();
         let mut subscriptions = Vec::with_capacity(SIDES.len());
         let [left, right] = files;
         let panes = [(Side::Left, left), (Side::Right, right)].map(|(side, file)| {
             doc.set_read_only(side, file.read_only);
             let pane = new_pane(&doc, side, file, &look, window, cx);
-            subscriptions.push(cx.subscribe_in(
-                &pane.editor,
-                window,
-                move |this, _, event: &InputEvent, window, cx| match event {
-                    InputEvent::Change => this.send_edits(side, window, cx),
-                    InputEvent::SpacerClick { line } => this.open_fold_above(side, *line, cx),
-                    InputEvent::GutterMarkClick { line } => {
-                        this.go_to_other_end(side, *line, window, cx);
-                    }
-                    InputEvent::PressEnter { .. } | InputEvent::Focus | InputEvent::Blur => {}
-                },
-            ));
-            subscriptions.push(cx.observe(&pane.editor, move |this, _, cx| {
-                this.follow_search_step(side, cx);
-            }));
+            subscriptions.extend(Self::subscribe_pane(&pane.editor, side, window, cx));
             pane
         });
         subscriptions.push(cx.observe_window_activation(window, |this, _, cx| {
@@ -594,7 +607,7 @@ impl DiffWindow {
         Self {
             menu_bar: crate::menu_bar::WindowMenu::new(cx),
             colouring,
-            chunked,
+            chunked: look.chunked.is_some(),
             status: strings::diff_status(settings.repo, differences(&doc), &comparison).into(),
             repo: settings.repo,
             doc,
@@ -617,6 +630,7 @@ impl DiffWindow {
             ruler_feed,
             ruler_drag: ruler::Dragging::default(),
             wrap,
+            whitespace: settings.whitespace,
             wrap_fit: None,
             reveal: None,
             collapse: Collapse::new(settings.collapsing),
@@ -942,6 +956,21 @@ impl DiffWindow {
         self.set_spacers(cx);
     }
 
+    /// Show or hide the whitespace in both panes (spec §5).
+    fn toggle_whitespace(
+        &mut self,
+        _: &ToggleWhitespace,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.whitespace = self.whitespace.toggled();
+        let shown = self.whitespace.shown();
+        for side in SIDES {
+            self.editor(side).update(cx, |state, cx| state.set_show_whitespaces(shown, window, cx));
+        }
+        cx.notify();
+    }
+
     /// Collapse every unchanged region, or show them all (spec §5).
     fn toggle_collapse_unchanged(
         &mut self,
@@ -995,6 +1024,7 @@ impl DiffWindow {
             origins_loaded: self.origin_column.origins().loaded(),
             syntax: self.colouring.shown(),
             soft_wrap: self.wrap.wraps(),
+            whitespace: self.whitespace.shown(),
             collapse_unchanged: self.collapse.on,
             ..crate::ViewTicks::default()
         }
@@ -2091,6 +2121,7 @@ fn title(origin: &Origin, modified: bool) -> SharedString {
 /// How a new pane's editor looks.
 struct Look<'a> {
     soft_wrap: bool,
+    whitespace: bool,
     /// When the panes' bars show.
     scrollbars: ScrollbarMode,
     /// The right pane's scroll, which its ruler is the vertical bar of.
@@ -2137,6 +2168,7 @@ fn new_pane(
             .folding(false)
             .indent_guides(false)
             .soft_wrap(look.soft_wrap)
+            .show_whitespaces(look.whitespace)
             .searchable(true)
             // Replace edits the right side only (spec §5, Two-way mode).
             .replaceable(side == Side::Right)
@@ -2212,6 +2244,7 @@ impl DiffWindow {
         })
         .on_action(cx.listener(Self::toggle_syntax))
         .on_action(cx.listener(Self::toggle_soft_wrap))
+        .on_action(cx.listener(Self::toggle_whitespace))
         .on_action(cx.listener(Self::toggle_collapse_unchanged))
     }
 
