@@ -1,5 +1,7 @@
 //! The toolbar (spec §5, §6.3): a button for each window action, in groups.
 
+use std::rc::Rc;
+
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{Selectable as _, Sizable as _, Theme, h_flex};
@@ -269,24 +271,20 @@ fn render(
             .child(next.with_tooltip(next.button(Labels::Hidden, text_size), context))
             .into_any_element(),
         // The menu's text matches the toolbar's labels. Base ticks while the region takes it.
-        // The menu takes a gpui-kit button as its trigger, so the tooltip goes round the menu.
-        Control::More => tooltip::wrap(
+        Control::More => MenuButton::new(
             MORE_ID,
-            MenuButton::new(
-                MORE_ID,
-                more_trigger(labels, text_size),
-                strings::MORE_MENU,
-                context,
-                text_size,
-                MORE_MENU.iter().map(|&(tool, label)| Item {
-                    icon: tool.icon(),
-                    label,
-                    action: tool.action(),
-                    checked: tool.toggles().then(|| pressed.contains(&tool)),
-                }),
-            ),
-            tooltip::build(strings::MORE_MENU),
+            more_trigger(labels, text_size),
+            strings::MORE_MENU,
+            context,
+            text_size,
+            MORE_MENU.iter().map(|&(tool, label)| Item {
+                icon: tool.icon(),
+                label,
+                action: tool.action(),
+                checked: tool.toggles().then(|| pressed.contains(&tool)),
+            }),
         )
+        .tooltip(Rc::new(tooltip::build(strings::MORE_MENU)))
         .into_any_element(),
     }
 }

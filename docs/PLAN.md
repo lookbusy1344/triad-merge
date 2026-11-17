@@ -59,7 +59,6 @@ In order. Each is one or more commits.
 | A histogram diff that gives git's hunks faster: 1.5 s against jj's 70 ms on the 100k-line `deep` triple | — | §B6 |
 | A sideways scrollbar for the top panes: a `ScrollbarHandle` over `Sideways` | — | §E4.4 |
 | A `script/measure-app` mode with a search query open | — | §A14 |
-| The More button's tooltip shows over its open menu; Zed hides a button's tooltip while its menu is open. `MenuButton` needs the popover's open state | — | `menu_button.rs` |
 | The result's search panel in triad's 12 px chrome | A gpui-component release that styles it, or vendoring the crate | `docs/gpui-kit-issues.md` |
 | More grammars | — | §2 |
 | Razor | A grammar that covers its code blocks | §F1 |

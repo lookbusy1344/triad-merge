@@ -8,12 +8,12 @@ use gpui_kit::assets::IconName;
 use gpui_kit::base::Popover;
 use gpui_kit::component::button::Button;
 use gpui_kit::component::kbd::Kbd;
-use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, Icon, Selectable as _, Sizable as _, h_flex, v_flex};
 use gpui_kit::{
-    Action, AnyElement, App, ClickEvent, Entity, EntityId, FocusHandle, InteractiveElement as _,
-    IntoElement, KeyBinding, ParentElement as _, Pixels, Role, SharedString,
-    StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Toggled, Window, actions,
-    div, prelude::FluentBuilder as _, px, transparent_black,
+    Action, AnyElement, AnyView, App, ClickEvent, Entity, EntityId, FocusHandle,
+    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Pixels, Role,
+    SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Toggled,
+    Window, actions, div, prelude::FluentBuilder as _, px, transparent_black,
 };
 
 use crate::elevation::{self, Elevation};
@@ -75,7 +75,11 @@ pub(crate) struct MenuButton {
     key_context: &'static str,
     text_size: Pixels,
     items: Rc<[Item]>,
+    tooltip: Option<TooltipBuilder>,
 }
+
+/// A builder of a tooltip, as an element's `tooltip` takes it.
+pub(crate) type TooltipBuilder = Rc<dyn Fn(&mut Window, &mut App) -> AnyView>;
 
 impl MenuButton {
     /// `trigger`, which opens a menu named `label` of `items`, whose text is `text_size`.
@@ -87,7 +91,20 @@ impl MenuButton {
         text_size: Pixels,
         items: impl IntoIterator<Item = Item>,
     ) -> Self {
-        Self { id, trigger, label, key_context, text_size, items: items.into_iter().collect() }
+        Self {
+            id,
+            trigger,
+            label,
+            key_context,
+            text_size,
+            items: items.into_iter().collect(),
+            tooltip: None,
+        }
+    }
+
+    /// Show `build`'s tooltip over the trigger while the menu is closed.
+    pub(crate) fn tooltip(self, build: TooltipBuilder) -> Self {
+        Self { tooltip: Some(build), ..self }
     }
 
     /// The id of one piece of the menu button's element state.
@@ -112,7 +129,19 @@ impl gpui_kit::RenderOnce for MenuButton {
                 let selected = selected.clone();
                 move |_, _, cx| selected.update(cx, |selected, _| *selected = None)
             })
-            .trigger(self.trigger);
+            .trigger_with({
+                let (id, trigger, tooltip) = (self.id, self.trigger, self.tooltip);
+                move |open, _, _| {
+                    let trigger = trigger.open(open);
+                    match tooltip.filter(|_| !open) {
+                        Some(build) => {
+                            crate::tooltip::wrap(id, trigger, move |window, cx| build(window, cx))
+                                .into_any_element()
+                        }
+                        None => trigger.into_any_element(),
+                    }
+                }
+            });
         let menu = Menu {
             label: self.label,
             key_context: self.key_context,
@@ -229,9 +258,89 @@ impl Menu {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+    use std::time::Duration;
+
+    use gpui_kit::test::TestWindowExt as _;
+    use gpui_kit::{AnyView, AppContext as _, Context, Render, TestAppContext};
+
     use super::*;
 
     const ROWS: usize = 3;
+    /// The menu button of the probe window.
+    const ID: &str = "probe";
+    /// Longer than GPUI's tooltip delay.
+    const PAST_TOOLTIP_DELAY: Duration = Duration::from_secs(1);
+
+    /// A window with one menu button, whose tooltip counts how often it is built.
+    struct Probe {
+        builds: Rc<Cell<usize>>,
+    }
+
+    impl Render for Probe {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let builds = Rc::clone(&self.builds);
+            let item = Item {
+                icon: IconName::Check,
+                label: "Row",
+                action: Box::new(Activate),
+                checked: None,
+            };
+            div().size_full().child(
+                MenuButton::new(
+                    ID,
+                    Button::new(ID).label("Menu"),
+                    "Menu",
+                    "Probe",
+                    px(12.),
+                    [item],
+                )
+                .tooltip(Rc::new(
+                    move |window: &mut Window, cx: &mut App| -> AnyView {
+                        builds.set(builds.get() + 1);
+                        crate::tooltip::tooltip("Menu").build(window, cx)
+                    },
+                )),
+            )
+        }
+    }
+
+    /// Open the probe; with `open_menu`, open its menu. Then hover the button past the
+    /// tooltip's delay and give the number of tooltips built.
+    fn tooltips_on_hover(cx: &mut TestAppContext, open_menu: bool) -> usize {
+        let builds = Rc::new(Cell::new(0));
+        let window = cx.update(|cx| {
+            gpui_kit::init(cx);
+            cx.set_reduce_motion(true);
+            let builds = Rc::clone(&builds);
+            cx.open_window(gpui_kit::WindowOptions::default(), |_, cx| cx.new(|_| Probe { builds }))
+                .expect("window opens")
+        });
+        let act = |cx: &mut TestAppContext, f: &dyn Fn(&mut Window, &mut App)| {
+            cx.update_window(window.into(), |_, window, cx| f(window, cx)).expect("window open");
+        };
+        act(cx, &|window, cx| window.render_frame(cx));
+        if open_menu {
+            act(cx, &|window, cx| window.click(ID, cx));
+            act(cx, &|window, _| assert!(window.try_find(POPUP_MENU_ID).is_some(), "menu open"));
+        }
+        act(cx, &|window, cx| window.hover(ID, cx));
+        cx.executor().advance_clock(PAST_TOOLTIP_DELAY);
+        cx.run_until_parked();
+        act(cx, &|window, cx| window.render_frame(cx));
+        builds.get()
+    }
+
+    #[gpui_kit::test]
+    fn a_closed_menu_button_shows_its_tooltip(cx: &mut TestAppContext) {
+        assert_eq!(tooltips_on_hover(cx, false), 1);
+    }
+
+    /// Zed hides a button's tooltip while its menu is open, so the tooltip never covers it.
+    #[gpui_kit::test]
+    fn an_open_menu_button_shows_no_tooltip(cx: &mut TestAppContext) {
+        assert_eq!(tooltips_on_hover(cx, true), 0);
+    }
 
     #[test]
     fn next_starts_at_the_first_row_and_wraps() {
