@@ -17,7 +17,7 @@ use crate::ignore_closed_view;
 /// How long each step of a blink lasts: 500 ms for the blink.
 pub(crate) const STEP: Duration = Duration::from_millis(100);
 /// The width of a jump's frame around the current region.
-pub(crate) const BORDER: Pixels = px(2.);
+pub(crate) const BORDER: Pixels = px(1.);
 
 /// A blink of a target `T` and the timers that step it.
 pub(crate) struct Flash<T> {
@@ -138,5 +138,14 @@ mod tests {
         assert_eq!(flash.range(), &(2..5));
         assert_eq!(flash.style(), RangeDecorationStyle::Fill);
         assert_eq!(flash.color(), Some(lime));
+    }
+
+    #[test]
+    fn the_current_region_frame_is_one_pixel_of_its_colour() {
+        // Spec §5: a 1 px frame, so it reads as an outline beside the blocks' own borders.
+        let lime = hsla(0.25, 0.85, 0.4, 1.);
+        let frame = region_frame(2..5, lime);
+        assert_eq!(frame.style(), RangeDecorationStyle::FullLine);
+        assert_eq!(frame.border_width(), px(1.));
     }
 }

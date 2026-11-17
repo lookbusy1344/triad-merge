@@ -74,6 +74,10 @@ After Zed's go-to-line modal: a raised card 384 px wide, 8 px under the top of t
 
 The result's search panel is gpui-component's, laid out as Zed's buffer search bar: the query with a case toggle, the replace toggle, previous and next, the match count and a close button. triad cannot style it (`docs/gpui-kit-issues.md`).
 
+## Current region and ruler
+
+The current region's frame in an editor is 1 px (`blink::BORDER`), so it reads as an outline beside the blocks' own borders. The overview ruler paints a change's mark at 60 % of its tone (`ruler::SOFT_MARK`) and the conflict tone at full strength, as Zed's scrollbar markers stay faint beside the thumb.
+
 ## Status bar
 
 The merge and diff windows end in `status_bar::bar`, after Zed's `StatusBar`: 24 px tall under a 1 px `border` outside its height, across the window, on `secondary`. Its text is 12 px on 16 px lines in the UI font, muted, 8 px in from the sides, its items 8 px apart. An item that warns, such as mixed line endings, takes its own colour.

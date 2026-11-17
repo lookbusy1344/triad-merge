@@ -30,6 +30,8 @@ const THUMB_OPACITY: f32 = 0.18;
 const DRAGGED_THUMB_OPACITY: f32 = 0.3;
 /// A resolved conflict paints the conflict tone over this share of the width.
 const RESOLVED_SHARE: f32 = 0.5;
+/// How much of its tone a change's mark takes, so conflicts, at full strength, stand out.
+const SOFT_MARK: f32 = 0.6;
 /// The conflict-tone outline round a duplicate's mark, on each side (`PLAN.md` §G16).
 const DUPLICATE_OUTLINE: Pixels = px(2.);
 
@@ -180,6 +182,19 @@ pub(crate) fn strip(
         )
 }
 
+/// The colours of a run of `style`: across the whole mark, and the resolution's half of a
+/// resolved conflict or the inside of a duplicate's outline.
+fn colours(style: Style, tones: &Tones) -> (Hsla, Option<Hsla>) {
+    let conflict = tones.mark(Tone::Conflict);
+    match style {
+        Style::Plain(tone) => (tones.mark(tone).opacity(SOFT_MARK), None),
+        Style::Unresolved => (conflict, None),
+        Style::Resolved(tone) | Style::Duplicate(tone) => {
+            (conflict, Some(tones.mark(tone).opacity(SOFT_MARK)))
+        }
+    }
+}
+
 #[expect(clippy::too_many_arguments, reason = "the strip's parts, borrowed for one paint")]
 fn paint(
     window: &mut Window,
@@ -201,20 +216,15 @@ fn paint(
     };
     for run in painted(marks, total, height, RULER_MIN_MARK_PX) {
         let (from, to) = (run.px.start, run.px.end);
-        match run.style {
-            Style::Plain(tone) => {
-                window.paint_quad(fill(band(from, to, px(0.), width), tones.mark(tone)));
-            }
-            Style::Unresolved => {
-                window.paint_quad(fill(band(from, to, px(0.), width), tones.mark(Tone::Conflict)));
-            }
-            Style::Resolved(tone) => {
+        let (whole, part) = colours(run.style, tones);
+        match (run.style, part) {
+            (Style::Resolved(_), Some(part)) => {
                 let split = width * RESOLVED_SHARE;
-                window.paint_quad(fill(band(from, to, px(0.), split), tones.mark(Tone::Conflict)));
-                window.paint_quad(fill(band(from, to, split, width - split), tones.mark(tone)));
+                window.paint_quad(fill(band(from, to, px(0.), split), whole));
+                window.paint_quad(fill(band(from, to, split, width - split), part));
             }
-            Style::Duplicate(tone) => {
-                window.paint_quad(fill(band(from, to, px(0.), width), tones.mark(Tone::Conflict)));
+            (Style::Duplicate(_), Some(part)) => {
+                window.paint_quad(fill(band(from, to, px(0.), width), whole));
                 // A mark too short for an outline above and below shows the outline alone.
                 let inset = f32::from(DUPLICATE_OUTLINE);
                 if to - from > inset + inset {
@@ -224,14 +234,38 @@ fn paint(
                         DUPLICATE_OUTLINE,
                         width - DUPLICATE_OUTLINE - DUPLICATE_OUTLINE,
                     );
-                    window.paint_quad(fill(inner, tones.mark(tone)));
+                    window.paint_quad(fill(inner, part));
                 }
             }
+            _ => window.paint_quad(fill(band(from, to, px(0.), width), whole)),
         }
     }
     if let Some(held) = held {
         let mut tint = foreground;
         tint.a *= if dragged { DRAGGED_THUMB_OPACITY } else { THUMB_OPACITY };
         window.paint_quad(fill(band(held.start, held.end, px(0.), width), tint));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tones::Palette;
+
+    #[test]
+    fn a_change_paints_soft_and_a_conflict_at_full_strength() {
+        let tones = *Palette::default().tones(false);
+        let soft = |tone| tones.mark(tone).opacity(0.6);
+        let conflict = tones.mark(Tone::Conflict);
+        assert_eq!(colours(Style::Plain(Tone::Left), &tones), (soft(Tone::Left), None));
+        assert_eq!(colours(Style::Unresolved, &tones), (conflict, None));
+        assert_eq!(
+            colours(Style::Resolved(Tone::Right), &tones),
+            (conflict, Some(soft(Tone::Right)))
+        );
+        assert_eq!(
+            colours(Style::Duplicate(Tone::Left), &tones),
+            (conflict, Some(soft(Tone::Left)))
+        );
     }
 }
