@@ -182,8 +182,8 @@ pub(crate) const SCROLL_EPSILON: Pixels = px(scroll::TOP_EPSILON);
 /// Soft wrap lays out every line before the first frame, so it is offered only for inputs of
 /// up to this many lines (spec §5).
 pub const SOFT_WRAP_MAX_LINES: usize = 10_000;
-/// The opacity of the marks on characters that differ, in the top panes.
-const INTRALINE_ALPHA: f32 = 0.35;
+/// The opacity of the marks on characters that differ, in the top panes and the diff panes.
+pub(crate) const INTRALINE_ALPHA: f32 = 0.35;
 
 /// The key contexts of the bindings in [`crate::init`].
 pub(crate) const WINDOW_CONTEXT: &str = "MergeWindow";

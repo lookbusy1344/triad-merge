@@ -35,7 +35,7 @@ use gpui_kit::{
 };
 use merge_config::settings::{Colours, DEFAULT_COLOURS, Scrollbars};
 use merge_core::diff::DiffOptions;
-use merge_core::diff2::{DiffDocument, Edited, Kind2, Region2, Rope, Side};
+use merge_core::diff2::{DiffDocument, Edited, Kind2, Marking, Region2, Rope, Side};
 use merge_core::edit::TextPatch;
 use merge_core::index::RegionIx;
 use merge_core::merge3::Source;
@@ -46,7 +46,7 @@ use merge_session::repository::Handoff;
 use merge_syntax::language::Language;
 use merge_view::diff::{
     self, MOVE_MARK, Pin, differences, first_change, held_region, move_ends, move_target,
-    next_change, previous_change, region_bytes, spacers, spacers_by,
+    next_change, previous_change, region_bytes, spacers, spacers_by, tone,
 };
 use merge_view::fold::{self, Fold, FoldRow, LineEdit, Opened};
 use merge_view::scroll::{Follow, ScrollSync};
@@ -69,7 +69,8 @@ use crate::syntax::Colouring;
 use crate::tones::{Palette, Tones};
 use crate::toolbar::{self, DIFF_GROUPS, Labels};
 use crate::window::{
-    OpenError, SCROLL_EPSILON, SOFT_WRAP_MAX_LINES, Syntax, revision_chip_element, revision_chip_id,
+    INTRALINE_ALPHA, OpenError, SCROLL_EPSILON, SOFT_WRAP_MAX_LINES, Syntax, revision_chip_element,
+    revision_chip_id,
 };
 use crate::wrap::Wrap;
 use crate::{
@@ -286,6 +287,8 @@ struct Pane {
     editor: Entity<EditorState>,
     recorded: Recorded,
     bands: RangeDecorationCollection,
+    /// The characters that differ from the paired line in the other pane (spec §5).
+    marks: RangeDecorationCollection,
     /// The frame a jump blinks around its region.
     flash: RangeDecorationCollection,
     /// The fill a search step blinks over the match it reached.
@@ -559,6 +562,7 @@ impl DiffWindow {
     ) -> Self {
         let [left, right] = &files;
         let mut doc = DiffDocument::new(&left.text, &right.text, settings.options.clone());
+        Self::load_marks(doc.marking(), window, cx);
         if let Some(lookup) = settings.origins.clone() {
             // Texts share their content, so the copies are O(1).
             Self::load_origins(lookup, [left.text.clone(), right.text.clone()], window, cx);
@@ -664,6 +668,13 @@ impl DiffWindow {
     #[must_use]
     pub fn editor(&self, side: Side) -> &Entity<EditorState> {
         &self.pane(side).editor
+    }
+
+    /// The byte ranges of `side`'s marks on the characters that differ, as the editor holds
+    /// them.
+    #[must_use]
+    pub fn mark_ranges(&self, side: Side, cx: &App) -> Vec<Range<usize>> {
+        self.pane(side).marks.get_ranges(cx)
     }
 
     /// The byte ranges of `side`'s bands, as the editor holds them.
@@ -1037,6 +1048,7 @@ impl DiffWindow {
         self.refresh_labels(cx);
         for side in SIDES {
             self.refresh_bands(side, cx);
+            self.refresh_marks(side, cx);
         }
         self.collapse.opened.renew(&self.doc);
         self.set_spacers(cx);
@@ -1120,6 +1132,41 @@ impl DiffWindow {
         let pane = self.pane(side);
         pane.bands.clear(cx);
         pane.bands.append(bands, cx);
+    }
+
+    /// Fill the characters the core marks on `side`. While the regions lag the text, the
+    /// editor carries the fills through the edits instead.
+    fn refresh_marks(&self, side: Side, cx: &mut Context<Self>) {
+        if !self.doc.regions_current() {
+            return;
+        }
+        let colour =
+            self.palette.tones(cx.theme().is_dark()).mark(tone(side)).opacity(INTRALINE_ALPHA);
+        let marks = self.doc.marks().side(side).iter().map(|bytes| {
+            RangeDecoration::new(bytes.clone())
+                .with_style(RangeDecorationStyle::Fill)
+                .with_color(colour)
+        });
+        self.pane(side).marks.set(marks.collect(), cx);
+    }
+
+    /// Mark the characters that differ off the UI thread: a large file's marks cost more than
+    /// its diff (`DESIGN.md` §A4.7).
+    fn load_marks(marking: Option<Marking>, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(marking) = marking else {
+            return;
+        };
+        cx.spawn_in(window, async move |this, cx| {
+            let (version, marks) = cx.background_spawn(async move { marking.run() }).await;
+            ignore_closed_view(this.update(cx, |this, cx| {
+                if this.doc.install_marks(version, marks) {
+                    for side in SIDES {
+                        this.refresh_marks(side, cx);
+                    }
+                }
+            }));
+        })
+        .detach();
     }
 
     fn set_modified(&mut self, side: Side, modified: bool) {
@@ -2189,9 +2236,11 @@ fn new_pane(
         state.set_spacers(spacers(doc, side).collect(), cx);
         state
     });
-    let (bands, flash, found) = editor.update(cx, |state, cx| {
+    // Collections paint in the order they are made: a search fill lies over the marks.
+    let (bands, marks, flash, found) = editor.update(cx, |state, cx| {
         (
             state.create_range_decorations_collection(decorations, cx),
+            state.create_range_decorations_collection(Vec::new(), cx),
             state.create_range_decorations_collection(Vec::new(), cx),
             state.create_range_decorations_collection(Vec::new(), cx),
         )
@@ -2203,6 +2252,7 @@ fn new_pane(
         editor,
         recorded,
         bands,
+        marks,
         flash,
         found,
         steps: SearchSteps::default(),

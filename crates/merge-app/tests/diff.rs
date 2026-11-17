@@ -770,6 +770,37 @@ fn click_gutter_mark(cx: &mut TestAppContext, o: &Opened, side: Side, line: usiz
     cx.run_until_parked();
 }
 
+fn char_marks(cx: &mut TestAppContext, o: &Opened, side: Side) -> Vec<Range<usize>> {
+    cx.read(|cx| o.view.read(cx).mark_ranges(side, cx))
+}
+
+#[gpui_kit::test]
+fn the_characters_that_differ_are_marked_in_each_pane(cx: &mut TestAppContext) {
+    // "a\n" is 2 bytes and "let " 4, so the name sits at byte 6 and the value at 10.
+    let o = open(cx, &Files::new("a\nlet x = 1;\n", "a\nlet y = 2;\n"));
+    cx.run_until_parked();
+    assert_eq!(char_marks(cx, &o, Side::Left), [6..7, 10..11]);
+    assert_eq!(char_marks(cx, &o, Side::Right), [6..7, 10..11]);
+}
+
+#[gpui_kit::test]
+fn the_marks_follow_an_edit_once_the_regions_are_recomputed(cx: &mut TestAppContext) {
+    let o = open(cx, &Files::new("a\nlet x = 1;\n", "a\nlet y = 2;\n"));
+    cx.run_until_parked();
+    type_at(cx, &o, Side::Right, 2, "q");
+    wait(cx, DIFF_DEBOUNCE);
+    assert_eq!(char_marks(cx, &o, Side::Left), [6..7, 10..11]);
+    assert_eq!(char_marks(cx, &o, Side::Right), [2..3, 7..8, 11..12]);
+}
+
+#[gpui_kit::test]
+fn unchanged_lines_and_whole_inserted_lines_get_no_marks(cx: &mut TestAppContext) {
+    let o = open(cx, &Files::new("a\nb\n", "a\nb\nnew line\n"));
+    cx.run_until_parked();
+    assert_eq!(char_marks(cx, &o, Side::Left), Vec::<Range<usize>>::new());
+    assert_eq!(char_marks(cx, &o, Side::Right), Vec::<Range<usize>>::new());
+}
+
 #[gpui_kit::test]
 fn a_moved_block_has_its_own_band_at_each_end(cx: &mut TestAppContext) {
     let o = open(cx, &Files::new(MOVED_LEFT, MOVED_RIGHT));

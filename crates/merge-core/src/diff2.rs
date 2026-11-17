@@ -1,12 +1,13 @@
 //! Two-way diff (spec §4.6): regions, and a document of two editable buffers.
 
+use std::iter::Peekable;
 use std::ops::Range;
 
 /// The rope that holds each side, which [`DiffDocument::text`] and [`DiffDocument::snapshot`]
 /// return. Front ends name it here, so the core alone picks the rope crate.
 pub use ropey::{Rope, RopeSlice};
 
-use crate::diff::{BlankLineRule, DiffOptions, Hunk, diff_lines, is_blank_line};
+use crate::diff::{BlankLineRule, DiffOptions, Hunk, diff_lines, intraline_hunks, is_blank_line};
 pub use crate::edit::{BatchError, EditBatch, TextPatch};
 use crate::edit::{apply, caret_after, inverse, prepare};
 use crate::index::RegionIx;
@@ -65,6 +66,105 @@ fn ignores(hunk: &Hunk, left: &Text, right: &Text, opts: &DiffOptions) -> bool {
     opts.blank_lines == BlankLineRule::Ignore
         && blank(left, &hunk.before)
         && blank(right, &hunk.after)
+}
+
+/// The characters that differ within paired lines of the changed regions (spec §5,
+/// intra-line highlights), as byte ranges into each side's text, sorted and disjoint.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Marks {
+    pub left: Vec<Range<usize>>,
+    pub right: Vec<Range<usize>>,
+}
+
+impl Marks {
+    /// `side`'s marks.
+    #[must_use]
+    pub fn side(&self, side: Side) -> &[Range<usize>] {
+        match side {
+            Side::Left => &self.left,
+            Side::Right => &self.right,
+        }
+    }
+}
+
+/// The [`Marks`] of `regions`. In each changed region the lines outside `moves`' ends pair in
+/// order, the n-th left line with the n-th right line. A pair marks the characters that
+/// differ, terminators left out; a line over [`MAX_INTRALINE_DIFF_CHARS`] characters is
+/// marked whole. A line without a partner gets no marks.
+///
+/// [`MAX_INTRALINE_DIFF_CHARS`]: crate::diff::MAX_INTRALINE_DIFF_CHARS
+#[must_use]
+pub fn marks(left: &Text, right: &Text, regions: &[Region2], moves: &[Move]) -> Marks {
+    let ends = |end: fn(&Move) -> (RegionIx, Range<usize>)| {
+        let mut ends: Vec<_> = moves.iter().map(end).collect();
+        ends.sort_by_key(|(region, lines)| (*region, lines.start));
+        ends.into_iter().peekable()
+    };
+    let mut left_ends = ends(|m| (m.from, m.left.clone()));
+    let mut right_ends = ends(|m| (m.to, m.right.clone()));
+    let mut marks = Marks::default();
+    for (index, region) in regions.iter().enumerate() {
+        let here = RegionIx::new(index);
+        let (left_out, right_out) = (ends_in(&mut left_ends, here), ends_in(&mut right_ends, here));
+        if region.kind != Kind2::Changed {
+            continue;
+        }
+        let pairs =
+            kept(region.left.clone(), &left_out).zip(kept(region.right.clone(), &right_out));
+        for (l, r) in pairs {
+            mark_pair(&Pair::of(left, l), &Pair::of(right, r), &mut marks);
+        }
+    }
+    marks
+}
+
+/// The move ends in region `here`, taken from `ends`, which are sorted by region.
+fn ends_in(
+    ends: &mut Peekable<impl Iterator<Item = (RegionIx, Range<usize>)>>,
+    here: RegionIx,
+) -> Vec<Range<usize>> {
+    std::iter::from_fn(|| ends.next_if(|(region, _)| *region <= here))
+        .filter_map(|(region, lines)| (region == here).then_some(lines))
+        .collect()
+}
+
+/// `lines` without those in `out`.
+fn kept(lines: Range<usize>, out: &[Range<usize>]) -> impl Iterator<Item = usize> + '_ {
+    lines.filter(|n| !out.iter().any(|lines| lines.contains(n)))
+}
+
+/// One line of a pair: its text without the terminator, and where it starts in its file.
+struct Pair<'t> {
+    content: &'t str,
+    at: usize,
+}
+
+impl<'t> Pair<'t> {
+    fn of(text: &'t Text, line: usize) -> Self {
+        let whole = text.line(line);
+        let content = whole.strip_suffix('\n').map_or(whole, |l| l.strip_suffix('\r').unwrap_or(l));
+        Self { content, at: text.span(0..line).len() }
+    }
+
+    fn shifted(&self, bytes: Range<usize>) -> Range<usize> {
+        self.at + bytes.start..self.at + bytes.end
+    }
+}
+
+fn mark_pair(left: &Pair<'_>, right: &Pair<'_>, marks: &mut Marks) {
+    if left.content == right.content {
+        return;
+    }
+    let whole = || Hunk { before: 0..left.content.len(), after: 0..right.content.len() };
+    let hunks = intraline_hunks(left.content, right.content).unwrap_or_else(|| vec![whole()]);
+    for Hunk { before, after } in hunks {
+        if !before.is_empty() {
+            marks.left.push(left.shifted(before));
+        }
+        if !after.is_empty() {
+            marks.right.push(right.shifted(after));
+        }
+    }
 }
 
 /// Equal lines from `from` to `to`, each a (left, right) pair of line numbers.
@@ -191,16 +291,18 @@ pub struct DiffDocument {
     options: DiffOptions,
     regions: Vec<Region2>,
     moves: Vec<Move>,
+    marks: Marks,
     regions_version: u64,
     version: u64,
 }
 
-/// The regions and moves of one version of both texts.
+/// The regions, moves and intra-line marks of one version of both texts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Diffed {
     pub version: u64,
     pub regions: Vec<Region2>,
     pub moves: Vec<Move>,
+    pub marks: Marks,
 }
 
 /// A snapshot of both texts to diff off the UI thread. Cloning a rope is O(1).
@@ -212,8 +314,29 @@ pub struct Recompute {
     options: DiffOptions,
 }
 
+/// A snapshot of both texts and their regions, to compute their marks off the UI thread.
+/// Cloning a rope is O(1).
+#[derive(Debug, Clone)]
+pub struct Marking {
+    version: u64,
+    left: Rope,
+    right: Rope,
+    regions: Vec<Region2>,
+    moves: Vec<Move>,
+}
+
+impl Marking {
+    /// The marks, and the version they belong to.
+    #[must_use]
+    pub fn run(self) -> (u64, Marks) {
+        let text = |rope: Rope| Text::new(Encoding::Utf8, rope.to_string());
+        let (left, right) = (text(self.left), text(self.right));
+        (self.version, marks(&left, &right, &self.regions, &self.moves))
+    }
+}
+
 impl Recompute {
-    /// The regions and moves, and the version they belong to.
+    /// The regions, moves and marks, and the version they belong to.
     #[must_use]
     pub fn run(self) -> Diffed {
         self.run_with(|_| ()).0
@@ -228,7 +351,8 @@ impl Recompute {
         let (left, right) = (text(self.left), text(self.right));
         let regions = regions(&left, &right, &self.options);
         let moves = moves(&left, &right, &regions, &self.options);
-        (Diffed { version: self.version, regions, moves }, also([&left, &right]))
+        let marks = marks(&left, &right, &regions, &moves);
+        (Diffed { version: self.version, regions, moves, marks }, also([&left, &right]))
     }
 }
 
@@ -238,6 +362,7 @@ impl DiffDocument {
         let regions = regions(left, right, &options);
         Self {
             moves: moves(left, right, &regions, &options),
+            marks: Marks::default(),
             regions,
             left: Buffer::new(left),
             right: Buffer::new(right),
@@ -268,6 +393,37 @@ impl DiffDocument {
     #[must_use]
     pub fn moves(&self) -> &[Move] {
         &self.moves
+    }
+
+    /// The intra-line marks of the regions last installed, in bytes of the text they were
+    /// computed from. A new document has none until [`DiffDocument::marking`]'s are
+    /// installed, since they can cost more than the diff.
+    #[must_use]
+    pub fn marks(&self) -> &Marks {
+        &self.marks
+    }
+
+    /// A snapshot to compute the marks of the current regions off the UI thread, or `None`
+    /// while the regions lag the text: a recompute brings its own.
+    #[must_use]
+    pub fn marking(&self) -> Option<Marking> {
+        self.regions_current().then(|| Marking {
+            version: self.version,
+            left: self.left.text.clone(),
+            right: self.right.text.clone(),
+            regions: self.regions.clone(),
+            moves: self.moves.clone(),
+        })
+    }
+
+    /// Install marks computed for version `version`. Marks for another version are dropped:
+    /// returns whether they were installed.
+    pub fn install_marks(&mut self, version: u64, marks: Marks) -> bool {
+        let current = version == self.version && self.regions_current();
+        if current {
+            self.marks = marks;
+        }
+        current
     }
 
     #[must_use]
@@ -363,6 +519,7 @@ impl DiffDocument {
         if current {
             self.regions = diffed.regions;
             self.moves = diffed.moves;
+            self.marks = diffed.marks;
             self.regions_version = diffed.version;
         }
         current
@@ -401,9 +558,10 @@ impl DiffDocument {
 }
 
 #[cfg(test)]
+#[expect(clippy::single_range_in_vec_init, reason = "marks are lists of ranges, often of one")]
 mod tests {
     use super::*;
-    use crate::diff::{BlankLineRule, Whitespace};
+    use crate::diff::{BlankLineRule, MAX_INTRALINE_DIFF_CHARS, Whitespace};
     use crate::pattern::Patterns;
     use crate::testing::text;
 
@@ -716,7 +874,8 @@ mod tests {
         assert_eq!(d.regions(), [same(0..3, 0..3)]);
         let diffed = d.recompute().run();
         let regions = vec![same(0..1, 0..1), changed(1..2, 1..2), same(2..3, 2..3)];
-        assert_eq!(diffed, Diffed { version: 1, regions: regions.clone(), moves: vec![] });
+        let marks = Marks { left: vec![2..3], right: vec![] };
+        assert_eq!(diffed, Diffed { version: 1, regions: regions.clone(), moves: vec![], marks });
         assert!(d.install(diffed));
         assert_eq!(d.regions(), regions);
     }
@@ -883,5 +1042,145 @@ mod tests {
         assert_eq!(d.text(Side::Left), "a\n");
         assert_eq!(d.version(), 0);
         assert_eq!(d.edit(Side::Left, EditBatch(vec![])), edited(Side::Left, 0, vec![]));
+    }
+
+    // Intra-line marks
+
+    fn marks_of(left: &str, right: &str) -> Marks {
+        let (left, right) = (text(left), text(right));
+        let opts = DiffOptions::default();
+        let found = regions(&left, &right, &opts);
+        marks(&left, &right, &found, &moves(&left, &right, &found, &opts))
+    }
+
+    fn marked(left: &[Range<usize>], right: &[Range<usize>]) -> Marks {
+        Marks { left: left.to_vec(), right: right.to_vec() }
+    }
+
+    #[test]
+    fn a_replaced_word_is_marked_on_both_sides() {
+        assert_eq!(marks_of("let x = 1;\n", "let y = 1;\n"), marked(&[4..5], &[4..5]));
+    }
+
+    #[test]
+    fn marks_are_bytes_into_the_whole_text() {
+        // "a\n" is 2 bytes and "foo ba" 6, so the changed letter sits at byte 8.
+        assert_eq!(marks_of("a\nfoo bar\n", "a\nfoo baz\n"), marked(&[8..9], &[8..9]));
+    }
+
+    #[test]
+    fn an_insertion_within_a_line_marks_one_side_only() {
+        assert_eq!(marks_of("ab\n", "aXb\n"), marked(&[], &[1..2]));
+        assert_eq!(marks_of("aXb\n", "ab\n"), marked(&[1..2], &[]));
+    }
+
+    #[test]
+    fn multibyte_characters_give_byte_ranges_on_their_boundaries() {
+        // "é" is 2 bytes; "ü" is 2 bytes, after "é " at byte 3.
+        assert_eq!(marks_of("é x\n", "é ü\n"), marked(&[3..4], &[3..5]));
+    }
+
+    #[test]
+    fn the_nth_line_of_each_side_pairs_and_extra_lines_get_no_marks() {
+        assert_eq!(marks_of("x1\nx2\n", "y1\n"), marked(&[0..1], &[0..1]));
+        assert_eq!(marks_of("q\nab\n", "q\nAb\nnew\n"), marked(&[2..3], &[2..3]));
+    }
+
+    #[test]
+    fn pure_insertions_and_deletions_get_no_marks() {
+        assert_eq!(marks_of("a\n", "a\nb\n"), Marks::default());
+        assert_eq!(marks_of("a\nb\n", "b\n"), Marks::default());
+    }
+
+    #[test]
+    fn identical_files_get_no_marks() {
+        assert_eq!(marks_of("a b\n", "a b\n"), Marks::default());
+    }
+
+    #[test]
+    fn line_terminators_are_never_marked() {
+        assert_eq!(marks_of("ab", "ab\n"), Marks::default());
+        assert_eq!(marks_of("ab\r\n", "ab\n"), Marks::default());
+        assert_eq!(marks_of("ab\r\n", "aB\n"), marked(&[1..2], &[1..2]));
+    }
+
+    #[test]
+    fn ignored_regions_get_no_marks() {
+        let (left, right) = (text("a\n \n"), text("a\n\t\n"));
+        let opts = DiffOptions { blank_lines: BlankLineRule::Ignore, ..DiffOptions::default() };
+        let found = regions(&left, &right, &opts);
+        assert_eq!(found, [same(0..1, 0..1), ignored(1..2, 1..2)]);
+        assert_eq!(marks(&left, &right, &found, &[]), Marks::default());
+    }
+
+    #[test]
+    fn a_line_too_long_for_a_character_diff_is_marked_whole_without_its_terminator() {
+        let long = "a".repeat(MAX_INTRALINE_DIFF_CHARS + 1);
+        let left = format!("x\n{long}\n");
+        let right = format!("x\n{long}b\n");
+        let line = 2..2 + long.len();
+        assert_eq!(
+            marks_of(&left, &right),
+            marked(std::slice::from_ref(&line), &[2..line.end + 1])
+        );
+    }
+
+    #[test]
+    fn lines_in_a_move_end_get_no_marks() {
+        let (left, right) = ("m1\nm2\na\nb\nc\nx\n", "y\na\nb\nc\nm1\nm2\n");
+        let found = regions(&text(left), &text(right), &DiffOptions::default());
+        let found_moves = moves(&text(left), &text(right), &found, &DiffOptions::default());
+        assert_eq!(found_moves, [moved(0, 2, 0..2, 4..6)], "the block m1, m2 moves");
+        assert_eq!(marks_of(left, right), Marks::default());
+    }
+
+    #[test]
+    fn lines_beside_a_move_end_pair_among_themselves() {
+        // Region 2 on the right holds "m1", "m2" from the left's top, then "zq" against "zp".
+        let (left, right) = ("m1\nm2\na\nb\nc\nzp\n", "a\nb\nc\nm1\nm2\nzq\n");
+        let found = regions(&text(left), &text(right), &DiffOptions::default());
+        assert_eq!(found, [changed(0..2, 0..0), same(2..5, 0..3), changed(5..6, 3..6)]);
+        assert_eq!(
+            moves(&text(left), &text(right), &found, &DiffOptions::default()),
+            [moved(0, 2, 0..2, 3..5)]
+        );
+        // "zp" pairs with "zq", past the move end; both start at byte 12.
+        assert_eq!(marks_of(left, right), marked(&[13..14], &[13..14]));
+    }
+
+    #[test]
+    fn a_new_document_has_no_marks_until_its_marking_installs() {
+        let mut d = doc("a\nb c\n", "a\nb d\n");
+        assert_eq!(d.marks(), &Marks::default());
+        let (version, marks) = d.marking().expect("regions are current").run();
+        assert_eq!((version, &marks), (0, &marked(&[4..5], &[4..5])));
+        assert!(d.install_marks(version, marks));
+        assert_eq!(d.marks(), &marked(&[4..5], &[4..5]));
+    }
+
+    #[test]
+    fn marks_of_an_older_version_are_dropped() {
+        let mut d = doc("a\nb c\n", "a\nb d\n");
+        let marking = d.marking().expect("regions are current");
+        d.edit(Side::Left, insert(0, "zz")).expect("edits");
+        assert!(d.marking().is_none(), "regions lag the text");
+        let (version, marks) = marking.run();
+        assert!(!d.install_marks(version, marks));
+        assert_eq!(d.marks(), &Marks::default());
+    }
+
+    #[test]
+    fn marks_install_with_the_regions_of_a_recompute() {
+        let mut d = doc("a\nb c\n", "a\nb d\n");
+        let (version, marks) = d.marking().expect("regions are current").run();
+        assert!(d.install_marks(version, marks));
+        assert_eq!(d.marks(), &marked(&[4..5], &[4..5]));
+        assert_eq!(d.marks().side(Side::Left), [4..5]);
+        d.edit(Side::Left, insert(0, "zz")).expect("edits");
+        assert_eq!(d.marks(), &marked(&[4..5], &[4..5]), "marks wait for the recompute");
+        let diffed = d.recompute().run();
+        assert_eq!(diffed.marks, marked(&[0..2, 6..7], &[4..5]));
+        assert!(d.install(diffed));
+        assert_eq!(d.marks().side(Side::Left), [0..2, 6..7]);
     }
 }
