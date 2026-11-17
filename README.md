@@ -184,6 +184,8 @@ On macOS, Gatekeeper scans each newly linked binary on its first run, so the fir
 | `docs/STYLE.md` | UI style |
 | `docs/json-schema.md` | JSON output and merge commands |
 | `docs/PLAN-diff-editor.md` | The diff editor plan, part H |
+| `CHANGELOG.md` | What changed in each release |
+| `docs/release.md` | The steps of a release |
 | `docs/release-checklist.md` | Manual checks before a release |
 | `docs/jj-upgrade.md` | The steps of a jj upgrade |
 | `docs/gpui-kit-issues.md`, `docs/gix-issues.md` | UI toolkit and gix problems, and triad's answers |
