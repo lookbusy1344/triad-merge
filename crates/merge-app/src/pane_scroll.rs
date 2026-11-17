@@ -140,8 +140,7 @@ impl PaneScroll {
         let old_top = f32::from(self.top());
         self.folds = folds;
         self.compose();
-        let item = old.to_items(old_top / row_h);
-        self.set_top(self.heights.to_rows(item) * row_h);
+        self.set_top(self.heights.keep_top(&old, old_top, row_h));
         if let Some(syncs) = &mut self.syncs {
             syncs.down.bring_result();
         }
@@ -194,7 +193,7 @@ impl PaneScroll {
 
     /// The first aligned row in view, with display rows `row_h` high.
     pub(crate) fn top_row(&self, row_h: Pixels) -> RowIx {
-        let top = self.heights().to_items(f32::from(self.top()) / f32::from(row_h));
+        let top = self.heights().to_items(f64::from(self.top()) / f64::from(row_h));
         #[expect(
             clippy::cast_possible_truncation,
             clippy::cast_sign_loss,
@@ -286,8 +285,7 @@ impl PaneScroll {
     /// each `row_h` high. The down sync takes the new top with the result at `result_top`,
     /// so the result does not follow.
     pub(crate) fn keep_place(&mut self, old: &Heights, row_h: f32, result_top: f32) {
-        let item = old.to_items(f32::from(self.top()) / row_h);
-        let top = self.heights().to_rows(item) * row_h;
+        let top = self.heights().keep_top(old, f32::from(self.top()), row_h);
         self.set_top(top);
         if let Some(syncs) = &mut self.syncs {
             syncs.down.place(top, result_top);

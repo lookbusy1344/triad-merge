@@ -108,25 +108,25 @@ impl ScrollSync {
 /// from 0 to the offset that shows the content's end at the view's right edge.
 #[must_use]
 pub fn clamp_left(left: f32, content: f32, view: f32) -> f32 {
-    left.clamp(0.0, Pane { content, view }.max_top())
+    left.clamp(0.0, (content - view).max(0.0))
 }
 
 /// One pane's scroll extent, in pixels: the height of its content and of its view.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Pane {
-    pub content: f32,
-    pub view: f32,
+    pub content: f64,
+    pub view: f64,
 }
 
 impl Pane {
     /// The furthest the content scrolls to show its end at the bottom of the view.
-    fn max_top(self) -> f32 {
+    fn max_top(self) -> f64 {
         (self.content - self.view).max(0.0)
     }
 
     /// The scroll distance over which the anchor moves from an edge of the view to its
     /// middle: half the view, or half the scroll range when that is shorter.
-    fn ramp(self) -> f32 {
+    fn ramp(self) -> f64 {
         self.view.min(self.max_top()) / 2.0
     }
 
@@ -135,7 +135,7 @@ impl Pane {
     /// the bottom edge as it nears its end, so the panes' tops and ends meet. A top past the
     /// end, into the space below the last line, anchors at the end.
     #[must_use]
-    pub fn anchor(self, top: f32) -> f32 {
+    pub fn anchor(self, top: f64) -> f64 {
         let (end, ramp, view) = (self.max_top(), self.ramp(), self.view);
         if ramp <= 0.0 {
             return top.clamp(0.0, self.content);
@@ -157,7 +157,7 @@ impl Pane {
     /// The scroll top whose anchor is at content position `anchor`: the inverse of
     /// [`Pane::anchor`], held to the scroll range.
     #[must_use]
-    pub fn top_for(self, anchor: f32) -> f32 {
+    pub fn top_for(self, anchor: f64) -> f64 {
         let (end, ramp, view) = (self.max_top(), self.ramp(), self.view);
         if ramp <= 0.0 {
             return anchor.clamp(0.0, end);
@@ -231,13 +231,13 @@ impl<'a> ResultRows<'a> {
     }
 
     /// The region whose span holds display row position `row`, below [`ResultRows::count`].
-    fn region_at(self, row: f32) -> RegionIx {
+    fn region_at(self, row: f64) -> RegionIx {
         // The last region starting at or before `row`; one with an empty span shares its
         // start with the next, so only the last region could be empty, and `row` is past it.
         let (mut low, mut high) = (0, self.doc.regions().len());
         while low < high {
             let middle = low + (high - low) / 2;
-            if to_f32(self.span(RegionIx::new(middle)).start) <= row {
+            if to_f64(self.span(RegionIx::new(middle)).start) <= row {
                 low = middle + 1;
             } else {
                 high = middle;
@@ -264,10 +264,18 @@ pub struct Geometry {
 }
 
 impl Geometry {
-    fn panes(self, displayed: Displayed) -> (Pane, Pane) {
+    /// The panes, and their row and line heights, in f64: a sync divides by a line height,
+    /// and rounds to f32 pixels once, at its end.
+    fn panes(self, displayed: Displayed) -> (Pane, Pane, f64, f64) {
+        let (row_h, line_h) = (f64::from(self.row_h), f64::from(self.line_h));
         (
-            Pane { content: to_f32(displayed.rows.rows()) * self.row_h, view: self.rows_view },
-            Pane { content: to_f32(displayed.result.rows()) * self.line_h, view: self.result_view },
+            Pane { content: to_f64(displayed.rows.rows()) * row_h, view: self.rows_view.into() },
+            Pane {
+                content: to_f64(displayed.result.rows()) * line_h,
+                view: self.result_view.into(),
+            },
+            row_h,
+            line_h,
         )
     }
 }
@@ -283,10 +291,10 @@ pub fn rows_to_result(
     geometry: Geometry,
     top: f32,
 ) -> f32 {
-    let (rows_pane, result_pane) = geometry.panes(displayed);
-    let row = displayed.rows.to_items(rows_pane.anchor(top) / geometry.row_h);
+    let (rows_pane, result_pane, row_h, line_h) = geometry.panes(displayed);
+    let row = displayed.rows.to_items(rows_pane.anchor(top.into()) / row_h);
     let result_row = displayed.result.to_rows(result_row_at(rows, result, row));
-    result_pane.top_for(result_row * geometry.line_h)
+    to_pixels(result_pane.top_for(result_row * line_h))
 }
 
 /// The top panes' scroll top for the result pane's `top`: the inverse of
@@ -299,43 +307,43 @@ pub fn result_to_rows(
     geometry: Geometry,
     top: f32,
 ) -> f32 {
-    let (rows_pane, result_pane) = geometry.panes(displayed);
-    let line = displayed.result.to_items(result_pane.anchor(top) / geometry.line_h);
+    let (rows_pane, result_pane, row_h, line_h) = geometry.panes(displayed);
+    let line = displayed.result.to_items(result_pane.anchor(top.into()) / line_h);
     let row = displayed.rows.to_rows(row_at(rows, result, line));
-    rows_pane.top_for(row * geometry.row_h)
+    to_pixels(rows_pane.top_for(row * row_h))
 }
 
 /// The result display row position at the same share of its region as row position `row`.
 /// The end of the rows maps to the end of the result.
 #[must_use]
-pub fn result_row_at(rows: &RowMap, result: ResultRows, row: f32) -> f32 {
+pub fn result_row_at(rows: &RowMap, result: ResultRows, row: f64) -> f64 {
     let count = rows.row_count();
-    if row >= to_f32(count) {
-        return to_f32(result.count());
+    if row >= to_f64(count) {
+        return to_f64(result.count());
     }
     let (whole, _) = split(row, count);
     let region = rows.region_of_row(RowIx::new(whole));
     let span = result.span(region);
     // A region holding a row has at least one. Multiplying first keeps whole shares exact.
-    let within = row.max(0.0) - to_f32(rows.first_row(region).get());
-    to_f32(span.start) + within * to_f32(span.len()) / to_f32(rows.rows_in(region))
+    let within = row.max(0.0) - to_f64(rows.first_row(region).get());
+    to_f64(span.start) + within * to_f64(span.len()) / to_f64(rows.rows_in(region))
 }
 
 /// The row position at the same share of its region as result display row position `row`.
 /// A region with no rows holds the rows at the place it would start. The end of the result
 /// maps to the end of the rows.
 #[must_use]
-pub fn row_at(rows: &RowMap, result: ResultRows, row: f32) -> f32 {
-    if row >= to_f32(result.count()) {
-        return to_f32(rows.row_count());
+pub fn row_at(rows: &RowMap, result: ResultRows, row: f64) -> f64 {
+    if row >= to_f64(result.count()) {
+        return to_f64(rows.row_count());
     }
     let row = row.max(0.0);
     let region = result.region_at(row);
     let span = result.span(region);
     // Below the count, the region found holds `row`, so its span is not empty.
-    let within = row - to_f32(span.start);
-    to_f32(rows.first_row(region).get())
-        + within * to_f32(rows.rows_in(region)) / to_f32(span.len())
+    let within = row - to_f64(span.start);
+    to_f64(rows.first_row(region).get())
+        + within * to_f64(rows.rows_in(region)) / to_f64(span.len())
 }
 
 /// The row of result `line`, held to the last line; `None` without rows or lines.
@@ -363,7 +371,7 @@ pub fn reveal_top(rows: Range<usize>, row_h: f32, view: f32) -> f32 {
 }
 
 /// The whole and fractional parts of `position`, with the whole part held in `0..count`.
-fn split(position: f32, count: usize) -> (usize, f32) {
+fn split(position: f64, count: usize) -> (usize, f64) {
     let position = position.max(0.0);
     let whole = position.floor();
     #[expect(
@@ -381,6 +389,20 @@ fn split(position: f32, count: usize) -> (usize, f32) {
 )]
 fn to_f32(n: usize) -> f32 {
     n as f32
+}
+
+#[expect(clippy::cast_precision_loss, reason = "row and line counts stay far below 2^53")]
+fn to_f64(n: usize) -> f64 {
+    n as f64
+}
+
+/// `pixels` rounded to f32 once, as GPUI takes them.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "a scroll offset lies far inside f32's range; the one rounding is the point"
+)]
+fn to_pixels(pixels: f64) -> f32 {
+    pixels as f32
 }
 
 fn first_line(doc: &MergeDocument, region: RegionIx) -> Line {
@@ -632,13 +654,13 @@ mod tests {
     }
 
     /// Row position `row` as a result display row position.
-    fn to_result(fixture: &(MergeDocument, RowMap), row: f32) -> f32 {
+    fn to_result(fixture: &(MergeDocument, RowMap), row: f64) -> f64 {
         let placeholders = placeholder_regions(&fixture.0);
         result_row_at(&fixture.1, ResultRows::new(&fixture.0, &placeholders), row)
     }
 
     /// Result display row position `row` as a row position.
-    fn to_rows(fixture: &(MergeDocument, RowMap), row: f32) -> f32 {
+    fn to_rows(fixture: &(MergeDocument, RowMap), row: f64) -> f64 {
         let placeholders = placeholder_regions(&fixture.0);
         row_at(&fixture.1, ResultRows::new(&fixture.0, &placeholders), row)
     }
@@ -869,6 +891,23 @@ mod tests {
         let heights = ResultRows::new(&doc, &placeholders).heights(|line| line + 2);
         // a: 2 rows, the placeholder: 1, c: 3.
         assert_eq!(heights, Heights::Starts(vec![0, 2, 3, 6]));
+    }
+
+    /// Lines 15 px, as at a 10 px font, in views whose heights are no multiple of a line.
+    const UNEVEN: Geometry =
+        Geometry { row_h: 15.0, rows_view: 402.5, line_h: 15.0, result_view: 386.5 };
+
+    #[test]
+    fn mid_scroll_tops_map_exactly_whatever_the_line_height() {
+        // 100 equal lines: each row is its result line. Past both ramps the anchors sit at
+        // the views' middles, so the tops differ by half the views' difference, 8 px.
+        let text = numbered(None);
+        let (doc, rows) = three(&text, &text, &text);
+        let result = ResultRows::new(&doc, &[]);
+        let heights = (Heights::Uniform(rows.row_count()), Heights::Uniform(result.count()));
+        let displayed = Displayed { rows: &heights.0, result: &heights.1 };
+        assert_eq!(result_to_rows(&rows, result, displayed, UNEVEN, 303.75), 295.75);
+        assert_eq!(rows_to_result(&rows, result, displayed, UNEVEN, 295.75), 303.75);
     }
 
     #[test]

@@ -175,6 +175,8 @@ gpui-component's `Input::render` copies the whole text each frame, but only with
 
 A zero-size canvas between the rows and the result runs the sync in its prepaint, every frame. It compares both scroll tops with the last sync and copies from the pane that moved, so the pane scrolled last leads and a synced pane does not echo back. The canvas sits before the result in prepaint order because the editor applies a deferred scroll offset in its prepaint and clears it in paint. `merge_view::scroll::ScrollSync` holds the rule; `pane_scroll::PaneScroll` holds the rows' handle, sideways scroll, wrap and both syncs.
 
+The map from one pane's top to the other's (`rows_to_result`, `result_to_rows`, `Heights::keep_top`) runs in f64 and rounds to f32 pixels once, at its end. A line height such as 15 px has no exact f32 reciprocal, so an f32 chain lands a ulp off and the tests' exact tops would hold only for some window heights.
+
 Zed's split diff gives both editors the same rows through spacer blocks. triad's rows and result differ in line count, so it maps by region.
 
 **Sideways.** The top panes' text sits in a clipping cell per pane and shifts by one shared offset (`sideways::Sideways`). The list keeps vertical wheel moves (`restrict_scroll_to_axis`); a wheel listener on the rows takes the sideways part when it is larger. The offset runs to the widest line a shown pane holds, counted off the UI thread with tabs expanded, times the advance of `m`, less the text width an invisible canvas records each frame. A second `ScrollSync` with identity maps keeps rows and result level sideways.
