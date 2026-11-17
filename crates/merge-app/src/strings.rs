@@ -583,7 +583,8 @@ pub(crate) fn tool_label(tool: Tool) -> Option<&'static str> {
         | Tool::Find
         | Tool::GoToLine
         | Tool::Syntax
-        | Tool::SoftWrap => None,
+        | Tool::SoftWrap
+        | Tool::Whitespace => None,
     }
 }
 
@@ -617,6 +618,7 @@ pub(crate) fn tool_name(tool: Tool) -> &'static str {
         Tool::GoToLine => "Go to a line in the result",
         Tool::Syntax => "Turn syntax colours on or off",
         Tool::SoftWrap => "Turn soft wrap on or off",
+        Tool::Whitespace => "Show or hide whitespace",
     }
 }
 

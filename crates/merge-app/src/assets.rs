@@ -27,6 +27,7 @@ icon_assets!(
         Hash,
         Highlighter,
         TextWrap,
+        Pilcrow,
         SquareMenu,
         SquarePlus,
         SquareMinus,
@@ -71,10 +72,10 @@ mod tests {
     const SVG_START: &[u8] = b"<svg";
     /// GPUI Kit's component icons: the lines of `gpui-kit-assets` 0.8.1's `default-icons.txt`.
     const COMPONENT_ICONS: usize = 106;
-    /// Icons outside the component set: the 17 tools' but chevron-up, chevron-down, undo-2,
+    /// Icons outside the component set: the 18 tools' but chevron-up, chevron-down, undo-2,
     /// redo-2 and search, the More button's square-menu, and the tool windows' square-plus
     /// and square-minus; their other status icons are the tools' or the component set's.
-    const EXTRA_TOOL_ICONS: usize = 15;
+    const EXTRA_TOOL_ICONS: usize = 16;
 
     #[test]
     fn every_tool_icon_loads() {

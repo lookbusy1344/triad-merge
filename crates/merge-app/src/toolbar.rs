@@ -17,7 +17,7 @@ use crate::window::TOOLBAR_ID;
 use crate::{
     About, ClearChoice, Find, GoToLine, NextConflict, NextDifference, PreviousConflict,
     PreviousDifference, Redo, TakeLeftThenRight, TakeRightThenLeft, ToggleBase, ToggleBasePane,
-    ToggleLeft, ToggleRight, ToggleSoftWrap, ToggleSyntax, Undo,
+    ToggleLeft, ToggleRight, ToggleSoftWrap, ToggleSyntax, ToggleWhitespace, Undo,
 };
 use crate::{ViewTicks, logo, menu_bar, strings, tooltip};
 
@@ -41,6 +41,7 @@ pub enum Tool {
     GoToLine,
     Syntax,
     SoftWrap,
+    Whitespace,
 }
 
 /// The mark that opens the About window, also used by tests.
@@ -66,9 +67,9 @@ pub const MORE_MENU_NONE: usize = 3;
 
 /// The narrowest window whose merge toolbar shows its labels at the default text size; a
 /// narrower one shows icons alone. It fits [`REFERENCE_BADGE`].
-pub const LABELS_MIN_WIDTH: Pixels = px(1052.);
+pub const LABELS_MIN_WIDTH: Pixels = px(1080.);
 /// The narrowest window whose merge toolbar fits without its labels, at the default text size.
-pub const COMPACT_MIN_WIDTH: Pixels = px(788.);
+pub const COMPACT_MIN_WIDTH: Pixels = px(816.);
 /// The longest conflict badge at two-digit counts, which the label threshold makes room for.
 const REFERENCE_BADGE: &str = "Conflict 10 of 12 · 12 unresolved";
 /// [`REFERENCE_BADGE`] in a merge of more than two sides, with the sides a conflict keeps.
@@ -147,6 +148,7 @@ pub(crate) fn views_on(ticks: ViewTicks) -> impl Iterator<Item = Tool> {
         (Tool::BasePane, ticks.base_pane),
         (Tool::Syntax, ticks.syntax),
         (Tool::SoftWrap, ticks.soft_wrap),
+        (Tool::Whitespace, ticks.whitespace),
     ]
     .into_iter()
     .filter_map(|(tool, on)| on.then_some(tool))
@@ -166,6 +168,7 @@ pub(crate) const GROUPS: [&[Control]; 4] = [
         Control::Button(Tool::GoToLine),
         Control::Button(Tool::Syntax),
         Control::Button(Tool::SoftWrap),
+        Control::Button(Tool::Whitespace),
     ],
 ];
 
@@ -174,7 +177,11 @@ pub(crate) const DIFF_GROUPS: [&[Control]; 4] = [
     &[Control::Pair(Tool::PreviousDifference, Tool::NextDifference)],
     &[Control::Button(Tool::Undo), Control::Button(Tool::Redo)],
     &[Control::Button(Tool::Find)],
-    &[Control::Button(Tool::Syntax), Control::Button(Tool::SoftWrap)],
+    &[
+        Control::Button(Tool::Syntax),
+        Control::Button(Tool::SoftWrap),
+        Control::Button(Tool::Whitespace),
+    ],
 ];
 
 /// The narrowest window whose merge toolbar shows its labels in text of `text_size` with
@@ -352,7 +359,13 @@ impl Tool {
     pub const fn toggles(self) -> bool {
         matches!(
             self,
-            Self::Left | Self::Base | Self::Right | Self::BasePane | Self::Syntax | Self::SoftWrap
+            Self::Left
+                | Self::Base
+                | Self::Right
+                | Self::BasePane
+                | Self::Syntax
+                | Self::SoftWrap
+                | Self::Whitespace
         )
     }
 
@@ -387,6 +400,7 @@ impl Tool {
             Self::GoToLine => Box::new(GoToLine),
             Self::Syntax => Box::new(ToggleSyntax),
             Self::SoftWrap => Box::new(ToggleSoftWrap),
+            Self::Whitespace => Box::new(ToggleWhitespace),
         }
     }
 
@@ -410,6 +424,7 @@ impl Tool {
             Self::GoToLine => IconName::Hash,
             Self::Syntax => IconName::Highlighter,
             Self::SoftWrap => IconName::TextWrap,
+            Self::Whitespace => IconName::Pilcrow,
         }
     }
 }
@@ -421,7 +436,7 @@ mod tests {
     use super::*;
 
     /// The number of `Tool` variants.
-    const TOOL_COUNT: usize = 17;
+    const TOOL_COUNT: usize = 18;
 
     #[test]
     fn the_toolbar_takes_the_ui_font() {
@@ -449,6 +464,15 @@ mod tests {
         assert!(tools(&GROUPS).any(|tool| tool == Tool::SoftWrap));
         assert!(tools(&DIFF_GROUPS).any(|tool| tool == Tool::SoftWrap));
         assert_eq!(Tool::SoftWrap.icon(), IconName::TextWrap);
+    }
+
+    #[test]
+    fn both_windows_toggle_whitespace_from_the_toolbar_after_soft_wrap() {
+        let last = |groups: &[&[Control]]| tools(groups).last();
+        assert_eq!(last(&GROUPS), Some(Tool::Whitespace));
+        assert_eq!(last(&DIFF_GROUPS), Some(Tool::Whitespace));
+        assert_eq!(Tool::Whitespace.icon(), IconName::Pilcrow);
+        assert!(Tool::Whitespace.toggles());
     }
 
     #[test]

@@ -1763,7 +1763,7 @@ fn a_far_first_difference_is_scrolled_into_view_in_both_panes(cx: &mut TestAppCo
 }
 
 /// The tools the diff window has, with their accessible labels.
-const DIFF_TOOLS: [(Tool, &str); 7] = [
+const DIFF_TOOLS: [(Tool, &str); 8] = [
     (Tool::PreviousDifference, "Previous difference"),
     (Tool::NextDifference, "Next difference"),
     (Tool::Undo, "Undo"),
@@ -1771,6 +1771,7 @@ const DIFF_TOOLS: [(Tool, &str); 7] = [
     (Tool::Find, "Find"),
     (Tool::Syntax, "Turn syntax colours on or off"),
     (Tool::SoftWrap, "Turn soft wrap on or off"),
+    (Tool::Whitespace, "Show or hide whitespace"),
 ];
 
 #[gpui_kit::test]
@@ -1789,7 +1790,7 @@ fn the_view_toggles_show_pressed_while_their_view_is_on(cx: &mut TestAppContext)
         let mut state = None;
         act(cx, o.window, |window, _| {
             state = Some(
-                [Tool::Syntax, Tool::SoftWrap, Tool::Undo]
+                [Tool::Syntax, Tool::SoftWrap, Tool::Whitespace, Tool::Undo]
                     .map(|tool| window.find(tool.id()).checked()),
             );
         });
@@ -1798,14 +1799,19 @@ fn the_view_toggles_show_pressed_while_their_view_is_on(cx: &mut TestAppContext)
     let click = |cx: &mut TestAppContext, tool: Tool| {
         act(cx, o.window, |window, cx| window.click(tool.id(), cx));
     };
-    // The defaults: syntax colours on, soft wrap off (spec §6.4). Undo is no toggle.
-    assert_eq!(pressed(cx), [Some(true), Some(false), None]);
+    // The defaults: syntax colours on, soft wrap and whitespace off (spec §6.4). Undo is no
+    // toggle.
+    assert_eq!(pressed(cx), [Some(true), Some(false), Some(false), None]);
     click(cx, Tool::Syntax);
-    assert_eq!(pressed(cx), [Some(false), Some(false), None]);
+    assert_eq!(pressed(cx), [Some(false), Some(false), Some(false), None]);
     click(cx, Tool::SoftWrap);
-    assert_eq!(pressed(cx), [Some(false), Some(true), None]);
+    assert_eq!(pressed(cx), [Some(false), Some(true), Some(false), None]);
+    click(cx, Tool::Whitespace);
+    assert_eq!(pressed(cx), [Some(false), Some(true), Some(true), None]);
     click(cx, Tool::Syntax);
-    assert_eq!(pressed(cx), [Some(true), Some(true), None]);
+    assert_eq!(pressed(cx), [Some(true), Some(true), Some(true), None]);
+    click(cx, Tool::Whitespace);
+    assert_eq!(pressed(cx), [Some(true), Some(true), Some(false), None]);
 }
 
 #[gpui_kit::test]
@@ -1819,9 +1825,15 @@ fn the_toolbar_labels_only_the_navigation_pair(cx: &mut TestAppContext) {
         shown
     };
     assert!(shown(cx, Tool::PreviousDifference));
-    for tool in
-        [Tool::NextDifference, Tool::Undo, Tool::Redo, Tool::Find, Tool::Syntax, Tool::SoftWrap]
-    {
+    for tool in [
+        Tool::NextDifference,
+        Tool::Undo,
+        Tool::Redo,
+        Tool::Find,
+        Tool::Syntax,
+        Tool::SoftWrap,
+        Tool::Whitespace,
+    ] {
         assert!(!shown(cx, tool), "{tool:?}");
     }
 }

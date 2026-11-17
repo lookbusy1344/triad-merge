@@ -159,7 +159,7 @@ View → Unified: one read-only pane, deleted and inserted lines interleaved, wi
 
 ### G10 Visible whitespace
 
-Done: View → Show Whitespace (⌘E) and `show-whitespace`, in every pane (spec §5, `DESIGN.md` §A6.10).
+Done: View → Show Whitespace (⌘E), the toolbar's Whitespace button and `show-whitespace`, in every pane (spec §5, `DESIGN.md` §A6.10).
 
 ### G11 Patch export
 

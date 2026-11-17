@@ -60,6 +60,7 @@ fn every_tool_is_a_named_button_in_a_toolbar(cx: &mut TestAppContext) {
         (Tool::GoToLine, "Go to a line in the result"),
         (Tool::Syntax, "Turn syntax colours on or off"),
         (Tool::SoftWrap, "Turn soft wrap on or off"),
+        (Tool::Whitespace, "Show or hide whitespace"),
     ];
     for (tool, name) in tools {
         assert_eq!(

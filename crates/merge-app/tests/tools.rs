@@ -339,25 +339,30 @@ fn pressed(cx: &mut TestAppContext, window: AnyWindowHandle) -> [Option<bool>; 3
     [left, base_ticked(cx, window), right]
 }
 
-/// The view toggles: base pane, syntax colours and soft wrap.
-const VIEW_TOOLS: [Tool; 3] = [Tool::BasePane, Tool::Syntax, Tool::SoftWrap];
+/// The view toggles: base pane, syntax colours, soft wrap and whitespace.
+const VIEW_TOOLS: [Tool; 4] = [Tool::BasePane, Tool::Syntax, Tool::SoftWrap, Tool::Whitespace];
 
 #[gpui_kit::test]
 fn the_view_toggles_show_pressed_while_their_view_is_on(cx: &mut TestAppContext) {
     let (window, _) = in_result(cx, mixed());
-    // The defaults: base pane and soft wrap off, syntax colours on (spec §6.4).
-    assert_eq!(pressed_of(cx, window, VIEW_TOOLS), [Some(false), Some(true), Some(false)]);
+    let (off, on) = (Some(false), Some(true));
+    // The defaults: base pane, soft wrap and whitespace off, syntax colours on (spec §6.4).
+    assert_eq!(pressed_of(cx, window, VIEW_TOOLS), [off, on, off, off]);
     click(cx, window, Tool::BasePane.id());
-    assert_eq!(pressed_of(cx, window, VIEW_TOOLS), [Some(true), Some(true), Some(false)]);
+    assert_eq!(pressed_of(cx, window, VIEW_TOOLS), [on, on, off, off]);
     click(cx, window, Tool::Syntax.id());
-    assert_eq!(pressed_of(cx, window, VIEW_TOOLS), [Some(true), Some(false), Some(false)]);
+    assert_eq!(pressed_of(cx, window, VIEW_TOOLS), [on, off, off, off]);
     click(cx, window, Tool::SoftWrap.id());
-    assert_eq!(pressed_of(cx, window, VIEW_TOOLS), [Some(true), Some(false), Some(true)]);
+    assert_eq!(pressed_of(cx, window, VIEW_TOOLS), [on, off, on, off]);
+    click(cx, window, Tool::Whitespace.id());
+    assert_eq!(pressed_of(cx, window, VIEW_TOOLS), [on, off, on, on]);
     click(cx, window, Tool::BasePane.id());
-    assert_eq!(pressed_of(cx, window, VIEW_TOOLS), [Some(false), Some(false), Some(true)]);
+    assert_eq!(pressed_of(cx, window, VIEW_TOOLS), [off, off, on, on]);
     // The key and the menu turn the same state.
     dispatch(cx, window, &merge_app::ToggleSoftWrap);
-    assert_eq!(pressed_of(cx, window, VIEW_TOOLS), [Some(false), Some(false), Some(false)]);
+    assert_eq!(pressed_of(cx, window, VIEW_TOOLS), [off, off, off, on]);
+    dispatch(cx, window, &merge_app::ToggleWhitespace);
+    assert_eq!(pressed_of(cx, window, VIEW_TOOLS), [off, off, off, off]);
 }
 
 #[gpui_kit::test]
@@ -629,7 +634,7 @@ fn each_navigation_pair_shows_one_label(cx: &mut TestAppContext) {
 }
 
 /// The choice tools keep their labels; the rest show icons alone.
-const LABELLED: [(Tool, bool); 9] = [
+const LABELLED: [(Tool, bool); 10] = [
     (Tool::Left, true),
     (Tool::Right, true),
     (Tool::Undo, false),
@@ -639,6 +644,7 @@ const LABELLED: [(Tool, bool); 9] = [
     (Tool::GoToLine, false),
     (Tool::Syntax, false),
     (Tool::SoftWrap, false),
+    (Tool::Whitespace, false),
 ];
 
 #[gpui_kit::test]
@@ -665,15 +671,16 @@ fn twelve_conflicts() -> MergeDocument {
 /// The toolbar's inner padding at each end: `px_2`, 0.5 rem.
 const BAR_PADDING: gpui_kit::Pixels = gpui_kit::px(8.);
 
-/// Whether every tool and the badge lie inside the toolbar's padding, in order, without
-/// overlap.
+/// Whether every tool and the badge lie inside the toolbar's padding and the window, in order,
+/// without overlap. A toolbar wider than its window grows past the window's edge.
 fn tools_fit(cx: &mut TestAppContext, window: AnyWindowHandle) -> bool {
     let mut fits = false;
     act(cx, window, |window, _| {
         let bar = window.find(TOOLBAR_ID).bounds();
-        let last = window.find(Tool::SoftWrap.id()).bounds();
+        let last = window.find(Tool::Whitespace.id()).bounds();
         let badge = window.find(CONFLICT_BADGE_ID).bounds();
-        fits = last.right() <= badge.left() && badge.right() <= bar.right() - BAR_PADDING;
+        let edge = bar.right().min(window.viewport_size().width);
+        fits = last.right() <= badge.left() && badge.right() <= edge - BAR_PADDING;
     });
     fits
 }
