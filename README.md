@@ -31,7 +31,7 @@ triad 0.1 is an early beta, tested on macOS 27 on Apple Silicon. [Releases](http
 
 ## Features
 
-**Merge window.** Left and right sit side by side, each showing its changes from base; the editable result sits below. Changes on one side, or the same change on both, apply on their own. Resolve each conflict by picking sources in order (left, base, right, or several), by typing in the result, or by taking one side for every conflict left. One undo history covers picks and edits.
+**Merge window.** Left and right sit side by side, each showing its changes from base; the editable result sits below. Changes on one side, or the same change on both, apply on their own. Resolve each conflict by picking sources in order (left, base, right, or several), by clicking a block's `!` in the result's gutter to keep that block's side alone, by typing in the result, or by taking one side for every conflict left. One undo history covers picks and edits.
 
 **Moved and duplicated code.** A block a side moved shows teal at both ends, with a pill that jumps to the other end. When both sides add the same block in different places, the merge holds it twice without a conflict; triad counts and outlines both copies and offers to drop one.
 
@@ -51,7 +51,7 @@ triad 0.1 is an early beta, tested on macOS 27 on Apple Silicon. [Releases](http
 - Syntax boundaries keep refinements from cutting inside a syntax node.
 - Suggestions offer, never apply, resolutions for common shapes: both sides inserting, sorted lists, a block moved on one side and edited on the other, a duplicated block.
 
-**Editor.** Syntax highlighting for Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS, C and C++. Overview ruler, search and replace, soft wrap, scroll sync, collapsed unchanged regions, whitespace modes, case-insensitive comparison, ignore patterns, line-ending control, recovery journals and a plain-text config file.
+**Editor.** Syntax highlighting for Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS, C and C++. Overview ruler, search and replace, soft wrap, scroll sync, collapsed unchanged regions, visible whitespace in every pane (⌘E or the toolbar), comparison that ignores whitespace or case, ignore patterns, line-ending control, recovery journals and a plain-text config file.
 
 **Text.** UTF-8 and UTF-16 with a BOM; any other text reads as Windows-1252 and saves back byte for byte. Invisible and bidirectional characters show as code-point badges, so a Trojan Source trick reads in its true order.
 
@@ -157,6 +157,18 @@ script/macos-app dist                                           # target/dist/tr
 A tag `vX.Y.Z` that matches the workspace version runs `.github/workflows/release.yml`, which builds and publishes the three platforms' packages.
 
 `script/gen-conflict-repo` and `script/gen-jj-repo SCENARIO` build disposable jj repositories to try triad in; `script/test-jj-repos` checks triad in each (`docs/test-repos.md`).
+
+### Code size
+
+About 85,000 lines of Rust in `crates/`, blank lines and comments excluded. Tests make up more than half.
+
+| Part | Lines |
+|---|---|
+| Product code | 34,000 |
+| Tests: `tests/`, `#[cfg(test)]` modules and test-support modules | 49,000 |
+| Benchmarks and examples | 2,000 |
+
+The GPUI shell, `merge-app`, holds 14,000 lines of product code; `merge-core` holds 6,000. `vendor/gpui-base` is left out.
 
 On macOS, Gatekeeper scans each newly linked binary on its first run, so the first test run after a rebuild can stall before any test starts, with `syspolicyd` at full CPU. Add your terminal and IDE under System Settings → Privacy & Security → Developer Tools and restart them. `spctl developer-mode enable-terminal` shows that pane if it is missing.
 
