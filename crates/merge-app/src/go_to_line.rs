@@ -1,20 +1,33 @@
-//! The go-to-line field (spec §6.3).
+//! The go-to-line field (spec §6.3), after Zed's go-to-line modal (`crates/go_to_line`):
+//! a raised card over the top of the result, with the field over a border and a muted line
+//! that names the current line, or the line Enter goes to.
 
 use gpui_kit::component::input::{Escape, Input, InputState};
-use gpui_kit::component::{Sizable as _, h_flex};
+use gpui_kit::component::{ActiveTheme as _, Sizable as _, v_flex};
 use gpui_kit::{
     App, AppContext as _, Entity, InteractiveElement as _, IntoElement, ParentElement as _, Pixels,
     Role, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div, px,
 };
 
+use crate::elevation::{self, Elevation};
 use crate::strings;
 
-const WIDTH: Pixels = px(120.);
+/// The card's width, Zed's 24 rem.
+const WIDTH: Pixels = px(384.);
+/// The space between the card and the top of the result.
+const INSET: Pixels = px(8.);
+/// Chrome text (`docs/STYLE.md` § Type) on Zed's 16 px lines.
+const TEXT_SIZE: Pixels = px(12.);
+const LINE_HEIGHT: Pixels = px(16.);
+/// Zed's padding round the field and the help line: 8 px at the sides, 4 px above and below.
+const PADDING_X: Pixels = px(8.);
+const PADDING_Y: Pixels = px(4.);
 const CONTEXT: &str = "GoToLine";
 
 /// Element ids, also used by tests.
 pub const GO_TO_LINE_ID: &str = "go-to-line";
 pub const GO_TO_LINE_FIELD_ID: &str = "go-to-line-field";
+pub const GO_TO_LINE_HELP_ID: &str = "go-to-line-help";
 
 /// The field and whether it shows.
 pub(crate) struct Field {
@@ -24,7 +37,8 @@ pub(crate) struct Field {
 
 impl Field {
     pub(crate) fn new(window: &mut Window, cx: &mut App) -> Self {
-        Self { input: cx.new(|cx| InputState::new(window, cx)), open: false }
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder(strings::GO_TO_LINE_FIELD));
+        Self { input, open: false }
     }
 
     /// The text field, whose Enter the window subscribes to.
@@ -54,31 +68,67 @@ impl Field {
         parse(&self.input.read(cx).value(), lines)
     }
 
-    /// The prompt and the field, for a result of `lines` lines. `on_escape` closes it.
-    pub(crate) fn render<F>(&self, lines: usize, on_escape: F) -> impl IntoElement + use<F>
+    /// The card over the top of the result, for a result of `lines` lines with the caret on
+    /// line `current`, from 0: the field, then the line Enter goes to, else the current line.
+    /// `on_escape` closes it.
+    pub(crate) fn render<F>(
+        &self,
+        lines: usize,
+        current: usize,
+        on_escape: F,
+        cx: &App,
+    ) -> impl IntoElement + use<F>
     where
         F: Fn(&Escape, &mut Window, &mut App) + 'static,
     {
-        let prompt = strings::go_to_line_prompt(lines);
-        h_flex()
+        let theme = cx.theme();
+        let help: gpui_kit::SharedString = match self.line(lines, cx) {
+            Some(line) => strings::go_to_line_target(line + 1),
+            None => strings::go_to_line_current(current + 1, lines),
+        }
+        .into();
+        let card = v_flex()
             .id(GO_TO_LINE_ID)
             .test_support()
             .role(Role::Group)
-            .aria_label(prompt.clone())
+            .aria_label(strings::go_to_line_prompt(lines))
             .key_context(CONTEXT)
             .on_action(on_escape)
-            .w_full()
-            .px_2()
-            .gap_2()
-            .child(prompt)
+            .w(WIDTH)
+            .font_family(theme.font_family.clone())
+            .text_size(TEXT_SIZE)
+            .line_height(LINE_HEIGHT)
             .child(
-                div().w(WIDTH).child(
+                div().px(PADDING_X).py(PADDING_Y).border_b_1().border_color(theme.border).child(
                     Input::new(&self.input)
                         .id(GO_TO_LINE_FIELD_ID)
                         .aria_label(strings::GO_TO_LINE_FIELD)
-                        .small(),
+                        .appearance(false)
+                        .small()
+                        // The card's padding places the text, in line with the help.
+                        .px_0(),
                 ),
             )
+            .child(
+                div()
+                    .id(GO_TO_LINE_HELP_ID)
+                    .test_support()
+                    .role(Role::Status)
+                    .aria_label(help.clone())
+                    .px(PADDING_X)
+                    .py(PADDING_Y)
+                    .text_color(theme.muted_foreground)
+                    .child(help),
+            );
+        // Across the result's top, so the card centres over it and the text stays put.
+        div()
+            .absolute()
+            .top(INSET)
+            .left_0()
+            .right_0()
+            .flex()
+            .justify_center()
+            .child(elevation::surface(card, Elevation::Raised, theme))
     }
 }
 

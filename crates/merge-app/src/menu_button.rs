@@ -16,6 +16,8 @@ use gpui_kit::{
     div, prelude::FluentBuilder as _, px, transparent_black,
 };
 
+use crate::elevation::{self, Elevation};
+
 actions!(menu_button, [SelectNext, SelectPrevious, Activate]);
 
 /// The key context of an open menu.
@@ -26,6 +28,8 @@ const ROW_HEIGHT: Pixels = px(20.);
 const CHECK_WIDTH: Pixels = px(12.);
 /// The gap between the trigger and the menu.
 const MENU_OFFSET: Pixels = px(2.);
+/// The space between the menu's edge and its rows.
+const INSET: Pixels = px(4.);
 
 /// An open menu; its rows' ids are their positions. Also used by tests.
 pub const POPUP_MENU_ID: &str = "popup-menu";
@@ -173,7 +177,8 @@ impl Menu {
         };
         let theme = cx.theme();
         let (accent, accent_text) = (theme.accent, theme.accent_foreground);
-        let row_radius = theme.radius / 2.;
+        // Inside the menu's large radius, less the inset (`docs/STYLE.md` § Controls).
+        let row_radius = theme.radius_lg - INSET;
         let rows = items.iter().enumerate().map(|(ix, item)| {
             let key = Kbd::binding_for_action(item.action.as_ref(), Some(key_context), window)
                 .map(|key| key.p_0().border_0().bg(transparent_black()).text_size(text_size));
@@ -214,14 +219,9 @@ impl Menu {
             .on_action(move |_: &SelectNext, _, cx| down(cx))
             .on_action(move |_: &SelectPrevious, _, cx| up(cx))
             .on_action(enter)
-            .p_1()
+            .p(INSET)
             .text_size(text_size)
-            .bg(theme.popover)
-            .text_color(theme.popover_foreground)
-            .border_1()
-            .border_color(theme.border)
-            .rounded(theme.radius)
-            .shadow_md()
+            .map(|menu| elevation::surface(menu, Elevation::Raised, theme))
             .children(rows)
             .into_any_element()
     }

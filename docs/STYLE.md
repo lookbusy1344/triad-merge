@@ -46,7 +46,7 @@ Chrome takes the theme's UI font, as Zed's does: the toolbar, the headings, the 
 - A tooltip is `tooltip::tooltip`, after Zed's: 12 px text on 16 px lines, 4 px above and below, 8 px at the sides, at most 384 px wide, on gpui-kit's popover surface with its border and shadow. Zed stops at 288 px; triad's widest line is a full commit ID. An element takes it through `tooltip::build`, or `build_with_action` to show an action's keys. A gpui-kit button builds its own tooltip, which cannot be styled (`docs/gpui-kit-issues.md`), so a button with a tooltip sits in `tooltip::wrap` and never calls `Button::tooltip`.
 - A heading whose text stands in for missing content, such as `(no description set)`, shows it muted at normal weight.
 - A heading's mark, such as the stack window's `@`, sits before its lead on `pick_list::MARKED_BAND`, lime at 35 % strength, with 4 px either side and the theme's radius. The rest of the row stays plain.
-- Corners take `theme.radius`, 4 px, Zed's `rounded_sm` on its buttons, list items and inputs. `corners::install` writes it into both theme files, over gpui-component's 6 px. Dialogs and popovers take `theme.radius_lg`, 8 px, Zed's `rounded_lg`. An element inside a rounded one takes the outer radius less the inset.
+- Corners take `theme.radius`, 4 px, Zed's `rounded_sm` on its buttons, list items and inputs. `corners::install` writes it into both theme files, over gpui-component's 6 px. Dialogs, menus and other raised surfaces take `theme.radius_lg`, 8 px, Zed's `rounded_lg` (§ Elevation). An element inside a rounded one takes the outer radius less the inset: a menu row, 4 px inside the menu's edge, takes 4 px.
 
 ## Tool windows
 
@@ -61,6 +61,18 @@ The directory, stack, history and absorb windows are built from `tool_window` an
 - **Status icons.** 12 px, Zed's squares in the theme's status colours: added `SquarePlus` in `success`, modified `SquareDot` in `warning`, renamed `SquareArrowRight` in `info`, copied as added, since Zed's git panel has no copy state, deleted `SquareMinus` in `danger`, conflicted `TriangleAlert` in `danger`. The row's accessible name says the state in words.
 - **Footer.** A result that belongs to the whole window, such as Preview Save's, sits under the lists over a 1 px `border`, laid out as the status line.
 - **Empty list.** One muted line where the first row would be: `No files differ.`
+
+## Elevation
+
+A surface raised over the window is `elevation::surface`, after Zed's `ElevationIndex`: the popover's fill and text, a 1 px `border`, `theme.radius_lg` and a shadow for its height. `Elevation::Raised`, Zed's `ElevatedSurface`, holds a surface that leaves the rest of the window working: a menu, Go to Line. `Elevation::Modal`, Zed's `ModalSurface`, holds a dialog that takes the window until it closes: a prompt, over a scrim of black at 20 %. The shadows are Zed's figures, in `elevation.rs`. Inline parts, such as the toolbar, the headings and the status bar, sit flat.
+
+## Go to Line
+
+After Zed's go-to-line modal: a raised card 384 px wide, 8 px under the top of the result and centred over it, so the text does not move. The field sits over a 1 px `border`, then one muted line: `Current line 5 of 1018` while the field names no line, `Go to line 120` once it does. Both are 12 px chrome text, 8 px in from the card's sides with 4 px above and below; the field draws no frame of its own.
+
+## Find
+
+The result's search panel is gpui-component's, laid out as Zed's buffer search bar: the query with a case toggle, the replace toggle, previous and next, the match count and a close button. triad cannot style it (`docs/gpui-kit-issues.md`).
 
 ## Status bar
 

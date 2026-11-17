@@ -20,7 +20,7 @@ As of 2026-11-17.
 | M7 syntax highlighting | Done: Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS | F |
 | p4merge parity | Done | E |
 | Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; §G6 done: the files that differ between two directories, or between a revision and the working copy (`diff`, `diff --rev`), in the directory window and printed by `diff --inspect`, and from `jj diff --tool` and `git difftool -d`, with renames and copies paired as jj pairs them; text that is not UTF-8 read and saved as Windows-1252 (§G17); invisible characters drawn as code points and odd spaces shaded in every pane, and escaped in terminal output (§A6.8); moved and duplicated blocks in the merge window and `inspect`, with a suggestion to drop a duplicate (§G16), done; the rest open | G |
-| Look after Zed (`docs/STYLE.md`) | Chrome in the UI font and the Zed status bar done; Go to Line and Find as Zed surfaces, the prompt's spacing and shadow, the gutter, current-conflict outline and ruler, and a merged title bar open | §2 |
+| Look after Zed (`docs/STYLE.md`) | Done: chrome in the UI font, the Zed status bar, raised surfaces (Go to Line as Zed's card, the menus, the prompt). Open: the gutter, current-conflict outline and ruler, and a merged title bar | §2 |
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
 | jj-native features | Done: conflicts across a stack (`stack`, `resolve -r`), operation-log history (`history`, `diff --op`) and absorb by hunk (`absorb`); the stack window, with a preview of a save's effect on the descendants and a confirmation before a save changes them; the history window; the absorb window, by hunk; these windows and the directory window share one frame after Zed's panels (`docs/STYLE.md`): a header with a count and the buttons, status icons with tooltips that name each state and file-name-first paths, keys for the lists, and Escape and Cancel to close; the conflict badge names the sides a conflict keeps; absorb, `resolve -r` and the default revset aliases checked against jj's CLI (§I5); `stack`, `resolve -r`, `history`, `absorb` and a three-sided save checked through the built binary in scenario repositories (`script/test-jj-repos`) | I |
 
@@ -34,7 +34,7 @@ Build profiles (root `Cargo.toml`): `release` aborts on panic and strips symbols
 
 In order. Each is one or more commits.
 
-1. **Look after Zed,** one commit each: Go to Line and Find as Zed's floating and docked surfaces, with a § Elevation in `docs/STYLE.md`; the prompt at STYLE.md's 12 px padding and 12 px text, with the popover shadow; the gutter marks as tone bars with muted line numbers, a 1 px current-conflict outline and a fainter ruler (spec §5); the title bar merged with the toolbar.
+1. **Look after Zed,** one commit each: the gutter marks as tone bars with muted line numbers, a 1 px current-conflict outline and a fainter ruler (spec §5); the title bar merged with the toolbar.
 2. **Close M3.** Skipped for now by the owner. The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
 3. **Screen-reader support** (part J). Skipped for now by the owner: live status, conflict regions, scrolling the row table, in the order of §J7.
 4. **Review and diff features** (part G): §G7–§G14.
@@ -60,6 +60,8 @@ In order. Each is one or more commits.
 | A histogram diff that gives git's hunks faster: 1.5 s against jj's 70 ms on the 100k-line `deep` triple | — | §B6 |
 | A sideways scrollbar for the top panes: a `ScrollbarHandle` over `Sideways` | — | §E4.4 |
 | A `script/measure-app` mode with a search query open | — | §A14 |
+| The More button's tooltip shows over its open menu; Zed hides a button's tooltip while its menu is open. `MenuButton` needs the popover's open state | — | `menu_button.rs` |
+| The result's search panel in triad's 12 px chrome | A gpui-component release that styles it, or vendoring the crate | `docs/gpui-kit-issues.md` |
 | More grammars | — | §2 |
 | Razor | A grammar that covers its code blocks | §F1 |
 | Unusual characters checked on screen with the platform shapers: badges and shades in the top panes and the editors, and no reordering around a masked bidirectional control | The owner at the machine | §A6.8 |

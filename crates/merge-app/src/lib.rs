@@ -11,6 +11,7 @@ pub mod diff_window;
 pub mod dir_window;
 mod editor_sync;
 mod editor_syntax;
+mod elevation;
 mod go_to_line;
 pub mod history_window;
 mod input_find;

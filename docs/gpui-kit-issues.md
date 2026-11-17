@@ -41,6 +41,10 @@ With soft wrap off, `TextWrapper` still builds one `LineItem` per buffer line be
 
 `gpui-base` 0.8.1 keeps rounding from stretching the scroll edge and throws the edge only when it is stretched. triad's tests of both stay in the vendored copy ([PATCHES.md](../vendor/gpui-base/PATCHES.md)). [scroll-debugging.md](scroll-debugging.md) gives the failure modes and how to reproduce them.
 
+## The search panel cannot be styled
+
+gpui-component's `SearchPanel` (`input/search.rs`) draws the editors' search with its own sizes: 14 px text, 12 px side padding, a full-width field. It takes no style from the editor, and the crate is not vendored, so triad's 12 px chrome cannot reach it. Its layout already follows Zed's buffer search bar.
+
 ## chrono is unmaintained
 
 RustSec marks `chrono` unmaintained (RUSTSEC-2026-0543). `gpui-base`, `gpui-component` and `gpui-pre` depend on it. triad's own code uses `jiff`. `cargo deny` checks unmaintained crates for the workspace's direct dependencies only (`deny.toml`), so the advisory fails no check until a gpui-kit release drops `chrono`.

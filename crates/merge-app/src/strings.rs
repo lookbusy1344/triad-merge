@@ -711,6 +711,16 @@ pub(crate) fn go_to_line_prompt(lines: usize) -> String {
     format!("Go to line (1–{}):", lines.max(1))
 }
 
+/// Go to Line's help while its field names no line: the caret's line, from 1, of `lines`.
+pub(crate) fn go_to_line_current(line: usize, lines: usize) -> String {
+    format!("Current line {line} of {}", lines.max(1))
+}
+
+/// Go to Line's help while its field names a line: the line Enter goes to, from 1.
+pub(crate) fn go_to_line_target(line: usize) -> String {
+    format!("Go to line {line}")
+}
+
 fn encoding(encoding: Encoding) -> &'static str {
     match encoding {
         Encoding::Utf8 => "UTF-8",

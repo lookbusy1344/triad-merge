@@ -188,7 +188,7 @@ const INTRALINE_ALPHA: f32 = 0.35;
 pub(crate) const WINDOW_CONTEXT: &str = "MergeWindow";
 pub(crate) const RESULT_CONTEXT: &str = "MergeResult";
 
-pub use crate::go_to_line::{GO_TO_LINE_FIELD_ID, GO_TO_LINE_ID};
+pub use crate::go_to_line::{GO_TO_LINE_FIELD_ID, GO_TO_LINE_HELP_ID, GO_TO_LINE_ID};
 pub use crate::input_find::{input_match_count_id, input_match_next_id, input_match_previous_id};
 
 /// Element ids, also used by tests.
@@ -2694,6 +2694,13 @@ impl MergeWindow {
 
     /// The result editor, with its overview ruler at the right.
     fn render_result(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let go_to_line = self.go_to_line.is_open().then(|| {
+            let close =
+                cx.listener(|this, _: &Escape, window, cx| this.close_go_to_line(window, cx));
+            let caret = self.result.read(cx).cursor();
+            let current = self.session.document().line_of_byte(ByteOffset::new(caret)).get();
+            self.go_to_line.render(self.session.document().line_count(), current, close, cx)
+        });
         let this = cx.entity().downgrade();
         h_flex()
             .flex_1()
@@ -2704,6 +2711,7 @@ impl MergeWindow {
                     .id(RESULT_ID)
                     .test_support()
                     .key_context(RESULT_CONTEXT)
+                    .relative()
                     .flex_1()
                     .h_full()
                     .child(
@@ -2722,7 +2730,8 @@ impl MergeWindow {
                             .line_height(gpui_kit::relative(self.typography.spacing))
                             .bordered(false)
                             .h(gpui_kit::relative(1.)),
-                    ),
+                    )
+                    .children(go_to_line),
             )
             .child(self.render_ruler(cx))
     }
@@ -4014,11 +4023,6 @@ impl Render for MergeWindow {
             })
             .child(div().h(PANE_DIVIDER).w_full().bg(border))
             .child(result_heading)
-            .when(self.go_to_line.is_open(), |d| {
-                let close =
-                    cx.listener(|this, _: &Escape, window, cx| this.close_go_to_line(window, cx));
-                d.child(self.go_to_line.render(self.session.document().line_count(), close))
-            })
             .child(self.render_result(cx))
             .child(status)
     }
