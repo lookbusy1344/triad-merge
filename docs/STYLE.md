@@ -34,6 +34,10 @@ One rem is the theme's `font_size`, 16 px; gpui-component's `Root` sets it on ev
 
 Chrome takes the theme's UI font, as Zed's does: the toolbar, the headings, the status bar, the dialogs and the tool windows. The panes and editors take the `font` setting, else the theme's monospace font (`Typography::editor_font`); so do commit IDs. Zed's scale is 14, 12 and 10 px; triad's chrome takes 12 px. Two settings size text: `font-size` the editors and panes, `toolbar-font-size` the toolbar, its badge and its menus, which take one value so they change together. Other chrome sizes are constants. Secondary text, such as field labels, takes `muted_foreground`. Text is normal weight. Semibold marks a heading: a pane's heading, a prompt's message, a list's group heading. Italic marks deletion notes and spacer notes.
 
+## Errors
+
+Every error and warning takes `alert::style`: 12 px chrome text on 16 px lines, as a tooltip's and the status bar's, wrapping, in a status colour. An error on the background is `danger`, with the accessible role of an alert. A banner across a window is `danger` with its text in `danger_foreground`, or `warning` with `warning_foreground` for a warning, and keeps 12 px text in a window whose base text is the editor's. A dialog keeps room for one line of error under its fields, so a short error shows whole and the controls do not move when it appears; a longer one scrolls in that room.
+
 ## Controls
 
 - A text button is `button::outlined`, after Zed's `Button` at `ButtonSize::Default` in `ButtonStyle::Outlined` with a `LabelSize::Small` label: 22 px tall, 4 px side padding, a 12 px label, and a faint 1 px edge: `border` 85 % of the way from the background, a step lighter than a divider. Zed's `border.variant` sits a third of the way; triad's is stronger, so the edge holds on a white dialog. On hover the edge turns `input` over `input` at half strength. gpui-kit's default variant at `.xsmall()` gives the hover, label and padding; the module sets the height and the resting edge.
@@ -54,7 +58,7 @@ The directory, stack, history and absorb windows are built from `tool_window` an
 
 - **Frame.** `tool_window::frame` fills the window in the theme's background, at 12 px text, and holds the `ToolWindow` key context. Escape in a list and Cancel (⌘W, ⌘Q) close the window through the same check as its close button.
 - **Header.** 32 px tall over a 1 px `border`, 12 px in from each side. At the left, a muted summary that counts what the list holds: `10 files`, `4 commits`. At the right, the buttons, 4 px apart: Refresh first, then the window's own; Refresh and a button that only shows something are outlined, the one that writes is the default action.
-- **Status line.** Under the header, an outcome or an error, muted, 12 px in from the sides with 4 px above and below; it wraps.
+- **Status line.** Under the header, 12 px in from the sides with 4 px above and below; it wraps. An outcome is muted; an error is alert text in `danger` (§ Errors).
 - **Lists.** Fill the space under the header, inset 4 px so a selected row's rounded corners show. Two lists side by side, as in absorb, stand on a 1 px `border` between them. The list takes the focus when its window opens: ↑ and ↓ move the selection, Enter opens the selected row, and the selection scrolls into view.
 - **Rows.** `pick_list::row`: 24 px tall, 8 px side padding, so its text lines up with the header's at 12 px. Then, 8 px apart: a status icon, a muted lead such as IDs, the main text, which ends in an ellipsis, and a muted trail such as a state or a count. A heading under which rows are indented is semibold.
 - **Paths.** A row whose text is a path shows the file name, then its directory muted, which is cut first. A deleted file's name and directory are struck through and muted.

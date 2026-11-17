@@ -110,6 +110,8 @@ pub mod tool_window {
     pub const ROW_HEIGHT: Pixels = px(24.);
     /// Where a tool window's list starts: under the header, its border and the list's inset.
     pub const LIST_TOP: Pixels = px(32. + 1. + 4.);
+    /// STYLE.md: chrome text and errors take 12 px on 16 px lines.
+    pub const TEXT_LINE_HEIGHT: Pixels = px(16.);
 
     /// Check the frame of a tool window: `summary` at the header's left, `last_button` at its
     /// right, both centred in the header, and `first_row` across the list at its top.
@@ -164,6 +166,21 @@ pub fn label(
     act(cx, window, |window, cx| {
         window.render_frame(cx);
         found = window.find(id).label().map_or_else(String::new, str::to_owned);
+    });
+    found
+}
+
+/// The accessible role of `id` in `window`'s last frame.
+pub fn role(
+    cx: &mut TestAppContext,
+    window: AnyWindowHandle,
+    id: impl Into<gpui_kit::ElementId>,
+) -> Option<gpui_kit::Role> {
+    let id = id.into();
+    let mut found = None;
+    act(cx, window, |window, cx| {
+        window.render_frame(cx);
+        found = window.find(id).role();
     });
     found
 }

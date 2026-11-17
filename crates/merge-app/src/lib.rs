@@ -2,6 +2,7 @@
 
 pub mod about;
 pub mod absorb_window;
+mod alert;
 mod assets;
 mod blink;
 mod button;

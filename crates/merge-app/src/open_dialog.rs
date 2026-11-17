@@ -25,10 +25,13 @@ use merge_view::status::FileNames;
 
 use crate::diff_window::{self, DiffFile, DiffLookup, Origin};
 use crate::window::{OpenError, WindowSettings};
-use crate::{ExitCode, finish, ignore_closed_view, run, strings, toolbar};
+use crate::{ExitCode, alert, finish, ignore_closed_view, run, strings, toolbar};
 
 const WINDOW_WIDTH: Pixels = px(440.);
-const WINDOW_HEIGHT: Pixels = px(232.);
+/// Tall enough for the four merge slots, the start button and `ERROR_LINES` of error.
+const WINDOW_HEIGHT: Pixels = px(236.);
+/// The lines of error the dialog shows before the error scrolls.
+const ERROR_LINES: f32 = 1.;
 const LABEL_WIDTH: Pixels = px(52.);
 /// The room around a tab inside the tab strip, and between two tabs.
 const TAB_INSET: Pixels = px(2.);
@@ -437,18 +440,17 @@ impl Render for OpenDialog {
                     .child(self.render_tabs(cx)),
             )
             .children(self.mode.slots().iter().map(|&slot| self.render_slot(slot, cx)))
-            // The error takes the height left over and scrolls, so the start button stays in
-            // view.
+            // The error keeps `ERROR_LINES` and takes any height left over; a longer one
+            // scrolls, so the start button stays in view.
             .child(
-                div()
+                alert::style(div(), danger)
                     .id(ERROR_ID)
                     .test_support()
                     .when_some(self.error.clone(), |d, error| d.role(Role::Alert).aria_label(error))
                     .flex_1()
-                    .min_h_0()
+                    .min_h(alert::LINE_HEIGHT * ERROR_LINES)
                     .overflow_y_scroll()
-                    .text_xs()
-                    .when_some(self.error.clone(), |d, error| d.text_color(danger).child(error)),
+                    .children(self.error.clone()),
             )
             .child(
                 h_flex().w_full().flex_none().justify_end().child(

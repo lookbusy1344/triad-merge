@@ -9,7 +9,7 @@ use gpui_kit::{
     SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div,
 };
 
-use crate::{ignore_closed_view, strings};
+use crate::{alert, ignore_closed_view, strings};
 
 /// The banner's element id.
 pub const BANNER_ID: &str = "settings-banner";
@@ -47,8 +47,7 @@ pub(crate) fn render<V: 'static>(
         .gap_2()
         .items_start()
         .bg(theme.danger)
-        .text_color(theme.danger_foreground)
-        .child(div().flex_1().child(text.clone()))
+        .child(alert::style(div().flex_1(), theme.danger_foreground).child(text.clone()))
         .child(
             Button::new(CLOSE_ID)
                 .ghost()

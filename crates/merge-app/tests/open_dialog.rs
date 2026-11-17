@@ -436,6 +436,33 @@ fn the_error_is_an_alert_only_while_it_shows(cx: &mut TestAppContext) {
     );
 }
 
+#[gpui_kit::test]
+fn the_error_shows_a_whole_line_above_the_start_button_in_both_tabs(cx: &mut TestAppContext) {
+    use crate::common::tool_window::TEXT_LINE_HEIGHT;
+    use merge_app::open_dialog::ERROR_ID;
+
+    /// STYLE.md § Spacing: a dialog's edge and its content, `p_3`.
+    const DIALOG_EDGE: gpui_kit::Pixels = gpui_kit::px(12.);
+    /// The lines the dialog keeps for its error before it scrolls.
+    const ERROR_LINES: f32 = 1.;
+
+    let (window, _) = opened(cx);
+    for (mode, last_slot) in [(Mode::Merge, Slot::Output), (Mode::Diff, Slot::Right)] {
+        select(cx, window, mode);
+        act(cx, window, |window, cx| window.click(START_ID, cx));
+        cx.run_until_parked();
+        let error = crate::common::bounds(cx, window, ERROR_ID);
+        let start = crate::common::bounds(cx, window, START_ID);
+        let last_slot = crate::common::bounds(cx, window, last_slot.id());
+        assert!(error.size.height >= TEXT_LINE_HEIGHT * ERROR_LINES, "{mode:?}: {error:?}");
+        assert!(last_slot.bottom() <= error.top(), "{mode:?}: the error sits under the slots");
+        assert!(error.bottom() <= start.top(), "{mode:?}: the error sits above start");
+        let mut height = gpui_kit::Pixels::ZERO;
+        act(cx, window, |window, _| height = window.viewport_size().height);
+        assert_eq!(start.bottom(), height - DIALOG_EDGE, "{mode:?}: start keeps the dialog's edge");
+    }
+}
+
 /// Inputs without an extension and an output named `out.rs` merge as Rust, as they colour:
 /// the output names the language (spec §4.3). Deep refinement would split off the lines both
 /// sides share, whose first edge falls inside the `if`; Rust's syntax boundaries keep the

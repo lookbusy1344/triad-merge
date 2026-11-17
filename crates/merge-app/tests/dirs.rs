@@ -330,6 +330,7 @@ fn a_directory_that_cannot_be_read_says_why(cx: &mut TestAppContext) {
     assert_eq!(listed(cx, &started.view), []);
     assert_eq!(note(cx, &started.view), Some(format!("cannot read {}", missing.display())));
     assert_eq!(bounds(cx, started.window, NOTE_ID).top(), UNDER_HEADER);
+    assert_eq!(crate::common::role(cx, started.window, NOTE_ID), Some(gpui_kit::Role::Alert));
 }
 
 #[gpui_kit::test]

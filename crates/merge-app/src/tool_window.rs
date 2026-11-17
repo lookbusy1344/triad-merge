@@ -5,6 +5,8 @@
 //! window as its close button does.
 
 use gpui_kit::base::ObservedElement;
+
+use crate::alert;
 use gpui_kit::component::button::Button;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, h_flex, v_flex};
 use gpui_kit::{
@@ -102,14 +104,37 @@ pub(crate) fn write_button(
     crate::button::default_action(id, label, cx).disabled(disabled)
 }
 
-/// The status line under the header: an outcome or an error, muted, wrapping.
+/// What a tool window's status line says.
+#[derive(Debug, Clone)]
+pub(crate) enum Note {
+    /// The outcome of an action, such as what absorb moved.
+    Outcome(SharedString),
+    /// Why an action failed.
+    Error(SharedString),
+}
+
+impl Note {
+    pub(crate) fn text(&self) -> &str {
+        match self {
+            Self::Outcome(text) | Self::Error(text) => text,
+        }
+    }
+}
+
+/// The status line under the header, wrapping: an outcome muted, an error as an alert in
+/// `danger`.
 pub(crate) fn status(
     id: &'static str,
-    text: Option<&SharedString>,
+    note: Option<&Note>,
     cx: &App,
 ) -> Option<ObservedElement<Stateful<Div>>> {
-    let muted = cx.theme().muted_foreground;
-    text.map(|text| line(id, text.clone()).text_color(muted))
+    let theme = cx.theme();
+    note.map(|note| match note {
+        Note::Outcome(text) => {
+            line(id, Role::Status, text.clone()).text_color(theme.muted_foreground)
+        }
+        Note::Error(text) => alert::style(line(id, Role::Alert, text.clone()), theme.danger),
+    })
 }
 
 /// The footer: a line of text over the window's bottom edge, such as a preview's result.
@@ -118,14 +143,14 @@ pub(crate) fn footer(
     text: SharedString,
     cx: &App,
 ) -> ObservedElement<Stateful<Div>> {
-    line(id, text).flex_none().border_t_1().border_color(cx.theme().border)
+    line(id, Role::Status, text).flex_none().border_t_1().border_color(cx.theme().border)
 }
 
-fn line(id: &'static str, text: SharedString) -> ObservedElement<Stateful<Div>> {
+fn line(id: &'static str, role: Role, text: SharedString) -> ObservedElement<Stateful<Div>> {
     div()
         .id(ElementId::Name(id.into()))
         .test_support()
-        .role(Role::Status)
+        .role(role)
         .aria_label(text.clone())
         .px(SIDE)
         .py_1()

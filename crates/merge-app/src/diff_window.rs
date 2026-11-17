@@ -75,7 +75,7 @@ use crate::wrap::Wrap;
 use crate::{
     Cancel, ExitCode, Find, GoToMoveEnd, NextDifference, PreviousDifference, Redo, Save,
     ToggleCollapseUnchanged, ToggleOriginColumn, ToggleSoftWrap, ToggleSyntax, ToggleWhitespace,
-    Typography, Undo, finish, ignore_closed_view,
+    Typography, Undo, alert, finish, ignore_closed_view,
 };
 
 /// How long edits must pause before the regions are recomputed (spec §4.6).
@@ -2298,14 +2298,13 @@ impl Render for DiffWindow {
             .children(render_banner(self.settings_errors.as_ref(), |v| &mut v.settings_errors, cx))
             .when_some(self.banner.clone(), |d, banner| {
                 d.child(
-                    div()
+                    alert::style(div(), warning_foreground)
                         .id(BANNER_ID)
                         .test_support()
                         .role(Role::Alert)
                         .aria_label(banner.clone())
                         .px_2()
                         .bg(warning)
-                        .text_color(warning_foreground)
                         .child(banner),
                 )
             })

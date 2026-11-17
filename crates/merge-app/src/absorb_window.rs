@@ -13,7 +13,7 @@ use gpui_kit::component::{ActiveTheme as _, v_flex};
 use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, ClickEvent, Context, ElementId, Entity, FocusHandle,
     InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render, ScrollHandle,
-    SharedString, Styled as _, TestSupportExt as _, Window, WindowBounds, WindowOptions, div, px,
+    Styled as _, TestSupportExt as _, Window, WindowBounds, WindowOptions, div, px,
 };
 use merge_session::jj_config::ConfigEnv;
 use merge_session::jj_native::{AbsorbHunk, Absorbed, Destination, HunkChoice};
@@ -22,7 +22,7 @@ use merge_view::diff::tone;
 
 use crate::pick_list::{self, Activate, Leave, SelectNext, SelectPrevious, State};
 use crate::tones::Palette;
-use crate::tool_window;
+use crate::tool_window::{self, Note};
 use crate::window::WindowSettings;
 use crate::{ExitCode, Typography, ignore_closed_view, strings};
 
@@ -88,7 +88,7 @@ pub struct AbsorbWindow {
     /// A close came while a job ran: the run ends when the job lands (spec §7.5).
     closing: bool,
     /// What happened last: an apply, or an error.
-    note: Option<SharedString>,
+    note: Option<Note>,
     /// The hunks' lines: their font, and their tones by side.
     typography: Typography,
     palette: Palette,
@@ -184,7 +184,7 @@ impl AbsorbWindow {
 
     #[must_use]
     pub fn note(&self) -> Option<&str> {
-        self.note.as_deref()
+        self.note.as_ref().map(Note::text)
     }
 
     /// List the hunks again, off the UI thread; the choices start over from the listing.
@@ -264,7 +264,7 @@ impl AbsorbWindow {
         }
         match ran {
             Ok(absorbed) if applied => {
-                self.note = Some(strings::absorb_note(&absorbed).into());
+                self.note = Some(Note::Outcome(strings::absorb_note(&absorbed).into()));
                 // The working copy lost the moved hunks: list what is left.
                 self.refresh(cx);
             }
@@ -281,7 +281,7 @@ impl AbsorbWindow {
                 self.highlighted = None;
                 self.listed = Some(listed);
             }
-            Err(error) => self.note = Some(error.to_string().into()),
+            Err(error) => self.note = Some(Note::Error(error.to_string().into())),
         }
         cx.notify();
     }

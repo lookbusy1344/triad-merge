@@ -13,7 +13,7 @@ use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, ClickEvent, Context, ElementId, Entity, FocusHandle,
     InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render, ScrollHandle,
-    SharedString, Styled as _, Window, WindowBounds, WindowOptions, px,
+    Styled as _, Window, WindowBounds, WindowOptions, px,
 };
 use merge_core::diff::DiffOptions;
 use merge_core::text::Text;
@@ -25,7 +25,7 @@ use merge_session::repository::{Handoff, RunRepository};
 use crate::diff_window::{self, DiffFile, DiffLookup, DiffSettings};
 use crate::pick_list::{self, Activate, SelectNext, SelectPrevious, State};
 use crate::run::{ToolDiff, ToolPair};
-use crate::tool_window;
+use crate::tool_window::{self, Note};
 use crate::window::WindowSettings;
 use crate::{ExitCode, Finish, ignore_closed_view, strings};
 
@@ -86,7 +86,7 @@ pub struct DirWindow {
     /// A close came while a job ran: the run ends when the job lands.
     closing: bool,
     /// The last error.
-    note: Option<SharedString>,
+    note: Option<Note>,
     /// The list's focus, which takes the list keys.
     focus: FocusHandle,
     scroll: ScrollHandle,
@@ -258,7 +258,7 @@ impl DirWindow {
 
     #[must_use]
     pub fn note(&self) -> Option<&str> {
-        self.note.as_deref()
+        self.note.as_ref().map(Note::text)
     }
 
     /// List the files again, off the UI thread; once the running listing lands if one runs.
@@ -312,7 +312,7 @@ impl DirWindow {
                 self.against = against;
                 self.note = None;
             }
-            Err(error) => self.note = Some(error.into()),
+            Err(error) => self.note = Some(Note::Error(error.into())),
         }
         cx.notify();
     }
@@ -364,7 +364,7 @@ impl DirWindow {
         let ToolDiff { left, right, origins, kind, title } = match loaded {
             Ok(loaded) => loaded,
             Err(error) => {
-                self.note = Some(error.into());
+                self.note = Some(Note::Error(error.into()));
                 return cx.notify();
             }
         };
@@ -378,7 +378,7 @@ impl DirWindow {
                 self.open = Some(window);
                 self.note = None;
             }
-            Err(error) => self.note = Some(error.to_string().into()),
+            Err(error) => self.note = Some(Note::Error(error.to_string().into())),
         }
         cx.notify();
     }

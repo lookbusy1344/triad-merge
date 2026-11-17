@@ -12,7 +12,7 @@ use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, ClickEvent, Context, ElementId, Entity, FocusHandle,
     InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render, ScrollHandle,
-    SharedString, Styled as _, Window, WindowBounds, WindowOptions, px,
+    Styled as _, Window, WindowBounds, WindowOptions, px,
 };
 use merge_session::jj_config::ConfigEnv;
 use merge_session::jj_native::{FileHistory, FileVersion};
@@ -22,7 +22,7 @@ use vcs::RepoKind;
 
 use crate::diff_window::{self, DiffFile, DiffLookup, DiffSettings};
 use crate::pick_list::{self, Activate, SelectNext, SelectPrevious, State};
-use crate::tool_window;
+use crate::tool_window::{self, Note};
 use crate::window::WindowSettings;
 use crate::{ExitCode, Finish, ignore_closed_view, strings};
 
@@ -84,7 +84,7 @@ pub struct HistoryWindow {
     /// A close came while a job ran: the run ends when the job lands (spec §7.5).
     closing: bool,
     /// The last error.
-    note: Option<SharedString>,
+    note: Option<Note>,
     /// The list's focus, which takes the list keys.
     focus: FocusHandle,
     scroll: ScrollHandle,
@@ -160,7 +160,7 @@ impl HistoryWindow {
 
     #[must_use]
     pub fn note(&self) -> Option<&str> {
-        self.note.as_deref()
+        self.note.as_ref().map(Note::text)
     }
 
     /// List the versions again, off the UI thread. The listing snapshots the working copy,
@@ -198,7 +198,7 @@ impl HistoryWindow {
                 let len = self.versions.len();
                 self.selected = self.selected.filter(|&ix| ix < len);
             }
-            Err(error) => self.note = Some(error.to_string().into()),
+            Err(error) => self.note = Some(Note::Error(error.to_string().into())),
         }
         cx.notify();
     }
@@ -252,7 +252,7 @@ impl HistoryWindow {
         let Loaded { left, right, file, commit, repo } = match loaded {
             Ok(loaded) => loaded,
             Err(error) => {
-                self.note = Some(error.into());
+                self.note = Some(Note::Error(error.into()));
                 return cx.notify();
             }
         };
@@ -269,7 +269,7 @@ impl HistoryWindow {
                 self.open = Some(window);
                 self.note = None;
             }
-            Err(error) => self.note = Some(error.to_string().into()),
+            Err(error) => self.note = Some(Note::Error(error.to_string().into())),
         }
         cx.notify();
     }

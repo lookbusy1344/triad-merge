@@ -23,7 +23,7 @@ use merge_session::resolve::{Opened, ResolveError};
 use vcs::IdKind;
 
 use crate::pick_list::{self, Activate, SelectNext, SelectPrevious, State};
-use crate::tool_window;
+use crate::tool_window::{self, Note};
 use crate::window::{MergeWindow, WindowSettings};
 use crate::{ExitCode, Finish, ignore_closed_view, strings};
 
@@ -99,7 +99,7 @@ pub struct StackWindow {
     closing: bool,
     preview: Option<Preview>,
     /// What happened last: a save, or an error.
-    note: Option<SharedString>,
+    note: Option<Note>,
     /// The list's focus, which takes the list keys.
     focus: FocusHandle,
     scroll: ScrollHandle,
@@ -182,7 +182,7 @@ impl StackWindow {
 
     #[must_use]
     pub fn note(&self) -> Option<&str> {
-        self.note.as_deref()
+        self.note.as_ref().map(Note::text)
     }
 
     /// The code the run ends with now: 0 when no conflicted commit is left, else 1.
@@ -218,11 +218,11 @@ impl StackWindow {
                 let len = self.path_count();
                 self.selected = self.selected.filter(|&ix| ix < len);
             }
-            Err(error) => self.note = Some(error.to_string().into()),
+            Err(error) => self.note = Some(Note::Error(error.to_string().into())),
         }
         if self.end_if_closing(cx) {
-            if let Some(note) = &self.note {
-                tracing::warn!(%note, "the window closed with this note unseen");
+            if let Some(note) = self.note.as_ref().map(Note::text) {
+                tracing::warn!(note, "the window closed with this note unseen");
             }
             return;
         }
@@ -292,7 +292,7 @@ impl StackWindow {
         let (opened, repo, root) = match loaded {
             Ok(loaded) => loaded,
             Err(error) => {
-                self.note = Some(error.into());
+                self.note = Some(Note::Error(error.into()));
                 return cx.notify();
             }
         };
@@ -303,7 +303,7 @@ impl StackWindow {
                 self.open = Some(OpenMerge { window, view: view.downgrade(), change, path });
                 self.note = None;
             }
-            Err(error) => self.note = Some(error.to_string().into()),
+            Err(error) => self.note = Some(Note::Error(error.to_string().into())),
         }
         cx.notify();
     }
@@ -317,7 +317,10 @@ impl StackWindow {
         // A window already closing has nothing left to close.
         ignore_closed_view(open.window.update(cx, |_, window, _| window.remove_window()));
         self.preview = None;
-        self.note = strings::stack_note(code, &open.path, &open.change).map(Into::into);
+        let note: fn(SharedString) -> Note =
+            if code == ExitCode::Error { Note::Error } else { Note::Outcome };
+        self.note =
+            strings::stack_note(code, &open.path, &open.change).map(|text| note(text.into()));
         self.refresh(cx);
     }
 

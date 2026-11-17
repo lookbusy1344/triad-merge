@@ -134,6 +134,11 @@ mod jj {
         assert_eq!(fixture.held_in(&fixture.latest(&one), "a.txt"), Held::File(A_AFTER.to_vec()));
         assert_eq!(fixture.held_in(&fixture.latest(&two), "b.txt"), Held::File(B_AFTER.to_vec()));
         assert_eq!(note(cx, &started.view).as_deref(), Some("Absorbed 2 hunks into 2 commits."));
+        assert_eq!(
+            crate::common::role(cx, started.window, absorb_window::NOTE_ID),
+            Some(gpui_kit::Role::Status),
+            "an outcome is no alert"
+        );
         // The working copy has nothing left to absorb.
         assert_eq!(targets(cx, &started.view), []);
         assert_eq!(started.exits.borrow().as_slice(), [], "the run goes on");
