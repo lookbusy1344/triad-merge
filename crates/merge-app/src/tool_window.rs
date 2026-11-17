@@ -78,18 +78,28 @@ pub(crate) fn header(
 }
 
 /// The header's button that lists again.
-pub(crate) fn refresh_button(id: &'static str, disabled: bool) -> Button {
-    button(id, crate::strings::REFRESH, disabled)
+pub(crate) fn refresh_button(id: &'static str, disabled: bool, cx: &gpui_kit::App) -> Button {
+    button(id, crate::strings::REFRESH, disabled, cx)
 }
 
 /// A header button that changes nothing.
-pub(crate) fn button(id: &'static str, label: &'static str, disabled: bool) -> Button {
-    crate::button::outlined(id, label).disabled(disabled)
+pub(crate) fn button(
+    id: &'static str,
+    label: &'static str,
+    disabled: bool,
+    cx: &gpui_kit::App,
+) -> Button {
+    crate::button::outlined(id, label, cx).disabled(disabled)
 }
 
 /// The header button that writes: the window's one default action.
-pub(crate) fn write_button(id: &'static str, label: &'static str, disabled: bool) -> Button {
-    crate::button::default_action(id, label).disabled(disabled)
+pub(crate) fn write_button(
+    id: &'static str,
+    label: &'static str,
+    disabled: bool,
+    cx: &gpui_kit::App,
+) -> Button {
+    crate::button::default_action(id, label, cx).disabled(disabled)
 }
 
 /// The status line under the header: an outcome or an error, muted, wrapping.

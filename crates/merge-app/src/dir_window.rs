@@ -470,7 +470,7 @@ impl Render for DirWindow {
         let empty = (self.files.as_ref().is_some_and(Vec::is_empty)
             && self.listing == ListJob::Idle)
             .then(|| pick_list::note(EMPTY_ID, strings::DIRS_EMPTY, muted));
-        let refresh = tool_window::refresh_button(REFRESH_ID, self.listing != ListJob::Idle)
+        let refresh = tool_window::refresh_button(REFRESH_ID, self.listing != ListJob::Idle, cx)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.refresh(cx)));
         let this = cx.entity().downgrade();
         tool_window::frame(cx, move |_, cx| {

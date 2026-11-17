@@ -465,12 +465,13 @@ impl Render for AbsorbWindow {
                 pick_list::note(id, strings::absorb_skipped(path.as_str(), reason), muted)
             },
         );
-        let refresh = tool_window::refresh_button(REFRESH_ID, self.busy)
+        let refresh = tool_window::refresh_button(REFRESH_ID, self.busy, cx)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.refresh(cx)));
         let apply = tool_window::write_button(
             APPLY_ID,
             strings::ABSORB_APPLY,
             self.busy || self.hunks().is_empty(),
+            cx,
         )
         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.apply(cx)));
         let this = cx.entity().downgrade();

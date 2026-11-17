@@ -6,6 +6,7 @@ mod assets;
 mod blink;
 mod button;
 mod choice;
+mod corners;
 pub mod diff_window;
 pub mod dir_window;
 mod editor_sync;
@@ -235,6 +236,7 @@ pub fn init(cx: &mut App) {
 
 /// Set up the app with `bindings` (spec §6.3). The menus show them, so they bind first.
 pub fn init_with(bindings: &KeyBindings, cx: &mut App) {
+    corners::install(cx);
     syntax_colours::install(cx);
     syntax::register_queries();
     keys::bind(bindings, cx);

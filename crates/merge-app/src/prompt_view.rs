@@ -94,9 +94,9 @@ impl Render for PromptView {
         let buttons = self.buttons.iter().enumerate().map(|(index, button)| {
             let label = button.label().clone();
             let button = if index == 0 {
-                crate::button::default_action(index, label)
+                crate::button::default_action(index, label, cx)
             } else {
-                crate::button::outlined(index, label)
+                crate::button::outlined(index, label, cx)
             };
             button.on_click(cx.listener(move |_, _, _, cx| {
                 cx.emit(PromptResponse(index));

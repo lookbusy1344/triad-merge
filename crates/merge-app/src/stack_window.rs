@@ -456,11 +456,12 @@ impl Render for StackWindow {
         let summary = (!self.listing).then(|| strings::stack_summary(self.commits.len()).into());
         let empty = (self.commits.is_empty() && !self.listing)
             .then(|| pick_list::note(EMPTY_ID, strings::STACK_EMPTY, muted));
-        let refresh = tool_window::refresh_button(REFRESH_ID, self.listing)
+        let refresh = tool_window::refresh_button(REFRESH_ID, self.listing, cx)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.refresh(cx)));
         // Preview writes nothing, so it is not the window's primary button.
-        let preview = tool_window::button(PREVIEW_ID, strings::STACK_PREVIEW, self.open.is_none())
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_preview(cx)));
+        let preview =
+            tool_window::button(PREVIEW_ID, strings::STACK_PREVIEW, self.open.is_none(), cx)
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_preview(cx)));
         let this = cx.entity().downgrade();
         tool_window::frame(cx, move |_, cx| {
             this.update(cx, StackWindow::close_requested).unwrap_or(true)

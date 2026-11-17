@@ -354,7 +354,7 @@ impl Render for HistoryWindow {
         let summary = listed.then(|| strings::history_summary(self.versions.len()).into());
         let empty = (self.versions.is_empty() && listed)
             .then(|| pick_list::note(EMPTY_ID, strings::HISTORY_EMPTY, muted));
-        let refresh = tool_window::refresh_button(REFRESH_ID, self.listing)
+        let refresh = tool_window::refresh_button(REFRESH_ID, self.listing, cx)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.refresh(cx)));
         let this = cx.entity().downgrade();
         tool_window::frame(cx, move |_, cx| {

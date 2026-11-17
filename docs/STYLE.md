@@ -36,8 +36,8 @@ Zed's scale is 14, 12 and 10 px; triad's chrome takes 12 px. Two settings size t
 
 ## Controls
 
-- A text button is `button::outlined`, after Zed's `Button` at `ButtonSize::Default` in `ButtonStyle::Outlined` with a `LabelSize::Small` label: 22 px tall, 4 px side padding, a 12 px label, a 1 px `input` border over the background, and `input` at half strength on hover. gpui-kit's default variant at `.xsmall()` gives the colours, label and padding; the module sets the height.
-- The button that finishes a dialog or writes from a tool window, which Enter takes in a prompt, is `button::default_action`: the outlined button in the primary colour, as Zed's prompts tint their default action. A dialog or tool window has at most one. A button that only shows something, such as Preview Save, is outlined.
+- A text button is `button::outlined`, after Zed's `Button` at `ButtonSize::Default` in `ButtonStyle::Outlined` with a `LabelSize::Small` label: 22 px tall, 4 px side padding, a 12 px label, and a faint 1 px edge: `border` 85 % of the way from the background, a step lighter than a divider. Zed's `border.variant` sits a third of the way; triad's is stronger, so the edge holds on a white dialog. On hover the edge turns `input` over `input` at half strength. gpui-kit's default variant at `.xsmall()` gives the hover, label and padding; the module sets the height and the resting edge.
+- The button that finishes a dialog or writes from a tool window, which Enter takes in a prompt, is `button::default_action`: the outlined button on a light grey fill, `muted` at rest, `secondary` on hover and `secondary_active` while pressed, with the label in the text colour. Zed tints a prompt's default action in its accent; triad keeps it grey, as the accent reads too strong on a small dialog. A dialog or tool window has at most one. A button that only shows something, such as Preview Save, is outlined.
 - An icon button and a toolbar button are `.ghost()` and `.small()`: transparent, with the theme's `accent` on hover, as Zed's `IconButton`s are subtle. Every `Input` is `.small()`.
 - A pill over one end of a moved block is a `move_pill::move_pill`; § Moved blocks gives where it goes.
 - A menu is a `menu_button::MenuButton`: 20 px rows, a 12 px icon, the label and the action's key, in the text size it is given. A row that toggles a state is a checkbox row, with a tick after its label while the state is on. gpui-component's `PopupMenu` has 26 px rows with 14 px text, which triad cannot shrink (`docs/gpui-kit-issues.md`).
@@ -46,7 +46,7 @@ Zed's scale is 14, 12 and 10 px; triad's chrome takes 12 px. Two settings size t
 - A tooltip is `tooltip::tooltip`, after Zed's: 12 px text on 16 px lines, 4 px above and below, 8 px at the sides, at most 384 px wide, on gpui-kit's popover surface with its border and shadow. Zed stops at 288 px; triad's widest line is a full commit ID. An element takes it through `tooltip::build`, or `build_with_action` to show an action's keys. A gpui-kit button builds its own tooltip, which cannot be styled (`docs/gpui-kit-issues.md`), so a button with a tooltip sits in `tooltip::wrap` and never calls `Button::tooltip`.
 - A heading whose text stands in for missing content, such as `(no description set)`, shows it muted at normal weight.
 - A heading's mark, such as the stack window's `@`, sits before its lead on `pick_list::MARKED_BAND`, lime at 35 % strength, with 4 px either side and the theme's radius. The rest of the row stays plain.
-- Corners take `theme.radius`. An element inside a rounded one takes the outer radius less the inset.
+- Corners take `theme.radius`, 4 px, Zed's `rounded_sm` on its buttons, list items and inputs. `corners::install` writes it into both theme files, over gpui-component's 6 px. Dialogs and popovers take `theme.radius_lg`, 8 px, Zed's `rounded_lg`. An element inside a rounded one takes the outer radius less the inset.
 
 ## Tool windows
 
