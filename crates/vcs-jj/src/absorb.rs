@@ -539,13 +539,17 @@ fn combine(left: &[u8], right: &[u8], ranges: &[RangePair]) -> Vec<u8> {
 }
 
 /// The line range, from 0, of the byte range `bytes` of `text`, which starts and ends at
-/// line starts.
+/// line starts or at the end of `text`. A last line without a newline counts as a line.
 #[expect(
     clippy::naive_bytecount,
     reason = "once per hunk in the report, over one file; not worth a dependency"
 )]
 fn lines(text: &[u8], bytes: &Range<usize>) -> Range<usize> {
-    let line = |end: usize| text[..end].iter().filter(|&&byte| byte == b'\n').count();
+    let line = |end: usize| {
+        let newlines = text[..end].iter().filter(|&&byte| byte == b'\n').count();
+        let unterminated = end == text.len() && text.last().is_some_and(|&byte| byte != b'\n');
+        newlines + usize::from(unterminated)
+    };
     line(bytes.start)..line(bytes.end)
 }
 
@@ -585,5 +589,14 @@ mod tests {
     fn lines_count_newlines_before_each_end() {
         assert_eq!(lines(b"a\nb\nc\n", &(2..4)), 1..2);
         assert_eq!(lines(b"a\nb\nc\n", &(6..6)), 3..3);
+    }
+
+    #[test]
+    fn lines_count_a_last_line_without_a_newline() {
+        assert_eq!(lines(b"a\nb\nc", &(4..5)), 2..3);
+        assert_eq!(lines(b"a\nb\nc", &(0..5)), 0..3);
+        assert_eq!(lines(b"a\nb\nc", &(5..5)), 3..3);
+        assert_eq!(lines(b"c", &(0..1)), 0..1);
+        assert_eq!(lines(b"", &(0..0)), 0..0);
     }
 }

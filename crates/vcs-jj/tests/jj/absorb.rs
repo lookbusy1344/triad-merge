@@ -112,6 +112,19 @@ fn an_insertion_inside_one_commit_s_lines_goes_there() {
 }
 
 #[test]
+fn a_changed_last_line_without_a_newline_counts_as_a_line() {
+    let fixture = Fixture::new();
+    let one = fixture.commit_on(&[], "one", &[("a.txt", b"1\n2\n3")]);
+    fixture.check_out(&[&one]);
+    fixture.check_out_to_disk();
+    std::fs::write(fixture.root().join("a.txt"), b"1\n2\nTHREE").expect("a.txt is written");
+    let absorbed = listed(&fixture, &[], false);
+    assert_eq!(summary(&absorbed), [(1, "a.txt", [2, 3, 2, 3], into(&one))]);
+    let texts: Vec<_> = absorbed.hunks.into_iter().map(|h| (h.before, h.after)).collect();
+    assert_eq!(texts, [(b"3".to_vec(), b"THREE".to_vec())]);
+}
+
+#[test]
 fn a_hunk_across_two_commits_lines_stays() {
     let fixture = Fixture::new();
     let one = fixture.commit_on(&[], "one", &[("a.txt", b"1\n2\n")]);
