@@ -457,3 +457,53 @@ fn dropping_a_duplicate_outside_a_copy_changes_nothing(cx: &mut TestAppContext) 
     act(cx, window, |window, cx| window.dispatch_action(Box::new(DropDuplicate), cx));
     assert_eq!(texts(cx, &view), before);
 }
+
+// `mixed`'s result lines: 0 a, 1 L, 2 R, 3 c, 4 D, 5 e, 6 F, 7 X, 8 g.
+
+fn click_result_mark(cx: &mut TestAppContext, view: &Entity<MergeWindow>, line: usize) {
+    view.update(cx, |view, cx| {
+        view.result_editor().update(cx, |_, cx| {
+            cx.emit(gpui_kit::component::input::InputEvent::GutterMarkClick { line });
+        });
+    });
+    cx.run_until_parked();
+}
+
+#[gpui_kit::test]
+fn a_click_on_a_conflict_blocks_mark_picks_that_blocks_side(cx: &mut TestAppContext) {
+    let (window, view) = opened(cx);
+    click_result_mark(cx, &view, 2);
+    assert_eq!(first_conflict_text(cx, &view), "R\n");
+    assert_eq!(resolution(cx, &view, RegionIx::new(1)), Resolution::Pick(vec![RIGHT]));
+    assert_eq!(caret(cx, &view), start(cx, &view, RegionIx::new(1)), "the region is current");
+    dispatch(cx, window, Box::new(Undo));
+    assert_eq!(first_conflict_text(cx, &view), "L\nR\n", "one undo step");
+    assert_eq!(resolution(cx, &view, RegionIx::new(1)), Resolution::Unresolved);
+    click_result_mark(cx, &view, 1);
+    assert_eq!(first_conflict_text(cx, &view), "L\n");
+    assert_eq!(resolution(cx, &view, RegionIx::new(1)), Resolution::Pick(vec![LEFT]));
+}
+
+#[gpui_kit::test]
+fn a_click_on_a_decided_regions_mark_does_nothing(cx: &mut TestAppContext) {
+    let (_, view) = opened(cx);
+    click_result_mark(cx, &view, 1);
+    let picked = texts(cx, &view);
+    // The pick's `L`, the left-only `D`, an unchanged line and the line after the last.
+    for line in [1, 4, 0, 9] {
+        click_result_mark(cx, &view, line);
+        assert_eq!(texts(cx, &view), picked, "line {line}");
+    }
+    assert_eq!(resolution(cx, &view, RegionIx::new(1)), Resolution::Pick(vec![LEFT]));
+    assert_eq!(resolution(cx, &view, RegionIx::new(3)), Resolution::Auto);
+}
+
+#[gpui_kit::test]
+fn a_click_on_a_conflict_mark_keeps_text_typed_before_it(cx: &mut TestAppContext) {
+    let (window, view) = opened(cx);
+    act(cx, window, |window, cx| window.input("z", cx));
+    click_result_mark(cx, &view, 7);
+    let expected = "za\nL\nR\nc\nD\ne\nX\ng\n".to_owned();
+    assert_eq!(texts(cx, &view), (expected.clone(), expected));
+    assert_eq!(resolution(cx, &view, RegionIx::new(5)), Resolution::Pick(vec![RIGHT]));
+}

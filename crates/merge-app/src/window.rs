@@ -1559,6 +1559,9 @@ impl MergeWindow {
                             this.open_fold(&fold, cx);
                         }
                     }
+                    InputEvent::GutterMarkClick { line } => {
+                        this.pick_block_at(Line::new(*line), window, cx);
+                    }
                     _ => {}
                 },
             ),
@@ -2063,6 +2066,19 @@ impl MergeWindow {
         self.send_edits(window, cx);
         let region = self.current_region(cx);
         self.pick(region, source, window, cx);
+    }
+
+    /// Pick the source of the unresolved conflict block holding result `line`, as a click on
+    /// its `!` asks (spec §5, Gutters). A line outside an unresolved conflict does nothing.
+    fn pick_block_at(&mut self, line: Line, window: &mut Window, cx: &mut Context<Self>) {
+        self.send_edits(window, cx);
+        let Some((region, source)) = marks::unresolved_block_at(self.session.document(), line)
+        else {
+            return;
+        };
+        let sources = vec![source];
+        self.run(Command::Pick { region, sources }, window, cx);
+        self.go_to(region, window, cx);
     }
 
     /// Set the current region's pick to `choice`. The region stays current.

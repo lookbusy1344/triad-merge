@@ -4,7 +4,7 @@
 use std::ops::Range;
 
 use merge_core::document::{MergeDocument, Resolution};
-use merge_core::index::RegionIx;
+use merge_core::index::{Line, RegionIx};
 use merge_core::merge3::{Kind, Source};
 
 /// The colour family of a mark, which also colours its band in the result pane.
@@ -103,6 +103,25 @@ pub fn bands(doc: &MergeDocument) -> Vec<Band> {
         })
         .filter(|band| !band.bytes.is_empty())
         .collect()
+}
+
+/// The unresolved conflict block holding result `line`: its region and source. A click on
+/// the block's `!` picks that source (spec §5, Gutters). None for a line outside an
+/// unresolved conflict, or past the last line.
+#[must_use]
+pub fn unresolved_block_at(doc: &MergeDocument, line: Line) -> Option<(RegionIx, Source)> {
+    if line.get() >= doc.line_count() {
+        return None;
+    }
+    let start = doc.byte_of_line(line);
+    let region = doc.region_at_byte(start);
+    if *doc.resolution(region) != Resolution::Unresolved {
+        return None;
+    }
+    doc.blocks(region)
+        .into_iter()
+        .find(|(_, bytes)| bytes.contains(&start.get()))
+        .map(|(source, _)| (region, source))
 }
 
 /// The look of a result placeholder: the band's tone, the gutter mark and the border tone.
@@ -382,6 +401,75 @@ mod tests {
         let mut expected = vec![None; 9];
         expected[7] = Some(UNRESOLVED);
         assert_eq!(marks, expected);
+    }
+
+    // `mixed`'s result lines: 0 a, 1 B, 2 c, 3 D, 4 e, 5 F, 6 g, 7 H, 8 X, 9 i.
+
+    #[test]
+    fn each_line_of_an_unresolved_conflict_names_its_blocks_source() {
+        let d = mixed();
+        let at = |line| unresolved_block_at(&d, Line::new(line));
+        assert_eq!(at(7), Some((RegionIx::new(7), Source::Side(0))));
+        assert_eq!(at(8), Some((RegionIx::new(7), Source::Side(1))));
+    }
+
+    #[test]
+    fn lines_outside_an_unresolved_conflict_name_no_block() {
+        let d = mixed();
+        let at = |line| unresolved_block_at(&d, Line::new(line));
+        // Unchanged, left only, right only, same change, the line after a conflict, the
+        // line after the last and one well past it.
+        for line in [0, 1, 3, 5, 6, 9, 10, 11] {
+            assert_eq!(at(line), None, "line {line}");
+        }
+    }
+
+    #[test]
+    fn every_line_of_a_multi_line_block_names_its_source() {
+        // Left writes three lines, right one: the conflict is result lines 1–4.
+        let d = doc(three("a\nx\nz\n", "a\nL1\nL2\nL3\nz\n", "a\nR\nz\n"));
+        let at = |line| unresolved_block_at(&d, Line::new(line));
+        let (region, left, right) = (RegionIx::new(1), Source::Side(0), Source::Side(1));
+        assert_eq!(
+            [0, 1, 2, 3, 4, 5].map(at),
+            [
+                None,
+                Some((region, left)),
+                Some((region, left)),
+                Some((region, left)),
+                Some((region, right)),
+                None
+            ]
+        );
+    }
+
+    #[test]
+    fn a_resolved_or_edited_conflict_names_no_block() {
+        let mut d = mixed();
+        toggle(&mut d, RegionIx::new(7), Source::Side(0));
+        toggle(&mut d, RegionIx::new(7), Source::Side(1));
+        assert_eq!(unresolved_block_at(&d, Line::new(7)), None, "picked left then right");
+        d.apply(Command::Undo).expect("undo");
+        d.apply(Command::Undo).expect("undo");
+        assert_eq!(
+            unresolved_block_at(&d, Line::new(8)),
+            Some((RegionIx::new(7), Source::Side(1)))
+        );
+        d.apply(Command::Edit(EditBatch(vec![TextPatch { range: 15..15, text: "x".to_owned() }])))
+            .expect("type");
+        assert_eq!(unresolved_block_at(&d, Line::new(7)), None, "edited");
+    }
+
+    #[test]
+    fn a_wider_merge_names_each_sides_block() {
+        let d = doc(Inputs::new(
+            vec![text("a\nL\n"), text("a\nM\n"), text("a\nR\n")],
+            vec![text("a\nb\n"), text("a\nb\n")],
+        )
+        .expect("three sides, two bases"));
+        let at = |line| unresolved_block_at(&d, Line::new(line));
+        let region = RegionIx::new(1);
+        assert_eq!([1, 2, 3].map(at), [0, 1, 2].map(|side| Some((region, Source::Side(side)))));
     }
 
     #[test]
