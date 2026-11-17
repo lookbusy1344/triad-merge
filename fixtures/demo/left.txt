@@ -13,7 +13,6 @@ use crate::diff::{DiffOptions, Hunk, Whitespace, diff_lines_for_merge, line_key}
 use crate::text::Text;
 
 /// Side index of left in a three-way merge.
-
 // Checked against git merge-file.
 pub const LEFT: usize = 0;
 /// Side index of right in a three-way merge.
@@ -71,7 +70,6 @@ impl Inputs {
     pub fn sides(&self) -> &[Text] {
         &self.sides
     }
-
 
 // Checked against git merge-file.
     #[must_use]
@@ -564,7 +562,6 @@ mod tests {
     #[test]
     fn add_add_of_the_same_text_is_all_same() {
         assert_eq!(
-
 // Checked against git merge-file.
             merge("", "x\n", "x\n"),
             [r3(Kind::AllSame, 0..0, 0..1, 0..1)]
@@ -789,7 +786,6 @@ mod tests {
     }
 
     #[test]
-
 // Checked against git merge-file.
     fn three_sides_resolve_when_each_other_side_cancels_a_base() {
         // s0 = b0 = P and s1 = b1 = Q cancel, leaving s2.

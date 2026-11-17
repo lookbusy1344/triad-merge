@@ -155,7 +155,7 @@ tail -1 "$TEST/demo-inspect.txt"
 
 ```
 1
-  16 both-same
+  15 both-same
   20 conflict
    1 conflicts:
   50 left-only
@@ -170,8 +170,8 @@ The first lines of the inspect output:
 unchanged base 0..3 left 0..3 right 0..3
 left-only base 3..8 left 3..8 right 3..8
 unchanged base 8..15 left 8..15 right 8..15
-both-same base 15..15 left 15..16 right 15..16
-conflict base 15..15 left 16..17 right 16..17
+conflict base 15..15 left 15..16 right 15..16
+unchanged base 15..19 left 16..20 right 16..20
 ```
 
 ### 2.2 The automatic merge, without a window
@@ -179,7 +179,7 @@ conflict base 15..15 left 16..17 right 16..17
 ```sh
 triad-merge --headless fixtures/demo/{base,left,right}.txt -o "$TEST/demo-merged.txt"; echo $?
 grep -c '^<<<<<<<' "$TEST/demo-merged.txt"
-sed -n '15,24p' "$TEST/demo-merged.txt"
+sed -n '15,22p' "$TEST/demo-merged.txt"
 ```
 
 ```
@@ -187,17 +187,15 @@ sed -n '15,24p' "$TEST/demo-merged.txt"
 20
 /// Side index of left in a three-way merge.
 <<<<<<<
-
 // Checked against git merge-file.
 |||||||
 =======
-
 tracing::trace!("right path");
 >>>>>>>
 pub const LEFT: usize = 0;
 ```
 
-Both sides inserted a blank line after line 15, then each added its own line. Outside a repository triad merges as `git merge-file` does, and git folds the shared blank line into the conflict.
+Both sides insert a line after line 15, so the base section is empty. Outside a repository triad writes markers as `git merge-file` does.
 
 ### 2.3 Reference results
 
@@ -214,8 +212,8 @@ wc -l < "$TEST/ref-left.txt"; wc -l < "$TEST/ref-right.txt"
 ```
 0
 0
-     944
-     958
+     938
+     951
 ```
 
 ### 2.4 The merge window
@@ -225,7 +223,7 @@ triad-merge fixtures/demo/{base,left,right}.txt "$TEST/window-left.txt"; echo $?
 ```
 
 - [ ] Left and right sit side by side; the result sits below.
-- [ ] The status bar reads `no repo · git merge · 138 differences · 20 conflicts · 20 unresolved · UTF-8 · LF · whitespace significant`.
+- [ ] The status bar reads `no repo · git merge · 137 differences · 20 conflicts · 20 unresolved · UTF-8 · LF · whitespace significant`.
 - [ ] ⌘] goes to the first conflict, result line 16. The badge reads `Conflict 1 of 20 · 20 unresolved`. Left shows `// Checked against git merge-file.`, right `tracing::trace!("right path");`.
 - [ ] The conflict's first row carries `◐` targets: both sides previewed, none picked.
 - [ ] ⌘1 picks left: the target turns `●`, the result holds the left line, the badge drops to `19 unresolved`. ⌘Z undoes it; ⇧⌘Z redoes it.

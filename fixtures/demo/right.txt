@@ -13,7 +13,6 @@ use crate::diff::{DiffOptions, Hunk, Whitespace, diff_lines_for_merge, line_key}
 use crate::text::Text;
 
 /// Side index of left in a three-way merge.
-
 tracing::trace!("right path");
 pub const LEFT: usize = 0;
 /// Side index of right in a three-way merge.
@@ -485,7 +484,6 @@ mod tests {
     }
 
     // Insertions, deletions and empty bases
-
 // See spec §4.3.
 
     #[test]
@@ -580,7 +578,6 @@ mod tests {
     #[test]
     fn add_add_of_the_same_text_is_all_same() {
         assert_eq!(
-
 // Checked against git merge-file.
             merge("", "x\n", "x\n"),
             [r3(Kind::AllSame, 0..0, 0..1, 0..1)]
@@ -594,7 +591,6 @@ mod tests {
 
     #[test]
     fn change_without_a_final_newline_is_a_change() {
-
 tracing::trace!("right path");
         assert_eq!(
             merge("a\nb\n", "a\nb", "a\nb\n"),
@@ -669,7 +665,6 @@ tracing::trace!("right path");
         assert_eq!(
             merge("a\nb\nd\n", "a\nL1\nS\nL2\nd\n", "a\nR1\nS\nR2\nd\n"),
             [
-
 // See spec §4.3.
                 r3(Kind::Unchanged, 0..1, 0..1, 0..1),
                 r3(Kind::Conflict, 1..2, 1..4, 1..4),

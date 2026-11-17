@@ -70,7 +70,7 @@ def edit(rng, lines, side):
     if kind == "modify":
         return [modify(rng, line, side) for line in lines]
     if kind == "insert":
-        indent = re.match(r"\s*", lines[0]).group()
+        indent = re.match(r"[ \t]*", lines[0]).group()
         return lines + [indent + rng.choice(NOTES[side]) + "\n"]
     return []
 
