@@ -3,6 +3,7 @@
 //! hover text.
 
 use std::ops::Range;
+use std::sync::Arc;
 
 use chrono::{DateTime, FixedOffset};
 use merge_core::document::{MergeDocument, Resolution};
@@ -33,10 +34,12 @@ pub struct OriginKey {
 pub struct NoInput(pub Source);
 
 /// The annotation of each input, as far as it is known. Lines no run covers have no origin.
+/// Each annotation is shared, so a copy for another thread or a hover card costs one
+/// reference count per input.
 #[derive(Debug, Clone, Default)]
 pub struct Origins {
-    sides: Vec<Option<Annotation>>,
-    bases: Vec<Option<Annotation>>,
+    sides: Vec<Option<Arc<Annotation>>>,
+    bases: Vec<Option<Arc<Annotation>>>,
 }
 
 impl Origins {
@@ -52,7 +55,7 @@ impl Origins {
         self.sides.iter().chain(&self.bases).any(Option::is_some)
     }
 
-    fn slot(&mut self, source: Source) -> Option<&mut Option<Annotation>> {
+    fn slot(&mut self, source: Source) -> Option<&mut Option<Arc<Annotation>>> {
         match source {
             Source::Side(i) => self.sides.get_mut(i),
             Source::Base(i) => self.bases.get_mut(i),
@@ -66,7 +69,7 @@ impl Origins {
     /// [`NoInput`] when the merge has no such input.
     pub fn set(&mut self, source: Source, annotation: Annotation) -> Result<(), NoInput> {
         let slot = self.slot(source).ok_or(NoInput(source))?;
-        *slot = Some(annotation);
+        *slot = Some(Arc::new(annotation));
         Ok(())
     }
 
@@ -103,12 +106,25 @@ impl Origins {
         self.annotation(key.source)?.origins.get(key.index)
     }
 
-    fn annotation(&self, source: Source) -> Option<&Annotation> {
+    /// `source`'s annotation, shared.
+    #[must_use]
+    pub fn annotation(&self, source: Source) -> Option<&Arc<Annotation>> {
         match source {
             Source::Side(i) => self.sides.get(i),
             Source::Base(i) => self.bases.get(i),
         }?
         .as_ref()
+    }
+
+    /// The runs of `source`'s lines from one commit, each with its origin's key, in order:
+    /// its annotation's runs, which never touch a run of the same commit.
+    pub fn runs(&self, source: Source) -> impl Iterator<Item = (Range<usize>, OriginKey)> {
+        self.annotation(source).into_iter().flat_map(move |annotation| {
+            annotation
+                .runs
+                .iter()
+                .map(move |run| (run.lines.clone(), OriginKey { source, index: run.origin }))
+        })
     }
 
     /// The key of the origin of `line` of `source`.
@@ -432,6 +448,29 @@ mod tests {
         assert_eq!(Origins::new(2, 1).result_runs(&d), []);
         assert_eq!(origins.origin(OriginKey { source: R, index: 0 }), None);
         assert_eq!(origins.origin(OriginKey { source: B, index: 1 }), None);
+    }
+
+    #[test]
+    fn an_inputs_runs_name_their_origins_by_key() {
+        let origins = origins(&[(L, annotation(&[(0..2, "c1"), (2..3, "c2"), (4..5, "c1")]))]);
+        let key = |index| OriginKey { source: L, index };
+        assert_eq!(
+            origins.runs(L).collect::<Vec<_>>(),
+            [(0..2, key(0)), (2..3, key(1)), (4..5, key(0))]
+        );
+        assert_eq!(origins.runs(R).count(), 0, "right has no annotation");
+        assert_eq!(origins.runs(Source::Side(2)).count(), 0, "no such input");
+    }
+
+    #[test]
+    fn a_copy_of_the_origins_shares_each_annotation_and_keeps_its_own_slots() {
+        let mut origins = origins(&[(L, annotation(&[(0..1, "c1")]))]);
+        let copy = origins.clone();
+        let (original, copied) = (origins.annotation(L), copy.annotation(L));
+        assert!(Arc::ptr_eq(original.expect("left"), copied.expect("left")), "shared, not copied");
+        origins.set(L, annotation(&[(0..1, "c2")])).expect("the input exists");
+        assert_eq!(commit(copy.line(L, 0)), Some("c1"));
+        assert_eq!(commit(origins.line(L, 0)), Some("c2"));
     }
 
     #[test]

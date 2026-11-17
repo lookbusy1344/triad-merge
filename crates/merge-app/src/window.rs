@@ -975,7 +975,7 @@ impl MergeWindow {
             let runs = cx.background_spawn(async move { origins.result_runs(&doc) }).await;
             ignore_closed_view(this.update(cx, |this, cx| {
                 this.result_labels = None;
-                let labels = this.origin_column.run_labels(&runs, cx.theme().muted_foreground);
+                let labels = this.origin_column.run_labels(runs, cx.theme().muted_foreground);
                 this.result.update(cx, |state, cx| state.set_line_labels(labels, cx));
             }));
         }));

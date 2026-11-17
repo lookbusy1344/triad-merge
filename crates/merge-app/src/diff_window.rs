@@ -896,14 +896,13 @@ impl DiffWindow {
         }));
     }
 
-    /// Give each pane's gutter its origins, while the column shows.
+    /// Give each pane's gutter its origins, while the column shows: a label per run of its
+    /// annotation, whose hover card builds its text when it shows.
     fn refresh_labels(&self, cx: &mut Context<Self>) {
         let colour = cx.theme().muted_foreground;
-        let origins = self.origin_column.origins();
         for side in SIDES {
-            let source = Source::Side(index(side));
-            let lines = (0..self.doc.text(side).len_lines()).map(|line| origins.line(source, line));
-            let labels = self.origin_column.labels(lines, colour);
+            let runs = self.origin_column.origins().runs(Source::Side(index(side)));
+            let labels = self.origin_column.run_labels(runs, colour);
             self.pane(side).editor.update(cx, |state, cx| state.set_line_labels(labels, cx));
         }
     }

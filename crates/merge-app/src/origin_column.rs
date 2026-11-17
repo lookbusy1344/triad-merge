@@ -9,7 +9,7 @@ use gpui_kit::base::input::{LineLabel, LineLabels};
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::{Hsla, Pixels, SharedString, px};
 use merge_core::merge3::Source;
-use merge_view::origin::{OriginKey, Origins, commit_runs, hover_text, revision_heading, short_id};
+use merge_view::origin::{OriginKey, Origins, hover_text, revision_heading, short_id};
 use vcs::{Annotation, IdKind, LineOrigin, VcsError};
 
 /// The origin column's width.
@@ -75,8 +75,7 @@ pub(crate) type Annotated = Vec<Result<Option<Annotation>, VcsError>>;
 
 /// A window's line origins and how its column shows them.
 pub(crate) struct OriginColumn {
-    /// Shared with the task that labels the result off the UI thread.
-    origins: Arc<Origins>,
+    origins: Origins,
     column: Visibility,
     kind: IdKind,
     /// The commit each input shows, once loaded.
@@ -86,16 +85,16 @@ pub(crate) struct OriginColumn {
 impl OriginColumn {
     /// The column of a window over `sides` sides and `bases` bases, none loaded.
     pub(crate) fn new(sides: usize, bases: usize, column: Visibility, kind: IdKind) -> Self {
-        Self { origins: Arc::new(Origins::new(sides, bases)), column, kind, revisions: Vec::new() }
+        Self { origins: Origins::new(sides, bases), column, kind, revisions: Vec::new() }
     }
 
     pub(crate) fn origins(&self) -> &Origins {
         &self.origins
     }
 
-    /// The origins, for a task off the UI thread.
-    pub(crate) fn shared(&self) -> Arc<Origins> {
-        Arc::clone(&self.origins)
+    /// A copy of the origins for a task off the UI thread; it shares each annotation.
+    pub(crate) fn shared(&self) -> Origins {
+        self.origins.clone()
     }
 
     /// The ID the column and the headings name a commit by.
@@ -116,7 +115,7 @@ impl OriginColumn {
 
     /// Show `annotation` as `source`'s origins. An input the window lacks is a defect, logged.
     pub(crate) fn set(&mut self, source: Source, annotation: Annotation) {
-        if let Err(error) = Arc::make_mut(&mut self.origins).set(source, annotation) {
+        if let Err(error) = self.origins.set(source, annotation) {
             tracing::error!(%error, ?source, "an annotation for an input the window lacks");
         }
     }
@@ -164,58 +163,33 @@ impl OriginColumn {
         heading_text(revision, title, self.kind)
     }
 
-    /// An editor gutter's labels for `lines` while the column shows.
-    pub(crate) fn labels<'a>(
-        &self,
-        lines: impl IntoIterator<Item = Option<&'a LineOrigin>>,
-        colour: Hsla,
-    ) -> Option<LineLabels> {
-        self.shown().then(|| origin_labels(lines, colour, self.kind))
-    }
-
-    /// An editor gutter's labels for `runs`, from [`Origins::result_runs`], while the column
-    /// shows. A run whose origin is gone gets no label. A short ID fits inside its
-    /// `SharedString`, so a label allocates nothing; the hover card's text builds when it
-    /// shows.
+    /// An editor gutter's labels for `runs`, from [`Origins::result_runs`] or
+    /// [`Origins::runs`], while the column shows. A run whose origin is gone gets no label. A
+    /// short ID fits inside its `SharedString`, so a label allocates nothing; the hover card
+    /// shares the annotation and builds its text when it shows.
     pub(crate) fn run_labels(
         &self,
-        runs: &[(Range<usize>, OriginKey)],
+        runs: impl IntoIterator<Item = (Range<usize>, OriginKey)>,
         colour: Hsla,
     ) -> Option<LineLabels> {
         self.shown().then(|| {
             let labels = runs
-                .iter()
+                .into_iter()
                 .filter_map(|(lines, key)| {
-                    let label = SharedString::new(short_id(self.origins.origin(*key)?, self.kind));
-                    let (origins, key) = (Arc::clone(&self.origins), *key);
+                    let annotation = self.origins.annotation(key.source)?;
+                    let label =
+                        SharedString::new(short_id(annotation.origins.get(key.index)?, self.kind));
+                    let (annotation, index) = (Arc::clone(annotation), key.index);
                     let hover = move |window: &mut gpui_kit::Window, cx: &mut gpui_kit::App| {
-                        let text = origins.origin(key).map_or_default(hover_text);
+                        let text = annotation.origins.get(index).map_or_default(hover_text);
                         Tooltip::new(text).build(window, cx)
                     };
-                    Some(LineLabel::new(lines.clone(), label).with_tooltip(hover))
+                    Some(LineLabel::new(lines, label).with_tooltip(hover))
                 })
                 .collect();
             LineLabels::new(ORIGIN_WIDTH, colour, labels)
         })
     }
-}
-
-/// An editor gutter's labels for `lines`, one per run of lines from one commit: the short ID,
-/// and the hover card over the run.
-fn origin_labels<'a>(
-    lines: impl IntoIterator<Item = Option<&'a LineOrigin>>,
-    colour: Hsla,
-    kind: IdKind,
-) -> LineLabels {
-    let labels = commit_runs(lines)
-        .into_iter()
-        .map(|(lines, origin)| {
-            let hover = SharedString::from(hover_text(origin));
-            LineLabel::new(lines, SharedString::new(short_id(origin, kind)))
-                .with_tooltip(move |window, cx| Tooltip::new(hover.clone()).build(window, cx))
-        })
-        .collect();
-    LineLabels::new(ORIGIN_WIDTH, colour, labels)
 }
 
 /// The commits `described` names, each with its input from `inputs`; an input whose commit
@@ -344,7 +318,7 @@ mod tests {
     ];
 
     fn run_label_texts(c: &OriginColumn) -> Vec<(Range<usize>, String)> {
-        let labels = c.run_labels(&SPLIT_RUNS, Hsla::default()).expect("the column shows");
+        let labels = c.run_labels(SPLIT_RUNS, Hsla::default()).expect("the column shows");
         labels.labels().iter().map(|l| (l.lines().clone(), l.label().to_string())).collect()
     }
 
@@ -358,7 +332,7 @@ mod tests {
             [(0..1, "knew".to_owned()), (1..2, "kalt".to_owned()), (2..3, "knew".to_owned())]
         );
         let gone = [(0..1, OriginKey { source: LEFT, index: 2 }), (1..2, SPLIT_RUNS[1].1)];
-        let labels = c.run_labels(&gone, Hsla::default()).expect("the column shows");
+        let labels = c.run_labels(gone, Hsla::default()).expect("the column shows");
         assert_eq!(labels.labels().len(), 1);
         assert_eq!(labels.labels()[0].lines(), &(1..2));
     }
@@ -367,9 +341,10 @@ mod tests {
     fn labels_follow_the_column() {
         let mut c = column(Visibility::Shown);
         c.set(LEFT, annotation());
-        let lines = [Some(&origin("kxyz"))];
-        assert!(c.labels(lines, Hsla::default()).is_some());
+        let runs = [(0..2, OriginKey { source: LEFT, index: 0 })];
+        assert_eq!(c.origins().runs(LEFT).collect::<Vec<_>>(), runs);
+        assert!(c.run_labels(runs.clone(), Hsla::default()).is_some());
         c.toggle();
-        assert!(c.labels(lines, Hsla::default()).is_none());
+        assert!(c.run_labels(runs, Hsla::default()).is_none());
     }
 }
