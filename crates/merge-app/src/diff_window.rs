@@ -775,8 +775,11 @@ impl DiffWindow {
     /// Send the edits `side`'s editor made to the core.
     fn send_edits(&mut self, side: Side, window: &mut Window, cx: &mut Context<Self>) {
         let pane = self.pane(side);
-        let core = || self.doc.text(side).to_string();
-        let Some(batch) = editor_sync::take_batch(&pane.editor, &pane.recorded, core, cx) else {
+        let text = self.doc.text(side);
+        let core = |bytes: Range<usize>| text.byte_slice(bytes).to_string();
+        let Some(batch) =
+            editor_sync::take_batch(&pane.editor, &pane.recorded, text.len_bytes(), core, cx)
+        else {
             return;
         };
         let text = self.doc.text(side);

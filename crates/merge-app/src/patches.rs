@@ -1,7 +1,9 @@
 //! Caret placement after the core's patches reach the editor. Patches are sorted and
 //! disjoint, with offsets in the text before any of them.
 
-use merge_core::document::TextPatch;
+use std::ops::Range;
+
+use merge_core::document::{EditBatch, TextPatch};
 
 /// Where `offset` lands once `patches` are applied. An offset inside a replaced range, or
 /// at its end, moves to the end of the new text, so a correction before the caret keeps
@@ -48,6 +50,50 @@ pub(crate) fn difference(before: &str, after: &str) -> Option<TextPatch> {
     (!range.is_empty() || !text.is_empty()).then(|| TextPatch { range, text: text.to_owned() })
 }
 
+/// The bytes at each end of a text that a run of edits leaves as they were.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Untouched {
+    pub(crate) head: usize,
+    pub(crate) tail: usize,
+}
+
+/// The ends of a text of `len` bytes that `batches`, applied in order, leave as they were.
+/// Each batch's patches are in the text before that batch.
+pub(crate) fn untouched(batches: &[EditBatch], len: usize) -> Untouched {
+    let mut len = len;
+    let mut ends = Untouched { head: len, tail: len };
+    for EditBatch(patches) in batches {
+        for patch in patches {
+            ends.head = ends.head.min(patch.range.start);
+            ends.tail = ends.tail.min(len.saturating_sub(patch.range.end));
+        }
+        len = shifted(len, patches.iter().map(growth).sum());
+    }
+    ends
+}
+
+/// The one patch that turns the core's text into the editor's after `batches`, as
+/// [`difference`] gives it, reading each text only between the ends the batches left as
+/// they were: `core` and `editor` give a text's bytes in a range, of `core_len` and
+/// `editor_len` bytes in all.
+pub(crate) fn batched_difference(
+    batches: &[EditBatch],
+    core_len: usize,
+    core: impl FnOnce(Range<usize>) -> String,
+    editor_len: usize,
+    editor: impl FnOnce(Range<usize>) -> String,
+) -> Option<TextPatch> {
+    let Untouched { head, tail } = untouched(batches, core_len);
+    let window = |len: usize| {
+        let start = head.min(len);
+        start..len.saturating_sub(tail).max(start)
+    };
+    let before = window(core_len);
+    let start = before.start;
+    let patch = difference(&core(before), &editor(window(editor_len)))?;
+    Some(TextPatch { range: patch.range.start + start..patch.range.end + start, ..patch })
+}
+
 fn growth(patch: &TextPatch) -> isize {
     // A patch's lengths fit in memory, so they fit in isize.
     patch.text.len().cast_signed() - patch.range.len().cast_signed()
@@ -61,8 +107,6 @@ fn shifted(offset: usize, shift: isize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Range;
-
     use super::*;
 
     fn patch(range: Range<usize>, text: &str) -> TextPatch {
@@ -119,6 +163,62 @@ mod tests {
         assert_eq!(difference("a€b", "a₭b"), Some(patch(1..4, "₭")));
         // A shared last byte: "¡" is C2 A1 and "á" is C3 A1.
         assert_eq!(difference("x¡", "xá"), Some(patch(1..3, "á")));
+    }
+
+    fn batch(patches: &[TextPatch]) -> EditBatch {
+        EditBatch(patches.to_vec())
+    }
+
+    #[test]
+    fn the_untouched_ends_are_the_narrowest_any_batch_leaves() {
+        // On ten bytes: "ab" inserted at 5 leaves 5 and 5; then, on twelve, 7..8 removed
+        // leaves 7 and 4.
+        let batches = [batch(&[patch(5..5, "ab")]), batch(&[patch(7..8, "")])];
+        assert_eq!(untouched(&batches, 10), Untouched { head: 5, tail: 4 });
+        assert_eq!(untouched(&[batch(&[patch(8..9, "x")])], 10), Untouched { head: 8, tail: 1 });
+        // One action at two places, from the highest offset down, both in the text before it.
+        let one_action = [batch(&[patch(8..9, "x"), patch(2..3, "")])];
+        assert_eq!(untouched(&one_action, 10), Untouched { head: 2, tail: 1 });
+        // A batch that empties the text leaves nothing at either end.
+        let batches = [batch(&[patch(0..10, "")]), batch(&[patch(0..0, "z")])];
+        assert_eq!(untouched(&batches, 10), Untouched { head: 0, tail: 0 });
+    }
+
+    #[test]
+    fn a_batched_difference_reads_only_between_the_untouched_ends() {
+        // "0123456789", "ab" inserted at 5, then the "5" after it removed: "01234ab6789".
+        let core = "0123456789";
+        let editor = "01234ab6789";
+        let batches = [batch(&[patch(5..5, "ab")]), batch(&[patch(7..8, "")])];
+        let mut read = Vec::new();
+        let joined = batched_difference(
+            &batches,
+            core.len(),
+            |range| {
+                read.push(range.clone());
+                core[range].to_owned()
+            },
+            editor.len(),
+            |range| editor[range].to_owned(),
+        );
+        assert_eq!(joined, Some(patch(5..6, "ab")));
+        assert_eq!(joined, difference(core, editor));
+        assert_eq!(read, vec![5..6]);
+    }
+
+    #[test]
+    fn a_batched_difference_of_edits_that_cancel_is_none() {
+        // "x" typed at 3, then removed.
+        let batches = [batch(&[patch(3..3, "x")]), batch(&[patch(3..4, "")])];
+        let text = "abcdef";
+        let joined = batched_difference(
+            &batches,
+            text.len(),
+            |range| text[range].to_owned(),
+            text.len(),
+            |range| text[range].to_owned(),
+        );
+        assert_eq!(joined, None);
     }
 
     #[test]

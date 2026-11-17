@@ -965,6 +965,22 @@ impl MergeDocument {
         self.result.to_string()
     }
 
+    /// The result pane's bytes in `range`.
+    ///
+    /// # Panics
+    ///
+    /// If `range` runs past the text or splits a character.
+    #[must_use]
+    pub fn text_in(&self, range: Range<usize>) -> String {
+        self.result.byte_slice(range).to_string()
+    }
+
+    /// The length of the result pane's text in bytes.
+    #[must_use]
+    pub fn text_len(&self) -> usize {
+        self.result.len_bytes()
+    }
+
     /// The document as it stands, without its undo and redo history, for another thread to
     /// build its output from. The texts and the result share their nodes, so the copy costs
     /// O(regions): 0.9 ms at 1M lines.
@@ -1616,7 +1632,7 @@ mod tests {
     /// Region 1 of [`conflict`] in the result pane while it is unresolved.
     const UNRESOLVED: &str = "L\nR\n";
 
-    // Snapshot
+    // Snapshot and text access
 
     #[test]
     fn a_snapshot_saves_as_the_document_stood_and_carries_no_history() {
@@ -1630,6 +1646,15 @@ mod tests {
         d.apply(Command::Undo).expect("undoes");
         assert_eq!(d.text(), format!("a\n{UNRESOLVED}c\n"));
         assert_eq!(snapshot.text(), "a\nL\nc\n");
+    }
+
+    #[test]
+    fn text_in_gives_the_bytes_of_a_range_and_text_len_the_whole() {
+        let d = doc("a\nb\n", "a\nb\n", "a\nb\n");
+        assert_eq!(d.text_len(), 4);
+        assert_eq!(d.text_in(1..3), "\nb");
+        assert_eq!(d.text_in(0..0), "");
+        assert_eq!(d.text_in(0..4), "a\nb\n");
     }
 
     // Unresolved and changed

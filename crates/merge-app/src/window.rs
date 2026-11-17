@@ -1654,7 +1654,9 @@ impl MergeWindow {
     /// the core's corrections to the earlier ones would shift, so they go as one patch.
     fn send_edits(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let doc = self.session.document();
-        let Some(batch) = editor_sync::take_batch(&self.result, &self.recorded, || doc.text(), cx)
+        let core = |bytes: Range<usize>| doc.text_in(bytes);
+        let Some(batch) =
+            editor_sync::take_batch(&self.result, &self.recorded, doc.text_len(), core, cx)
         else {
             return;
         };

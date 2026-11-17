@@ -2,12 +2,14 @@
 //! as one batch, and the core's patches come back to the editor unrecorded. The merge
 //! window's result and each pane of the diff window use it.
 
+use std::ops::Range;
+
 use gpui_kit::base::input::RopeExt as _;
 use gpui_kit::component::input::EditorState;
 use gpui_kit::{App, Entity, EntityInputHandler as _, Window};
 use merge_core::document::{EditBatch, TextPatch};
 
-use crate::patches::{difference, end_of_last, map_offset};
+use crate::patches::{batched_difference, end_of_last, map_offset};
 use crate::recorder::Recorded;
 
 /// Where the caret goes after the core's patches reach the editor.
@@ -19,19 +21,24 @@ pub(crate) enum Caret {
     AtChange,
 }
 
-/// The user's edits to `editor` since the last call, as one batch against the core's text.
-/// One recorded batch goes as it is. Several become the one patch between `core()` and the
-/// editor's text, since only the first is in the core's offsets. None without edits.
+/// The user's edits to `editor` since the last call, as one batch against the core's text,
+/// `core_len` bytes long. One recorded batch goes as it is. Several become the one patch
+/// between the core's text and the editor's, since only the first is in the core's offsets;
+/// `core` gives the core's bytes in a range, and only the span the edits touched is read.
+/// None without edits.
 pub(crate) fn take_batch(
     editor: &Entity<EditorState>,
     recorded: &Recorded,
-    core: impl FnOnce() -> String,
+    core_len: usize,
+    core: impl FnOnce(Range<usize>) -> String,
     cx: &App,
 ) -> Option<EditBatch> {
     let mut batches = recorded.take();
     if batches.len() > 1 {
-        let editor = editor.read(cx).text().to_string();
-        Some(EditBatch(difference(&core(), &editor).into_iter().collect()))
+        let text = editor.read(cx).text();
+        let editor = |range: Range<usize>| text.slice(range).to_string();
+        let joined = batched_difference(&batches, core_len, core, text.len(), editor);
+        Some(EditBatch(joined.into_iter().collect()))
     } else {
         batches.pop()
     }
