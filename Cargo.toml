@@ -48,8 +48,6 @@ anyhow = "1"
 # Already in the tree through gpui; carries file-watch events to the diff window.
 async-channel = "2"
 camino = "1.2"
-# Already in the tree through gpui-base; the local time of a line origin.
-chrono = { version = "0.4", default-features = false, features = ["clock"] }
 clap = { version = "4.6", features = ["derive"] }
 # A counting allocator for the memory bench: safe code cannot implement `GlobalAlloc`.
 cap = { version = "0.1.2", features = ["stats"] }
@@ -67,7 +65,8 @@ dunce = "1.0.5"
 gix = { version = "=0.90.0", default-features = false, features = ["revision", "sha1"] }
 gpui-kit = "=0.8.1"
 imara-diff = "0.2"
-# Already in the tree through jj-lib; the current time for jj revset date patterns.
+# Already in the tree through jj-lib; the current time for jj revset date patterns, and the
+# local time of a line origin.
 jiff = "0.2"
 # Exact pin, bumped with gix (DESIGN.md §A3). The git backend only: no watchman.
 jj-lib = { version = "=0.47.1", default-features = false, features = ["git"] }

@@ -14,7 +14,7 @@ workspace = true
 # The top panes' search, matching as the editors' search does.
 aho-corasick.workspace = true
 # Hover dates of line origins.
-chrono.workspace = true
+jiff.workspace = true
 merge-core.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true

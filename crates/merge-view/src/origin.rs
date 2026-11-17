@@ -5,7 +5,6 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use chrono::{DateTime, FixedOffset};
 use merge_core::document::{MergeDocument, Resolution};
 use merge_core::index::{ByteOffset, Line};
 use merge_core::merge3::{Inputs, Kind, Region, Source};
@@ -300,21 +299,23 @@ pub fn revision_heading<'t, 'o>(
     RevisionHeading { title, id: short_id(origin, kind) }
 }
 
-/// `time` in its own offset, to the minute: `2001-02-03 05:05 +01:00`. A time chrono cannot
-/// represent shows as seconds since the epoch.
+/// `time` in its own offset, to the minute: `2001-02-03 05:05 +01:00`. A time or offset
+/// outside jiff's range shows as seconds since the epoch.
 #[must_use]
 pub fn local_time(time: Timestamp) -> String {
-    FixedOffset::east_opt(time.offset_seconds)
-        .zip(DateTime::from_timestamp(time.seconds, 0))
-        .map_or_else(
-            || format!("{} s", time.seconds),
-            |(offset, utc)| utc.with_timezone(&offset).format(HOVER_TIME).to_string(),
-        )
+    let offset = jiff::tz::Offset::from_seconds(time.offset_seconds).ok();
+    let instant = jiff::Timestamp::from_second(time.seconds).ok();
+    offset.zip(instant).map_or_else(
+        || format!("{} s", time.seconds),
+        |(offset, instant)| {
+            instant.to_zoned(offset.to_time_zone()).strftime(HOVER_TIME).to_string()
+        },
+    )
 }
 
 /// The hover card's text for `origin`: the change ID and commit, the author and the author's
-/// local time, then the summary. A time chrono cannot represent shows as seconds since the
-/// epoch.
+/// local time, then the summary. A time or offset outside jiff's range shows as seconds
+/// since the epoch.
 #[must_use]
 pub fn hover_text(origin: &LineOrigin) -> String {
     let change = &origin.change;
@@ -817,6 +818,15 @@ mod tests {
             hover_text(&origin),
             format!("1a2b3c4\nAda, {} s\nsummary of 1a2b3c4", i64::MAX)
         );
+    }
+
+    #[test]
+    fn the_hover_of_an_offset_beyond_a_day_shows_the_raw_seconds() {
+        // Git records offsets up to ±99:99; no time zone lies more than 26 hours from UTC.
+        const OFFSET_BEYOND_ANY_ZONE: i32 = 27 * 3600;
+        let mut origin = git("1a2b3c4");
+        origin.time = Timestamp { seconds: 0, offset_seconds: OFFSET_BEYOND_ANY_ZONE };
+        assert_eq!(hover_text(&origin), "1a2b3c4\nAda, 0 s\nsummary of 1a2b3c4");
     }
 
     #[test]

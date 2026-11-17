@@ -5700,7 +5700,7 @@ name = "merge-view"
 version = "0.1.0"
 dependencies = [
  "aho-corasick",
- "chrono",
+ "jiff",
  "merge-core",
  "merge-syntax",
  "smallvec",
