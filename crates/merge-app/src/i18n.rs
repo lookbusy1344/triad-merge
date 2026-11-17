@@ -19,25 +19,35 @@ pub(crate) enum Locale {
     En,
     Es,
     ZhCn,
+    ZhTw,
     Ja,
     De,
     Fr,
     PtBr,
     Ru,
     Nl,
+    Ko,
+    Pl,
+    Sv,
+    Uk,
 }
 
 impl Locale {
-    pub(crate) const ALL: [Self; 9] = [
+    pub(crate) const ALL: [Self; 14] = [
         Self::En,
         Self::Es,
         Self::ZhCn,
+        Self::ZhTw,
         Self::Ja,
         Self::De,
         Self::Fr,
         Self::PtBr,
         Self::Ru,
         Self::Nl,
+        Self::Ko,
+        Self::Pl,
+        Self::Sv,
+        Self::Uk,
     ];
 
     /// The catalogue's text.
@@ -46,12 +56,17 @@ impl Locale {
             Self::En => include_str!("../locales/en.ftl"),
             Self::Es => include_str!("../locales/es.ftl"),
             Self::ZhCn => include_str!("../locales/zh-CN.ftl"),
+            Self::ZhTw => include_str!("../locales/zh-TW.ftl"),
             Self::Ja => include_str!("../locales/ja.ftl"),
             Self::De => include_str!("../locales/de.ftl"),
             Self::Fr => include_str!("../locales/fr.ftl"),
             Self::PtBr => include_str!("../locales/pt-BR.ftl"),
             Self::Ru => include_str!("../locales/ru.ftl"),
             Self::Nl => include_str!("../locales/nl.ftl"),
+            Self::Ko => include_str!("../locales/ko.ftl"),
+            Self::Pl => include_str!("../locales/pl.ftl"),
+            Self::Sv => include_str!("../locales/sv.ftl"),
+            Self::Uk => include_str!("../locales/uk.ftl"),
         }
     }
 
@@ -61,12 +76,17 @@ impl Locale {
             Self::En => langid!("en"),
             Self::Es => langid!("es"),
             Self::ZhCn => langid!("zh-CN"),
+            Self::ZhTw => langid!("zh-TW"),
             Self::Ja => langid!("ja"),
             Self::De => langid!("de"),
             Self::Fr => langid!("fr"),
             Self::PtBr => langid!("pt-BR"),
             Self::Ru => langid!("ru"),
             Self::Nl => langid!("nl"),
+            Self::Ko => langid!("ko"),
+            Self::Pl => langid!("pl"),
+            Self::Sv => langid!("sv"),
+            Self::Uk => langid!("uk"),
         }
     }
 
@@ -77,32 +97,59 @@ impl Locale {
             UiLanguage::En => Some(Self::En),
             UiLanguage::Es => Some(Self::Es),
             UiLanguage::ZhCn => Some(Self::ZhCn),
+            UiLanguage::ZhTw => Some(Self::ZhTw),
             UiLanguage::Ja => Some(Self::Ja),
             UiLanguage::De => Some(Self::De),
             UiLanguage::Fr => Some(Self::Fr),
             UiLanguage::PtBr => Some(Self::PtBr),
             UiLanguage::Ru => Some(Self::Ru),
             UiLanguage::Nl => Some(Self::Nl),
+            UiLanguage::Ko => Some(Self::Ko),
+            UiLanguage::Pl => Some(Self::Pl),
+            UiLanguage::Sv => Some(Self::Sv),
+            UiLanguage::Uk => Some(Self::Uk),
         }
     }
 
     /// The catalogue for a system locale such as `pt-BR`, `de_DE.UTF-8` or `zh-Hant-TW`,
-    /// matched by its language subtag alone: every Chinese locale reads the simplified
-    /// catalogue, every Portuguese one the Brazilian. None for a language without one.
+    /// matched by its language subtag: every Portuguese locale reads the Brazilian catalogue.
+    /// Chinese takes its script, else its region: Hant, or Taiwan, Hong Kong or Macau
+    /// without a script, reads the traditional catalogue; the rest the simplified. None for a
+    /// language without one.
     fn of_system(locale: &str) -> Option<Self> {
-        let language = locale.split(['-', '_', '.', '@']).next()?.to_ascii_lowercase();
-        match language.as_str() {
+        let tag = locale.split(['.', '@']).next()?.to_ascii_lowercase();
+        let mut subtags = tag.split(['-', '_']);
+        let language = subtags.next()?;
+        match language {
             "en" => Some(Self::En),
             "es" => Some(Self::Es),
-            "zh" => Some(Self::ZhCn),
+            "zh" => Some(Self::chinese(subtags)),
             "ja" => Some(Self::Ja),
             "de" => Some(Self::De),
             "fr" => Some(Self::Fr),
             "pt" => Some(Self::PtBr),
             "ru" => Some(Self::Ru),
             "nl" => Some(Self::Nl),
+            "ko" => Some(Self::Ko),
+            "pl" => Some(Self::Pl),
+            "sv" => Some(Self::Sv),
+            "uk" => Some(Self::Uk),
             _ => None,
         }
+    }
+
+    /// The Chinese catalogue for a locale's lowercase subtags after `zh`.
+    fn chinese<'a>(subtags: impl Iterator<Item = &'a str>) -> Self {
+        let mut traditional_region = false;
+        for subtag in subtags {
+            match subtag {
+                "hant" => return Self::ZhTw,
+                "hans" => return Self::ZhCn,
+                "tw" | "hk" | "mo" => traditional_region = true,
+                _ => {}
+            }
+        }
+        if traditional_region { Self::ZhTw } else { Self::ZhCn }
     }
 
     /// The language `setting` names; under `auto`, the system's `locale`, else English.
@@ -380,6 +427,23 @@ mod tests {
         assert_eq!(lines(Locale::Fr, 2), "2 lignes supprimées");
         assert_eq!(lines(Locale::Nl, 1), "1 regel verwijderd");
         assert_eq!(lines(Locale::Nl, 0), "0 regels verwijderd");
+        // Polish: one (1 only), few (2–4, 22–24 but not 12–14), many (0, 5–21).
+        assert_eq!(lines(Locale::Pl, 1), "Usunięto 1 wiersz");
+        assert_eq!(lines(Locale::Pl, 3), "Usunięto 3 wiersze");
+        assert_eq!(lines(Locale::Pl, 12), "Usunięto 12 wierszy");
+        assert_eq!(lines(Locale::Pl, 21), "Usunięto 21 wierszy");
+        assert_eq!(lines(Locale::Pl, 22), "Usunięto 22 wiersze");
+        // Ukrainian follows Russian: one (1, 21), few (2–4, 22), many (0, 5–20).
+        assert_eq!(lines(Locale::Uk, 1), "Видалено 1 рядок");
+        assert_eq!(lines(Locale::Uk, 21), "Видалено 21 рядок");
+        assert_eq!(lines(Locale::Uk, 22), "Видалено 22 рядки");
+        assert_eq!(lines(Locale::Uk, 11), "Видалено 11 рядків");
+        // Korean has one form; Swedish two.
+        assert_eq!(lines(Locale::Ko, 1), "1줄 삭제됨");
+        assert_eq!(lines(Locale::Ko, 5), "5줄 삭제됨");
+        assert_eq!(lines(Locale::Sv, 1), "1 rad borttagen");
+        assert_eq!(lines(Locale::Sv, 0), "0 rader borttagna");
+        assert_eq!(lines(Locale::ZhTw, 2), "已刪除 2 行");
     }
 
     #[test]
@@ -423,12 +487,23 @@ mod tests {
         assert_eq!(Locale::choose(UiLanguage::En, Some("fr")), Locale::En);
         assert_eq!(Locale::choose(UiLanguage::Auto, Some("de-DE")), Locale::De);
         assert_eq!(Locale::choose(UiLanguage::Auto, Some("pt_PT.UTF-8")), Locale::PtBr);
-        assert_eq!(Locale::choose(UiLanguage::Auto, Some("zh-Hant-TW")), Locale::ZhCn);
+        assert_eq!(Locale::choose(UiLanguage::Auto, Some("zh-Hant-TW")), Locale::ZhTw);
+        assert_eq!(Locale::choose(UiLanguage::Auto, Some("zh_TW.UTF-8")), Locale::ZhTw);
+        assert_eq!(Locale::choose(UiLanguage::Auto, Some("zh-HK")), Locale::ZhTw);
+        assert_eq!(Locale::choose(UiLanguage::Auto, Some("zh-Hant")), Locale::ZhTw);
+        assert_eq!(Locale::choose(UiLanguage::Auto, Some("zh-Hans-HK")), Locale::ZhCn);
+        assert_eq!(Locale::choose(UiLanguage::Auto, Some("zh-SG")), Locale::ZhCn);
+        assert_eq!(Locale::choose(UiLanguage::Auto, Some("zh")), Locale::ZhCn);
         assert_eq!(Locale::choose(UiLanguage::Auto, Some("ZH-cn")), Locale::ZhCn);
+        assert_eq!(Locale::choose(UiLanguage::ZhTw, Some("zh-CN")), Locale::ZhTw);
+        assert_eq!(Locale::choose(UiLanguage::Auto, Some("ko-KR")), Locale::Ko);
+        assert_eq!(Locale::choose(UiLanguage::Auto, Some("pl_PL.UTF-8")), Locale::Pl);
+        assert_eq!(Locale::choose(UiLanguage::Auto, Some("sv-FI")), Locale::Sv);
+        assert_eq!(Locale::choose(UiLanguage::Auto, Some("uk-UA")), Locale::Uk);
         assert_eq!(Locale::choose(UiLanguage::Auto, Some("ru_RU@euro")), Locale::Ru);
         assert_eq!(Locale::choose(UiLanguage::Auto, Some("nl-BE")), Locale::Nl);
         assert_eq!(Locale::choose(UiLanguage::Nl, Some("en-GB")), Locale::Nl);
-        assert_eq!(Locale::choose(UiLanguage::Auto, Some("ko-KR")), Locale::En);
+        assert_eq!(Locale::choose(UiLanguage::Auto, Some("it-IT")), Locale::En);
         assert_eq!(Locale::choose(UiLanguage::Auto, Some("")), Locale::En);
         assert_eq!(Locale::choose(UiLanguage::Auto, None), Locale::En);
     }

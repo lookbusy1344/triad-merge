@@ -3,7 +3,7 @@
 ## About window
 
 about-title = Acerca de triad
-about-description = Fusión a tres bandas y comparación a dos bandas
+about-description = Fusión de tres vías y comparación de dos vías
 about-vcs-support = Hecho para Jujutsu, con soporte completo de Git
 about-version = Versión { $version }
 about-build-commit = Commit { $commit }

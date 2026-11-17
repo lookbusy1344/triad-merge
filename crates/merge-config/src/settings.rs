@@ -325,6 +325,8 @@ pub enum UiLanguage {
     Es,
     #[strum(serialize = "zh-CN")]
     ZhCn,
+    #[strum(serialize = "zh-TW")]
+    ZhTw,
     #[strum(serialize = "ja")]
     Ja,
     #[strum(serialize = "de")]
@@ -337,6 +339,14 @@ pub enum UiLanguage {
     Ru,
     #[strum(serialize = "nl")]
     Nl,
+    #[strum(serialize = "ko")]
+    Ko,
+    #[strum(serialize = "pl")]
+    Pl,
+    #[strum(serialize = "sv")]
+    Sv,
+    #[strum(serialize = "uk")]
+    Uk,
 }
 
 /// When the panes show their scrollbars.
@@ -978,7 +988,7 @@ const KEYS: &[Key] = &[
     ),
     named_key!(
         "ui-language",
-        "The language of the windows' text: auto follows the system, or en, es, zh-CN, ja, de, fr, pt-BR, ru or nl.",
+        "The language of the windows' text: auto follows the system, or en, es, zh-CN, zh-TW, ja, de, fr, pt-BR, ru, nl, ko, pl, sv or uk.",
         ui_language = UiLanguage::default()
     ),
     key!(
@@ -1732,6 +1742,11 @@ mod tests {
         assert_eq!(settings("ui-language = zh-CN").ui_language, UiLanguage::ZhCn);
         assert_eq!(settings("ui-language = pt-BR").ui_language, UiLanguage::PtBr);
         assert_eq!(settings("ui-language = nl").ui_language, UiLanguage::Nl);
+        assert_eq!(settings("ui-language = zh-TW").ui_language, UiLanguage::ZhTw);
+        assert_eq!(settings("ui-language = ko").ui_language, UiLanguage::Ko);
+        assert_eq!(settings("ui-language = pl").ui_language, UiLanguage::Pl);
+        assert_eq!(settings("ui-language = sv").ui_language, UiLanguage::Sv);
+        assert_eq!(settings("ui-language = uk").ui_language, UiLanguage::Uk);
         assert_eq!(
             settings("ui-language = de\nui-language =").ui_language,
             UiLanguage::Auto,
@@ -1741,13 +1756,24 @@ mod tests {
             problem("ui-language = zh-cn"),
             (
                 1,
-                invalid("ui-language", "zh-cn", "auto, en, es, zh-CN, ja, de, fr, pt-BR, ru or nl")
+                invalid(
+                    "ui-language",
+                    "zh-cn",
+                    "auto, en, es, zh-CN, zh-TW, ja, de, fr, pt-BR, ru, nl, ko, pl, sv or uk"
+                )
             ),
             "tags compare case-sensitively, as every name does"
         );
         assert_eq!(
             problem("ui-language = it"),
-            (1, invalid("ui-language", "it", "auto, en, es, zh-CN, ja, de, fr, pt-BR, ru or nl"))
+            (
+                1,
+                invalid(
+                    "ui-language",
+                    "it",
+                    "auto, en, es, zh-CN, zh-TW, ja, de, fr, pt-BR, ru, nl, ko, pl, sv or uk"
+                )
+            )
         );
     }
 

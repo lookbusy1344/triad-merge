@@ -1,12 +1,14 @@
-//! The merge window in Spanish and Japanese (spec §6.5). Spanish labels run longer than
+//! The merge and About windows in Spanish and Japanese (spec §6.5). Spanish labels run longer than
 //! English and Japanese ones shorter, so the toolbar's label threshold moves both ways. The language belongs to the process
 //! and a run sets it once; nextest runs each test in a process of its own, so each test here
 //! sets its language before its first window. Expected text is the catalogues' text.
 
 use std::path::Path;
 
-use gpui_kit::test::TestWindowExt as _;
+use gpui_kit::test::TestWindowExt;
 use gpui_kit::{AnyWindowHandle, Entity, TestAppContext};
+use merge_app::About;
+use merge_app::about::{BUILD_ID, DESCRIPTION_ID, VCS_ID, VERSION_ID};
 use merge_app::toolbar::{Badge, LABELS_MIN_WIDTH, Tool, labels_min_width};
 use merge_app::window::CONFLICT_BADGE_ID;
 use merge_app::{MergeWindow, WindowSettings};
@@ -159,4 +161,59 @@ fn the_japanese_toolbar_shows_its_shorter_labels_in_less_width(cx: &mut TestAppC
     // Each label is one or two ideographs, against four to ten letters in English.
     assert!(threshold < LABELS_MIN_WIDTH, "{threshold:?}");
     assert_labels_fit_from(cx, window, threshold);
+}
+
+/// The About window's lines: version, build, description and VCS support. Test builds get no
+/// `TRIAD_COMMIT`, so only a debug build has a build line. GPUI's test window keeps no title
+/// to read, so the title goes unchecked here.
+fn about(cx: &mut TestAppContext) -> [Option<String>; 4] {
+    let (merge, _) = open(cx, doc("a\n", "b\n", "c\n"));
+    cx.update(|cx| cx.dispatch_action(&About));
+    cx.run_until_parked();
+    let about = cx
+        .update(|cx| cx.windows().into_iter().find(|w| w.window_id() != merge.window_id()))
+        .expect("the About window is open");
+    act(cx, about, TestWindowExt::render_frame);
+    let mut found = [None, None, None, None];
+    act(cx, about, |window, _| {
+        let text = |id| window.try_find(id).and_then(|e| e.label().map(str::to_owned));
+        let lines = [text(VERSION_ID), text(BUILD_ID), text(DESCRIPTION_ID), text(VCS_ID)];
+        found = lines;
+    });
+    found
+}
+
+/// `build` on a debug build, where the About window names the placeholder IDs.
+fn debug_only(build: &str) -> Option<String> {
+    cfg!(debug_assertions).then(|| build.to_owned())
+}
+
+#[gpui_kit::test]
+fn the_spanish_about_window_reads_in_spanish(cx: &mut TestAppContext) {
+    speak(UiLanguage::Es);
+    let version = env!("CARGO_PKG_VERSION");
+    assert_eq!(
+        about(cx),
+        [
+            Some(format!("Versión {version}")),
+            debug_only("Commit 000000000000, cambio zzzzzzzzzzzz"),
+            Some("Fusión de tres vías y comparación de dos vías".to_owned()),
+            Some("Hecho para Jujutsu, con soporte completo de Git".to_owned()),
+        ]
+    );
+}
+
+#[gpui_kit::test]
+fn the_japanese_about_window_reads_in_japanese(cx: &mut TestAppContext) {
+    speak(UiLanguage::Ja);
+    let version = env!("CARGO_PKG_VERSION");
+    assert_eq!(
+        about(cx),
+        [
+            Some(format!("バージョン {version}")),
+            debug_only("コミット 000000000000、変更 zzzzzzzzzzzz"),
+            Some("3 方向マージと 2 方向比較".to_owned()),
+            Some("Jujutsu 向けに設計、Git も完全サポート".to_owned()),
+        ]
+    );
 }

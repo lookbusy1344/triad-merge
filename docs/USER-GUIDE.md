@@ -381,7 +381,7 @@ triad-merge show-config                    # the settings in effect
 
 Bind a key with `keybind = CHORD=ACTION`, for example `keybind = cmd+j=next-conflict`.
 
-The windows follow the system's language. `ui-language = ja` holds them to Japanese; the others are `en`, `es`, `zh-CN`, `de`, `fr`, `pt-BR`, `ru` and `nl`. The command line stays in English.
+The windows follow the system's language. `ui-language = ja` holds them to Japanese; the others are `en`, `es`, `zh-CN`, `zh-TW`, `ko`, `de`, `fr`, `pt-BR`, `ru`, `uk`, `pl`, `nl` and `sv`. The command line stays in English.
 
 ## 8. Exit codes
 

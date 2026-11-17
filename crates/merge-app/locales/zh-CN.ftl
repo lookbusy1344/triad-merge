@@ -4,7 +4,7 @@
 ## About window
 
 about-title = 关于 triad
-about-description = 三方合并与双方对比
+about-description = 三方合并与双向对比
 about-vcs-support = 为 Jujutsu 打造，全面支持 Git
 about-version = 版本 { $version }
 about-build-commit = 提交 { $commit }
