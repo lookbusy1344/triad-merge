@@ -466,3 +466,9 @@ err-io-is-directory = es ist ein Verzeichnis
 err-io-not-directory = kein Verzeichnis
 err-io-full = kein Speicherplatz mehr auf dem Gerät
 err-io-read-only = das Dateisystem ist schreibgeschützt
+
+## gpui-component's text
+
+component-replace = Ersetzen
+component-replace-all = Alle ersetzen
+component-clear = Leeren

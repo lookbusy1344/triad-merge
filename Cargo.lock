@@ -5635,6 +5635,7 @@ dependencies = [
  "merge-view",
  "notify",
  "ropey 1.6.1",
+ "rust-i18n",
  "serde_json",
  "sys-locale",
  "tempfile",

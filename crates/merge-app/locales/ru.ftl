@@ -481,3 +481,9 @@ err-io-is-directory = это каталог
 err-io-not-directory = это не каталог
 err-io-full = на устройстве нет места
 err-io-read-only = файловая система только для чтения
+
+## gpui-component's text
+
+component-replace = Заменить
+component-replace-all = Заменить все
+component-clear = Очистить

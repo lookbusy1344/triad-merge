@@ -466,3 +466,9 @@ err-io-is-directory = det är en katalog
 err-io-not-directory = ingen katalog
 err-io-full = inget utrymme kvar på enheten
 err-io-read-only = filsystemet är skrivskyddat
+
+## gpui-component's text
+
+component-replace = Ersätt
+component-replace-all = Ersätt alla
+component-clear = Rensa

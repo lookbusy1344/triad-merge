@@ -410,3 +410,9 @@ err-io-is-directory = ディレクトリです
 err-io-not-directory = ディレクトリではありません
 err-io-full = デバイスに空き容量がありません
 err-io-read-only = ファイルシステムは読み取り専用です
+
+## gpui-component's text
+
+component-replace = 置換
+component-replace-all = すべて置換
+component-clear = クリア

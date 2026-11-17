@@ -16,6 +16,7 @@ workspace = true
 anyhow.workspace = true
 async-channel.workspace = true
 fluent-bundle.workspace = true
+rust-i18n.workspace = true
 # The grammars of the languages `merge_syntax::language` names.
 gpui-kit = { workspace = true, features = [
     "tree-sitter-rust",

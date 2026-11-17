@@ -60,6 +60,9 @@ fluent-bundle = "0.16"
 # The catalogues' syntax tree, which the catalogue tests walk. Already in the tree through
 # fluent-bundle.
 fluent-syntax = "0.12"
+# gpui-component's catalogue engine. triad lends it the windows' text for the keys it shows,
+# such as the search panel's Replace buttons. Already in the tree through gpui-component.
+rust-i18n = "4.2"
 # Already in the tree through jj-lib; streams and readers from its async APIs.
 futures = { version = "0.3", default-features = false, features = ["std"] }
 # jj-cli 0.47's choice of the user's config and home directories, so triad reads jj's config where jj does.

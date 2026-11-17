@@ -410,3 +410,9 @@ err-io-is-directory = 这是一个目录
 err-io-not-directory = 不是目录
 err-io-full = 设备上没有剩余空间
 err-io-read-only = 文件系统为只读
+
+## gpui-component's text
+
+component-replace = 替换
+component-replace-all = 全部替换
+component-clear = 清除

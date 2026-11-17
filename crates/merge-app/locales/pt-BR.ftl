@@ -475,3 +475,9 @@ err-io-is-directory = é um diretório
 err-io-not-directory = não é um diretório
 err-io-full = não há espaço no dispositivo
 err-io-read-only = o sistema de arquivos é somente leitura
+
+## gpui-component's text
+
+component-replace = Substituir
+component-replace-all = Substituir tudo
+component-clear = Limpar

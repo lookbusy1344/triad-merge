@@ -45,9 +45,9 @@ With soft wrap off, `TextWrapper` still builds one `LineItem` per buffer line be
 
 gpui-component's `SearchPanel` (`input/search.rs`) draws the editors' search with its own sizes: 14 px text, 12 px side padding, a full-width field. It takes no style from the editor, and the crate is not vendored, so triad's 12 px chrome cannot reach it. Its layout already follows Zed's buffer search bar.
 
-## The search panel's Replace buttons are English only
+## gpui-component's catalogue lacks most of triad's languages
 
-gpui-component labels the result search's Replace and Replace All buttons through its own `rust-i18n` catalogue, `locales/ui.yml`, which holds the `Input` group in English alone. A crate cannot add to another crate's `rust-i18n` catalogue, so the buttons stay English in every language triad shows. The fix is upstream translations of the `Input` group, or a hook that lets the app name the buttons.
+gpui-component labels its own text, such as the search panel's Replace buttons and a field's right-click menu, through its `rust-i18n` catalogue, `locales/ui.yml`. It holds English, Brazilian Portuguese, Chinese and some Italian. triad lends gpui-component its own catalogues through `gpui_component::_rust_i18n_extend`, which rust-i18n 4 generates and hides from the docs (`DESIGN.md` §E3.6). A release that renames or drops the hook fails triad's build; the fallback is a vendored copy of gpui-component with the translations added.
 
 ## chrono is unmaintained
 

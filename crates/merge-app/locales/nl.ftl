@@ -466,3 +466,9 @@ err-io-is-directory = het is een map
 err-io-not-directory = geen map
 err-io-full = geen ruimte meer op het apparaat
 err-io-read-only = het bestandssysteem is alleen-lezen
+
+## gpui-component's text
+
+component-replace = Vervangen
+component-replace-all = Alles vervangen
+component-clear = Wissen

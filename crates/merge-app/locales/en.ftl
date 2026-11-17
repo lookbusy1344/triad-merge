@@ -473,3 +473,10 @@ err-io-is-directory = it is a directory
 err-io-not-directory = not a directory
 err-io-full = no space left on the device
 err-io-read-only = the file system is read-only
+
+## gpui-component's text: the search panel's Replace buttons and a field's Clear button.
+## A field's right-click menu reads the Edit messages above.
+
+component-replace = Replace
+component-replace-all = Replace All
+component-clear = Clear

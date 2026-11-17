@@ -410,3 +410,9 @@ err-io-is-directory = 디렉터리입니다
 err-io-not-directory = 디렉터리가 아닙니다
 err-io-full = 장치에 남은 공간이 없습니다
 err-io-read-only = 파일 시스템이 읽기 전용입니다
+
+## gpui-component's text
+
+component-replace = 바꾸기
+component-replace-all = 모두 바꾸기
+component-clear = 지우기

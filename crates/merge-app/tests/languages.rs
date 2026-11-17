@@ -217,3 +217,44 @@ fn the_japanese_about_window_reads_in_japanese(cx: &mut TestAppContext) {
         ]
     );
 }
+
+/// gpui-component takes the run's language by its tag, and reads triad's catalogue for it.
+#[test]
+fn gpui_component_speaks_traditional_chinese_with_the_windows() {
+    speak(UiLanguage::ZhTw);
+    assert_eq!(&*gpui_kit::component::locale(), "zh-TW");
+}
+
+/// The result's search panel in replace mode, rendered: the labels of its Replace and Replace
+/// All buttons.
+fn replace_buttons(cx: &mut TestAppContext) -> [Option<String>; 2] {
+    let (window, _) = open(cx, doc("a\n", "b\n", "c\n"));
+    act(cx, window, |window, cx| window.click(merge_app::window::RESULT_ID, cx));
+    act(cx, window, |window, cx| window.press("secondary-f", cx));
+    cx.run_until_parked();
+    act(cx, window, |window, cx| {
+        window.dispatch_action(Box::new(gpui_kit::base::input::Replace), cx);
+    });
+    act(cx, window, TestWindowExt::render_frame);
+    let mut labels = [None, None];
+    act(cx, window, |window, _| {
+        labels =
+            ["replace-one", "replace-all"].map(|id| window.find(id).label().map(str::to_owned));
+    });
+    labels
+}
+
+#[gpui_kit::test]
+fn the_japanese_search_panel_replaces_in_japanese(cx: &mut TestAppContext) {
+    speak(UiLanguage::Ja);
+    assert_eq!(replace_buttons(cx), [Some("置換".to_owned()), Some("すべて置換".to_owned())]);
+}
+
+#[gpui_kit::test]
+fn the_polish_search_panel_replaces_in_polish(cx: &mut TestAppContext) {
+    speak(UiLanguage::Pl);
+    assert_eq!(
+        replace_buttons(cx),
+        [Some("Zamień".to_owned()), Some("Zamień wszystko".to_owned())]
+    );
+}

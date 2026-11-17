@@ -241,7 +241,6 @@ pub(crate) fn finish(code: ExitCode, cx: &mut App) {
     }
 }
 
-/// Set up the app with the default keys.
 /// Fix the language of this process's windows from `setting`, with `system` the system's
 /// preferred locale for `auto` (spec §6.5). Call it once, before the first window; a later
 /// call keeps the first language.
@@ -249,6 +248,7 @@ pub fn set_language(setting: merge_config::settings::UiLanguage, system: Option<
     i18n::set_locale(i18n::Locale::choose(setting, system));
 }
 
+/// Set up the app with the default keys.
 pub fn init(cx: &mut App) {
     init_with(&KeyBindings::default(), cx);
 }

@@ -520,6 +520,33 @@ pub(crate) fn start(mode: Mode) -> SharedString {
     }
 }
 
+/// The message for a key of gpui-component's own catalogue, for the text of its that triad's
+/// windows show: the search panel's Replace buttons and a text field's right-click menu.
+pub(crate) fn component_message(key: &str) -> Option<&'static str> {
+    let id = match key {
+        "Input.Replace" => "component-replace",
+        "Input.Replace All" => "component-replace-all",
+        "Input.Clear" => "component-clear",
+        "Input.Cut" => "edit-cut",
+        "Input.Copy" => "edit-copy",
+        "Input.Paste" => "edit-paste",
+        "Input.Select All" => "edit-select-all",
+        _ => return None,
+    };
+    Some(id)
+}
+
+/// The keys of gpui-component's catalogue that [`component_message`] names.
+pub(crate) const COMPONENT_KEYS: [&str; 7] = [
+    "Input.Replace",
+    "Input.Replace All",
+    "Input.Clear",
+    "Input.Cut",
+    "Input.Copy",
+    "Input.Paste",
+    "Input.Select All",
+];
+
 /// A slot's name in the open dialog.
 pub(crate) fn slot_name(slot: Slot) -> SharedString {
     match slot {

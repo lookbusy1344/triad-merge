@@ -90,6 +90,31 @@ impl Locale {
         }
     }
 
+    /// The language's BCP 47 tag, as its catalogue's file is named.
+    const fn tag(self) -> &'static str {
+        match self {
+            Self::En => "en",
+            Self::Es => "es",
+            Self::ZhCn => "zh-CN",
+            Self::ZhTw => "zh-TW",
+            Self::Ja => "ja",
+            Self::De => "de",
+            Self::Fr => "fr",
+            Self::PtBr => "pt-BR",
+            Self::Ru => "ru",
+            Self::Nl => "nl",
+            Self::Ko => "ko",
+            Self::Pl => "pl",
+            Self::Sv => "sv",
+            Self::Uk => "uk",
+        }
+    }
+
+    /// The language tagged `tag` exactly, as gpui-component asks for it.
+    fn of_tag(tag: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|locale| locale.tag() == tag)
+    }
+
     /// The language a setting holds; `auto` holds none.
     const fn of_setting(setting: UiLanguage) -> Option<Self> {
         match setting {
@@ -198,7 +223,10 @@ static LOCALE: OnceLock<Locale> = OnceLock::new();
 /// Fix the language of this run's windows. A run sets it once, before its first window;
 /// a second call keeps the first language.
 pub(crate) fn set_locale(locale: Locale) {
-    if LOCALE.set(locale).is_err() && current() != locale {
+    if LOCALE.set(locale).is_ok() {
+        gpui_kit::component::_rust_i18n_extend(&ComponentText, COMPONENT_NAMESPACE);
+        gpui_kit::component::set_locale(locale.tag());
+    } else if current() != locale {
         tracing::warn!(?locale, kept = ?current(), "the language is already set; it stays");
     }
 }
@@ -206,6 +234,42 @@ pub(crate) fn set_locale(locale: Locale) {
 /// The language of this run's windows.
 pub(crate) fn current() -> Locale {
     LOCALE.get().copied().unwrap_or(Locale::En)
+}
+
+/// The namespace triad's text takes in gpui-component's catalogue: it asks for
+/// `triad.Input.Replace` where its own text says `Input.Replace`.
+const COMPONENT_NAMESPACE: &str = "triad";
+
+/// The windows' catalogues, lent to gpui-component for the text of its that the windows show
+/// (`strings::component_message`). gpui-component asks here first, then falls back to its own
+/// catalogue, which holds English for every key.
+struct ComponentText;
+
+impl ComponentText {
+    fn key(key: &str) -> Option<&str> {
+        key.strip_prefix(COMPONENT_NAMESPACE)?.strip_prefix('.')
+    }
+}
+
+impl rust_i18n::Backend for ComponentText {
+    fn available_locales(&self) -> Vec<Cow<'_, str>> {
+        Locale::ALL.map(|locale| Cow::Borrowed(locale.tag())).into()
+    }
+
+    fn translate(&self, locale: &str, key: &str) -> Option<Cow<'_, str>> {
+        let id = crate::strings::component_message(Self::key(key)?)?;
+        Some(format_in(Locale::of_tag(locale)?, id, &[]))
+    }
+
+    fn messages_for_locale(&self, locale: &str) -> Option<Vec<(Cow<'_, str>, Cow<'_, str>)>> {
+        let locale = Locale::of_tag(locale)?;
+        let message = |key: &'static str| {
+            let id = crate::strings::component_message(key)?;
+            let text = format_in(locale, id, &[]);
+            Some((Cow::Owned(format!("{COMPONENT_NAMESPACE}.{key}")), text))
+        };
+        crate::strings::COMPONENT_KEYS.into_iter().map(message).collect()
+    }
 }
 
 /// A value a message places in its text.
@@ -310,6 +374,39 @@ mod tests {
     use fluent_syntax::ast::{Entry, Expression, InlineExpression, Pattern, PatternElement};
 
     use super::*;
+
+    #[test]
+    fn gpui_component_reads_the_windows_text_for_the_keys_triad_lends() {
+        use rust_i18n::Backend as _;
+        assert_eq!(
+            ComponentText.translate("pl", "triad.Input.Replace All").as_deref(),
+            Some("Zamień wszystko")
+        );
+        assert_eq!(ComponentText.translate("ko", "triad.Input.Paste").as_deref(), Some("붙여넣기"));
+        assert_eq!(ComponentText.translate("en", "triad.Input.Clear").as_deref(), Some("Clear"));
+    }
+
+    #[test]
+    fn gpui_component_keeps_its_own_text_for_other_keys_languages_and_namespaces() {
+        use rust_i18n::Backend as _;
+        assert_eq!(ComponentText.translate("pl", "triad.Input.Show Password"), None);
+        assert_eq!(ComponentText.translate("it", "triad.Input.Replace"), None);
+        assert_eq!(ComponentText.translate("zh", "triad.Input.Replace"), None);
+        assert_eq!(ComponentText.translate("pl", "Input.Replace"), None);
+        assert_eq!(ComponentText.translate("pl", "triadInput.Replace"), None);
+    }
+
+    #[test]
+    fn gpui_component_sees_every_key_triad_lends_in_every_language() {
+        use rust_i18n::Backend as _;
+        for locale in Locale::ALL {
+            let messages = ComponentText.messages_for_locale(locale.tag()).expect("the language");
+            let keys: Vec<_> = messages.iter().map(|(key, _)| key.as_ref()).collect();
+            assert_eq!(keys.len(), crate::strings::COMPONENT_KEYS.len(), "{locale:?}");
+            assert!(keys.contains(&"triad.Input.Replace"), "{locale:?}: {keys:?}");
+        }
+        assert_eq!(ComponentText.available_locales().len(), Locale::ALL.len());
+    }
 
     /// The macOS bundle names each catalogue's language, so the system's own controls follow
     /// it. Apple names Chinese by script.
