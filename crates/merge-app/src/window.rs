@@ -948,7 +948,7 @@ impl MergeWindow {
         Some(OriginCell {
             label: origins
                 .result_label(doc, line, self.origin_column.kind())
-                .map(|label| SharedString::from(label.to_owned())),
+                .map(SharedString::new),
             hover: hover_text(origin).into(),
         })
     }
@@ -1675,10 +1675,8 @@ impl MergeWindow {
     /// the core's corrections to the earlier ones would shift, so they go as one patch.
     fn send_edits(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let doc = self.session.document();
-        let core = |bytes: Range<usize>| doc.text_in(bytes);
-        let Some(batch) =
-            editor_sync::take_batch(&self.result, &self.recorded, doc.text_len(), core, cx)
-        else {
+        let core = doc.text_slice();
+        let Some(batch) = editor_sync::take_batch(&self.result, &self.recorded, &core, cx) else {
             return;
         };
         self.pinned = None;

@@ -8,7 +8,7 @@
 use std::borrow::Cow;
 use std::ops::Range;
 
-use ropey::{Rope, RopeBuilder};
+use ropey::{Rope, RopeBuilder, RopeSlice};
 use serde::{Deserialize, Serialize};
 
 use crate::boundaries::Boundaries;
@@ -965,20 +965,10 @@ impl MergeDocument {
         self.result.to_string()
     }
 
-    /// The result pane's bytes in `range`.
-    ///
-    /// # Panics
-    ///
-    /// If `range` runs past the text or splits a character.
+    /// The result pane's text in place, for reading without a copy.
     #[must_use]
-    pub fn text_in(&self, range: Range<usize>) -> String {
-        self.result.byte_slice(range).to_string()
-    }
-
-    /// The length of the result pane's text in bytes.
-    #[must_use]
-    pub fn text_len(&self) -> usize {
-        self.result.len_bytes()
+    pub fn text_slice(&self) -> RopeSlice<'_> {
+        self.result.slice(..)
     }
 
     /// The document as it stands, without its undo and redo history, for another thread to
@@ -1649,12 +1639,12 @@ mod tests {
     }
 
     #[test]
-    fn text_in_gives_the_bytes_of_a_range_and_text_len_the_whole() {
-        let d = doc("a\nb\n", "a\nb\n", "a\nb\n");
-        assert_eq!(d.text_len(), 4);
-        assert_eq!(d.text_in(1..3), "\nb");
-        assert_eq!(d.text_in(0..0), "");
-        assert_eq!(d.text_in(0..4), "a\nb\n");
+    fn the_text_slice_holds_the_result_pane_text() {
+        let mut d = conflict();
+        d.apply(Command::Pick { region: RegionIx::new(1), sources: vec![L] }).expect("picks");
+        let slice = d.text_slice();
+        assert_eq!(slice.len_bytes(), 6);
+        assert_eq!(slice.to_string(), "a\nL\nc\n");
     }
 
     // Unresolved and changed

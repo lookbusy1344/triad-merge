@@ -776,13 +776,9 @@ impl DiffWindow {
     fn send_edits(&mut self, side: Side, window: &mut Window, cx: &mut Context<Self>) {
         let pane = self.pane(side);
         let text = self.doc.text(side);
-        let core = |bytes: Range<usize>| text.byte_slice(bytes).to_string();
-        let Some(batch) =
-            editor_sync::take_batch(&pane.editor, &pane.recorded, text.len_bytes(), core, cx)
-        else {
+        let Some(batch) = editor_sync::take_batch(&pane.editor, &pane.recorded, &text, cx) else {
             return;
         };
-        let text = self.doc.text(side);
         self.collapse.note_edits(
             side,
             &batch.0,

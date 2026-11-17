@@ -153,10 +153,7 @@ impl OriginColumn {
     pub(crate) fn cell(&self, source: Source, line: Option<usize>) -> Option<OriginCell> {
         let origin = self.origins.cell(source, line)?;
         Some(OriginCell {
-            label: self
-                .origins
-                .cell_label(source, line, self.kind)
-                .map(|label| SharedString::from(label.to_owned())),
+            label: self.origins.cell_label(source, line, self.kind).map(SharedString::new),
             hover: hover_text(origin).into(),
         })
     }
@@ -177,7 +174,8 @@ impl OriginColumn {
     }
 
     /// An editor gutter's labels for `runs`, from [`Origins::result_runs`], while the column
-    /// shows. A run whose origin is gone gets no label. The hover card's text builds when it
+    /// shows. A run whose origin is gone gets no label. A short ID fits inside its
+    /// `SharedString`, so a label allocates nothing; the hover card's text builds when it
     /// shows.
     pub(crate) fn run_labels(
         &self,
@@ -188,7 +186,7 @@ impl OriginColumn {
             let labels = runs
                 .iter()
                 .filter_map(|(lines, key)| {
-                    let label = short_id(self.origins.origin(*key)?, self.kind).to_owned();
+                    let label = SharedString::new(short_id(self.origins.origin(*key)?, self.kind));
                     let (origins, key) = (Arc::clone(&self.origins), *key);
                     let hover = move |window: &mut gpui_kit::Window, cx: &mut gpui_kit::App| {
                         let text = origins.origin(key).map_or_default(hover_text);
@@ -213,7 +211,7 @@ fn origin_labels<'a>(
         .into_iter()
         .map(|(lines, origin)| {
             let hover = SharedString::from(hover_text(origin));
-            LineLabel::new(lines, short_id(origin, kind).to_owned())
+            LineLabel::new(lines, SharedString::new(short_id(origin, kind)))
                 .with_tooltip(move |window, cx| Tooltip::new(hover.clone()).build(window, cx))
         })
         .collect();
@@ -247,12 +245,12 @@ fn heading_text(revision: Option<&LineOrigin>, title: &SharedString, kind: IdKin
     let shown = if heading.title.len() == title.len() {
         title.clone()
     } else {
-        SharedString::from(heading.title.to_owned())
+        SharedString::new(heading.title)
     };
     HeadingText {
         title: shown,
         chip: Some(OriginCell {
-            label: Some(SharedString::from(heading.id.to_owned())),
+            label: Some(SharedString::new(heading.id)),
             hover: hover_text(origin).into(),
         }),
     }
@@ -325,6 +323,44 @@ mod tests {
         let left = c.heading(LEFT, &title);
         assert_eq!(left.chip.and_then(|chip| chip.label).as_deref(), Some("kxyz"));
         assert_eq!(c.heading(RIGHT, &title), HeadingText::plain(&title));
+    }
+
+    /// Lines 0 and 2 from change `kone`, line 1 from `ktwo`.
+    fn split_annotation(one: &str, two: &str) -> Annotation {
+        Annotation {
+            origins: vec![origin(one), origin(two)],
+            runs: vec![
+                OriginRun { lines: 0..1, origin: 0 },
+                OriginRun { lines: 1..2, origin: 1 },
+                OriginRun { lines: 2..3, origin: 0 },
+            ],
+        }
+    }
+
+    const SPLIT_RUNS: [(Range<usize>, OriginKey); 3] = [
+        (0..1, OriginKey { source: LEFT, index: 0 }),
+        (1..2, OriginKey { source: LEFT, index: 1 }),
+        (2..3, OriginKey { source: LEFT, index: 0 }),
+    ];
+
+    fn run_label_texts(c: &OriginColumn) -> Vec<(Range<usize>, String)> {
+        let labels = c.run_labels(&SPLIT_RUNS, Hsla::default()).expect("the column shows");
+        labels.labels().iter().map(|l| (l.lines().clone(), l.label().to_string())).collect()
+    }
+
+    #[test]
+    fn a_new_annotation_relabels_its_runs_and_a_missing_origin_has_none() {
+        let mut c = column(Visibility::Shown);
+        c.set(LEFT, split_annotation("kone", "ktwo"));
+        c.set(LEFT, split_annotation("knew", "kalt"));
+        assert_eq!(
+            run_label_texts(&c),
+            [(0..1, "knew".to_owned()), (1..2, "kalt".to_owned()), (2..3, "knew".to_owned())]
+        );
+        let gone = [(0..1, OriginKey { source: LEFT, index: 2 }), (1..2, SPLIT_RUNS[1].1)];
+        let labels = c.run_labels(&gone, Hsla::default()).expect("the column shows");
+        assert_eq!(labels.labels().len(), 1);
+        assert_eq!(labels.labels()[0].lines(), &(1..2));
     }
 
     #[test]

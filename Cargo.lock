@@ -5576,6 +5576,7 @@ dependencies = [
  "merge-syntax",
  "merge-view",
  "notify",
+ "ropey 1.6.1",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
