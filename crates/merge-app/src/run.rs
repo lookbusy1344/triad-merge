@@ -41,6 +41,8 @@ const WATCH_FILES: bool = true;
 pub fn run(form: WindowForm) -> ExitCode {
     let started = Instant::now();
     let WindowForm { window, settings: mut stored, settings_errors: errors, cwd, repo } = form;
+    let system = sys_locale::get_locale();
+    crate::set_language(stored.ui_language, system.as_deref());
     let bindings = std::mem::take(&mut stored.key_bindings);
     let base = WindowSettings { cwd: cwd.clone(), ..window_settings(&stored) };
     let dir = cwd.as_deref();
@@ -340,7 +342,8 @@ pub(crate) fn native_sides(
 ) -> Result<(DiffFile, DiffFile), merge_session::SessionError> {
     let text = merge_session::read_text(&native.right)?;
     let right = DiffFile { origin: Origin::File(native.right), text, read_only: false };
-    Ok((DiffFile::revision(native.left, native.left_title), right))
+    let title = strings::revision_title(&native.left_at);
+    Ok((DiffFile::revision(native.left, title), right))
 }
 
 /// The merge window on the conflict `resolve` names, read from the repository (spec §7.4).
@@ -658,6 +661,7 @@ mod tests {
             origin_column: true,
             revision_id: merge_config::settings::RevisionId::Commit,
             theme: merge_config::settings::Theme::Dark,
+            ui_language: merge_config::settings::UiLanguage::Ja,
             line_height: 2.5,
             colours: merge_config::settings::Colours {
                 left: merge_config::settings::Themed::both(merge_config::settings::Colour::rgb(

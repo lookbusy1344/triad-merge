@@ -122,7 +122,7 @@ pub fn start(
     };
     let exit: Rc<ExitFn> = Rc::new(exit);
     let (window, view) = gpui_kit::open_window(options, cx, |window, cx| {
-        window.set_window_title(strings::ABSORB_TITLE);
+        window.set_window_title(&strings::absorb_title());
         let hunks_focus = cx.focus_handle();
         hunks_focus.focus(window, cx);
         let typography = start.settings.typography.clone();
@@ -281,7 +281,7 @@ impl AbsorbWindow {
                 self.highlighted = None;
                 self.listed = Some(listed);
             }
-            Err(error) => self.note = Some(Note::Error(error.to_string().into())),
+            Err(error) => self.note = Some(Note::Error(crate::error_text::describe(&error).into())),
         }
         cx.notify();
     }
@@ -458,7 +458,7 @@ impl Render for AbsorbWindow {
         let summary =
             self.listed.is_some().then(|| strings::absorb_summary(self.hunks().len()).into());
         let empty = (self.hunks().is_empty() && self.listed.is_some())
-            .then(|| pick_list::note(EMPTY_ID, strings::ABSORB_EMPTY, muted));
+            .then(|| pick_list::note(EMPTY_ID, strings::absorb_empty(), muted));
         let skipped = self.listed.iter().flat_map(|listed| &listed.skipped).enumerate().map(
             |(ix, (path, reason))| {
                 let id = ElementId::Name(format!("{SKIPPED_ID}-{ix}").into());
@@ -469,7 +469,7 @@ impl Render for AbsorbWindow {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.refresh(cx)));
         let apply = tool_window::write_button(
             APPLY_ID,
-            strings::ABSORB_APPLY,
+            strings::absorb_apply(),
             self.busy || self.hunks().is_empty(),
             cx,
         )

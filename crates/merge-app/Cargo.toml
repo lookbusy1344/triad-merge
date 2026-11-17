@@ -15,6 +15,8 @@ workspace = true
 [dependencies]
 anyhow.workspace = true
 async-channel.workspace = true
+fluent-bundle.workspace = true
+rust-i18n.workspace = true
 # The grammars of the languages `merge_syntax::language` names.
 gpui-kit = { workspace = true, features = [
     "tree-sitter-rust",
@@ -41,6 +43,7 @@ notify.workspace = true
 # The core's texts, read in place when several edits go to it as one patch.
 ropey.workspace = true
 serde_json.workspace = true
+sys-locale.workspace = true
 thiserror.workspace = true
 # C#'s and Swift's highlight queries, which gpui-component registers empty.
 tree-sitter-c.workspace = true
@@ -48,11 +51,13 @@ tree-sitter-c-sharp.workspace = true
 tree-sitter-cpp.workspace = true
 tree-sitter-swift.workspace = true
 tracing.workspace = true
+unic-langid.workspace = true
 # The line origin types.
 vcs.workspace = true
 
 [dev-dependencies]
 dunce.workspace = true
+fluent-syntax.workspace = true
 tempfile.workspace = true
 gpui-kit = { workspace = true, features = ["test-support"] }
 merge-core = { workspace = true, features = ["testing"] }

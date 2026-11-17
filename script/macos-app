@@ -33,6 +33,15 @@ cat > "$app/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleLocalizations</key>
+  <array>
+    <string>en</string><string>es</string><string>zh-Hans</string><string>zh-Hant</string>
+    <string>ja</string><string>ko</string><string>de</string><string>fr</string>
+    <string>pt-BR</string><string>ru</string><string>uk</string><string>pl</string>
+    <string>nl</string><string>sv</string>
+  </array>
+  <key>CFBundleAllowMixedLocalizations</key><true/>
   <key>CFBundleExecutable</key><string>$bin</string>
   <key>CFBundleIconFile</key><string>triad</string>
   <key>CFBundleIdentifier</key><string>$identifier</string>

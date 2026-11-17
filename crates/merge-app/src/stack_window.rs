@@ -128,7 +128,7 @@ pub fn start(
     };
     let exit: Rc<ExitFn> = Rc::new(exit);
     let (window, view) = gpui_kit::open_window(options, cx, |window, cx| {
-        window.set_window_title(strings::STACK_TITLE);
+        window.set_window_title(&strings::stack_title());
         let focus = cx.focus_handle();
         focus.focus(window, cx);
         let view = cx.new(|_| StackWindow {
@@ -218,7 +218,7 @@ impl StackWindow {
                 let len = self.path_count();
                 self.selected = self.selected.filter(|&ix| ix < len);
             }
-            Err(error) => self.note = Some(Note::Error(error.to_string().into())),
+            Err(error) => self.note = Some(Note::Error(crate::error_text::describe(&error).into())),
         }
         if self.end_if_closing(cx) {
             if let Some(note) = self.note.as_ref().map(Note::text) {
@@ -257,8 +257,8 @@ impl StackWindow {
         let loaded = cx.background_spawn(async move {
             let loaded =
                 merge_session::resolve::load_at_commit(&root, &rev, &load_path, config.clone())
-                    .map_err(|e| e.to_string())?;
-            let opened = loaded.open(options).map_err(|e| e.to_string())?;
+                    .map_err(|e| crate::error_text::describe(&e))?;
+            let opened = loaded.open(options).map_err(|e| crate::error_text::describe(&e))?;
             let repo = RunRepository::find([root.as_path()]);
             let repo = match config {
                 Some(config) => repo.with_jj_config(config),
@@ -303,7 +303,7 @@ impl StackWindow {
                 self.open = Some(OpenMerge { window, view: view.downgrade(), change, path });
                 self.note = None;
             }
-            Err(error) => self.note = Some(Note::Error(error.to_string().into())),
+            Err(error) => self.note = Some(Note::Error(crate::error_text::describe(&error).into())),
         }
         cx.notify();
     }
@@ -339,7 +339,7 @@ impl StackWindow {
             ignore_closed_view(this.update(cx, |this, cx| {
                 this.preview = Some(match previewed {
                     Ok(rewrite) => Preview::Done(rewrite),
-                    Err(error) => Preview::Failed(error.to_string()),
+                    Err(error) => Preview::Failed(crate::error_text::describe(&error)),
                 });
                 cx.notify();
             }));
@@ -445,7 +445,7 @@ impl StackWindow {
     /// The preview's result, in the footer.
     fn render_preview(&self, cx: &App) -> Option<impl IntoElement + use<>> {
         let text: SharedString = match self.preview.as_ref()? {
-            Preview::Running => strings::PREVIEW_RUNNING.into(),
+            Preview::Running => strings::preview_running(),
             Preview::Done(rewrite) => strings::stack_preview(rewrite).into(),
             Preview::Failed(error) => error.clone().into(),
         };
@@ -458,13 +458,17 @@ impl Render for StackWindow {
         let muted = cx.theme().muted_foreground;
         let summary = (!self.listing).then(|| strings::stack_summary(self.commits.len()).into());
         let empty = (self.commits.is_empty() && !self.listing)
-            .then(|| pick_list::note(EMPTY_ID, strings::STACK_EMPTY, muted));
+            .then(|| pick_list::note(EMPTY_ID, strings::stack_empty(), muted));
         let refresh = tool_window::refresh_button(REFRESH_ID, self.listing, cx)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.refresh(cx)));
         // Preview writes nothing, so it is not the window's primary button.
-        let preview =
-            tool_window::button(PREVIEW_ID, strings::STACK_PREVIEW, self.open.is_none(), cx)
-                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_preview(cx)));
+        let preview = tool_window::button(
+            PREVIEW_ID,
+            strings::stack_preview_button(),
+            self.open.is_none(),
+            cx,
+        )
+        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_preview(cx)));
         let this = cx.entity().downgrade();
         tool_window::frame(cx, move |_, cx| {
             this.update(cx, StackWindow::close_requested).unwrap_or(true)

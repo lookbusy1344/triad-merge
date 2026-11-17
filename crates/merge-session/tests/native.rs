@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use merge_session::dir_diff::{Change, Content};
-use merge_session::native::{self, NativeDiff, NativeError};
+use merge_session::native::{self, LeftAt, NativeDiff, NativeError, Revision};
 use merge_session::repository::RunRepository;
 use vcs::VcsError;
 use vcs_git::testing::Fixture;
@@ -140,9 +140,9 @@ fn a_listed_file_loads_from_the_commit_listed_though_head_moved() {
     // A commit moves `HEAD` after the listing.
     fixture.commit("two", &[("a.txt", b"two\n"), ("new.txt", b"1\n2\n3\n4\n")]);
     let diff = load_from(&listing, "a.txt", "a.txt");
-    assert_eq!((diff.left.content(), diff.left_title.as_str()), ("one\n", "HEAD"));
+    assert_eq!((diff.left.content(), diff.left_at.clone()), ("one\n", named("HEAD")));
     let diff = load_from(&listing, "old.txt", "new.txt");
-    assert_eq!((diff.left.content(), diff.left_title.as_str()), ("1\n2\n3\n4\n", "HEAD"));
+    assert_eq!((diff.left.content(), diff.left_at.clone()), ("1\n2\n3\n4\n", named("HEAD")));
 }
 
 #[cfg(unix)]
@@ -222,7 +222,7 @@ fn a_repository_without_commits_lists_its_files_as_added() {
     );
     let listing = try_list(fixture.root(), None).expect("listed");
     let diff = load_from(&listing, "a.txt", "a.txt");
-    assert_eq!((diff.left.content(), diff.left_title.as_str()), ("", "HEAD (no file)"));
+    assert_eq!((diff.left.content(), diff.left_at.clone()), ("", absent("HEAD")));
     // A revision given by name must exist.
     let error = try_list(fixture.root(), Some("HEAD")).expect_err("no commit");
     assert!(
@@ -240,7 +240,7 @@ fn a_listed_file_loads_against_the_listing_s_revision() {
     let listing = try_list(fixture.root(), Some("HEAD~1")).expect("listed");
     let diff = load_from(&listing, "sub/a.txt", "sub/a.txt");
     assert_eq!(diff.left.content(), "one\n");
-    assert_eq!(diff.left_title, "HEAD~1");
+    assert_eq!(diff.left_at, named("HEAD~1"));
     // The repository's root is canonical.
     let root = dunce::canonicalize(fixture.root()).expect("canonical");
     assert_eq!(listing.against.root, root);
@@ -250,8 +250,8 @@ fn a_listed_file_loads_against_the_listing_s_revision() {
     assert!(!root.join("gone.txt").exists());
     let diff = load_from(&listing, "gone.txt", "gone.txt");
     assert_eq!(diff.left.content(), "g\n");
-    assert_eq!(diff.left_title, "HEAD~1");
-    assert_eq!(load_from(&listing, "new.txt", "new.txt").left_title, "HEAD~1 (no file)");
+    assert_eq!(diff.left_at, named("HEAD~1"));
+    assert_eq!(load_from(&listing, "new.txt", "new.txt").left_at, absent("HEAD~1"));
     // A rename reads its old path at the revision and its new path on disk.
     let diff = load_from(&listing, "gone.txt", "sub/a.txt");
     assert_eq!(diff.left.content(), "g\n");
@@ -314,7 +314,7 @@ fn an_unstaged_file_is_compared_with_head_titled_by_branch() {
     let path = fixture.write("src/a.txt", b"edited\n");
     let diff = load(&path, None);
     assert_eq!(diff.left.content(), "committed\n");
-    assert_eq!(diff.left_title, "main");
+    assert_eq!(diff.left_at, named("main"));
     assert_eq!(diff.right, path.as_std_path());
 }
 
@@ -339,7 +339,7 @@ fn a_staged_file_is_compared_with_the_index() {
     let path = fixture.write("a.txt", b"edited\n");
     let diff = load(&path, None);
     assert_eq!(diff.left.content(), "staged\n");
-    assert_eq!(diff.left_title, "index");
+    assert_eq!(diff.left_at, named("index"));
 }
 
 #[test]
@@ -351,7 +351,7 @@ fn rev_picks_the_revision_and_titles_the_pane() {
     let path = fixture.write("a.txt", b"three\n");
     let diff = load(&path, Some("HEAD~1"));
     assert_eq!(diff.left.content(), "one\n");
-    assert_eq!(diff.left_title, "HEAD~1");
+    assert_eq!(diff.left_at, named("HEAD~1"));
 }
 
 #[test]
@@ -362,7 +362,7 @@ fn a_file_absent_from_the_parent_is_compared_with_nothing() {
     let path = fixture.write("new.txt", b"new\n");
     let diff = load(&path, None);
     assert_eq!(diff.left.content(), "");
-    assert_eq!(diff.left_title, "main (no file)");
+    assert_eq!(diff.left_at, absent("main"));
 }
 
 #[test]
@@ -374,7 +374,7 @@ fn a_file_absent_from_a_given_revision_says_so_in_the_title() {
     let path = fixture.write("b.txt", b"edited\n");
     let diff = load(&path, Some("HEAD~1"));
     assert_eq!(diff.left.content(), "");
-    assert_eq!(diff.left_title, "HEAD~1 (no file)");
+    assert_eq!(diff.left_at, absent("HEAD~1"));
 }
 
 #[test]
@@ -385,7 +385,7 @@ fn an_empty_file_at_the_revision_keeps_the_plain_title() {
     let path = fixture.write("a.txt", b"edited\n");
     let diff = load(&path, None);
     assert_eq!(diff.left.content(), "");
-    assert_eq!(diff.left_title, "main");
+    assert_eq!(diff.left_at, named("main"));
 }
 
 #[test]
@@ -447,7 +447,7 @@ fn a_binary_parent_is_refused_with_its_revision() {
 }
 
 mod jj {
-    use super::{Change, Content, file, listed, load};
+    use super::{Change, Content, LeftAt, Revision, absent, file, listed, load, named};
     use merge_session::dir_diff::ChangedFile;
     use merge_session::native;
     use merge_session::repository::RunRepository;
@@ -462,7 +462,7 @@ mod jj {
         let diff = load(&path, None);
         assert_eq!(diff.left.content(), "committed\n");
         // The heading's revision chip names the change (spec §5).
-        assert_eq!(diff.left_title, "@-");
+        assert_eq!(diff.left_at, named("@-"));
         assert_eq!(diff.right, path.as_std_path());
     }
 
@@ -473,7 +473,7 @@ mod jj {
         let path = fixture.write("new.txt", b"new\n");
         let diff = load(&path, None);
         assert_eq!(diff.left.content(), "");
-        assert_eq!(diff.left_title, "@- (no file)");
+        assert_eq!(diff.left_at, absent("@-"));
     }
 
     /// Write `bytes` to `a.txt` and snapshot it; the new head operation's ID.
@@ -499,7 +499,13 @@ mod jj {
         )
         .expect("the inputs load");
         assert_eq!(diff.left.content(), "one\n");
-        assert_eq!(diff.left_title, format!("@ at operation {}", &one[..vcs_jj::SHORT_OPERATION]));
+        assert_eq!(
+            diff.left_at,
+            LeftAt {
+                revision: Revision::Operation(one[..vcs_jj::SHORT_OPERATION].to_owned()),
+                exists: true
+            }
+        );
         assert_eq!(commit.as_str(), commit_then);
     }
 
@@ -517,8 +523,11 @@ mod jj {
         .expect("the inputs load");
         assert_eq!(diff.left.content(), "");
         assert_eq!(
-            diff.left_title,
-            format!("@ at operation {} {}", &first[..vcs_jj::SHORT_OPERATION], native::NO_FILE)
+            diff.left_at,
+            LeftAt {
+                revision: Revision::Operation(first[..vcs_jj::SHORT_OPERATION].to_owned()),
+                exists: false
+            }
         );
     }
 
@@ -530,7 +539,7 @@ mod jj {
         let path = fixture.write("a.txt", b"three\n");
         let diff = load(&path, Some("@--"));
         assert_eq!(diff.left.content(), "one\n");
-        assert_eq!(diff.left_title, "@--");
+        assert_eq!(diff.left_at, named("@--"));
     }
 
     #[test]
@@ -552,7 +561,7 @@ mod jj {
         let diff = native::load(&mut run, path.as_std_path(), Some("older()"))
             .expect("the alias names a revision");
         assert_eq!(diff.left.content(), "one\n");
-        assert_eq!(diff.left_title, "older()");
+        assert_eq!(diff.left_at, named("older()"));
     }
 
     #[test]
@@ -566,7 +575,7 @@ mod jj {
         let diff = native::load(&mut run, path.as_std_path(), Some("trunk()"))
             .expect("jj's default alias names a revision");
         assert_eq!(diff.left.content(), "");
-        assert_eq!(diff.left_title, "trunk() (no file)");
+        assert_eq!(diff.left_at, absent("trunk()"));
     }
 
     #[test]
@@ -578,7 +587,7 @@ mod jj {
         let path = fixture.write("a.txt", b"edited\n");
         let diff = load(&path, None);
         assert_eq!(diff.left.content(), "left\n");
-        assert_eq!(diff.left_title, "@-");
+        assert_eq!(diff.left_at, named("@-"));
     }
 
     #[test]
@@ -589,7 +598,7 @@ mod jj {
         let repo = native::discover(fixture.root()).expect("the repository is found");
         assert_eq!(repo.kind(), RepoKind::Jj);
         let diff = load(&path, None);
-        assert_eq!(diff.left_title, "@-");
+        assert_eq!(diff.left_at, named("@-"));
         // git's detached HEAD is jj's @-.
         let git = vcs_git::GitRepository::discover(fixture.root()).expect("git sees it");
         let head = vcs::Repository::file_at(
@@ -671,7 +680,7 @@ mod jj {
         // `jj commit` from elsewhere: `@-` is now `two`.
         fixture.commit("two", &[("a.txt", b"two\n")]);
         let diff = super::load_from(&listing, "a.txt", "a.txt");
-        assert_eq!((diff.left.content(), diff.left_title.as_str()), ("one\n", "@-"));
+        assert_eq!((diff.left.content(), diff.left_at.clone()), ("one\n", named("@-")));
     }
 
     #[test]
@@ -688,7 +697,7 @@ mod jj {
             ["a.txt"]
         );
         let diff = super::load_from(&listing, "a.txt", "a.txt");
-        assert_eq!((diff.left.content(), diff.left_title.as_str()), ("a\n", "@-"));
+        assert_eq!((diff.left.content(), diff.left_at.clone()), ("a\n", named("@-")));
         assert_eq!(super::load_from(&listing, "b.txt", "b.txt").left.content(), "b\n");
     }
 
@@ -773,4 +782,14 @@ mod jj {
             [file("lib/new.rs", Change::Renamed { from: "src/old.rs".into() }, Content::Text)]
         );
     }
+}
+
+/// The left side at the revision `name`, where the file exists.
+fn named(name: &str) -> LeftAt {
+    LeftAt { revision: Revision::Named(name.to_owned()), exists: true }
+}
+
+/// The left side at the revision `name`, where the file does not exist.
+fn absent(name: &str) -> LeftAt {
+    LeftAt { revision: Revision::Named(name.to_owned()), exists: false }
 }

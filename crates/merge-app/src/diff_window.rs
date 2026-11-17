@@ -29,9 +29,9 @@ use gpui_kit::component::{ActiveTheme as _, h_flex, v_flex};
 use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, Bounds, ClickEvent, Context, Div, ElementId, Entity,
     Focusable as _, Hsla, InteractiveElement as _, IntoElement, ParentElement as _, Pixels,
-    PromptLevel, Render, Role, SharedString, Size, StatefulInteractiveElement as _, Styled as _,
-    Subscription, Task, TestSupportExt as _, Window, WindowOptions, canvas, div, point,
-    prelude::FluentBuilder as _, px,
+    PromptButton, PromptLevel, Render, Role, SharedString, Size, StatefulInteractiveElement as _,
+    Styled as _, Subscription, Task, TestSupportExt as _, Window, WindowOptions, canvas, div,
+    point, prelude::FluentBuilder as _, px,
 };
 use merge_config::settings::{Colours, DEFAULT_COLOURS, Scrollbars};
 use merge_core::diff::DiffOptions;
@@ -93,7 +93,9 @@ type WrapFit = [(Pixels, usize); 2];
 /// The temporary directory `jj diff --tool` makes, and its sides' directories.
 /// The answers to a change on disk under unsaved edits, in button order (spec §6.1). The
 /// first keeps the edits, so the default button never loses them.
-const ON_DISK_CHANGE: [&str; 2] = [prompt::KEEP_MINE, prompt::RELOAD];
+fn on_disk_change() -> [SharedString; 2] {
+    [prompt::keep_mine(), prompt::reload()]
+}
 
 /// The key contexts of the bindings in [`crate::init`].
 pub(crate) const DIFF_CONTEXT: &str = "DiffWindow";
@@ -1426,12 +1428,12 @@ impl DiffWindow {
                 Err(error) => {
                     all_saved = false;
                     self.pane_mut(write.side).writes.ended(write.changes, false);
-                    let detail = error.to_string();
+                    let detail = crate::error_text::describe(&error);
                     let answer = window.prompt(
                         PromptLevel::Critical,
-                        prompt::CANNOT_SAVE,
+                        &prompt::cannot_save(),
                         Some(&detail),
-                        &[prompt::OK],
+                        &[prompt::ok_button()],
                         cx,
                     );
                     cx.spawn(async move |_, _| {
@@ -1479,9 +1481,13 @@ impl DiffWindow {
         }
         let answer = window.prompt(
             PromptLevel::Warning,
-            prompt::SAVE_CHANGES,
+            &prompt::save_changes(),
             None,
-            &[prompt::SAVE, prompt::DISCARD, prompt::KEEP_EDITING],
+            &[
+                PromptButton::new(prompt::save()),
+                PromptButton::new(prompt::discard()),
+                PromptButton::new(prompt::keep_editing()),
+            ],
             cx,
         );
         cx.spawn_in(window, async move |this, cx| {
@@ -1549,14 +1555,14 @@ impl DiffWindow {
         let answer = window.prompt(
             PromptLevel::Warning,
             &question,
-            Some(prompt::CHANGED_DETAIL),
-            &ON_DISK_CHANGE,
+            Some(&prompt::changed_detail()),
+            &on_disk_change().map(PromptButton::new),
             cx,
         );
         self.pane_mut(side).asking = true;
         cx.spawn_in(window, async move |this, cx| {
-            let reload = answer.await.ok().and_then(|answer| ON_DISK_CHANGE.get(answer))
-                == Some(&prompt::RELOAD);
+            let reload = answer.await.ok().and_then(|answer| on_disk_change().get(answer).cloned())
+                == Some(prompt::reload());
             ignore_closed_view(this.update_in(cx, |this, window, cx| {
                 this.pane_mut(side).asking = false;
                 // The file may have changed again while the prompt was open.
@@ -1800,8 +1806,8 @@ impl DiffWindow {
         };
         let button = |region: RegionIx, to: Side, cx: &mut Context<Self>| {
             let (glyph, label) = match to {
-                Side::Right => (strings::COPY_TO_RIGHT, strings::COPY_TO_RIGHT_LABEL),
-                Side::Left => (strings::COPY_TO_LEFT, strings::COPY_TO_LEFT_LABEL),
+                Side::Right => (strings::COPY_TO_RIGHT, strings::copy_to_right_label()),
+                Side::Left => (strings::COPY_TO_LEFT, strings::copy_to_left_label()),
             };
             div().w(COPY_BUTTON_WIDTH).h_full().flex_none().when(writable[index(to)], |d| {
                 d.child(
@@ -2097,7 +2103,7 @@ fn changed_sides(first: Side, receiver: &Receiver<Side>) -> impl Iterator<Item =
 /// The banner for editable files `jj diff --tool` copied, whose edits it throws away
 /// (spec §7.1).
 fn jj_banner<'a>(paths: impl IntoIterator<Item = &'a Path>, cwd: &Path) -> Option<SharedString> {
-    paths.into_iter().any(|path| in_jj_diff_copy(path, cwd)).then(|| strings::JJ_DIFF_BANNER.into())
+    paths.into_iter().any(|path| in_jj_diff_copy(path, cwd)).then(strings::jj_diff_banner)
 }
 
 /// Whether `path`, taken from `cwd` when relative, lies in a side of the temporary directory
@@ -2284,7 +2290,7 @@ impl Render for DiffWindow {
             .child(crate::menu_bar::render(
                 self.menu_bar.bar(),
                 toolbar::bar(
-                    strings::DIFF_TOOLBAR,
+                    strings::diff_toolbar(),
                     &DIFF_GROUPS,
                     DIFF_CONTEXT,
                     cx.theme(),
@@ -2356,7 +2362,7 @@ impl Render for DiffWindow {
 mod tests {
     #[test]
     fn a_change_on_disk_offers_keep_mine_first() {
-        assert_eq!(super::ON_DISK_CHANGE, ["Keep Mine", "Reload"]);
+        assert_eq!(super::on_disk_change(), ["Keep Mine", "Reload"]);
     }
 
     use super::*;

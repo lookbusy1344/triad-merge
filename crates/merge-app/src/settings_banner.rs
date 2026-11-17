@@ -53,7 +53,7 @@ pub(crate) fn render<V: 'static>(
                 .ghost()
                 .xsmall()
                 .icon(IconName::Close)
-                .accessibility_label(strings::CLOSE)
+                .accessibility_label(strings::close())
                 .on_click(close),
         );
     Some(banner)

@@ -37,7 +37,8 @@ pub(crate) struct Field {
 
 impl Field {
     pub(crate) fn new(window: &mut Window, cx: &mut App) -> Self {
-        let input = cx.new(|cx| InputState::new(window, cx).placeholder(strings::GO_TO_LINE_FIELD));
+        let input =
+            cx.new(|cx| InputState::new(window, cx).placeholder(strings::go_to_line_field()));
         Self { input, open: false }
     }
 
@@ -102,7 +103,7 @@ impl Field {
                 div().px(PADDING_X).py(PADDING_Y).border_b_1().border_color(theme.border).child(
                     Input::new(&self.input)
                         .id(GO_TO_LINE_FIELD_ID)
-                        .aria_label(strings::GO_TO_LINE_FIELD)
+                        .aria_label(strings::go_to_line_field())
                         .appearance(false)
                         .small()
                         // The card's padding places the text, in line with the help.

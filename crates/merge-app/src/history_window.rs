@@ -198,7 +198,7 @@ impl HistoryWindow {
                 let len = self.versions.len();
                 self.selected = self.selected.filter(|&ix| ix < len);
             }
-            Err(error) => self.note = Some(Note::Error(error.to_string().into())),
+            Err(error) => self.note = Some(Note::Error(crate::error_text::describe(&error).into())),
         }
         cx.notify();
     }
@@ -228,8 +228,9 @@ impl HistoryWindow {
                 None => repo,
             };
             let (native, commit) = merge_session::native::load_at_operation(&mut repo, &file, &op)
-                .map_err(|e| e.to_string())?;
-            let (left, right) = crate::run::native_sides(native).map_err(|e| e.to_string())?;
+                .map_err(|e| crate::error_text::describe(&e))?;
+            let (left, right) =
+                crate::run::native_sides(native).map_err(|e| crate::error_text::describe(&e))?;
             let commit = commit.as_str().to_owned();
             Ok::<_, String>(Loaded { left, right, file, commit, repo })
         });
@@ -269,7 +270,7 @@ impl HistoryWindow {
                 self.open = Some(window);
                 self.note = None;
             }
-            Err(error) => self.note = Some(Note::Error(error.to_string().into())),
+            Err(error) => self.note = Some(Note::Error(crate::error_text::describe(&error).into())),
         }
         cx.notify();
     }
@@ -353,7 +354,7 @@ impl Render for HistoryWindow {
         let listed = self.file.is_some() && !self.listing;
         let summary = listed.then(|| strings::history_summary(self.versions.len()).into());
         let empty = (self.versions.is_empty() && listed)
-            .then(|| pick_list::note(EMPTY_ID, strings::HISTORY_EMPTY, muted));
+            .then(|| pick_list::note(EMPTY_ID, strings::history_empty(), muted));
         let refresh = tool_window::refresh_button(REFRESH_ID, self.listing, cx)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.refresh(cx)));
         let this = cx.entity().downgrade();

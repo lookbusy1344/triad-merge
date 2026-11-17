@@ -26,9 +26,10 @@ use gpui_kit::{
     DispatchPhase, Div, ElementId, Entity, EntityInputHandler as _, FocusHandle, FontWeight,
     HighlightStyle, Hsla, IndentAdjustment, InteractiveElement as _, IntoElement, LineFragment,
     MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels,
-    PromptLevel, Render, Role, ScrollEvent, SharedString, Size, StatefulInteractiveElement as _,
-    Styled as _, StyledText, Subscription, Task, TestSupportExt as _, Toggled, Window,
-    WindowOptions, canvas, div, point, prelude::FluentBuilder as _, px, uniform_list,
+    PromptButton, PromptLevel, Render, Role, ScrollEvent, SharedString, Size,
+    StatefulInteractiveElement as _, Styled as _, StyledText, Subscription, Task,
+    TestSupportExt as _, Toggled, Window, WindowOptions, canvas, div, point,
+    prelude::FluentBuilder as _, px, uniform_list,
 };
 use merge_config::settings::{Colours, DEFAULT_COLOURS, Scrollbars};
 use merge_core::boundaries::Boundaries;
@@ -150,29 +151,29 @@ pub const ORIGIN_DEBOUNCE: Duration = Duration::from_millis(100);
 const GO_AHEAD: usize = 0;
 
 /// A close question's button label.
-fn closing_label(answer: Closing) -> &'static str {
+fn closing_label(answer: Closing) -> SharedString {
     match answer {
-        Closing::SaveAndExit => prompt::SAVE_AND_EXIT,
-        Closing::Discard => prompt::DISCARD,
-        Closing::KeepEditing => prompt::KEEP_EDITING,
+        Closing::SaveAndExit => prompt::save_and_exit(),
+        Closing::Discard => prompt::discard(),
+        Closing::KeepEditing => prompt::keep_editing(),
     }
 }
 
 /// The title of the alert after a save that left `undone` undone.
-fn undone_title(undone: Undone) -> &'static str {
+fn undone_title(undone: Undone) -> SharedString {
     match undone {
-        Undone::Write => prompt::CANNOT_WRITE,
-        Undone::Record(_) => prompt::CANNOT_RECORD,
+        Undone::Write => prompt::cannot_write(),
+        Undone::Record(_) => prompt::cannot_record(),
     }
 }
 
 /// A failed save's alert's button label.
-fn failed_label(answer: SaveFailed) -> &'static str {
+fn failed_label(answer: SaveFailed) -> SharedString {
     match answer {
-        SaveFailed::TryAgain => prompt::TRY_AGAIN,
-        SaveFailed::SaveCopyAs => prompt::SAVE_COPY_AS,
-        SaveFailed::KeepEditing => prompt::KEEP_EDITING,
-        SaveFailed::Quit => prompt::QUIT,
+        SaveFailed::TryAgain => prompt::try_again(),
+        SaveFailed::SaveCopyAs => prompt::save_copy_as(),
+        SaveFailed::KeepEditing => prompt::keep_editing(),
+        SaveFailed::Quit => prompt::quit(),
     }
 }
 
@@ -427,6 +428,16 @@ enum RebuildError {
     Labels(#[from] LabelCountError),
     #[error(transparent)]
     Panes(#[from] PaneError),
+}
+
+impl RebuildError {
+    /// The error in the run's language. Label and pane counts mark a bug, and stay English.
+    fn describe(&self) -> String {
+        match self {
+            Self::Restore(error) => crate::error_text::describe(error),
+            Self::Labels(_) | Self::Panes(_) => self.to_string(),
+        }
+    }
 }
 
 /// Log the refusal of `what`: expected while a save runs, a defect otherwise.
@@ -749,7 +760,8 @@ impl MergeWindow {
             result_highlighter,
             parsing: colouring.language().is_some(),
             headings: headings(&doc, panes, &settings.file_names),
-            result_heading: status::result_heading(settings.output.as_deref()).into(),
+            result_heading: status::result_heading(settings.output.as_deref(), strings::role)
+                .into(),
             file_names: settings.file_names.clone(),
             journal: JournalTasks::default(),
             session: Session::new(doc, target, recovery),
@@ -1134,6 +1146,19 @@ impl MergeWindow {
     /// The panes' titles, in pane order.
     pub fn pane_titles(&self) -> impl Iterator<Item = &SharedString> {
         self.headings.iter().map(|heading| &heading.title)
+    }
+
+    /// The result heading's role chip, in capitals: none for a heading without one.
+    #[must_use]
+    pub fn result_role(&self) -> Option<&SharedString> {
+        self.result_heading.role.as_ref()
+    }
+
+    /// The role chip of `pane`'s heading, in capitals: none for a pane the window lacks or
+    /// a heading without a chip.
+    #[must_use]
+    pub fn heading_role(&self, pane: usize) -> Option<&SharedString> {
+        self.headings.get(pane)?.role.as_ref()
     }
 
     /// The result pane's title.
@@ -1878,9 +1903,9 @@ impl MergeWindow {
         };
         let answer = window.prompt(
             PromptLevel::Info,
-            prompt::RESTORE_SESSION,
-            Some(prompt::RESTORE_DETAIL),
-            &[prompt::RESTORE, prompt::START_OVER],
+            &prompt::restore_session(),
+            Some(&prompt::restore_detail()),
+            &[PromptButton::new(prompt::restore()), PromptButton::new(prompt::start_over())],
             cx,
         );
         cx.spawn_in(window, async move |this, cx| {
@@ -1933,12 +1958,12 @@ impl MergeWindow {
             Ok(restored) => restored,
             Err(error) => {
                 tracing::warn!(%error, "cannot restore the journal");
-                let detail = error.to_string();
+                let detail = error.describe();
                 let answer = window.prompt(
                     PromptLevel::Warning,
-                    prompt::CANNOT_RESTORE,
+                    &prompt::cannot_restore(),
                     Some(&detail),
-                    &[prompt::OK],
+                    &[prompt::ok_button()],
                     cx,
                 );
                 cx.spawn(async move |_, _| {
@@ -2286,15 +2311,17 @@ impl MergeWindow {
             Next::Write => self.check_descendants(window, cx),
             Next::Record(code) => self.record_again(code, window, cx),
             Next::SaveCopyAs => self.save_copy_as(&SaveCopyAs, window, cx),
-            Next::Failed { undone, detail } => {
+            Next::Failed { undone, error } => {
+                let detail = crate::error_text::describe(error.error());
                 // The save wrote the journal first; a failed write tries again.
                 self.write_journal(cx);
                 Self::save_failed(undone, detail, window, cx);
             }
-            Next::Refused { detail } => {
+            Next::Refused { error } => {
+                let detail = crate::error_text::describe(&error);
                 // Nothing is written and the merge goes on, so its journal does too.
                 self.schedule_journal(cx);
-                alert(prompt::CANNOT_WRITE, &detail, window, cx);
+                alert(&prompt::cannot_write(), &detail, window, cx);
             }
             Next::Finish { code, journal } => {
                 self.journal.cancel();
@@ -2308,12 +2335,15 @@ impl MergeWindow {
     fn confirm_unresolved(&self, unresolved: usize, window: &mut Window, cx: &mut Context<Self>) {
         let answer = window.prompt(
             PromptLevel::Warning,
-            prompt::SAVE_UNRESOLVED,
+            &prompt::save_unresolved(),
             Some(&prompt::save_unresolved_detail(
                 unresolved,
                 self.session.document().options().semantics,
             )),
-            &[prompt::SAVE_WITH_CONFLICTS, prompt::KEEP_EDITING],
+            &[
+                PromptButton::new(prompt::save_with_conflicts()),
+                PromptButton::new(prompt::keep_editing()),
+            ],
             cx,
         );
         cx.spawn_in(window, async move |this, cx| {
@@ -2375,7 +2405,12 @@ impl MergeWindow {
                 self.copy_note = Some(strings::copy_saved(unresolved).into());
                 cx.notify();
             }
-            Err(error) => alert(prompt::CANNOT_WRITE_COPY, &error.to_string(), window, cx),
+            Err(error) => alert(
+                &prompt::cannot_write_copy(),
+                &crate::error_text::describe(&error),
+                window,
+                cx,
+            ),
         }
     }
 
@@ -2435,7 +2470,7 @@ impl MergeWindow {
             PromptLevel::Info,
             &prompt::descendants_changed(changed.len()),
             Some(&strings::descendant_effects(changed)),
-            &[prompt::SAVE, prompt::KEEP_EDITING],
+            &[PromptButton::new(prompt::save()), PromptButton::new(prompt::keep_editing())],
             cx,
         );
         cx.spawn_in(window, async move |this, cx| {
@@ -2455,7 +2490,7 @@ impl MergeWindow {
         self.journal.cancel();
         match self.session.start_save() {
             Ok(job) => self.save_in_background(job, window, cx),
-            Err(CannotSave::NoOutput) => Self::fail(prompt::NO_OUTPUT, window, cx),
+            Err(CannotSave::NoOutput) => Self::fail(&prompt::no_output(), window, cx),
             Err(CannotSave::Saving) => {}
         }
     }
@@ -2494,9 +2529,10 @@ impl MergeWindow {
     fn save_failed(undone: Undone, detail: String, window: &mut Window, cx: &mut Context<Self>) {
         tracing::error!(detail, "cannot save");
         let answers = undone.answers();
-        let labels: Vec<&str> = answers.iter().map(|&answer| failed_label(answer)).collect();
+        let labels: Vec<PromptButton> =
+            answers.iter().map(|&answer| PromptButton::new(failed_label(answer))).collect();
         let answer =
-            window.prompt(PromptLevel::Critical, undone_title(undone), Some(&detail), &labels, cx);
+            window.prompt(PromptLevel::Critical, &undone_title(undone), Some(&detail), &labels, cx);
         let handle = window.window_handle();
         cx.spawn(async move |this, cx| {
             let answer = answer.await.ok().and_then(|answer| answers.get(answer).copied());
@@ -2525,9 +2561,9 @@ impl MergeWindow {
         eprintln!("{}: {detail}", strings::PROGRAM);
         let answer = window.prompt(
             PromptLevel::Critical,
-            prompt::CANNOT_WRITE,
+            &prompt::cannot_write(),
             Some(detail),
-            &[prompt::QUIT],
+            &[PromptButton::new(prompt::quit())],
             cx,
         );
         cx.spawn(async move |_, cx| {
@@ -2551,9 +2587,9 @@ impl MergeWindow {
     fn confirm_close(window: &mut Window, cx: &mut Context<Self>) {
         let answer = window.prompt(
             PromptLevel::Warning,
-            prompt::SAVE_CHANGES,
-            Some(prompt::DISCARD_DETAIL),
-            &Closing::ALL.map(closing_label),
+            &prompt::save_changes(),
+            Some(&prompt::discard_detail()),
+            &Closing::ALL.map(|answer| PromptButton::new(closing_label(answer))),
             cx,
         );
         cx.spawn_in(window, async move |this, cx| {
@@ -2765,7 +2801,7 @@ impl MergeWindow {
                     .child(
                         // The element sets the state's read-only flag each frame.
                         Editor::new(&self.result)
-                            .aria_label(strings::RESULT_TITLE)
+                            .aria_label(strings::result_title())
                             .readonly(self.session.saving())
                             .context_menu(move |menu, _, cx| {
                                 let items = this
@@ -2868,7 +2904,7 @@ impl MergeWindow {
             .chain(toolbar::views_on(ticks))
             .collect();
         toolbar::bar(
-            strings::TOOLBAR,
+            strings::toolbar(),
             &GROUPS,
             WINDOW_CONTEXT,
             cx.theme(),
@@ -2976,7 +3012,7 @@ impl MergeWindow {
             .id(INPUT_LINES_ID)
             .test_support()
             .role(Role::Table)
-            .aria_label(strings::INPUT_LINES)
+            .aria_label(strings::input_lines())
             .aria_row_count(self.rows.row_count())
             .aria_column_count(self.headings.len())
             .flex_1()
@@ -3877,7 +3913,7 @@ fn input_wrap(doc: &MergeDocument, wanted: bool) -> Wrap {
 }
 
 fn headings(doc: &MergeDocument, panes: PaneSet, names: &FileNames) -> Vec<Heading> {
-    status::pane_headings(doc, panes, names).into_iter().map(Heading::from).collect()
+    status::pane_headings(doc, panes, names, strings::role).into_iter().map(Heading::from).collect()
 }
 
 /// The result pane's right-click menu: the current region's suggestions, then the choices,
@@ -3893,16 +3929,16 @@ fn choice_menu(menu: NativeMenu, items: &[MenuChoice]) -> NativeMenu {
             let label = if item.suggested {
                 strings::suggested_label(item.action)
             } else {
-                strings::menu_label(item.action).into()
+                strings::menu_label(item.action)
             };
             menu.menu_with_check(label, item.checked, item.action.action())
         })
         .separator()
-        .menu(edit_menu::CUT, Box::new(input::Cut))
-        .menu(edit_menu::COPY, Box::new(input::Copy))
-        .menu(edit_menu::PASTE, Box::new(input::Paste))
+        .menu(edit_menu::cut(), Box::new(input::Cut))
+        .menu(edit_menu::copy(), Box::new(input::Copy))
+        .menu(edit_menu::paste(), Box::new(input::Paste))
         .separator()
-        .menu(edit_menu::SELECT_ALL, Box::new(input::SelectAll))
+        .menu(edit_menu::select_all(), Box::new(input::SelectAll))
 }
 
 /// One spacer row and its note for each placeholder of the result (`placeholder::placeholders`),
@@ -3929,7 +3965,11 @@ fn result_spacers(
     let mut rows: Vec<_> = found
         .iter()
         .map(|p| {
-            let roles = p.sources.iter().map(|&s| status::role_name(doc, s)).collect::<Vec<_>>();
+            let roles = p
+                .sources
+                .iter()
+                .map(|&s| strings::role(status::Role::of(doc, s)))
+                .collect::<Vec<_>>();
             let label = strings::placeholder_label(p.lines, roles.iter().map(AsRef::as_ref));
             let look = marks::placeholder_mark(doc, p.region, &p.sources);
             let line = shown(p.line.get());
@@ -3985,9 +4025,9 @@ impl MergeWindow {
                         .id(MIXED_ENDINGS_ID)
                         .test_support()
                         .role(Role::Status)
-                        .aria_label(strings::MIXED_ENDINGS)
+                        .aria_label(strings::mixed_endings())
                         .text_color(mixed_tone)
-                        .child(strings::MIXED_ENDINGS),
+                        .child(strings::mixed_endings()),
                 )
             })
     }
@@ -4096,7 +4136,8 @@ enum Keep {
 /// as it was.
 fn alert(title: &str, detail: &str, window: &mut Window, cx: &mut App) {
     tracing::error!(detail, "{title}");
-    let answer = window.prompt(PromptLevel::Critical, title, Some(detail), &[prompt::OK], cx);
+    let answer =
+        window.prompt(PromptLevel::Critical, title, Some(detail), &[prompt::ok_button()], cx);
     cx.spawn(async move |_| {
         // The one button only closes the alert.
         let _ = answer.await;

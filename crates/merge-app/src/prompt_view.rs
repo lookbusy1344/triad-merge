@@ -62,7 +62,7 @@ fn answer(key: &str, buttons: &[PromptButton]) -> Option<usize> {
             .iter()
             .position(|button| {
                 button.is_cancel()
-                    || [prompt::KEEP_EDITING, prompt::KEEP_MINE].contains(&button.label().as_ref())
+                    || [prompt::keep_editing(), prompt::keep_mine()].contains(button.label())
             })
             .or((buttons.len() == 1).then_some(0)),
         _ => None,
@@ -163,13 +163,13 @@ mod tests {
         assert_eq!(style.box_shadow, Some(Elevation::Modal.shadow(false)));
     }
 
-    fn buttons(labels: &[&'static str]) -> Vec<PromptButton> {
-        labels.iter().map(|&label| PromptButton::new(label)).collect()
+    fn buttons(labels: &[SharedString]) -> Vec<PromptButton> {
+        labels.iter().cloned().map(PromptButton::new).collect()
     }
 
     #[test]
     fn enter_takes_the_first_button() {
-        let save = buttons(&[prompt::SAVE, prompt::DISCARD, prompt::KEEP_EDITING]);
+        let save = buttons(&[prompt::save(), prompt::discard(), prompt::keep_editing()]);
         assert_eq!(answer(ENTER, &save), Some(0));
     }
 
@@ -180,34 +180,37 @@ mod tests {
 
     #[test]
     fn escape_keeps_editing_wherever_that_button_sits() {
-        let last = buttons(&[prompt::SAVE, prompt::DISCARD, prompt::KEEP_EDITING]);
+        let last = buttons(&[prompt::save(), prompt::discard(), prompt::keep_editing()]);
         assert_eq!(answer(ESCAPE, &last), Some(2));
-        let first = buttons(&[prompt::KEEP_EDITING, prompt::DISCARD]);
+        let first = buttons(&[prompt::keep_editing(), prompt::discard()]);
         assert_eq!(answer(ESCAPE, &first), Some(0));
     }
 
     #[test]
     fn escape_keeps_mine_on_a_change_on_disk() {
-        let changed = buttons(&[prompt::KEEP_MINE, prompt::RELOAD]);
+        let changed = buttons(&[prompt::keep_mine(), prompt::reload()]);
         assert_eq!(answer(ESCAPE, &changed), Some(0));
-        let reversed = buttons(&[prompt::RELOAD, prompt::KEEP_MINE]);
+        let reversed = buttons(&[prompt::reload(), prompt::keep_mine()]);
         assert_eq!(answer(ESCAPE, &reversed), Some(1));
     }
 
     #[test]
     fn escape_takes_a_cancel_button() {
-        let cancel = [PromptButton::new(prompt::SAVE), PromptButton::cancel("Cancel")];
+        let cancel = [
+            PromptButton::new(prompt::save()),
+            PromptButton::cancel(crate::strings::menu::cancel()),
+        ];
         assert_eq!(answer(ESCAPE, &cancel), Some(1));
     }
 
     #[test]
     fn escape_closes_an_alert_with_one_button() {
-        assert_eq!(answer(ESCAPE, &buttons(&[prompt::QUIT])), Some(0));
+        assert_eq!(answer(ESCAPE, &buttons(&[prompt::quit()])), Some(0));
     }
 
     #[test]
     fn escape_does_not_choose_between_a_restore_and_starting_over() {
-        let restore = buttons(&[prompt::RESTORE, prompt::START_OVER]);
+        let restore = buttons(&[prompt::restore(), prompt::start_over()]);
         assert_eq!(answer(ESCAPE, &restore), None);
     }
 
@@ -218,6 +221,6 @@ mod tests {
 
     #[test]
     fn another_key_takes_none() {
-        assert_eq!(answer("a", &buttons(&[prompt::QUIT])), None);
+        assert_eq!(answer("a", &buttons(&[prompt::quit()])), None);
     }
 }

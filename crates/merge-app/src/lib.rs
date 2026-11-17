@@ -13,8 +13,10 @@ pub mod dir_window;
 mod editor_sync;
 mod editor_syntax;
 mod elevation;
+mod error_text;
 mod go_to_line;
 pub mod history_window;
+mod i18n;
 mod input_find;
 mod input_select;
 mod keys;
@@ -239,6 +241,13 @@ pub(crate) fn finish(code: ExitCode, cx: &mut App) {
     }
 }
 
+/// Fix the language of this process's windows from `setting`, with `system` the system's
+/// preferred locale for `auto` (spec §6.5). Call it once, before the first window; a later
+/// call keeps the first language.
+pub fn set_language(setting: merge_config::settings::UiLanguage, system: Option<&str>) {
+    i18n::set_locale(i18n::Locale::choose(setting, system));
+}
+
 /// Set up the app with the default keys.
 pub fn init(cx: &mut App) {
     init_with(&KeyBindings::default(), cx);
@@ -278,68 +287,69 @@ pub(crate) fn menus(ticks: ViewTicks) -> Vec<Menu> {
     use strings::menu;
     vec![
         Menu::new(strings::APP_NAME).items([
-            MenuItem::action(strings::ABOUT_TITLE, About),
+            MenuItem::action(strings::about_title(), About),
             MenuItem::separator(),
-            MenuItem::action(menu::SETTINGS, OpenSettings),
+            MenuItem::action(menu::settings(), OpenSettings),
             MenuItem::separator(),
-            MenuItem::action(menu::SAVE_AND_EXIT, SaveAndExit),
-            MenuItem::action(menu::SAVE_COPY_AS, SaveCopyAs),
-            MenuItem::action(menu::SAVE, Save),
-            MenuItem::action(menu::CANCEL, Cancel),
+            MenuItem::action(menu::save_and_exit(), SaveAndExit),
+            MenuItem::action(menu::save_copy_as(), SaveCopyAs),
+            MenuItem::action(menu::save(), Save),
+            MenuItem::action(menu::cancel(), Cancel),
         ]),
-        Menu::new(menu::EDIT).items([
-            MenuItem::action(menu::UNDO, Undo),
-            MenuItem::action(menu::REDO, Redo),
+        Menu::new(menu::edit()).items([
+            MenuItem::action(menu::undo(), Undo),
+            MenuItem::action(menu::redo(), Redo),
             MenuItem::separator(),
-            MenuItem::action(menu::FIND, Find),
-            MenuItem::action(menu::GO_TO_LINE, GoToLine),
+            MenuItem::action(menu::find(), Find),
+            MenuItem::action(menu::go_to_line(), GoToLine),
         ]),
-        Menu::new(menu::MERGE).items([
-            MenuItem::action(menu::TOGGLE_LEFT, ToggleLeft),
-            MenuItem::action(menu::TOGGLE_BASE, ToggleBase),
-            MenuItem::action(menu::TOGGLE_RIGHT, ToggleRight),
-            MenuItem::action(menu::CLEAR_CHOICE, ClearChoice),
+        Menu::new(menu::merge()).items([
+            MenuItem::action(menu::toggle_left(), ToggleLeft),
+            MenuItem::action(menu::toggle_base(), ToggleBase),
+            MenuItem::action(menu::toggle_right(), ToggleRight),
+            MenuItem::action(menu::clear_choice(), ClearChoice),
             MenuItem::separator(),
-            MenuItem::action(menu::TAKE_BASE, TakeBase),
-            MenuItem::action(menu::TAKE_LEFT, TakeLeft),
-            MenuItem::action(menu::TAKE_RIGHT, TakeRight),
-            MenuItem::action(menu::TAKE_LEFT_THEN_RIGHT, TakeLeftThenRight),
-            MenuItem::action(menu::TAKE_RIGHT_THEN_LEFT, TakeRightThenLeft),
-            MenuItem::action(menu::TAKE_SORTED_UNION, TakeSortedUnion),
-            MenuItem::action(menu::CARRY_MOVED_EDIT, CarryMovedEdit),
-            MenuItem::action(menu::DROP_DUPLICATE, DropDuplicate),
+            MenuItem::action(menu::take_base(), TakeBase),
+            MenuItem::action(menu::take_left(), TakeLeft),
+            MenuItem::action(menu::take_right(), TakeRight),
+            MenuItem::action(menu::take_left_then_right(), TakeLeftThenRight),
+            MenuItem::action(menu::take_right_then_left(), TakeRightThenLeft),
+            MenuItem::action(menu::take_sorted_union(), TakeSortedUnion),
+            MenuItem::action(menu::carry_moved_edit(), CarryMovedEdit),
+            MenuItem::action(menu::drop_duplicate(), DropDuplicate),
             MenuItem::separator(),
-            MenuItem::action(menu::TAKE_LEFT_ALL_UNRESOLVED, TakeLeftAllUnresolved),
-            MenuItem::action(menu::TAKE_RIGHT_ALL_UNRESOLVED, TakeRightAllUnresolved),
-            MenuItem::action(menu::TAKE_WHOLE_LEFT, TakeWholeLeft),
-            MenuItem::action(menu::TAKE_WHOLE_RIGHT, TakeWholeRight),
+            MenuItem::action(menu::take_left_all_unresolved(), TakeLeftAllUnresolved),
+            MenuItem::action(menu::take_right_all_unresolved(), TakeRightAllUnresolved),
+            MenuItem::action(menu::take_whole_left(), TakeWholeLeft),
+            MenuItem::action(menu::take_whole_right(), TakeWholeRight),
         ]),
-        Menu::new(menu::GO).items([
-            MenuItem::action(menu::NEXT_DIFFERENCE, NextDifference),
-            MenuItem::action(menu::PREVIOUS_DIFFERENCE, PreviousDifference),
-            MenuItem::action(menu::NEXT_CONFLICT, NextConflict),
-            MenuItem::action(menu::PREVIOUS_CONFLICT, PreviousConflict),
+        Menu::new(menu::go()).items([
+            MenuItem::action(menu::next_difference(), NextDifference),
+            MenuItem::action(menu::previous_difference(), PreviousDifference),
+            MenuItem::action(menu::next_conflict(), NextConflict),
+            MenuItem::action(menu::previous_conflict(), PreviousConflict),
             MenuItem::separator(),
-            MenuItem::action(menu::GO_TO_MOVE_END, GoToMoveEnd),
+            MenuItem::action(menu::go_to_move_end(), GoToMoveEnd),
         ]),
         // Blame shows only in a window with origins: without them there is nothing to blame.
-        Menu::new(menu::VIEW).items(
+        Menu::new(menu::view()).items(
             [
-                Some(MenuItem::action(menu::BASE_PANE, ToggleBasePane).checked(ticks.base_pane)),
+                Some(MenuItem::action(menu::base_pane(), ToggleBasePane).checked(ticks.base_pane)),
                 ticks.origins_loaded.then(|| {
-                    MenuItem::action(menu::BLAME, ToggleOriginColumn).checked(ticks.origin_column)
+                    MenuItem::action(menu::blame(), ToggleOriginColumn).checked(ticks.origin_column)
                 }),
-                Some(MenuItem::action(menu::SYNTAX, ToggleSyntax).checked(ticks.syntax)),
-                Some(MenuItem::action(menu::SOFT_WRAP, ToggleSoftWrap).checked(ticks.soft_wrap)),
+                Some(MenuItem::action(menu::syntax(), ToggleSyntax).checked(ticks.syntax)),
+                Some(MenuItem::action(menu::soft_wrap(), ToggleSoftWrap).checked(ticks.soft_wrap)),
                 Some(
-                    MenuItem::action(menu::WHITESPACE, ToggleWhitespace).checked(ticks.whitespace),
+                    MenuItem::action(menu::whitespace(), ToggleWhitespace)
+                        .checked(ticks.whitespace),
                 ),
                 Some(
-                    MenuItem::action(menu::COLLAPSE_UNCHANGED, ToggleCollapseUnchanged)
+                    MenuItem::action(menu::collapse_unchanged(), ToggleCollapseUnchanged)
                         .checked(ticks.collapse_unchanged),
                 ),
                 Some(
-                    MenuItem::action(menu::SCROLL_SYNC, ToggleScrollSync)
+                    MenuItem::action(menu::scroll_sync(), ToggleScrollSync)
                         .checked(ticks.scroll_sync),
                 ),
             ]

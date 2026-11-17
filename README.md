@@ -53,6 +53,8 @@ triad 0.1 is an early beta, tested on macOS 27 on Apple Silicon. [Releases](http
 
 **Editor.** Syntax highlighting for Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS, C and C++. Overview ruler, search and replace, soft wrap, scroll sync, collapsed unchanged regions, visible whitespace in every pane (⌘E or the toolbar), comparison that ignores whitespace or case, ignore patterns, line-ending control, recovery journals and a plain-text config file.
 
+**Languages.** The windows read in English, Spanish, simplified Chinese, traditional Chinese, Japanese, Korean, German, French, Brazilian Portuguese, Russian, Ukrainian, Polish, Dutch or Swedish. They follow the system's language; `ui-language` in the config file holds one. The command line stays in English.
+
 **Text.** UTF-8 and UTF-16 with a BOM; any other text reads as Windows-1252 and saves back byte for byte. Invisible and bidirectional characters show as code-point badges, so a Trojan Source trick reads in its true order.
 
 ## jj-enabled features
@@ -132,7 +134,7 @@ Exit codes: 0 all conflicts resolved, 1 conflicts left, 2 cancelled, 3 error.
 
 ### Settings
 
-`~/.config/triad/config.triad`, one `key = value` per line; Settings… (⌘,) opens it. `triad-merge show-config --default --docs` lists every key.
+`~/.config/triad/config.triad`, one `key = value` per line; Settings… (⌘,) opens it. `triad-merge show-config --default --docs` lists every key. `ui-language = ko` holds the windows to Korean; the tags are `en`, `es`, `zh-CN`, `zh-TW`, `ja`, `ko`, `de`, `fr`, `pt-BR`, `ru`, `uk`, `pl`, `nl` and `sv`.
 
 ### Known limits
 
