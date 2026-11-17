@@ -136,19 +136,21 @@ const WINDOWS_1252_HIGH: [char; 32] = [
 /// The first byte [`WINDOWS_1252_HIGH`] covers.
 const WINDOWS_1252_HIGH_START: u8 = 0x80;
 
+/// The character [`WINDOWS_1252_HIGH`] gives `byte`, if the table covers it.
+fn windows_1252_high_char(byte: u8) -> Option<char> {
+    let at = byte.checked_sub(WINDOWS_1252_HIGH_START)?;
+    WINDOWS_1252_HIGH.get(usize::from(at)).copied()
+}
+
 /// The character Windows-1252 gives `byte`.
 fn windows_1252_char(byte: u8) -> char {
-    match byte.checked_sub(WINDOWS_1252_HIGH_START) {
-        Some(at) if usize::from(at) < WINDOWS_1252_HIGH.len() => WINDOWS_1252_HIGH[usize::from(at)],
-        _ => char::from(byte),
-    }
+    windows_1252_high_char(byte).unwrap_or(char::from(byte))
 }
 
 /// The byte Windows-1252 gives `c`, if it holds it.
 fn windows_1252_byte(c: char) -> Option<u8> {
-    let high = WINDOWS_1252_HIGH_START..WINDOWS_1252_HIGH_START + 32;
     match u8::try_from(u32::from(c)) {
-        Ok(byte) if !high.contains(&byte) => Some(byte),
+        Ok(byte) if windows_1252_high_char(byte).is_none() => Some(byte),
         _ => WINDOWS_1252_HIGH
             .iter()
             .position(|&high| high == c)
@@ -814,6 +816,18 @@ mod tests {
     fn valid_utf8_stays_utf8() {
         let text = decoded("café\n".as_bytes().to_vec());
         assert_eq!((text.encoding(), text.content()), (Encoding::Utf8, "café\n"));
+    }
+
+    #[test]
+    fn windows_1252_holds_no_c1_control_but_its_five_unassigned_bytes() {
+        // WHATWG's index maps 0x80 to U+20AC and 0x9F to U+0178, so U+0080 and U+009F have
+        // no byte; 0x81 keeps U+0081; U+007F and U+00A0 sit outside 0x80–0x9F as themselves.
+        assert_eq!(windows_1252_byte('\u{007F}'), Some(0x7F));
+        assert_eq!(windows_1252_byte('\u{0080}'), None);
+        assert_eq!(windows_1252_byte('\u{0081}'), Some(0x81));
+        assert_eq!(windows_1252_byte('\u{009F}'), None);
+        assert_eq!(windows_1252_byte('\u{00A0}'), Some(0xA0));
+        assert_eq!(windows_1252_byte('\u{0178}'), Some(0x9F));
     }
 
     #[test]

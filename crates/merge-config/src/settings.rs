@@ -652,11 +652,46 @@ pub fn apply(settings: &mut Settings, key: &str, value: &str) -> Result<(), Prob
 /// A setting: its name in the file, what it does, and how a value reads and writes.
 struct Key {
     name: &'static str,
-    description: &'static str,
+    description: Description,
     set: fn(&mut Settings, &str) -> Result<(), Problem>,
     /// The value as [`Key::set`] reads it; empty for none. A key of many values gives one
     /// per line.
     get: fn(&Settings) -> String,
+}
+
+/// What a key does, as the config file's comments give it.
+enum Description {
+    Text(&'static str),
+    /// Text around the bounds of the values the key takes, read from their range.
+    Bounded {
+        before: &'static str,
+        bounds: fn() -> String,
+        after: &'static str,
+    },
+}
+
+impl fmt::Display for Description {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Text(text) => f.write_str(text),
+            Self::Bounded { before, bounds, after } => write!(f, "{before} {}{after}", bounds()),
+        }
+    }
+}
+
+/// `range` as its description gives it: `start–end`.
+fn bounds<T: fmt::Display>(range: &RangeInclusive<T>) -> String {
+    format!("{}–{}", range.start(), range.end())
+}
+
+/// A [`Description`]: a text, or `[before, RANGE, after]` around the bounds of `RANGE`.
+macro_rules! description {
+    ($text:literal) => {
+        Description::Text($text)
+    };
+    ([$before:literal, $range:expr, $after:literal]) => {
+        Description::Bounded { before: $before, bounds: || bounds(&$range), after: $after }
+    };
 }
 
 /// The key `color-…` for the colour in `Colours::$field`.
@@ -664,7 +699,10 @@ macro_rules! colour_key {
     ($name:literal, $field:ident, $what:literal) => {
         Key {
             name: $name,
-            description: concat!($what, ": #rrggbb, or light:#rrggbb,dark:#rrggbb."),
+            description: Description::Text(concat!(
+                $what,
+                ": #rrggbb, or light:#rrggbb,dark:#rrggbb."
+            )),
             set: |s, v| {
                 s.colours.$field = or_default(v, DEFAULT_COLOURS.$field, |v| {
                     themed($name, v, COLOUR_FORMS, |part| {
@@ -681,10 +719,10 @@ macro_rules! colour_key {
 /// A key at `s.$field`: an empty value restores `$default`, `$parse` reads any other, and
 /// `$get` writes the value back.
 macro_rules! key {
-    ($name:expr, $description:expr, $($field:ident).+ = $default:expr, $parse:expr, $get:expr $(,)?) => {
+    ($name:expr, $description:tt, $($field:ident).+ = $default:expr, $parse:expr, $get:expr $(,)?) => {
         Key {
             name: $name,
-            description: $description,
+            description: description!($description),
             set: |s, v| {
                 s.$($field).+ = or_default(v, $default, $parse)?;
                 Ok(())
@@ -696,7 +734,7 @@ macro_rules! key {
 
 /// A `true` or `false` key at `s.$field`, empty for its default.
 macro_rules! bool_key {
-    ($name:expr, $description:expr, $field:ident $(,)?) => {
+    ($name:expr, $description:tt, $field:ident $(,)?) => {
         key! {
             $name,
             $description,
@@ -709,17 +747,17 @@ macro_rules! bool_key {
 
 /// A key at `s.$field` that holds one of the names of its type, empty for `$default`.
 macro_rules! named_key {
-    ($name:expr, $description:expr, $field:ident = $default:expr $(,)?) => {
+    ($name:expr, $description:tt, $field:ident = $default:expr $(,)?) => {
         key!($name, $description, $field = $default, |v| named($name, v), |s| name(s.$field))
     };
 }
 
 /// A key at `s.$field` that holds one of the names of `$file`, or nothing when empty.
 macro_rules! optional_key {
-    ($name:expr, $description:expr, $field:ident = $file:ty $(,)?) => {
+    ($name:expr, $description:tt, $field:ident = $file:ty $(,)?) => {
         Key {
             name: $name,
-            description: $description,
+            description: description!($description),
             set: |s, v| {
                 s.$field = optional(v, |v| named::<$file>($name, v))?.map(Into::into);
                 Ok(())
@@ -800,9 +838,11 @@ const KEYS: &[Key] = &[
     ),
     Key {
         name: IGNORE_PATTERN_KEY,
-        description: "A regular expression whose matches lines drop before comparison, in \
+        description: Description::Text(
+            "A regular expression whose matches lines drop before comparison, in \
              merges, the diff window and diff --inspect. Each line adds one; an empty value \
              drops those before it. The saved bytes stay each line's.",
+        ),
         set: |s, v| {
             s.diff.patterns = if v.is_empty() {
                 Patterns::empty()
@@ -834,14 +874,16 @@ const KEYS: &[Key] = &[
     ),
     key!(
         TAB_WIDTH_KEY,
-        "Columns between tab stops, 1–16. The Tab key types that many spaces.",
+        ["Columns between tab stops,", TAB_WIDTHS, ". The Tab key types that many spaces."],
         tab_width = DEFAULT_TAB_WIDTH,
         tab_width,
         |s| s.tab_width.to_string()
     ),
     Key {
         name: "font",
-        description: "The editor font family. Empty: the theme's monospace font.",
+        description: Description::Text(
+            "The editor font family. Empty: the theme's monospace font.",
+        ),
         set: |s, v| {
             s.font = (!v.is_empty()).then(|| v.to_owned());
             Ok(())
@@ -850,23 +892,29 @@ const KEYS: &[Key] = &[
     },
     key!(
         FONT_SIZE_KEY,
-        "Text size in points, 6–72.",
+        ["Text size in points,", FONT_SIZES, "."],
         font_size = DEFAULT_FONT_SIZE,
         font_size,
         |s| s.font_size.to_string()
     ),
     key!(
         TOOLBAR_FONT_SIZE_KEY,
-        "The toolbar's text size in points, 6–12: its labels, its conflict badge \
-         and its menus.",
+        [
+            "The toolbar's text size in points,",
+            TOOLBAR_FONT_SIZES,
+            ": its labels, its conflict badge and its menus."
+        ],
         toolbar_font_size = DEFAULT_TOOLBAR_FONT_SIZE,
         toolbar_font_size,
         |s| s.toolbar_font_size.to_string()
     ),
     key!(
         WINDOW_SIZE_KEY,
-        "The size the merge and diff windows open at, WIDTHxHEIGHT in points, \
-         each 400–16384. A window opens no larger than its display.",
+        [
+            "The size the merge and diff windows open at, WIDTHxHEIGHT in points, each",
+            WINDOW_SIZES,
+            ". A window opens no larger than its display."
+        ],
         window_size = DEFAULT_WINDOW_SIZE,
         window_size,
         |s| s.window_size.to_string()
@@ -896,7 +944,7 @@ const KEYS: &[Key] = &[
     ),
     key!(
         "line-height",
-        "Line height as a multiple of the text size, 1–3.",
+        ["Line height as a multiple of the text size,", LINE_HEIGHTS, "."],
         line_height = DEFAULT_LINE_HEIGHT,
         |v| number_in("line-height", v, &LINE_HEIGHTS),
         |s| s.line_height.to_string()
@@ -917,7 +965,7 @@ const KEYS: &[Key] = &[
     colour_key!("color-resolved", resolved, "The conflict badge's colour once no conflict is left"),
     key!(
         BAND_OPACITY_KEY,
-        "The opacity of the bands behind changed rows, 0–1, or light:N,dark:N.",
+        ["The opacity of the bands behind changed rows,", BAND_OPACITIES, ", or light:N,dark:N."],
         colours.band_opacity = DEFAULT_COLOURS.band_opacity,
         |v| themed(BAND_OPACITY_KEY, v, OPACITY_PAIR, |part| {
             number_in(BAND_OPACITY_KEY, part, &BAND_OPACITIES)
@@ -946,7 +994,9 @@ const KEYS: &[Key] = &[
     ),
     Key {
         name: "keybind",
-        description: "A key and the menu command it runs: cmd+j=next-conflict, cmd+k=unbind to make a key do nothing, or clear to drop every binding so far. Each line adds to the ones before it.",
+        description: Description::Text(
+            "A key and the menu command it runs: cmd+j=next-conflict, cmd+k=unbind to make a key do nothing, or clear to drop every binding so far. Each line adds to the ones before it.",
+        ),
         set: |s, v| {
             if v.is_empty() {
                 s.key_bindings = KeyBindings::default();
@@ -987,7 +1037,11 @@ const KEYS: &[Key] = &[
     ),
     key!(
         CONTEXT_LINES_KEY,
-        "The lines a collapsed unchanged region keeps at each end that faces a change, 0–100.",
+        [
+            "The lines a collapsed unchanged region keeps at each end that faces a change,",
+            CONTEXT_LINES,
+            "."
+        ],
         context_lines = DEFAULT_CONTEXT_LINES,
         context_lines,
         |s| s.context_lines.to_string()
@@ -2559,9 +2613,40 @@ context-lines = 3
     }
 
     #[test]
+    fn a_key_of_bounded_values_names_its_bounds() {
+        let description =
+            |name: &str| KEYS.iter().find(|k| k.name == name).expect(name).description.to_string();
+        // Bounds from spec §6.4.
+        assert_eq!(
+            description("tab-width"),
+            "Columns between tab stops, 1–16. The Tab key types that many spaces."
+        );
+        assert_eq!(description("font-size"), "Text size in points, 6–72.");
+        assert_eq!(
+            description("toolbar-font-size"),
+            "The toolbar's text size in points, 6–12: its labels, its conflict badge and its \
+             menus."
+        );
+        assert_eq!(
+            description("window-size"),
+            "The size the merge and diff windows open at, WIDTHxHEIGHT in points, each \
+             400–16384. A window opens no larger than its display."
+        );
+        assert_eq!(description("line-height"), "Line height as a multiple of the text size, 1–3.");
+        assert_eq!(
+            description("band-opacity"),
+            "The opacity of the bands behind changed rows, 0–1, or light:N,dark:N."
+        );
+        assert_eq!(
+            description("context-lines"),
+            "The lines a collapsed unchanged region keeps at each end that faces a change, 0–100."
+        );
+    }
+
+    #[test]
     fn every_key_has_a_description_and_a_unique_name() {
         for key in KEYS {
-            assert!(!key.description.is_empty(), "{}", key.name);
+            assert!(!key.description.to_string().is_empty(), "{}", key.name);
             assert_eq!(KEYS.iter().filter(|k| k.name == key.name).count(), 1, "{}", key.name);
         }
         let bindings = DEFAULTS.lines().filter(|l| l.starts_with("keybind = cmd+"));
