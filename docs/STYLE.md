@@ -78,6 +78,10 @@ The result's search panel is gpui-component's, laid out as Zed's buffer search b
 
 The current region's frame in an editor is 1 px (`blink::BORDER`), so it reads as an outline beside the blocks' own borders. The overview ruler paints a change's mark at 60 % of its tone (`ruler::SOFT_MARK`) and the conflict tone at full strength, as Zed's scrollbar markers stay faint beside the thumb.
 
+## Title bar
+
+The merge and diff windows draw their own title bar, gpui-component's `TitleBar`, as Zed does (`menu_bar::render`): 34 px tall over a 1 px border, the system's title hidden. On macOS it holds the toolbar beside the traffic lights, which sit 9 px in from the top left; it keeps 80 px for them, and 12 px in full screen, which hides them. A drag on its empty space moves the window, and a double click zooms it. On Linux and Windows it holds the mark and the menus over the toolbar. The tool windows keep the system's title bar.
+
 ## Status bar
 
 The merge and diff windows end in `status_bar::bar`, after Zed's `StatusBar`: 24 px tall under a 1 px `border` outside its height, across the window, on `secondary`. Its text is 12 px on 16 px lines in the UI font, muted, 8 px in from the sides, its items 8 px apart. An item that warns, such as mixed line endings, takes its own colour.

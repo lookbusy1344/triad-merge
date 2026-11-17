@@ -3998,8 +3998,12 @@ impl Render for MergeWindow {
             .on_action(cx.listener(|this, _: &Cancel, window, cx| this.cancel(window, cx)))
             .font_family(ui_font)
             .text_size(self.typography.size)
-            .children(crate::menu_bar::render(self.menu_bar.bar(), cx.theme().is_dark()))
-            .child(self.render_toolbar(ticks, window, cx))
+            .child(crate::menu_bar::render(
+                self.menu_bar.bar(),
+                self.render_toolbar(ticks, window, cx),
+                cx.theme().is_dark(),
+                window.is_fullscreen(),
+            ))
             .children(render_banner(self.settings_errors.as_ref(), |v| &mut v.settings_errors, cx))
             .child(input_headings)
             .child(self.render_rows(cx))

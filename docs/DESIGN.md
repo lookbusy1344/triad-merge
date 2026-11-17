@@ -719,7 +719,7 @@ A strip at the right edge of the result pane and the diff window's right pane ma
 - `script/package` builds the AppImage and `.tar.gz` there, so the binary needs glibc 2.35 at most. Both bundle `libxkbcommon`, `libxkbcommon-x11` and `libxcb-xkb` by rpath; `libxcb` stays the system's. CI's `package` job tests the release build and smoke-tests the AppImage with `APPIMAGE_EXTRACT_AND_RUN=1`. appimagetool 1.9.1 and the type-2 runtime are pinned by digest.
 - The `linux-emulated` nextest profile leaves out `forward::a_missing_gui_binary_is_an_error`: Rosetta's `posix_spawn` reports success for a missing file.
 - `script/linux/smoke` drives the real window on Wayland and X11. X11 runs on GL: Mesa 23's software Vulkan shows nothing in a 32-bit window.
-- `merge_app::menu_bar` draws gpui-component's `TitleBar` and `AppMenuBar` on Linux and Windows. `merge_app::prompt_view` replaces GPUI's fallback prompt on Linux; `run` installs it, since headless tests answer the test platform's prompts.
+- `merge_app::menu_bar` draws gpui-component's `TitleBar` over the merge and diff windows: on macOS it holds the toolbar, on Linux and Windows the mark and `AppMenuBar`. `merge_app::prompt_view` replaces GPUI's fallback prompt on Linux; `run` installs it, since headless tests answer the test platform's prompts.
 
 #### E7.2 Windows
 

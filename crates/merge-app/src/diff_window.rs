@@ -2248,15 +2248,19 @@ impl Render for DiffWindow {
             .on_action(cx.listener(|this, _: &Cancel, window, cx| this.close(window, cx)))
             .font_family(ui_font)
             .text_size(self.typography.size)
-            .children(crate::menu_bar::render(self.menu_bar.bar(), cx.theme().is_dark()))
-            .child(toolbar::bar(
-                strings::DIFF_TOOLBAR,
-                &DIFF_GROUPS,
-                DIFF_CONTEXT,
-                cx.theme(),
-                Labels::Shown,
-                self.typography.toolbar_size,
-                &toolbar::views_on(ticks).collect::<Vec<_>>(),
+            .child(crate::menu_bar::render(
+                self.menu_bar.bar(),
+                toolbar::bar(
+                    strings::DIFF_TOOLBAR,
+                    &DIFF_GROUPS,
+                    DIFF_CONTEXT,
+                    cx.theme(),
+                    Labels::Shown,
+                    self.typography.toolbar_size,
+                    &toolbar::views_on(ticks).collect::<Vec<_>>(),
+                ),
+                cx.theme().is_dark(),
+                window.is_fullscreen(),
             ))
             .children(render_banner(self.settings_errors.as_ref(), |v| &mut v.settings_errors, cx))
             .when_some(self.banner.clone(), |d, banner| {
