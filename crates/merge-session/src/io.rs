@@ -98,23 +98,25 @@ fn write_replacing(
     Ok(())
 }
 
-/// Sync the directory holding `path`, so the rename that put the file there survives a
-/// crash. The file holds its bytes already; a failure only leaves the rename unsynced, so it
-/// is logged and the write stands.
-#[cfg(unix)]
-fn sync_dir_of(path: &Path) {
-    let dir = match path.parent() {
-        Some(dir) if !dir.as_os_str().is_empty() => dir,
-        _ => Path::new("."),
-    };
-    if let Err(error) = fs::File::open(dir).and_then(|dir| dir.sync_all()) {
-        tracing::warn!(%error, dir = %dir.display(), "cannot sync the directory after a write");
+// Sync the directory holding `path`, so the rename that put the file there survives a crash.
+// The file holds its bytes already; a failure only leaves the rename unsynced, so it is logged
+// and the write stands. `std` opens no directory handle to sync on Windows.
+cfg_select! {
+    unix => {
+        fn sync_dir_of(path: &Path) {
+            let dir = match path.parent() {
+                Some(dir) if !dir.as_os_str().is_empty() => dir,
+                _ => Path::new("."),
+            };
+            if let Err(error) = fs::File::open(dir).and_then(|dir| dir.sync_all()) {
+                tracing::warn!(%error, dir = %dir.display(), "cannot sync the directory after a write");
+            }
+        }
+    }
+    _ => {
+        fn sync_dir_of(_: &Path) {}
     }
 }
-
-/// `std` opens no directory handle to sync on Windows.
-#[cfg(not(unix))]
-fn sync_dir_of(_: &Path) {}
 
 /// The file `path` names: `path`, or the end of its chain of links. That file may not exist.
 fn link_target(path: &Path) -> io::Result<Cow<'_, Path>> {
@@ -146,17 +148,16 @@ fn temp_file_beside(path: &Path, access: Access) -> io::Result<NamedTempFile> {
 }
 
 /// A builder whose files get the mode of a newly created file, not `tempfile`'s owner-only one.
-#[cfg(unix)]
 fn new_file_builder() -> Builder<'static, 'static> {
-    use std::os::unix::fs::PermissionsExt;
-    let mut builder = Builder::new();
-    builder.permissions(fs::Permissions::from_mode(NEW_FILE_MODE));
-    builder
-}
-
-#[cfg(not(unix))]
-fn new_file_builder() -> Builder<'static, 'static> {
-    Builder::new()
+    cfg_select! {
+        unix => {
+            use std::os::unix::fs::PermissionsExt;
+            let mut builder = Builder::new();
+            builder.permissions(fs::Permissions::from_mode(NEW_FILE_MODE));
+            builder
+        }
+        _ => Builder::new(),
+    }
 }
 
 #[cfg(test)]

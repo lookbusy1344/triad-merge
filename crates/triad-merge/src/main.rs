@@ -20,25 +20,28 @@ fn main() -> std::process::ExitCode {
     code.into()
 }
 
-/// Windows: the GUI-subsystem binary beside this one runs the window, with the same
-/// arguments, so this console process keeps git's or jj's console (spec §6.1).
-#[cfg(windows)]
-fn window(_: merge_session::WindowForm) -> ExitCode {
-    let mut stderr = io::stderr().lock();
-    let gui = match std::env::current_exe() {
-        Ok(exe) => exe.with_file_name(merge_cli::forward::GUI_EXE),
-        Err(e) => {
-            use std::io::Write;
-            let _ = writeln!(stderr, "triad-merge: cannot find this program's path: {e}");
-            return ExitCode::Error;
+// On Windows the GUI-subsystem binary beside this one runs the window, with the same
+// arguments, so this console process keeps git's or jj's console (spec §6.1).
+cfg_select! {
+    windows => {
+        fn window(_: merge_session::WindowForm) -> ExitCode {
+            let mut stderr = io::stderr().lock();
+            let gui = match std::env::current_exe() {
+                Ok(exe) => exe.with_file_name(merge_cli::forward::GUI_EXE),
+                Err(e) => {
+                    use std::io::Write;
+                    let _ = writeln!(stderr, "triad-merge: cannot find this program's path: {e}");
+                    return ExitCode::Error;
+                }
+            };
+            let mut command = std::process::Command::new(gui);
+            command.args(std::env::args_os().skip(1));
+            merge_cli::forward::forward(command, &mut stderr)
         }
-    };
-    let mut command = std::process::Command::new(gui);
-    command.args(std::env::args_os().skip(1));
-    merge_cli::forward::forward(command, &mut stderr)
-}
-
-#[cfg(not(windows))]
-fn window(form: merge_session::WindowForm) -> ExitCode {
-    merge_app::run(form)
+    }
+    _ => {
+        fn window(form: merge_session::WindowForm) -> ExitCode {
+            merge_app::run(form)
+        }
+    }
 }

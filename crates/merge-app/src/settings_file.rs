@@ -115,16 +115,17 @@ mod tests {
 
     /// An exit status with `code`, as the platform reports it.
     fn status(code: i32) -> ExitStatus {
-        #[cfg(unix)]
-        use std::os::unix::process::ExitStatusExt as _;
-        #[cfg(windows)]
-        use std::os::windows::process::ExitStatusExt as _;
-        #[cfg(unix)]
-        const SHIFT: i32 = 8;
-        #[cfg(unix)]
-        return ExitStatus::from_raw(code << SHIFT);
-        #[cfg(windows)]
-        return ExitStatus::from_raw(code.cast_unsigned());
+        cfg_select! {
+            unix => {
+                use std::os::unix::process::ExitStatusExt as _;
+                const SHIFT: i32 = 8;
+                ExitStatus::from_raw(code << SHIFT)
+            }
+            windows => {
+                use std::os::windows::process::ExitStatusExt as _;
+                ExitStatus::from_raw(code.cast_unsigned())
+            }
+        }
     }
 
     #[test]
