@@ -5,13 +5,19 @@ permissions:
 
 # Docs-only changes run nothing. The weekly run catches breakage from outside the
 # repository: a new stable Rust (rust-toolchain.toml follows the channel), new lints,
-# new runner images.
+# new runner images. release.yml calls it on a tag and builds nothing unless it passes.
 on:
   push:
     branches: [ main ]
     paths-ignore: [ 'docs/**', '**/*.md', 'images/**', 'LICENSE' ]
   pull_request:
     paths-ignore: [ 'docs/**', '**/*.md', 'images/**', 'LICENSE' ]
+  workflow_call:
+    inputs:
+      release:
+        description: Called by release.yml, which builds its own packages
+        type: boolean
+        default: false
   workflow_dispatch:
   schedule:
     - cron: '0 5 * * 1'
@@ -106,7 +112,9 @@ jobs:
   package:
     name: Linux packages
     # The container image and AppImage smoke tests are slow; run them by hand or weekly.
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    if: >
+      !inputs.release
+      && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

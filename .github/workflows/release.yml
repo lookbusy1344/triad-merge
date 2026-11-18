@@ -3,9 +3,11 @@ name: release
 permissions:
   contents: read
 
-# A tag vX.Y.Z builds the packages of each target and publishes them as a release, with notes
-# GitHub generates from the commits since the last tag. The tag must match the workspace
-# version. A manual run builds the packages as workflow artifacts only.
+# A tag vX.Y.Z runs the test suite of triad.yml on every platform, then builds the packages of
+# each target and publishes them as a release, with notes GitHub generates from the commits
+# since the last tag. The tag must match the workspace version. A failure on any platform
+# builds and publishes nothing. A manual run tests and builds the packages as workflow
+# artifacts only.
 on:
   push:
     tags: [ 'v*' ]
@@ -44,9 +46,16 @@ jobs:
             exit 1
           }
 
+  test:
+    name: test
+    needs: version
+    uses: ./.github/workflows/triad.yml
+    with:
+      release: true
+
   macos:
     name: macOS ARM64
-    needs: version
+    needs: [ version, test ]
     runs-on: macos-latest
     env:
       NAME: triad-merge-${{ needs.version.outputs.version }}-aarch64-apple-darwin
@@ -68,7 +77,7 @@ jobs:
 
   windows:
     name: Windows x64
-    needs: version
+    needs: [ version, test ]
     runs-on: windows-latest
     env:
       NAME: triad-merge-${{ needs.version.outputs.version }}-x86_64-pc-windows-msvc
@@ -95,7 +104,7 @@ jobs:
 
   linux:
     name: Linux x64
-    needs: version
+    needs: [ version, test ]
     runs-on: ubuntu-latest
     env:
       APPIMAGE: /out/dist/triad-merge-${{ needs.version.outputs.version }}-x86_64-unknown-linux-gnu.AppImage
