@@ -50,13 +50,23 @@ fn a_line_picked_in_an_unresolved_conflict_is_its_only_text() {
 }
 
 #[test]
-fn sources_go_in_the_order_they_were_first_picked() {
+fn lines_go_in_click_order_across_the_sides() {
     let mut d = two_line_conflict();
     apply(&mut d, toggle_lines(CONFLICT, R, 0..1));
     apply(&mut d, toggle_lines(CONFLICT, L, 1..2));
-    assert_eq!(d.text(), "a\nR1\nL2\nc\n");
     apply(&mut d, toggle_lines(CONFLICT, R, 1..2));
-    assert_eq!(d.text(), "a\nR1\nR2\nL2\nc\n", "right keeps its place, its lines in order");
+    apply(&mut d, toggle_lines(CONFLICT, L, 0..1));
+    assert_eq!(d.text(), "a\nR1\nL2\nR2\nL1\nc\n");
+}
+
+#[test]
+fn a_pick_target_replaces_line_picks_with_its_whole_side() {
+    let mut d = two_line_conflict();
+    apply(&mut d, toggle_lines(CONFLICT, R, 1..2));
+    apply(&mut d, toggle_lines(CONFLICT, L, 0..1));
+    apply(&mut d, Command::Toggle { region: RegionIx::new(CONFLICT), source: L });
+    assert_eq!(d.resolutions()[CONFLICT], Resolution::Pick(vec![L]));
+    assert_eq!(d.text(), "a\nL1\nL2\nc\n");
 }
 
 #[test]
@@ -92,10 +102,22 @@ fn a_line_pick_on_a_reordered_pick_keeps_its_order() {
 fn lines_that_cover_whole_sources_collapse_to_a_pick_in_their_order() {
     let mut d = two_line_conflict();
     apply(&mut d, toggle_lines(CONFLICT, R, 0..1));
-    apply(&mut d, toggle_lines(CONFLICT, L, 0..2));
     apply(&mut d, toggle_lines(CONFLICT, R, 1..2));
+    apply(&mut d, toggle_lines(CONFLICT, L, 0..2));
     assert_eq!(d.resolutions()[CONFLICT], Resolution::Pick(vec![R, L]));
     assert_eq!(d.text(), "a\nR1\nR2\nL1\nL2\nc\n");
+}
+
+#[test]
+fn every_line_of_a_side_in_reverse_order_stays_lines() {
+    let mut d = two_line_conflict();
+    apply(&mut d, toggle_lines(CONFLICT, R, 1..2));
+    apply(&mut d, toggle_lines(CONFLICT, R, 0..1));
+    assert_eq!(
+        d.resolutions()[CONFLICT],
+        Resolution::Lines(vec![picked(R, 1..2), picked(R, 0..1)])
+    );
+    assert_eq!(d.text(), "a\nR2\nR1\nc\n");
 }
 
 #[test]

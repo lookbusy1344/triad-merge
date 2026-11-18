@@ -1,9 +1,8 @@
 //! Lines picked one by one inside a region (spec §4.4, `PLAN.md` §G8).
 //!
-//! A selection is a list of [`PickedLines`] in normal form: each source's runs together, the
-//! sources in the order they were first picked, and each source's runs in line order; each
-//! range non-empty; no two ranges of one source overlapping or touching. The result takes the
-//! lines in that order.
+//! A selection is a list of [`PickedLines`] in the order they were picked, which is the
+//! order the result takes them in. In normal form each range is non-empty, no line is picked
+//! twice, and no run ends where the next one, of the same source, starts: those join.
 
 use std::ops::Range;
 
@@ -25,45 +24,34 @@ impl PickedLines {
     }
 }
 
-/// `selection` with `lines` of `source` toggled: removed when every one of them is picked,
-/// otherwise added. A source already picked keeps its place; a new one goes last.
-/// `selection` is in normal form, and so is the result. `lines` is not empty.
+/// `selection` with `lines` of `source` toggled. When every one of them is picked, they are
+/// removed where they stand; otherwise any of them already picked are removed and the whole
+/// range goes last. `selection` is in normal form, and so is the result. `lines` is not empty.
 pub(crate) fn toggle(
     selection: &[PickedLines],
     source: Source,
     lines: &Range<usize>,
 ) -> Vec<PickedLines> {
-    let of_source = || selection.iter().filter(move |p| p.source == source);
-    let covered = of_source().any(|p| p.lines.start <= lines.start && lines.end <= p.lines.end);
-    let ranges: Vec<Range<usize>> = if covered {
-        of_source()
-            .flat_map(|p| {
-                let before = p.lines.start..p.lines.end.min(lines.start);
-                let after = p.lines.start.max(lines.end)..p.lines.end;
-                [before, after]
-            })
-            .filter(|r| !r.is_empty())
-            .collect()
-    } else {
-        let mut joined = lines.clone();
-        let mut ranges: Vec<Range<usize>> = Vec::new();
-        for p in of_source() {
-            if p.lines.end < joined.start || joined.end < p.lines.start {
-                ranges.push(p.lines.clone());
-            } else {
-                joined = joined.start.min(p.lines.start)..joined.end.max(p.lines.end);
-            }
+    let picked = |n: &usize| selection.iter().any(|p| p.source == source && p.lines.contains(n));
+    let covered = lines.clone().all(|n| picked(&n));
+    let kept = selection.iter().flat_map(|p| {
+        if p.source != source {
+            return [Some(p.clone()), None];
         }
-        let at = ranges.partition_point(|r| r.start < joined.start);
-        ranges.insert(at, joined);
-        ranges
-    };
-    let runs = ranges.into_iter().map(|lines| PickedLines { source, lines });
-    let place = selection.iter().position(|p| p.source == source).unwrap_or(selection.len());
-    let others = |range: Range<usize>| {
-        selection[range].iter().filter(|p| p.source != source).cloned().collect::<Vec<_>>()
-    };
-    [others(0..place), runs.collect(), others(place..selection.len())].concat()
+        let before = p.lines.start..p.lines.end.min(lines.start);
+        let after = p.lines.start.max(lines.end)..p.lines.end;
+        [before, after].map(|lines| (!lines.is_empty()).then_some(PickedLines { source, lines }))
+    });
+    let added = (!covered).then(|| PickedLines { source, lines: lines.clone() });
+    kept.flatten().chain(added).fold(Vec::new(), |mut runs, run| {
+        match runs.last_mut() {
+            Some(last) if last.source == run.source && last.lines.end == run.lines.start => {
+                last.lines.end = run.lines.end;
+            }
+            _ => runs.push(run),
+        }
+        runs
+    })
 }
 
 /// The sources `selection` takes whole, in order, when it takes each of its sources whole:
@@ -81,7 +69,6 @@ mod tests {
 
     const L: Source = Source::Side(0);
     const R: Source = Source::Side(1);
-    const B: Source = Source::Base(0);
 
     fn p(source: Source, lines: Range<usize>) -> PickedLines {
         PickedLines::new(source, lines)
@@ -109,52 +96,38 @@ mod tests {
     }
 
     #[test]
-    fn lines_next_to_a_run_join_it() {
+    fn a_line_after_its_neighbour_joins_it() {
         assert_eq!(toggle(&[p(L, 0..1)], L, &(1..2)), [p(L, 0..2)]);
-        assert_eq!(toggle(&[p(L, 2..4)], L, &(1..2)), [p(L, 1..4)]);
     }
 
     #[test]
-    fn lines_that_fill_a_gap_join_both_runs() {
-        assert_eq!(toggle(&[p(L, 0..1), p(L, 3..4)], L, &(1..3)), [p(L, 0..4)]);
+    fn a_line_before_its_neighbour_goes_after_it() {
+        assert_eq!(toggle(&[p(L, 2..4)], L, &(1..2)), [p(L, 2..4), p(L, 1..2)]);
     }
 
     #[test]
-    fn a_range_partly_picked_is_added_whole() {
-        assert_eq!(toggle(&[p(L, 0..2), p(L, 5..6)], L, &(1..4)), [p(L, 0..4), p(L, 5..6)]);
+    fn clicks_interleave_the_sides_in_click_order() {
+        let clicks = [(R, 60), (L, 61), (R, 61), (L, 60)];
+        let picked = clicks.iter().fold(Vec::new(), |s, &(src, n)| toggle(&s, src, &(n..n + 1)));
+        assert_eq!(picked, [p(R, 60..61), p(L, 61..62), p(R, 61..62), p(L, 60..61)]);
     }
 
     #[test]
-    fn a_range_across_two_runs_is_added_as_it_is_not_all_picked() {
-        assert_eq!(toggle(&[p(L, 0..2), p(L, 3..5)], L, &(1..4)), [p(L, 0..5)]);
+    fn a_range_partly_picked_moves_to_the_end_whole() {
+        let picked = [p(L, 0..2), p(R, 0..1), p(L, 5..6)];
+        assert_eq!(toggle(&picked, L, &(1..4)), [p(L, 0..1), p(R, 0..1), p(L, 5..6), p(L, 1..4)]);
     }
 
     #[test]
-    fn a_new_run_keeps_line_order_among_the_runs_of_its_source() {
-        assert_eq!(
-            toggle(&[p(L, 0..1), p(L, 6..7)], L, &(3..4)),
-            [p(L, 0..1), p(L, 3..4), p(L, 6..7)]
-        );
+    fn a_range_picked_in_scattered_runs_turns_off() {
+        let picked = [p(R, 0..1), p(L, 3..4), p(R, 1..2)];
+        assert_eq!(toggle(&picked, R, &(0..2)), [p(L, 3..4)]);
     }
 
     #[test]
-    fn sources_go_in_the_order_they_were_first_picked() {
-        let base_first = toggle(&[], B, &(0..1));
-        let then_right = toggle(&base_first, R, &(2..3));
-        assert_eq!(toggle(&then_right, L, &(1..2)), [p(B, 0..1), p(R, 2..3), p(L, 1..2)]);
-    }
-
-    #[test]
-    fn more_lines_of_a_picked_source_keep_its_place() {
-        let picked = [p(R, 2..3), p(L, 0..1)];
-        assert_eq!(toggle(&picked, R, &(0..1)), [p(R, 0..1), p(R, 2..3), p(L, 0..1)]);
-    }
-
-    #[test]
-    fn a_source_turned_off_and_picked_again_goes_last() {
-        let picked = [p(R, 2..3), p(L, 0..1)];
-        let without_right = toggle(&picked, R, &(2..3));
-        assert_eq!(toggle(&without_right, R, &(1..2)), [p(L, 0..1), p(R, 1..2)]);
+    fn turning_off_the_lines_between_two_runs_joins_them() {
+        let picked = [p(R, 0..1), p(L, 3..4), p(R, 1..2)];
+        assert_eq!(toggle(&picked, L, &(3..4)), [p(R, 0..2)]);
     }
 
     #[test]

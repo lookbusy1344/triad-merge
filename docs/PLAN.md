@@ -157,7 +157,7 @@ Done: the matcher, `diff2::moves` (spec §4.6, `DESIGN.md` §A4.7), recomputed a
 
 ### G8 Line picks inside a conflict
 
-- Each line of a side in a conflict gets a hit target in the top pane. Picked lines go into the result by source, in the order each source's first line was picked, then in line order.
+- Each line of a side in a conflict gets a hit target in the top pane. Picked lines go into the result in click order.
 - A new resolution, `Lines(Vec<(Source, Range)>)`, toggles line by line and keeps each line's origin (§G15).
 - Steps:
   1. Done: `Resolution::Lines`, `Command::ToggleLines` and `MergeDocument::line_selection` in `merge-core` (`line_pick`), the marks and line origins of picked lines in `merge-view`, journal format 13 (spec §4.4).
@@ -249,8 +249,8 @@ A file that is not valid UTF-8 and has no byte order mark decodes as Windows-125
 
 - **G8 model:** decided. A new resolution, `Lines(Vec<(Source, Range)>)`, not picks that write `Edited` text: the region stays toggleable and keeps each line's origin.
 - **G8 rules:** decided.
-  - Picked lines go into the result by source, in the order each source's first line was picked, as whole-side picks follow click order; within a source, in line order.
-  - A line pick adds to a whole-side pick: each picked side becomes the range of all its lines, in the pick's order. A `Lines` selection that covers whole sources collapses to `Pick` in the same order, so each state has one form.
+  - Picked lines go into the result in click order, as whole-side picks follow click order, so the sides' lines may interleave. A line picked just after its predecessor in the same source joins its run; a run picked over lines partly picked moves last, whole.
+  - A line pick adds to a whole-side pick: each picked side becomes the run of all its lines, in the pick's order. Runs that are whole sources collapse to `Pick` in the same order, so each state has one form. A region's pick target replaces line picks with its whole source.
   - Base lines can be picked one at a time; their targets show while the base pane shows.
   - Turning off a conflict's last picked line leaves it unresolved, as with whole sources (spec §4.4).
   - A click toggles a line, a shift-click a range, and a key toggles the line under the top pane's caret.

@@ -155,8 +155,8 @@ pub enum Resolution {
     Auto,
     /// These sources' texts in this order, each at most once. Empty removes the region's text.
     Pick(Vec<Source>),
-    /// Lines of the sources, in the normal form of [`crate::line_pick`]: the sources in the
-    /// order they were first picked, each one's lines in order. Never takes every source it
+    /// Runs of the sources' lines, in the normal form of [`crate::line_pick`]: in the order
+    /// they were picked, which the result takes them in. Never takes every source it
     /// names whole; that is a [`Resolution::Pick`].
     Lines(Vec<PickedLines>),
     /// Text typed in the result pane. It lives in the result text.
