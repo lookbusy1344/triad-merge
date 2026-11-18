@@ -125,7 +125,10 @@ impl Comparison<'_> {
     /// Lines compare byte for byte.
     #[must_use]
     pub fn is_exact(self) -> bool {
-        self == Self::default()
+        matches!(
+            (self.whitespace, self.line_endings, self.case),
+            (Whitespace::None, LineEndingRule::Compare, CaseRule::Compare)
+        ) && self.patterns.is_empty()
     }
 }
 
@@ -237,6 +240,9 @@ pub fn intraline_hunks(before: &str, after: &str) -> Option<Vec<Hunk>> {
 /// The key a line compares under by `mode`.
 #[must_use]
 pub fn line_key<'t>(line: &'t str, mode: Comparison<'_>) -> Cow<'t, str> {
+    if mode.is_exact() {
+        return Cow::Borrowed(line);
+    }
     let key = match cut_patterns(line, mode.patterns) {
         Cow::Borrowed(line) => spaced_key(line, mode),
         Cow::Owned(line) => Cow::Owned(spaced_key(&line, mode).into_owned()),
@@ -652,6 +658,14 @@ mod tests {
     fn a_comparison_that_ignores_case_is_not_exact() {
         assert!(!IGNORE_CASE.is_exact());
         assert!(Comparison::default().is_exact());
+    }
+
+    #[test]
+    fn a_comparison_that_changes_whitespace_or_line_endings_is_not_exact() {
+        for whitespace in [Whitespace::Trailing, Whitespace::Amount, Whitespace::All] {
+            assert!(!Comparison::from(whitespace).is_exact(), "{whitespace:?}");
+        }
+        assert!(!IGNORE_ENDINGS.is_exact());
     }
 
     #[test]

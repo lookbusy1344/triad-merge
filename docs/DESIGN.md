@@ -60,7 +60,7 @@ Text with no BOM that is not UTF-8 decodes as `Encoding::Windows1252`: `WINDOWS_
 
 #### A4.3 Diffing (`merge_core::diff`)
 
-Line diffs run imara's indent heuristic, as git's diff does; the merge's diffs do not (§A4.4). Character diffs use Myers, since histogram does badly on small alphabets, and stop above `MAX_INTRALINE_DIFF_CHARS` (10 000). Whitespace modes rewrite only the interning key (`diff::line_key`): `Trailing` drops trailing spaces, tabs, `\r` and the `\n`; `Amount` also collapses runs; `All` removes all whitespace. Whitespace is space, tab and `\r`, as in git's `isspace`. `CaseRule::Ignore` folds the key last, with `unicase`'s full Unicode case folding, already in the tree through GPUI; a key of ASCII without capitals stays borrowed. `ignore-pattern` cuts first, on the line without its terminator (`merge_core::pattern::Patterns`, compiled once and shared by `Arc`). `Comparison<'p>` borrows the patterns, so it stays `Copy`; `DiffOptions` and `MergeOptions` own them and are `Clone` only, and functions take them by reference. A comparison without filters borrows the static `pattern::NONE`, and a line no pattern matches stays borrowed. `BlankLineRule` is no key rule: `diff2::regions` runs the diff as usual and marks a hunk `Kind2::Ignored` when `diff::is_blank_line` holds for every line on both sides, as git's `xdl_mark_ignorable` marks change groups. Blank lines that keyed equal would merge into `Unchanged` regions with unequal line counts on the two sides; a region kind of its own keeps `Unchanged` regions equal in length, which folds and scroll sync rely on, and gives the view filler rows for free. The field sits in `DiffOptions` beside the other filters; only `diff2` reads it, and `Settings::two_way` alone sets it, so merges never see it. An ignored region inside a long unchanged stretch splits that stretch's fold in two.
+Line diffs run imara's indent heuristic, as git's diff does; the merge's diffs do not (§A4.4). Character diffs use Myers, since histogram does badly on small alphabets, and stop above `MAX_INTRALINE_DIFF_CHARS` (10 000). Whitespace modes rewrite only the interning key (`diff::line_key`): `Trailing` drops trailing spaces, tabs, `\r` and the `\n`; `Amount` also collapses runs; `All` removes all whitespace. Whitespace is space, tab and `\r`, as in git's `isspace`. `CaseRule::Ignore` folds the key last, with `unicase`'s full Unicode case folding, already in the tree through GPUI; a key of ASCII without capitals stays borrowed. `ignore-pattern` cuts first, on the line without its terminator (`merge_core::pattern::Patterns`, compiled once and shared by `Arc`). `Comparison<'p>` borrows the patterns, so it stays `Copy`; `DiffOptions` and `MergeOptions` own them and are `Clone` only, and functions take them by reference. A comparison without filters borrows the static `pattern::NONE`, and a line no pattern matches stays borrowed. An exact comparison (`Comparison::is_exact`: the default rules, no patterns) returns the line itself before any rule runs: the chain of rules costs `align` 7% at 1M lines. `BlankLineRule` is no key rule: `diff2::regions` runs the diff as usual and marks a hunk `Kind2::Ignored` when `diff::is_blank_line` holds for every line on both sides, as git's `xdl_mark_ignorable` marks change groups. Blank lines that keyed equal would merge into `Unchanged` regions with unequal line counts on the two sides; a region kind of its own keeps `Unchanged` regions equal in length, which folds and scroll sync rely on, and gives the view filler rows for free. The field sits in `DiffOptions` beside the other filters; only `diff2` reads it, and `Settings::two_way` alone sets it, so merges never see it. An ignored region inside a long unchanged stretch splits that stretch's fold in two.
 
 #### A4.4 Three-way alignment (`merge_core::merge3`)
 
@@ -95,7 +95,7 @@ Region offsets live in a Fenwick tree of region byte lengths, and a second one o
 
 `DiffDocument` holds two buffers, each a rope with its own history and read-only flag, and the regions with a version. `recompute` takes O(1) rope clones for a background diff; `install` takes the result only when its version still matches, which gives spec §4.6's debounce. `copy_region` recomputes first when the regions lag the text.
 
-The moves (spec §4.6) run with the regions in each recompute and install with them as one `Diffed`, so they never name regions of another version. `diff2::moves` keys every right line of a `Changed` region once, by `line_key`, into a map from key to its places. Each block checks only the places of its line with the fewest, shifted back by that line's offset and kept inside the region; a block that matches twice stops at the second. A block of lines that each repeat many times among the inserted lines still checks every place of the rarest. Anchoring on the first line instead is quadratic where many blocks start with `}` or a blank line: 4.3 s at 100k lines. The benchmark `diff-load-braced` (`testing::generate_braced_changes`) builds that case: every block starts with `}`. On an M4 Pro the search costs 1.3 ms at 100k lines and 21 ms at 1M, of a load of 29 ms and 496 ms under Myers; on the generated pair, 0.1 ms and 1.2 ms of 10 ms and 191 ms. Histogram takes 2.1 s to diff the braced pair at 100k lines, Myers 29 ms: imara's histogram slows on a line repeated 20,000 times on each side, as git's does. Places that overlap another block's, found by a sweep in order of start with the largest end so far, drop out. `suggest::carried_edit` keeps its own search: it compares bytes, inside one-side regions of a merge, and needs no map for one conflict.
+The moves (spec §4.6) run with the regions in each recompute and install with them as one `Diffed`, so they never name regions of another version. `diff2::moves` keys every right line of a `Changed` region once, by `line_key`, into a map from key to its places. Each block checks only the places of its line with the fewest, shifted back by that line's offset and kept inside the region; a block that matches twice stops at the second. A block of lines that each repeat many times among the inserted lines still checks every place of the rarest. Anchoring on the first line instead is quadratic where many blocks start with `}` or a blank line: 4.3 s at 100k lines. The benchmark `diff-load-braced` (`testing::generate_braced_changes`) builds that case: every block starts with `}`. On an M4 Pro the search costs 1.3 ms at 100k lines and 21 ms at 1M, of a load of 29 ms and 494 ms under Myers; on the generated pair, 0.1 ms and 1.2 ms of 9 ms and 181 ms. Histogram takes 2.1 s to diff the braced pair at 100k lines, Myers 29 ms: imara's histogram slows on a line repeated 20,000 times on each side, as git's does. Places that overlap another block's, found by a sweep in order of start with the largest end so far, drop out. `suggest::carried_edit` keeps its own search: it compares bytes, inside one-side regions of a merge, and needs no map for one conflict.
 
 The intra-line marks (spec §5) also run in each recompute and install with the regions in `Diffed`. `diff2::marks` pairs each changed region's lines outside the move ends in order, left with right, and gives each side the byte ranges `diff::intraline_hunks` finds, terminators left out. They cost about 1.3 µs per pair on an M4 Pro: 130 ms when all 100k lines differ, 1.3 s at 1M, against a diff of 20 ms and 480 ms. That breaks spec §9's load target, so `DiffDocument::new` leaves the marks empty and the window computes them off the UI thread from `DiffDocument::marking`; `install_marks` takes them only for the current version. `copy_region` while the regions lag runs a recompute, marks included, on the UI thread.
 
@@ -229,12 +229,12 @@ A change to the alignment options re-aligns the open merge while every region ke
 
 | Benchmark | 100k | 1M |
 |---|---|---|
-| `load` | 26 ms | 479 ms |
-| `load-jj` | 42 ms | 516 ms |
-| `load-word-small` | 56 ms | 670 ms |
+| `load` | 25 ms | 464 ms |
+| `load-jj` | 42 ms | 505 ms |
+| `load-word-small` | 57 ms | 657 ms |
 | `load-word-large` | 1.61 s | 16.1 s |
-| `load-word-small-rust-bounded` | 50 ms | 546 ms |
-| `load-deep-rust-bounded` | 94 ms | 983 ms |
+| `load-word-small-rust-bounded` | 50 ms | 544 ms |
+| `load-deep-rust-bounded` | 93 ms | 976 ms |
 | `toggle`, `keystroke` | 0.7 / 0.8 µs | 0.9 / 0.8 µs |
 | Session heap, git / jj | 32 / 56 MB | 363 / 607 MB |
 
@@ -246,7 +246,7 @@ What sets these figures:
 - **Journal hashing** runs once per input on its own thread, so the window shows first.
 - **Incremental refresh.** The editor moves its decorations with each edit; `refresh` compares the new bands with the moved ranges (`marks::bands_unchanged`) and rebuilds only when a range or look differs. The keystroke maximum at 1M is the first key into a region, which changes its look. A pick always rebuilds. Bands, placeholders and status counts still scan every region per command.
 - **Ruler.** `ruler::painted` gives each whole pixel the style of the last mark on it and joins equal neighbours, so a long file paints no more runs than the strip has pixels. One quad per mark took a third of the main thread at 1M.
-- **Alignment** is 391 of load's 479 ms at 1M and grows faster than linear (19 ms at 100k): the first place to look if load nears 1 s.
+- **Alignment** is 368 of load's 464 ms at 1M and grows faster than linear (17 ms at 100k): the first place to look if load nears 1 s.
 - **Known whole-text copies**, each a few milliseconds and one file's size at 1M: `Recompute::run` copies both diff texts twice; `MergeDocument::output` copies the rope to save; `Text` keeps an 8-byte line start per line where `u32` would do under 4 GiB.
 
 **Idle memory.** The caret's blink draws every 500 ms, which keeps the Metal driver's reclaimable blocks in use: a bare GPUI window takes 52 MB idle and 185 MB blinking. The vendored caret rests, shown, after 10 s without a key, click or focus. At rest the demo diff of `fixtures/demo/code_a.py` and `code_b.py` takes 98 MB of physical footprint (p4merge: 121 MB): 37 MB of drawables, 33 MB of heap, and the binary. GPUI counts a window losing the front as a blur, which stops the blink. GPUI's per-window path texture and the drawables remain.
@@ -498,13 +498,13 @@ A region's text, less surrounding whitespace, is its core; a cut is a byte offse
 
 | Measure | 100k lines | 1M lines |
 |---|---|---|
-| `load-jj` | 42 ms | 516 ms |
-| `align-jj` | 34 ms | 424 ms |
+| `load-jj` | 42 ms | 505 ms |
+| `align-jj` | 34 ms | 426 ms |
 | Session peak heap, jj / git | 56 / 32 MB | 607 / 363 MB |
-| `load-word-small` (a one-line conflict every 20 lines) | 56 ms | 670 ms |
+| `load-word-small` (a one-line conflict every 20 lines) | 57 ms | 657 ms |
 | `load-word-large` (one conflict over the whole file) | 1.61 s | 16.1 s |
-| `load-word-small-rust`, off / bounded | 45 / 50 ms | 496 / 546 ms |
-| `load-deep-rust`, off / bounded | 49 / 94 ms | 525 / 983 ms |
+| `load-word-small-rust`, off / bounded | 45 / 50 ms | 496 / 544 ms |
+| `load-deep-rust`, off / bounded | 49 / 93 ms | 517 / 976 ms |
 
 - `load-word-large` is one call to jj-core's `ContentDiff::by_word`, about 16 µs per line, as jj's own word merge makes. Spec §9 exempts it (§B7, decision 5); `script/check-bench` holds it below 2 s at 100k and 20 s at 1M.
 - `cargo bench -p merge-syntax --bench boundaries` writes valid Rust: four-line functions with a conflict in every fifth. The deep case parses each conflict's window in both sides, about 9 µs a conflict.
