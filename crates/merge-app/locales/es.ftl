@@ -43,7 +43,6 @@ prompt-cannot-save = No se puede guardar el archivo
 prompt-ok = Aceptar
 prompt-changed-detail = Recárgalo y pierde tus ediciones, o conserva tu versión y sobrescríbelo más tarde.
 prompt-reload = Recargar
-prompt-overwrite = Sobrescribir
 prompt-output-changed-detail = Otro programa lo cambió desde que se abrió la fusión. Guardar y salir reemplaza esos cambios por la fusión.
 prompt-keep-mine = Conservar la mía
 prompt-changed-on-disk = { $name } cambió en el disco.

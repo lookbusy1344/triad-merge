@@ -156,7 +156,6 @@ pub(crate) mod prompt {
         changed_detail = "prompt-changed-detail";
         reload = "prompt-reload";
         keep_mine = "prompt-keep-mine";
-        overwrite = "prompt-overwrite";
         output_changed_detail = "prompt-output-changed-detail";
     }
 

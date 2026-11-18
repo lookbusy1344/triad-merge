@@ -54,7 +54,7 @@ Resolve a conflict by picking sources, or type in the result. Each region's firs
 
 The toolbar can take one side for every conflict left. The ruler at the right marks each change; click a mark to go there. Closing without a save exits 2; the VCS keeps its conflict.
 
-When another program changes the output file while the window is open, a banner says so at once. Save & Exit then asks before it replaces that file: Overwrite or Keep Editing.
+When another program changes the output file while the window is open, a banner says so at once, and the window asks once whether to go on: Keep Editing or Quit. Until you answer, the merge takes no picks or typing. After Keep Editing, Save & Exit replaces the file.
 
 #### Moved and duplicated blocks
 

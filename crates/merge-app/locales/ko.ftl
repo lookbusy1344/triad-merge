@@ -44,7 +44,6 @@ prompt-cannot-save = 파일을 저장할 수 없습니다
 prompt-ok = 확인
 prompt-changed-detail = 다시 불러와 편집을 잃거나, 내 버전을 유지하고 나중에 덮어써 저장하세요.
 prompt-reload = 다시 불러오기
-prompt-overwrite = 덮어쓰기
 prompt-output-changed-detail = 병합을 연 뒤 다른 프로그램이 변경했습니다. 저장 후 종료하면 그 변경이 병합 결과로 바뀝니다.
 prompt-keep-mine = 내 버전 유지
 prompt-changed-on-disk = { $name } 파일이 디스크에서 변경되었습니다.

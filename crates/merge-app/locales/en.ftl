@@ -48,7 +48,6 @@ prompt-cannot-save = Cannot save the file
 prompt-ok = OK
 prompt-changed-detail = Reload it and lose your edits, or keep your version and save over it later.
 prompt-reload = Reload
-prompt-overwrite = Overwrite
 prompt-output-changed-detail = Another program changed it since the merge opened. Save & Exit replaces its changes with the merge.
 prompt-keep-mine = Keep Mine
 prompt-changed-on-disk = { $name } changed on disk.

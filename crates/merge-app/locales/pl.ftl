@@ -45,7 +45,6 @@ prompt-cannot-save = Nie można zapisać pliku
 prompt-ok = OK
 prompt-changed-detail = Wczytaj go ponownie i utrać edycje albo zachowaj swoją wersję i zapisz ją na nim później.
 prompt-reload = Wczytaj ponownie
-prompt-overwrite = Nadpisz
 prompt-output-changed-detail = Inny program zmienił go od otwarcia scalania. Zapisz i zakończ zastąpi te zmiany scaleniem.
 prompt-keep-mine = Zachowaj moją
 prompt-changed-on-disk = Plik { $name } zmienił się na dysku.

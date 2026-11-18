@@ -44,7 +44,6 @@ prompt-cannot-save = 無法儲存檔案
 prompt-ok = 好
 prompt-changed-detail = 重新載入並捨棄你的編輯，或保留你的版本稍後覆寫儲存。
 prompt-reload = 重新載入
-prompt-overwrite = 覆寫
 prompt-output-changed-detail = 合併開啟後，另一個程式修改了它。儲存並結束會以合併結果取代這些修改。
 prompt-keep-mine = 保留我的
 prompt-changed-on-disk = { $name } 在磁碟上已變更。

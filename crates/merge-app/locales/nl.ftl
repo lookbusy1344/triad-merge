@@ -43,7 +43,6 @@ prompt-cannot-save = Kan het bestand niet opslaan
 prompt-ok = OK
 prompt-changed-detail = Laad het opnieuw en verlies je bewerkingen, of houd je eigen versie en sla die later eroverheen op.
 prompt-reload = Opnieuw laden
-prompt-overwrite = Overschrijven
 prompt-output-changed-detail = Een ander programma heeft het gewijzigd sinds de samenvoeging openging. Opslaan en stoppen vervangt die wijzigingen door de samenvoeging.
 prompt-keep-mine = Mijn versie houden
 prompt-changed-on-disk = { $name } is op schijf gewijzigd.

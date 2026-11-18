@@ -1,4 +1,4 @@
-//! Whether another program changed OUTPUT while the merge window is open (spec §6.3). The
+//! Whether another program changed OUTPUT while the merge window is open (spec §6.2). The
 //! window stamps OUTPUT when it opens and after a save that did not end the session, and
 //! checks each change the watcher reports against that stamp. Stamps and checks read the
 //! file off the UI thread; each carries the generation it began in, and a result from an
@@ -19,6 +19,8 @@ pub(crate) struct OutputWatch {
     generation: u64,
     /// OUTPUT differs from the stamp.
     changed: bool,
+    /// The window asked about a change once; it asks no more this session.
+    asked: bool,
     _watch: Option<Watch>,
 }
 
@@ -36,7 +38,14 @@ impl Read {
 
 impl OutputWatch {
     pub(crate) fn new(path: &Path, watch: Option<Watch>) -> Self {
-        Self { path: path.to_owned(), stamp: None, generation: 0, changed: false, _watch: watch }
+        Self {
+            path: path.to_owned(),
+            stamp: None,
+            generation: 0,
+            changed: false,
+            asked: false,
+            _watch: watch,
+        }
     }
 
     pub(crate) fn path(&self) -> &Path {
@@ -46,6 +55,14 @@ impl OutputWatch {
     /// OUTPUT differs from what it held at the latest stamp.
     pub(crate) fn changed(&self) -> bool {
         self.changed
+    }
+
+    /// Whether the window should ask about the change now: once per session, at the first.
+    /// Asking counts from here.
+    pub(crate) fn ask(&mut self) -> bool {
+        let ask = self.changed && !self.asked;
+        self.asked |= ask;
+        ask
     }
 
     /// Begin a new stamp. Checks already running are dropped, and the change goes until a
@@ -161,6 +178,20 @@ mod tests {
         let read = watch.restamp();
         watch.stamped(read.generation, Err(io::Error::other("busy")));
         assert!(watch.check().is_none());
+    }
+
+    #[test]
+    fn the_first_change_asks_and_no_later_one_does() {
+        let mut watch = stamped(b"theirs\n");
+        assert!(!watch.ask(), "nothing changed");
+        check(&mut watch, Ok(Stamp::of(b"other\n")));
+        assert!(watch.ask());
+        assert!(!watch.ask(), "asked once");
+        check(&mut watch, Ok(Stamp::of(b"theirs\n")));
+        check(&mut watch, Ok(Stamp::of(b"again\n")));
+        assert!(!watch.ask(), "a later change asks nothing");
+        let _ = watch.restamp();
+        assert!(!watch.ask(), "a restamp keeps the answer");
     }
 
     #[test]

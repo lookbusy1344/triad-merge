@@ -152,6 +152,8 @@ pub const JOURNAL_DEBOUNCE: Duration = Duration::from_millis(500);
 pub const ORIGIN_DEBOUNCE: Duration = Duration::from_millis(100);
 /// The index of the answer that goes ahead in every confirmation.
 const GO_AHEAD: usize = 0;
+/// Quit, the second answer to the question about a changed OUTPUT.
+const OUTPUT_QUIT: usize = 1;
 
 /// A close question's button label.
 fn closing_label(answer: Closing) -> SharedString {
@@ -570,6 +572,8 @@ pub struct MergeWindow {
     collapse: Collapse,
     /// Whether another program changed OUTPUT; none without an output.
     output_watch: Option<OutputWatch>,
+    /// The question about a changed OUTPUT is open: the merge takes no commands.
+    asking_output: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -819,6 +823,7 @@ impl MergeWindow {
             origin_column,
             result_labels: None,
             output_watch: None,
+            asking_output: false,
             _subscriptions: subscriptions,
         };
         this.output_watch = Self::watch_output(settings, window, cx);
@@ -876,8 +881,9 @@ impl MergeWindow {
         cx.spawn_in(window, async move |this, cx| {
             let generation = read.generation;
             let now = cx.background_spawn(async move { read.run() }).await;
-            ignore_closed_view(this.update(cx, |this, cx| {
+            ignore_closed_view(this.update_in(cx, |this, window, cx| {
                 if this.output_watch.as_mut().is_some_and(|w| w.checked(generation, now)) {
+                    this.ask_output_changed(window, cx);
                     cx.notify();
                 }
             }));
@@ -895,21 +901,33 @@ impl MergeWindow {
         Some(strings::output_changed_banner(&name).into())
     }
 
-    /// Ask before Save & Exit replaces an OUTPUT another program changed; write on Overwrite.
-    fn confirm_overwrite(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let name = self.output_watch.as_ref().map(|watch| watch.path().display().to_string());
+    /// Ask once, as soon as another program changes OUTPUT, whether to go on with the merge
+    /// (spec §6.2). The merge takes no picks or edits until the answer. Keep Editing goes on;
+    /// Quit closes the window as Close does.
+    fn ask_output_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(watch) = self.output_watch.as_mut() else {
+            return;
+        };
+        if !watch.ask() {
+            return;
+        }
+        let path = watch.path().display().to_string();
+        self.asking_output = true;
+        self.lock_result(cx);
         let answer = window.prompt(
             PromptLevel::Warning,
-            &prompt::changed_on_disk(name.as_deref().unwrap_or_default()),
+            &prompt::changed_on_disk(&path),
             Some(&prompt::output_changed_detail()),
-            &[PromptButton::new(prompt::overwrite()), PromptButton::new(prompt::keep_editing())],
+            &[PromptButton::new(prompt::keep_editing()), PromptButton::new(prompt::quit())],
             cx,
         );
         cx.spawn_in(window, async move |this, cx| {
-            let overwrite = answer.await == Ok(GO_AHEAD);
+            let quit = answer.await == Ok(OUTPUT_QUIT);
             ignore_closed_view(this.update_in(cx, |this, window, cx| {
-                if overwrite {
-                    this.check_descendants(window, cx);
+                this.asking_output = false;
+                this.lock_result(cx);
+                if quit {
+                    this.cancel(window, cx);
                 }
             }));
         })
@@ -1870,6 +1888,10 @@ impl MergeWindow {
 
     /// Run a command that is not an edit, after any edits still waiting.
     fn run(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
+        if self.asking_output {
+            tracing::info!("a command while the question about the output is open; ignored");
+            return;
+        }
         self.send_edits(window, cx);
         match self.apply(command, cx) {
             Ok(applied) => {
@@ -2272,6 +2294,10 @@ impl MergeWindow {
             log_refused(&refused, "a suggested edit");
             return;
         }
+        if self.asking_output {
+            tracing::info!("a suggested edit while the question about the output is open; ignored");
+            return;
+        }
         // The editor takes the text first, as when the user types; the core then records it.
         self.apply_patches(&batch.0, Caret::AtChange, window, cx);
         self.pinned = None;
@@ -2423,9 +2449,6 @@ impl MergeWindow {
             }
             Next::ConfirmClose => Self::confirm_close(window, cx),
             Next::SaveAndExit => self.save_and_exit(&SaveAndExit, window, cx),
-            Next::Write if self.output_watch.as_ref().is_some_and(OutputWatch::changed) => {
-                self.confirm_overwrite(window, cx);
-            }
             Next::Write => self.check_descendants(window, cx),
             Next::Record(code) => self.record_again(code, window, cx),
             Next::SaveCopyAs => self.save_copy_as(&SaveCopyAs, window, cx),
@@ -2645,7 +2668,13 @@ impl MergeWindow {
 
     /// Lock the result while a save writes it, and unlock it after.
     fn set_saving(&self, saving: bool, cx: &mut Context<Self>) {
-        self.result.update(cx, |state, cx| state.set_readonly(saving, cx));
+        let locked = saving || self.asking_output;
+        self.result.update(cx, |state, cx| state.set_readonly(locked, cx));
+    }
+
+    /// Lock the result while a save runs or the question about OUTPUT is open.
+    fn lock_result(&self, cx: &mut Context<Self>) {
+        self.set_saving(self.session.saving(), cx);
     }
 
     /// Say why a save failed, and offer the answers `undone` allows: try again, save a copy,
@@ -2927,7 +2956,7 @@ impl MergeWindow {
                         // The element sets the state's read-only flag each frame.
                         Editor::new(&self.result)
                             .aria_label(strings::result_title())
-                            .readonly(self.session.saving())
+                            .readonly(self.session.saving() || self.asking_output)
                             .context_menu(move |menu, _, cx| {
                                 let items = this
                                     .upgrade()

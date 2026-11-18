@@ -177,7 +177,7 @@ View → Swap Sides in the diff window: the panes, their read-only flags, titles
 
 ### G13 Merge window reload
 
-The merge window watches its inputs as the diff window does (spec §6.1). A change asks Keep Mine (first) or Reload; Reload rebuilds the merge and drops the resolutions. Low value: git and jj pass copies that do not change. The merge window watches OUTPUT already: a change by another program shows a banner and Save & Exit asks before replacing it (spec §6.2).
+The merge window watches its inputs as the diff window does (spec §6.1). A change asks Keep Mine (first) or Reload; Reload rebuilds the merge and drops the resolutions. Low value: git and jj pass copies that do not change. The merge window watches OUTPUT already: a change by another program shows a banner and asks once whether to go on (spec §6.2).
 
 ### G14 Standard input
 

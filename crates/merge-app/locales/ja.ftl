@@ -44,7 +44,6 @@ prompt-cannot-save = ファイルを保存できません
 prompt-ok = OK
 prompt-changed-detail = 再読み込みして編集を破棄するか、自分の版を保持して後で上書き保存します。
 prompt-reload = 再読み込み
-prompt-overwrite = 上書き
 prompt-output-changed-detail = マージを開いた後に別のプログラムが変更しました。保存して終了すると、その変更はマージで置き換えられます。
 prompt-keep-mine = 自分の版を保持
 prompt-changed-on-disk = { $name } がディスク上で変更されました。

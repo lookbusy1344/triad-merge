@@ -3,16 +3,16 @@
 
 use crate::common;
 
-use common::{act, doc, open_saving};
+use common::{act, doc, open_saving, texts};
 use gpui_kit::test::TestWindowExt;
 use gpui_kit::{AnyWindowHandle, Entity, Role, TestAppContext};
-use merge_app::window::OUTPUT_BANNER_ID;
+use merge_app::window::{OUTPUT_BANNER_ID, RESULT_ID};
 use merge_app::{ExitCode, MergeWindow};
 use merge_core::document::MergeDocument;
 use tempfile::TempDir;
 
-const OVERWRITE: &str = "Overwrite";
 const KEEP_EDITING: &str = "Keep Editing";
+const QUIT: &str = "Quit";
 const BANNER: &str = "out changed on disk since the merge opened. Save & Exit replaces it.";
 /// What the merge of [`clean`] writes.
 const MERGED: &str = "A\nb\nC\n";
@@ -140,29 +140,88 @@ fn save_and_exit_without_a_change_asks_nothing(cx: &mut TestAppContext) {
     assert_eq!(o.finished.codes(), [ExitCode::Resolved]);
 }
 
-#[gpui_kit::test]
-fn save_and_exit_after_a_change_asks_and_overwrite_writes(cx: &mut TestAppContext) {
-    let o = open(cx, Some("theirs\n"));
-    o.write("other\n");
-    output_changed(cx, &o);
-    save_and_exit(cx, &o);
-    assert!(cx.has_pending_prompt());
-    assert_eq!(o.written().as_deref(), Some("other\n"), "nothing written before the answer");
-    cx.simulate_prompt_answer(OVERWRITE);
+/// Click the result at its start, then type `text` there.
+fn type_in_result(cx: &mut TestAppContext, o: &Opened, text: &str) {
+    common::set_caret(cx, &o.view, 0);
+    act(cx, o.window, |window, cx| window.click(RESULT_ID, cx));
+    common::set_caret(cx, &o.view, 0);
+    act(cx, o.window, |window, cx| window.input(text, cx));
     cx.run_until_parked();
-    assert_eq!(o.written().as_deref(), Some(MERGED));
+}
+
+/// Write `text` to OUTPUT and tell the window, as the watcher does.
+fn change(cx: &mut TestAppContext, o: &Opened, text: &str) {
+    o.write(text);
+    output_changed(cx, o);
+}
+
+#[gpui_kit::test]
+fn a_change_asks_at_once_and_locks_the_merge_until_answered(cx: &mut TestAppContext) {
+    let o = open(cx, Some("theirs\n"));
+    change(cx, &o, "other\n");
+    assert!(cx.has_pending_prompt());
+    type_in_result(cx, &o, "x");
+    assert_eq!(texts(cx, &o.view), (MERGED.to_owned(), MERGED.to_owned()), "no typing now");
+    // ⌘1 toggles the left side's pick in the first region; it changes nothing now.
+    act(cx, o.window, |window, cx| window.press("secondary-1", cx));
+    assert_eq!(texts(cx, &o.view).0, MERGED, "no picks while the question is open");
+    cx.simulate_prompt_answer(KEEP_EDITING);
+    cx.run_until_parked();
+    act(cx, o.window, |window, cx| window.press("secondary-1", cx));
+    // The region holds no pick now, so its line goes.
+    assert_eq!(texts(cx, &o.view).0, "b\nC\n", "picks work again");
+}
+
+#[gpui_kit::test]
+fn after_keep_editing_further_changes_and_save_ask_nothing(cx: &mut TestAppContext) {
+    let o = open(cx, Some("theirs\n"));
+    change(cx, &o, "other\n");
+    cx.simulate_prompt_answer(KEEP_EDITING);
+    cx.run_until_parked();
+    change(cx, &o, "another\n");
+    assert!(!cx.has_pending_prompt(), "one question per session");
+    type_in_result(cx, &o, "x");
+    assert_eq!(texts(cx, &o.view).1, "xA\nb\nC\n", "typing works");
+    assert_eq!(banner(cx, &o).and_then(|b| b.1).as_deref(), Some(BANNER), "the banner stays");
+    save_and_exit(cx, &o);
+    assert!(!cx.has_pending_prompt());
+    assert_eq!(o.written().as_deref(), Some("xA\nb\nC\n"));
     assert_eq!(o.finished.codes(), [ExitCode::Resolved]);
 }
 
 #[gpui_kit::test]
-fn keep_editing_leaves_the_changed_output_and_the_window(cx: &mut TestAppContext) {
+fn a_change_undone_before_the_answer_still_counts_as_asked(cx: &mut TestAppContext) {
     let o = open(cx, Some("theirs\n"));
-    o.write("other\n");
-    output_changed(cx, &o);
-    save_and_exit(cx, &o);
+    change(cx, &o, "other\n");
+    change(cx, &o, "theirs\n");
     cx.simulate_prompt_answer(KEEP_EDITING);
     cx.run_until_parked();
+    assert_eq!(banner(cx, &o), None);
+    change(cx, &o, "other\n");
+    assert!(!cx.has_pending_prompt());
+}
+
+#[gpui_kit::test]
+fn quit_without_edits_exits_2_and_leaves_the_output(cx: &mut TestAppContext) {
+    let o = open(cx, Some("theirs\n"));
+    change(cx, &o, "other\n");
+    cx.simulate_prompt_answer(QUIT);
+    cx.run_until_parked();
     assert_eq!(o.written().as_deref(), Some("other\n"));
+    assert_eq!(o.finished.codes(), [ExitCode::Cancelled]);
+}
+
+#[gpui_kit::test]
+fn quit_after_edits_asks_to_save_as_close_does(cx: &mut TestAppContext) {
+    let o = open(cx, Some("theirs\n"));
+    act(cx, o.window, |window, cx| window.press("secondary-1", cx));
+    change(cx, &o, "other\n");
+    cx.simulate_prompt_answer(QUIT);
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt(), "Save your changes?");
+    cx.simulate_prompt_answer(KEEP_EDITING);
+    cx.run_until_parked();
     assert_eq!(o.finished.codes(), []);
-    assert_eq!(banner(cx, &o).and_then(|b| b.1).as_deref(), Some(BANNER), "the banner stays");
+    type_in_result(cx, &o, "x");
+    assert_eq!(texts(cx, &o.view).1, "xb\nC\n", "the merge goes on");
 }

@@ -43,7 +43,6 @@ prompt-cannot-save = Kan inte spara filen
 prompt-ok = OK
 prompt-changed-detail = Läs in den igen och förlora dina redigeringar, eller behåll din version och spara över den senare.
 prompt-reload = Läs in igen
-prompt-overwrite = Skriv över
 prompt-output-changed-detail = Ett annat program har ändrat den sedan sammanslagningen öppnades. Spara och avsluta ersätter de ändringarna med sammanslagningen.
 prompt-keep-mine = Behåll min
 prompt-changed-on-disk = { $name } har ändrats på disken.

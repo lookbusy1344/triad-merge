@@ -45,7 +45,6 @@ prompt-cannot-save = Не вдається зберегти файл
 prompt-ok = Гаразд
 prompt-changed-detail = Перезавантажте файл і втратьте правки або залиште свою версію і збережіть її поверх пізніше.
 prompt-reload = Перезавантажити
-prompt-overwrite = Перезаписати
 prompt-output-changed-detail = Інша програма змінила його після відкриття злиття. «Зберегти і вийти» замінить ці зміни результатом злиття.
 prompt-keep-mine = Залишити мою
 prompt-changed-on-disk = Файл { $name } змінився на диску.

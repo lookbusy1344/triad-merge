@@ -44,7 +44,6 @@ prompt-cannot-save = Impossible d’enregistrer le fichier
 prompt-ok = OK
 prompt-changed-detail = Rechargez-le et perdez vos modifications, ou gardez votre version et enregistrez-la par-dessus plus tard.
 prompt-reload = Recharger
-prompt-overwrite = Écraser
 prompt-output-changed-detail = Un autre programme l’a modifié depuis l’ouverture de la fusion. Enregistrer et quitter remplace ces modifications par la fusion.
 prompt-keep-mine = Garder la mienne
 prompt-changed-on-disk = { $name } a changé sur le disque.

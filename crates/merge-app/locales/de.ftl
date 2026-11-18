@@ -43,7 +43,6 @@ prompt-cannot-save = Die Datei kann nicht gespeichert werden
 prompt-ok = OK
 prompt-changed-detail = Neu laden und die Bearbeitungen verlieren, oder die eigene Fassung behalten und sie später darüber speichern.
 prompt-reload = Neu laden
-prompt-overwrite = Überschreiben
 prompt-output-changed-detail = Ein anderes Programm hat sie geändert, seit die Zusammenführung geöffnet wurde. Speichern und beenden ersetzt diese Änderungen durch die Zusammenführung.
 prompt-keep-mine = Meine behalten
 prompt-changed-on-disk = { $name } wurde auf der Festplatte geändert.

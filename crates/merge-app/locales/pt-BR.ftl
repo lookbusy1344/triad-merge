@@ -44,7 +44,6 @@ prompt-cannot-save = Não é possível salvar o arquivo
 prompt-ok = OK
 prompt-changed-detail = Recarregue e perca suas edições, ou mantenha sua versão e salve por cima depois.
 prompt-reload = Recarregar
-prompt-overwrite = Sobrescrever
 prompt-output-changed-detail = Outro programa o alterou desde que a mesclagem foi aberta. Salvar e sair substitui essas alterações pela mesclagem.
 prompt-keep-mine = Manter a minha
 prompt-changed-on-disk = { $name } mudou no disco.
