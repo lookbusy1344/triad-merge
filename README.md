@@ -10,7 +10,7 @@
 [![Audit](https://github.com/lookbusy1344/triad-merge/actions/workflows/audit.yml/badge.svg)](https://github.com/lookbusy1344/triad-merge/actions/workflows/audit.yml)
 [![crates.io](https://img.shields.io/crates/v/triad-merge.svg)](https://crates.io/crates/triad-merge)
 
-triad is a native 3-way merge and 2-way diff tool, written in Rust and GPUI, built for [Jujutsu](https://www.jj-vcs.dev/latest/) with full Git support. It runs on macOS, Linux and Windows. It opens a million-line merge in under a second, merges as your VCS does, and resolves conflicts straight from the repository. The binary is `triad-merge`.
+triad is a native 3-way merge and 2-way diff tool, written in Rust and GPUI, built for [Jujutsu](https://www.jj-vcs.dev/latest/) with full Git support. It runs on macOS, Linux and Windows. It opens a million-line merge in under a second, merges as your VCS does, and resolves conflicts in the repository. The binary is `triad-merge`.
 
 ![The triad merge window: left and right inputs above, the result below, with conflict 1 of 20 selected](images/merge.png)
 
@@ -20,9 +20,8 @@ triad 0.1 is an early beta, tested on macOS 27 on Apple Silicon. [Releases](http
 
 ## Why triad
 
-- **Jujutsu first.** In a Jujutsu (jj) repository triad merges with jj's rules.
+- **Jujutsu first.** In a Jujutsu (jj) repository triad merges with jj's rules. It also resolves conflicts in any commit, walks a file through the operation log and absorbs edits into the commits that wrote the lines (§ Jujutsu-enabled features).
 - **Git parity.** In a git repository triad merges as `git merge-file` does, byte for byte. Every feature git can support works in both.
-- **Enhanced Jujutsu features.** Resolve a conflict in any commit, walk a file through the operation log, absorb edits into the commits that wrote the lines (§ Jujutsu-enabled features).
 - **Checked semantics.** Two oracle corpora pin the engine: about 1,970 merges from jj-lib and 1,950 triples from `git merge-file`.
 - **Fast on large files.** Panes draw only the rows on screen; scrolling holds the display's refresh rate at 1M lines.
 - **No jj or git binaries.** triad reads and writes repositories in-process through jj-lib and gix.
@@ -134,12 +133,12 @@ Exit codes: 0 all conflicts resolved, 1 conflicts left, 2 cancelled, 3 error.
 
 ## Code size
 
-About 87,000 lines of Rust in `crates/`, blank lines and comments excluded, as `script/code-size` counts them. Tests make up more than half.
+About 88,000 lines of Rust in `crates/`, blank lines and comments excluded, as `script/code-size` counts them. Tests make up more than half.
 
 | Part | Lines |
 |---|---|
 | Product code | 34,000 |
-| Tests: `tests/`, `#[cfg(test)]` modules and test-support modules | 51,000 |
+| Tests: `tests/`, `#[cfg(test)]` modules and test-support modules | 52,000 |
 | Benchmarks and examples | 2,000 |
 
 The GPUI shell, `merge-app`, holds 15,000 lines of product code; `merge-core` holds 5,000. `vendor/gpui-base` is left out.

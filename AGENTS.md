@@ -19,12 +19,11 @@ triad is built for jj. git comes second, with parity wherever git has the capabi
 - The product reaches jj and git only through jj-lib and gix, never their executables.
 - In a jj repository triad merges with jj's semantics only.
 
-**jj means jj's default layout.** Every jj repository takes jj's default layout, colocated with git, unless a test, script or doc names another. This covers fixtures, scripts, docs and manual checks. Docs assume the default without comment: write "jj repository", never "colocated jj repository" or "colocated or not". Name the layout only for an internal repository, where behaviour differs. The default is named in one place, so a change to jj's default is a one-line change:
+**jj means jj's default layout**, colocated with git, in fixtures, scripts, docs and manual checks. Write "jj repository", never "colocated jj repository". Name the layout only for an internal repository, which keeps its git store inside `.jj` and behaves differently. The default is named in one place:
 
 - Fixtures: `Fixture::new` follows `vcs_jj::testing::DEFAULT_STORE`.
 - Scripts and docs: `jj git init` with neither `--colocate` nor `--no-colocate`.
-- A test about one layout names it: `Fixture::colocated` or `Fixture::internal`.
-- An internal jj repository keeps its git store inside `.jj`. Create one only on purpose (`Fixture::internal`, `jj git init --no-colocate`) and call it internal.
+- A test about one layout names it: `Fixture::colocated` or `Fixture::internal`. Create an internal repository only on purpose (`Fixture::internal`, `jj git init --no-colocate`).
 
 ## Version control
 
@@ -37,13 +36,13 @@ Before the first VCS command, run `jj --ignore-working-copy root` on its own. Th
 
 ## Commit gate
 
-Each gate runs once per commit and once per push. jj has no commit hooks, so nothing else runs this gate: run it by hand before `jj commit`, `jj describe` (finalising) and `jj squash`. In a git checkout with the hook installed, `git commit` runs it; do not run it by hand first.
+jj has no commit hooks: run the gate by hand before `jj commit`, `jj describe` (finalising) and `jj squash`. In a git checkout with the hook installed, `git commit` runs it; do not run it by hand first.
 
 ```sh
 script/pre-commit              # from the repo root
 ```
 
-**The gate takes under 35 s on a warm build.** An edit to `merge-app` takes 12 s, one to `merge-core` 16 s. An edit under `vendor/` has a 60 s limit; it takes 45 s (`DESIGN.md` §A13.5). A run over its limit is a defect, not a slow run. Stop, report it to the owner with the time of each step, and fix the cause before going on. Never wait it out or raise a limit. Check the object count under `target/debug/build` first: a huge file count there slows every rustc run (`DESIGN.md` §A13.5).
+**Limits: 35 s on a warm build, 60 s after an edit under `vendor/`.** `DESIGN.md` §A13.5 holds the measured times. A run over its limit is a defect, not a slow run. Stop, report each step's time to the owner, and fix the cause before going on. Never wait it out or raise a limit. Check the object count under `target/debug/build` first: a huge file count there slows every rustc run.
 
 The gate reads the changes in `@` (jj) or against `HEAD` (git). It skips the checks when no build file changed: `.rs`, `Cargo.toml`, `Cargo.lock`, `deny.toml`, `.cargo/config.toml`, toolchain and format config, `script/`, `fixtures/`. Otherwise it runs `script/checks --quick` on the changed paths:
 
@@ -59,7 +58,7 @@ cargo deny check                  # when a manifest, Cargo.lock or deny.toml cha
 - Every step passes with zero warnings. On a format failure, run `cargo fmt --all` and rerun.
 - A change to `docs/` or to a Markdown file at the root runs no tests. A change to `vendor/` runs the tests of the crates that depend on `gpui-kit` and their dependents. Any other path outside `crates/` runs the whole profile.
 - The `quick` profile (`.config/nextest.toml`) leaves out the tests that build jj repositories, the scrolling tests and the serial tests that compare against the editor's highlighter; git conformance stays in. A test that builds a jj repository sits in a `jj` module, and the profile names that module. A change to `vcs-jj`, to jj behaviour, to scrolling or to syntax highlighting runs the full suite before commit: `script/checks`.
-- What keeps it fast: `cargo nextest run --no-run` builds only what the tests need; clippy always covers the whole workspace, so every run shares one feature set and build cache; each crate links one integration-test binary, `tests/main.rs` (`autotests = false`); dev builds carry no debug info.
+- Each crate links one integration-test binary, `tests/main.rs` (`autotests = false`). A new test file is a module there.
 - In a plain git checkout, install the gate once: `ln -sf ../../script/pre-commit .git/hooks/pre-commit`.
 
 ## Tests
@@ -79,7 +78,7 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 - `--full`: formats every mutable revision in `::@` and checks each in its own checkout through `jj run`.
 - Plain git: checks `HEAD` (`--full`: each commit in `@{upstream}..HEAD`), without formatting. Install once: `ln -sf ../../script/pre-push .git/hooks/pre-push`.
 
-`script/agent-pre-push-hook` runs the tip check once before a command that pushes, and blocks the push on failure. Claude Code calls it as a `PreToolUse` hook from `.claude/settings.json`. A command pushes when one of its simple commands is `jj git push`, `jj pmain` or `git push` without a help or dry-run flag; quoted text, heredoc bodies and comments never count. When git's `pre-push` hook is `script/pre-push`, git runs the check on `git push` and the agent hook leaves it to git. `script/test-agent-pre-push-hook` checks both; `script/checks` runs it when either script changes. It checks the tip of `@`, not the pushed bookmark, so push only the bookmark on `@-`, with an empty `@` above it.
+`script/agent-pre-push-hook`, a `PreToolUse` hook in `.claude/settings.json`, runs the tip check once before a command that pushes (`jj git push`, `jj pmain`, `git push`) and blocks the push on failure. When git's `pre-push` hook is `script/pre-push`, it leaves `git push` to git. It checks the tip of `@`, not the pushed bookmark: push only the bookmark on `@-`, with an empty `@` above it.
 
 ## Rules
 
@@ -120,7 +119,7 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
   - `with_capacity` when the length is known. Small `Copy` types go by value.
 - **Licences.** Dependencies pass `cargo deny check`.
 - **Publish age.** `.cargo/config.toml` sets `registry.global-min-publish-age = "3 days"`: `cargo update`, `cargo add` and `cargo generate-lockfile` take only versions published at least three days ago. Cargo.lock keeps what it already holds.
-- **Security audits.** Run `cargo audit` once per working session and after any dependency change. Fix or report every vulnerability. Before adding or bumping a dependency, also check Dependabot (`gh api -X GET repos/{owner}/{repo}/dependabot/alerts -f state=open`): RustSec, which `cargo audit` and `cargo deny` read, lags GitHub advisories. Known and needing no action: unmaintained-crate warnings deep in the GPUI tree, and the future-incompatibility notice for `block 0.1.6`, which GPUI's macOS backend pulls in through `cocoa` and `metal`, until a `gpui-kit` release drops it.
+- **Security audits.** Run `cargo audit` once per working session and after any dependency change. Fix or report every vulnerability. Before adding or bumping a dependency, also check Dependabot (`gh api -X GET repos/{owner}/{repo}/dependabot/alerts -f state=open`): RustSec, which `cargo audit` and `cargo deny` read, lags GitHub advisories. Known, no action: unmaintained-crate warnings deep in the GPUI tree, and `block 0.1.6`'s future-incompatibility notice (GPUI's macOS backend, through `cocoa` and `metal`) until a `gpui-kit` release drops it.
 
 ## Commands
 
@@ -134,9 +133,7 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | Lines of Rust, product code and tests apart, for README § Code size | `script/code-size` |
 | Cost of `resolve`'s repository steps on 10k and 100k files (`DESIGN.md` §D5.5) | `cargo bench -p merge-cli --bench resolve` |
 | Measure the running app against spec §9 (`DESIGN.md` §A6.7) | `script/measure-app` (`docs/release-checklist.md`) |
-| Check that `script/pre-push` removes its git clone on every exit; `script/checks` runs it when either script changes | `script/test-pre-push` |
-| Check that `script/agent-pre-push-hook` runs the push check once per push and never for a command that only mentions one; `script/checks` runs it when either script changes | `script/test-agent-pre-push-hook` |
-| Check the revision `script/build-id` names and `script/pre-push` checks, merges included; `script/checks` runs it when one of the three changes | `script/test-tip` |
+| Tests of the push scripts: `pre-push` removes its clone on every exit; the agent hook runs once per push; `build-id` and `pre-push` name the right tip, merges included. `script/checks` runs each when its scripts change | `script/test-pre-push`, `script/test-agent-pre-push-hook`, `script/test-tip` |
 | Linux test machine in OrbStack (`DESIGN.md` §E7.1) | `script/linux/run image` once and after each new stable Rust; then `script/linux/run cargo build -p triad-merge`, `script/linux/run cargo nextest run --workspace --profile linux-emulated`, `script/linux/run script/linux/smoke wayland` or `x11` |
 | Linux CI locally (needs OrbStack running) | `act workflow_dispatch -W .github/workflows/<triad\|bench\|audit>.yml [-j <job>] -P ubuntu-latest=catthehacker/ubuntu:act-latest --container-architecture linux/arm64`; `triad.yml` runs only its Linux matrix entry under act. act runs as root, so the tests of unreadable or unwritable paths fail there; GitHub's runners do not run as root |
 | Linux packages into `target/linux/dist` | `script/linux/run script/package x86_64-unknown-linux-gnu` |
