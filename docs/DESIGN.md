@@ -313,6 +313,7 @@ Release 1 is for local use: no Developer ID signing, notarisation or Homebrew ca
 3. The licence is MIT (owner, 2026-10-25). libgit2's tests are GPL-2.0-only and Zed's crates GPL-3.0-or-later, so they give case lists and designs only.
 4. A repository with `.jj` is a jj repository and merges with jj's semantics (§B3) (owner, 2026-10-27).
 5. gix moves with jj-lib, exact-pinned together, so the build holds one gix (§A3).
+6. triad ships as release binaries and builds from source in its repository, never through crates.io (owner, 2026-11-18). crates.io takes no path or git dependencies and ignores `[patch.crates-io]`. A crates.io `triad-merge` would need all ten internal crates published under public names, plus the patched `gpui-base` (§A6.1) as a forked crate: twelve crates to version in lockstep, each a public API. The workspace keeps its crates for their layering (§A2), and the `triad-merge` crate on crates.io stays a placeholder that holds the name. A library crate that stands alone, such as `merge-core`, may be published later under a `triad-` name.
 
 ### A13 Code structure
 

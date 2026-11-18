@@ -8,7 +8,6 @@
 [![Build & test](https://github.com/lookbusy1344/triad-merge/actions/workflows/triad.yml/badge.svg)](https://github.com/lookbusy1344/triad-merge/actions/workflows/triad.yml)
 [![CodeQL](https://github.com/lookbusy1344/triad-merge/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/lookbusy1344/triad-merge/actions/workflows/github-code-scanning/codeql)
 [![Audit](https://github.com/lookbusy1344/triad-merge/actions/workflows/audit.yml/badge.svg)](https://github.com/lookbusy1344/triad-merge/actions/workflows/audit.yml)
-[![crates.io](https://img.shields.io/crates/v/triad-merge.svg)](https://crates.io/crates/triad-merge)
 
 triad is a native 3-way merge and 2-way diff tool, written in Rust and GPUI, built for [Jujutsu](https://www.jj-vcs.dev/latest/) with full Git support. It runs on macOS, Linux and Windows. It opens a million-line merge in under a second, merges as your VCS does, and resolves conflicts in the repository. The binary is `triad-merge`.
 
@@ -83,7 +82,7 @@ An idle window draws nothing.
 
 ## Install
 
-The crates.io package only holds the name; `cargo install triad-merge` does not install triad.
+triad ships as release binaries and builds from source; it is not distributed through crates.io. The `triad-merge` crate there only holds the name, so `cargo install triad-merge` does not install triad.
 
 ### From a release
 
