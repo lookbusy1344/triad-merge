@@ -76,7 +76,7 @@ In order. Each is one or more commits.
 | Ruler marks with folds: the marks keep their place in the whole file while the thumb follows display rows | A choice between the two | §G2 |
 | A key that opens the fold next to the caret | — | §G2 |
 | A `fallback-encoding` setting to turn the Windows-1252 fallback off | Someone who needs it off | §G17 |
-| Review and diff features: blank lines in a merge (§G4), §G7–§G9, §G11–§G14 | Owner's choices on §G15's open points for §G4 and §G8 | G |
+| Review and diff features: blank lines in a merge (§G4), §G7–§G9, §G11–§G14 | Owner's choice on §G15's open point for §G4 | G |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
 | The absorb oracle's generator builds text files only: no renames, executable bits, symlinks, conflicted inputs or immutable commits | — | §I5 |
 | jj-cli's config defaults other than the revset aliases: none checked for whether triad depends on one | — | §I5 |
@@ -158,7 +158,7 @@ Done: the matcher, `diff2::moves` (spec §4.6, `DESIGN.md` §A4.7), recomputed a
 ### G8 Line picks inside a conflict
 
 - Each line of a side in a conflict gets a hit target in the top pane. Picked lines go into the result in source order, then line order.
-- Open: a new resolution, `Lines(Vec<(Source, Range)>)`, that toggles line by line and needs a journal version; or picks that build `Edited` text, which needs no model change but cannot be toggled back. Proposed: the new resolution.
+- A new resolution, `Lines(Vec<(Source, Range)>)`, toggles line by line and keeps each line's origin. It needs a journal version and a change to `inspect`'s schema (§G15).
 - Tests: every order of picks across two sides; toggling a line off; a line without a newline before another pick (spec §4.4); undo.
 
 ### G9 Unified view in the diff window
@@ -244,7 +244,15 @@ A file that is not valid UTF-8 and has no byte order mark decodes as Windows-125
 
 - **G16 duplicates:** decided. A duplicate is reported in the ruler, the status bar and `inspect`, and each copy suggests `Drop Duplicate of Line N`, which deletes that copy as one edit and one undo, as Carry Edit does; the user picks which place keeps the block.
 
-Open: G4's blank lines in a merge, G8's resolution model.
+- **G8 model:** decided. A new resolution, `Lines(Vec<(Source, Range)>)`, not picks that write `Edited` text: the region stays toggleable and keeps each line's origin.
+- **G8 rules:** decided.
+  - Picked lines go into the result in source order, sides by index then bases, and in line order within a source; click order does not count.
+  - A line pick adds to a whole-side pick: each picked side becomes the range of all its lines. A `Lines` selection that covers whole sources in source order collapses to `Pick`, so each state has one form.
+  - Base lines can be picked one at a time; their targets show while the base pane shows.
+  - Turning off a conflict's last picked line leaves it unresolved, as with whole sources (spec §4.4).
+  - A click toggles a line, a shift-click a range, and a key toggles the line under the top pane's caret.
+
+Open: G4's blank lines in a merge.
 
 ## J. Screen-reader support
 
