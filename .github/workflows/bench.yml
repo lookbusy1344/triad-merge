@@ -34,7 +34,7 @@ jobs:
             echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
             export PATH="$HOME/.cargo/bin:$PATH"
           fi
-          rustup show active-toolchain || rustup toolchain install
+          rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - run: cargo bench -p merge-core --bench merge --locked -- 'load|toggle|keystroke'
       - run: cargo bench -p merge-syntax --bench boundaries --locked -- bounded

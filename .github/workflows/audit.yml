@@ -32,7 +32,7 @@ jobs:
             echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
             export PATH="$HOME/.cargo/bin:$PATH"
           fi
-          rustup show active-toolchain || rustup toolchain install
+          rustup toolchain install
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-audit,cargo-deny

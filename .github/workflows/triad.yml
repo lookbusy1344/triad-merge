@@ -41,7 +41,7 @@ jobs:
             echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
             export PATH="$HOME/.cargo/bin:$PATH"
           fi
-          rustup show active-toolchain || rustup toolchain install
+          rustup toolchain install
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-deny
@@ -79,7 +79,7 @@ jobs:
             echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
             export PATH="$HOME/.cargo/bin:$PATH"
           fi
-          rustup show active-toolchain || rustup toolchain install
+          rustup toolchain install
       # Only main saves the cache, so branches cannot push main's out of the 10 GB limit.
       - uses: Swatinem/rust-cache@v2
         with:
