@@ -272,30 +272,49 @@ pub fn align_bounded(
     } else {
         Vec::new()
     };
-    let mut merged = merged.into_iter();
-    let mut regions = Vec::with_capacity(classified.len());
     let mut word_merged = Vec::new();
-    for mut region in classified {
-        if let Some(text) = merged.next().flatten() {
+    for (region, text) in classified.iter_mut().zip(merged) {
+        if let Some(text) = text {
             region.kind = Kind::WordMerged;
             word_merged.push(text);
         }
-        if region.kind != Kind::Conflict || opts.refine == Refine::Off {
-            regions.push(region);
-            continue;
-        }
-        let mode = opts.diff.comparison();
-        let trimmed = split_shared_ends(inputs, &region, mode);
-        if opts.refine == Refine::Deep {
-            regions.extend(trimmed.into_iter().flat_map(|piece| match piece.kind {
-                Kind::Conflict => split_shared_blocks(inputs, &piece, mode, boundaries),
-                _ => vec![piece],
-            }));
-        } else {
-            regions.extend(trimmed);
-        }
     }
+    // Each conflict refines alone; deep refinement's diffs and syntax parses dominate a load.
+    let regions = if opts.refine == Refine::Off {
+        classified
+    } else {
+        let mode = opts.diff.comparison();
+        classified
+            .into_par_iter()
+            .flat_map_iter(|region| refine(inputs, region, opts.refine, mode, boundaries))
+            .collect()
+    };
     Aligned { regions, word_merged }
+}
+
+/// `region` split by `refine`: a conflict's shared ends, and under [`Refine::Deep`] the
+/// blocks both sides share inside it. Any other region stays whole.
+fn refine(
+    inputs: &Inputs,
+    region: Region,
+    refine: Refine,
+    mode: Comparison,
+    boundaries: Option<&dyn Boundaries>,
+) -> Vec<Region> {
+    if region.kind != Kind::Conflict {
+        return vec![region];
+    }
+    let trimmed = split_shared_ends(inputs, &region, mode);
+    if refine != Refine::Deep {
+        return trimmed;
+    }
+    trimmed
+        .into_iter()
+        .flat_map(|piece| match piece.kind {
+            Kind::Conflict => split_shared_blocks(inputs, &piece, mode, boundaries),
+            _ => vec![piece],
+        })
+        .collect()
 }
 
 /// The text of `region` merged word by word, as jj-lib's `merge_hunk_by_word` does: jj's word

@@ -233,8 +233,8 @@ A change to the alignment options re-aligns the open merge while every region ke
 | `load-jj` | 42 ms | 505 ms |
 | `load-word-small` | 57 ms | 657 ms |
 | `load-word-large` | 1.61 s | 16.1 s |
-| `load-word-small-rust-bounded` | 50 ms | 544 ms |
-| `load-deep-rust-bounded` | 93 ms | 976 ms |
+| `load-word-small-rust-bounded` | 50 ms | 541 ms |
+| `load-deep-rust-bounded` | 49 ms | 510 ms |
 | `toggle`, `keystroke` | 0.7 / 0.8 µs | 0.9 / 0.8 µs |
 | Session heap, git / jj | 32 / 56 MB | 363 / 607 MB |
 
@@ -492,7 +492,7 @@ A region's text, less surrounding whitespace, is its core; a cut is a byte offse
 - **Word merge.** A cut is clean when it lies inside no token (a leaf: a string's content, a comment, `->`). The node rule would reject nearly every word merge, since every word hunk lies inside some statement. The merge's text stays only when every word hunk resolved from a side starts and ends at clean cuts of each side holding its text.
 - The region parses with the lines around it, from the top-level line at or before it to the first top-level line after it (§F4). A window over 20 000 lines, an input without a grammar, or an error node across the core leaves every cut clean.
 
-`merge-core` stays free of tree-sitter: `merge_core::boundaries` holds `Cuts` and the `Boundaries` trait; `merge_syntax::boundaries::SyntaxBoundaries` implements it, parsing each region's window, never the whole file. Each thread keeps one parser.
+`merge-core` stays free of tree-sitter: `merge_core::boundaries` holds `Cuts` and the `Boundaries` trait; `merge_syntax::boundaries::SyntaxBoundaries` implements it, parsing each region's window, never the whole file. `align_bounded` refines each conflict on rayon, so the parses spread over the cores; each thread keeps one parser.
 
 ### B6 Benchmarks
 
@@ -503,11 +503,11 @@ A region's text, less surrounding whitespace, is its core; a cut is a byte offse
 | Session peak heap, jj / git | 56 / 32 MB | 607 / 363 MB |
 | `load-word-small` (a one-line conflict every 20 lines) | 57 ms | 657 ms |
 | `load-word-large` (one conflict over the whole file) | 1.61 s | 16.1 s |
-| `load-word-small-rust`, off / bounded | 45 / 50 ms | 496 / 544 ms |
-| `load-deep-rust`, off / bounded | 49 / 93 ms | 517 / 976 ms |
+| `load-word-small-rust`, off / bounded | 45 / 50 ms | 498 / 541 ms |
+| `load-deep-rust`, off / bounded | 43 / 49 ms | 458 / 510 ms |
 
 - `load-word-large` is one call to jj-core's `ContentDiff::by_word`, about 16 µs per line, as jj's own word merge makes. Spec §9 exempts it (§B7, decision 5); `script/check-bench` holds it below 2 s at 100k and 20 s at 1M.
-- `cargo bench -p merge-syntax --bench boundaries` writes valid Rust: four-line functions with a conflict in every fifth. The deep case parses each conflict's window in both sides, about 9 µs a conflict.
+- `cargo bench -p merge-syntax --bench boundaries` writes valid Rust: four-line functions with a conflict in every fifth. The deep case parses each conflict's window in both sides, about 9 µs a conflict on one core.
 - **git's histogram on regular input.** The headless merge of the 100k-line `deep` triple takes 1.5 s under git semantics and 70 ms under jj's. Its unchanged runs are all about one length, each region's anchor is the first, so each split takes one function off the front and the recursion goes about 5 000 levels deep. git's `xhistogram.c` does the same: `git merge-file` takes 1.27 s. The hunks must match git's (spec §4.2).
 
 ### B7 Decisions
