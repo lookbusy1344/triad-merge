@@ -4,7 +4,7 @@ Where the project stands and what comes next. [SPEC.md](SPEC.md) sets the behavi
 
 ## 1. Status
 
-As of 2026-11-17.
+As of 2026-11-18.
 
 | Milestone | State | Part |
 |---|---|---|
@@ -19,7 +19,7 @@ As of 2026-11-17.
 | M6 native resolution | Done: git stages a resolved save; jj snapshots before the read and after each save | D |
 | M7 syntax highlighting | Done: Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS, C, C++ | F |
 | p4merge parity | Done | E |
-| Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; §G6 done: the files that differ between two directories, or between a revision and the working copy (`diff`, `diff --rev`), in the directory window and printed by `diff --inspect`, and from `jj diff --tool` and `git difftool -d`, with renames and copies paired as jj pairs them; text that is not UTF-8 read and saved as Windows-1252 (§G17); invisible characters drawn as code points and odd spaces shaded in every pane, and escaped in terminal output (§A6.8); moved and duplicated blocks in the merge window and `inspect`, with a suggestion to drop a duplicate (§G16), done; visible whitespace in every pane (§G10) done; the rest open | G |
+| Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; §G6 done: the files that differ between two directories, or between a revision and the working copy (`diff`, `diff --rev`), in the directory window and printed by `diff --inspect`, and from `jj diff --tool` and `git difftool -d`, with renames and copies paired as jj pairs them; text that is not UTF-8 read and saved as Windows-1252 (§G17); invisible characters drawn as code points and odd spaces shaded in every pane, and escaped in terminal output (§A6.8); moved and duplicated blocks in the merge window and `inspect`, with a suggestion to drop a duplicate (§G16), done; visible whitespace in every pane (§G10) done; a reload from disk keeps the caret and the view on their lines, and the merge window warns at once when another program changes OUTPUT (spec §6.1, §6.2), done; the rest open | G |
 | Languages | Done: the windows and their error details in English, Spanish, simplified and traditional Chinese, Japanese, Korean, German, French, Brazilian Portuguese, Russian, Ukrainian, Polish, Dutch and Swedish, from Fluent catalogues, set by `ui-language` or the system; gpui-component's own text, such as Replace and a field's right-click menu, from triad's catalogues; on macOS the system's own controls follow the system's language | §E3.6 |
 | Look after Zed | Done: chrome in the UI font, the Zed status bar, raised surfaces (Go to Line as Zed's card, the menus, the prompt), a 1 px current-region frame, a softer ruler, one style for errors and warnings, and on macOS the toolbar in the title bar | `docs/STYLE.md` |
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
@@ -177,7 +177,7 @@ View → Swap Sides in the diff window: the panes, their read-only flags, titles
 
 ### G13 Merge window reload
 
-The merge window watches its inputs as the diff window does (spec §6.1). A change asks Keep Mine (first) or Reload; Reload rebuilds the merge and drops the resolutions. Low value: git and jj pass copies that do not change.
+The merge window watches its inputs as the diff window does (spec §6.1). A change asks Keep Mine (first) or Reload; Reload rebuilds the merge and drops the resolutions. Low value: git and jj pass copies that do not change. The merge window watches OUTPUT already: a change by another program shows a banner and Save & Exit asks before replacing it (spec §6.2).
 
 ### G14 Standard input
 

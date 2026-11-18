@@ -74,9 +74,11 @@ use merge_view::tabs::{self, Drawing, Mark};
 use merge_view::{scroll, status};
 use vcs::{IdKind, RepoKind, VcsError};
 
+use crate::alert;
 use crate::blink::{self, Flash, SearchSteps};
 use crate::choice::{self, Choice, MenuChoice};
 use crate::editor_sync::{self, Caret};
+use crate::file_watch;
 use crate::input_find::{self, Step};
 use crate::input_select::{
     self, AUTOSCROLL_MAX_ROWS, AUTOSCROLL_TICK, CellHit, INPUT_PANES_CONTEXT, InputSelect,
@@ -86,6 +88,7 @@ use crate::move_pill::{MOVE_PILL_INSET, move_pill};
 use crate::origin_column::{
     Annotated, Described, HeadingText, ORIGIN_WIDTH, OriginCell, OriginColumn, Visibility,
 };
+use crate::output_watch::OutputWatch;
 use crate::pane_scroll::PaneScroll;
 use crate::recorder::Recorded;
 use crate::recovery::JournalTasks;
@@ -194,6 +197,8 @@ pub use crate::input_find::{input_match_count_id, input_match_next_id, input_mat
 
 /// Element ids, also used by tests.
 pub const RESULT_ID: &str = "result";
+/// The banner after another program changed OUTPUT (spec §6.3).
+pub const OUTPUT_BANNER_ID: &str = "output-banner";
 /// The overview ruler beside the result.
 pub const RULER_ID: &str = "ruler";
 pub const ROWS_ID: &str = "rows";
@@ -374,6 +379,17 @@ pub struct WindowSettings {
     pub repo: Option<RepoKind>,
     /// The run's working directory; none when the process has none.
     pub cwd: Option<PathBuf>,
+    /// Whether the window watches `output` for changes another program makes (spec §6.3).
+    pub watch_output: Watching,
+}
+
+/// Whether a merge window watches OUTPUT for changes another program makes (spec §6.3).
+/// Tests leave it off and call [`MergeWindow::output_disk_changed`] in its place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Watching {
+    #[default]
+    Off,
+    On,
 }
 
 impl Default for WindowSettings {
@@ -407,6 +423,7 @@ impl Default for WindowSettings {
             file_names: FileNames::default(),
             repo: None,
             cwd: None,
+            watch_output: Watching::Off,
         }
     }
 }
@@ -551,6 +568,8 @@ pub struct MergeWindow {
     result_labels: Option<Task<()>>,
     /// The collapsed unchanged regions.
     collapse: Collapse,
+    /// Whether another program changed OUTPUT; none without an output.
+    output_watch: Option<OutputWatch>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -632,6 +651,16 @@ pub fn open(
 }
 
 /// The language a merge's file names give.
+/// Where `settings` say Save & Exit writes, and how.
+fn save_target(settings: &WindowSettings) -> SaveTarget {
+    SaveTarget {
+        output: settings.output.clone(),
+        record: settings.record.clone(),
+        line_ending: settings.line_ending,
+        unresolved_save: settings.unresolved_save,
+    }
+}
+
 fn language(settings: &WindowSettings) -> Option<Language> {
     Language::of_run(
         settings.file_names.paths(),
@@ -735,12 +764,6 @@ impl MergeWindow {
             scrollbars::install(state, scrollbar_mode, Some(ruler_feed.clone()));
         });
         let recovery = Self::journaling(&doc, settings, window, cx);
-        let target = SaveTarget {
-            output: settings.output.clone(),
-            record: settings.record.clone(),
-            line_ending: settings.line_ending,
-            unresolved_save: settings.unresolved_save,
-        };
         let mut this = Self {
             // Before `doc` and `rows` move into the window.
             move_ends: moves::move_ends(&doc, &rows),
@@ -764,7 +787,7 @@ impl MergeWindow {
                 .into(),
             file_names: settings.file_names.clone(),
             journal: JournalTasks::default(),
-            session: Session::new(doc, target, recovery),
+            session: Session::new(doc, save_target(settings), recovery),
             panes,
             scroll: PaneScroll::new(rows.row_count(), wrap, settings.scroll_sync),
             collapse: Collapse::new(settings.collapsing),
@@ -795,10 +818,102 @@ impl MergeWindow {
             measurement: Measurement::new(settings.measure),
             origin_column,
             result_labels: None,
+            output_watch: None,
             _subscriptions: subscriptions,
         };
+        this.output_watch = Self::watch_output(settings, window, cx);
+        this.stamp_output(window, cx);
         this.show_folds(cx);
         this
+    }
+
+    /// The watch on `settings`' output, with a watcher when the settings ask for one.
+    fn watch_output(
+        settings: &WindowSettings,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<OutputWatch> {
+        let path = settings.output.as_deref()?;
+        let watch = (settings.watch_output == Watching::On).then(|| {
+            // Without a working directory, a relative path stays relative.
+            let cwd = settings.cwd.as_deref().unwrap_or(Path::new(""));
+            let changed = |this: &mut Self, _: usize, window: &mut Window, cx: &mut Context<_>| {
+                this.output_disk_changed(window, cx);
+            };
+            file_watch::watch(&[Some(path)], cwd, changed, window, cx)
+        });
+        Some(OutputWatch::new(path, watch))
+    }
+
+    /// Read what OUTPUT holds off the UI thread, as the stamp later changes are measured
+    /// against (spec §6.3).
+    fn stamp_output(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(read) = self.output_watch.as_mut().map(OutputWatch::restamp) else {
+            return;
+        };
+        cx.spawn_in(window, async move |this, cx| {
+            let generation = read.generation;
+            let stamp = cx.background_spawn(async move { read.run() }).await;
+            ignore_closed_view(this.update(cx, |this, cx| {
+                if let Some(watch) = &mut this.output_watch {
+                    watch.stamped(generation, stamp);
+                }
+                cx.notify();
+            }));
+        })
+        .detach();
+    }
+
+    /// OUTPUT changed on disk (spec §6.3): read it off the UI thread, and show the banner when
+    /// it no longer holds what it held at the stamp. A save's own write changes nothing.
+    pub fn output_disk_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.session.saving() {
+            return;
+        }
+        let Some(read) = self.output_watch.as_ref().and_then(OutputWatch::check) else {
+            return;
+        };
+        cx.spawn_in(window, async move |this, cx| {
+            let generation = read.generation;
+            let now = cx.background_spawn(async move { read.run() }).await;
+            ignore_closed_view(this.update(cx, |this, cx| {
+                if this.output_watch.as_mut().is_some_and(|w| w.checked(generation, now)) {
+                    cx.notify();
+                }
+            }));
+        })
+        .detach();
+    }
+
+    /// The banner's text while OUTPUT differs from its stamp.
+    fn output_banner(&self) -> Option<SharedString> {
+        let watch = self.output_watch.as_ref().filter(|watch| watch.changed())?;
+        let path = watch.path();
+        let name = path
+            .file_name()
+            .map_or_else(|| path.display().to_string(), |name| name.to_string_lossy().into_owned());
+        Some(strings::output_changed_banner(&name).into())
+    }
+
+    /// Ask before Save & Exit replaces an OUTPUT another program changed; write on Overwrite.
+    fn confirm_overwrite(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let name = self.output_watch.as_ref().map(|watch| watch.path().display().to_string());
+        let answer = window.prompt(
+            PromptLevel::Warning,
+            &prompt::changed_on_disk(name.as_deref().unwrap_or_default()),
+            Some(&prompt::output_changed_detail()),
+            &[PromptButton::new(prompt::overwrite()), PromptButton::new(prompt::keep_editing())],
+            cx,
+        );
+        cx.spawn_in(window, async move |this, cx| {
+            let overwrite = answer.await == Ok(GO_AHEAD);
+            ignore_closed_view(this.update_in(cx, |this, window, cx| {
+                if overwrite {
+                    this.check_descendants(window, cx);
+                }
+            }));
+        })
+        .detach();
     }
 
     /// The recovery journal `settings` asks for, with the inputs' hashes computing.
@@ -2308,6 +2423,9 @@ impl MergeWindow {
             }
             Next::ConfirmClose => Self::confirm_close(window, cx),
             Next::SaveAndExit => self.save_and_exit(&SaveAndExit, window, cx),
+            Next::Write if self.output_watch.as_ref().is_some_and(OutputWatch::changed) => {
+                self.confirm_overwrite(window, cx);
+            }
             Next::Write => self.check_descendants(window, cx),
             Next::Record(code) => self.record_again(code, window, cx),
             Next::SaveCopyAs => self.save_copy_as(&SaveCopyAs, window, cx),
@@ -2507,12 +2625,19 @@ impl MergeWindow {
     /// say why it failed.
     fn save_in_background(&mut self, job: SaveJob, window: &mut Window, cx: &mut Context<Self>) {
         self.set_saving(true, cx);
+        if let Some(watch) = &mut self.output_watch {
+            watch.saving();
+        }
         self.save_task = Some(cx.spawn_in(window, async move |this, cx| {
             let saved = cx.background_spawn(async move { job.run() }).await;
             ignore_closed_view(this.update_in(cx, |this, window, cx| {
                 this.save_task = None;
                 this.set_saving(false, cx);
                 let next = this.session.saved(saved);
+                // The session goes on: OUTPUT may hold the save's write now.
+                if !matches!(next, Next::Finish { .. }) {
+                    this.stamp_output(window, cx);
+                }
                 this.step(next, window, cx);
             }));
         }));
@@ -4100,6 +4225,9 @@ impl Render for MergeWindow {
                 window.is_fullscreen(),
             ))
             .children(render_banner(self.settings_errors.as_ref(), |v| &mut v.settings_errors, cx))
+            .children(
+                self.output_banner().map(|text| alert::warning_banner(OUTPUT_BANNER_ID, text, cx)),
+            )
             .child(input_headings)
             .child(self.render_rows(cx))
             .child({

@@ -26,7 +26,7 @@ use crate::history_window::{self, HistoryStart};
 use crate::measure::{self, Measure};
 use crate::resolve_queue::{self, Queue};
 use crate::stack_window::{self, StackStart};
-use crate::window::{OpenError, OriginLookup, WindowSettings};
+use crate::window::{OpenError, OriginLookup, Watching, WindowSettings};
 use crate::{ExitCode, Finish, Typography, open_dialog, strings};
 
 /// A diff window opened from the open dialog or the history window watches its files on
@@ -512,6 +512,7 @@ fn window_settings(stored: &Stored) -> WindowSettings {
             marker_style: stored.conflict_style.map_or_else(Default::default, Into::into),
             ..MergeOptions::default()
         },
+        watch_output: Watching::On,
         ..WindowSettings::default()
     }
 }

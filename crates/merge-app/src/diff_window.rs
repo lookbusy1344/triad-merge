@@ -18,7 +18,6 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_channel::Receiver;
 use gpui_kit::base::ScrollbarMode;
 use gpui_kit::base::input::{GutterMark, InputHighlighterFactory, SpacerNote};
 use gpui_kit::component::input::{
@@ -38,6 +37,7 @@ use merge_core::diff::DiffOptions;
 use merge_core::diff2::{DiffDocument, Edited, Kind2, Marking, Region2, Rope, Side};
 use merge_core::edit::TextPatch;
 use merge_core::index::RegionIx;
+use merge_core::line_map::LineMap;
 use merge_core::merge3::Source;
 use merge_core::text::{Encoding, Text};
 use merge_session::SessionError;
@@ -49,11 +49,12 @@ use merge_view::diff::{
     next_change, previous_change, region_bytes, spacers, spacers_by, tone,
 };
 use merge_view::fold::{self, Fold, FoldRow, LineEdit, Opened};
-use merge_view::scroll::{Follow, ScrollSync};
+use merge_view::scroll::{Follow, ScrollSync, TopAnchor};
 use vcs::{Annotation, IdKind, RepoKind, VcsError};
 
 use crate::blink::{self, Flash, SearchSteps};
 use crate::editor_sync::{self, Caret};
+use crate::file_watch::Watch;
 use crate::move_pill::{MOVE_PILL_INSET, move_pill};
 use crate::origin_column::{
     Annotated, Described, HeadingText, OriginCell, OriginColumn, Visibility,
@@ -81,8 +82,6 @@ use crate::{
 
 /// How long edits must pause before the regions are recomputed (spec §4.6).
 pub const DIFF_DEBOUNCE: Duration = Duration::from_millis(100);
-/// How long the watcher waits after a change on disk for the events that follow it.
-const DISK_SETTLE: Duration = Duration::from_millis(100);
 const COPY_BUTTON_WIDTH: Pixels = px(14.);
 /// The copy buttons' column between the panes: one button each way.
 const GUTTER_WIDTH: Pixels = px(28.);
@@ -345,6 +344,25 @@ enum OnRead {
     Reload,
 }
 
+/// A file read from disk after a change, with the map from the pane's text as it stood when
+/// the read began; no map when the texts match.
+struct DiskRead {
+    text: Result<Text, SessionError>,
+    map: Option<LineMap>,
+}
+
+/// The view top a reload keeps (spec §6.1). Both panes take it once they lay out with the
+/// new text, and again once the recompute after the reload re-levels them.
+#[derive(Clone, Copy)]
+struct HeldTop {
+    side: Side,
+    anchor: TopAnchor,
+    /// The panes take it before they next lay out.
+    due: bool,
+    /// The recompute has landed: this is the last time the panes take it.
+    last: bool,
+}
+
 pub struct DiffWindow {
     menu_bar: crate::menu_bar::WindowMenu,
     doc: DiffDocument,
@@ -399,6 +417,8 @@ pub struct DiffWindow {
     wrap_fit: Option<WrapFit>,
     /// The region `go_to` moved to, which both panes scroll into view once laid out.
     reveal: Option<RegionIx>,
+    /// The view top a reload keeps, until the recompute after it re-levels the panes.
+    held_top: Option<HeldTop>,
     /// The collapsed unchanged regions.
     collapse: Collapse,
     /// How far the left pane's first row sits below the top of the copy buttons' column.
@@ -485,12 +505,6 @@ impl Collapse {
 struct Navigation {
     step: fn(&DiffDocument, RegionIx) -> Option<RegionIx>,
     side: Side,
-}
-
-/// The task that starts the watcher on both files' directories and passes its events on.
-/// The watcher lives as long as the task.
-struct Watch {
-    _events: Task<()>,
 }
 
 /// Open a diff window.
@@ -609,7 +623,7 @@ impl DiffWindow {
         let banner = jj_banner(editable.filter_map(|p| p.origin.path()), cwd);
         let watch = settings
             .watch
-            .then(|| watch(panes.each_ref().map(|p| p.origin.path()), cwd, window, cx));
+            .then(|| watch(&panes.each_ref().map(|p| p.origin.path()), cwd, window, cx));
         Self {
             menu_bar: crate::menu_bar::WindowMenu::new(cx),
             colouring,
@@ -639,6 +653,7 @@ impl DiffWindow {
             whitespace: settings.whitespace,
             wrap_fit: None,
             reveal: None,
+            held_top: None,
             collapse: Collapse::new(settings.collapsing),
             gutter_offset: Pixels::ZERO,
             typography: settings.typography.clone(),
@@ -823,7 +838,8 @@ impl DiffWindow {
             Ok(edited) => self.follow(before, &edited, Caret::Follow, window, cx),
             Err(error) => {
                 tracing::error!(%error, ?side, "the core refused an edit; reloading the pane");
-                self.reload(side, window, cx);
+                let caret = self.editor(side).read(cx).cursor();
+                self.reload(side, caret, window, cx);
             }
         }
     }
@@ -860,6 +876,7 @@ impl DiffWindow {
         );
         if edited.version != before {
             self.pinned = None;
+            self.held_top = None;
             self.waiting.clear();
             self.pane_mut(side).changes += 1;
             self.set_modified(side, true);
@@ -867,12 +884,13 @@ impl DiffWindow {
         }
         self.refresh_bands(side, cx);
     }
-    fn reload(&mut self, side: Side, window: &mut Window, cx: &mut Context<Self>) {
+    /// Give `side`'s editor the core's text, with the caret at `caret`, cut to the text.
+    fn reload(&mut self, side: Side, caret: usize, window: &mut Window, cx: &mut Context<Self>) {
         let text = self.doc.text(side).to_string();
         let pane = self.pane(side);
         pane.recorded.muted(|| {
             pane.editor.update(cx, |state, cx| {
-                let caret = state.cursor().min(text.len());
+                let caret = caret.min(text.len());
                 state.set_value(text, window, cx);
                 state.set_selected_range(caret..caret, cx);
             });
@@ -1052,6 +1070,12 @@ impl DiffWindow {
         }
         self.collapse.opened.renew(&self.doc);
         self.set_spacers(cx);
+        if self.doc.regions_current()
+            && let Some(held) = &mut self.held_top
+        {
+            held.due = true;
+            held.last = true;
+        }
         self.status =
             strings::diff_status(self.repo, differences(&self.doc), &self.comparison).into();
         cx.notify();
@@ -1287,6 +1311,7 @@ impl DiffWindow {
         }
         self.pinned = Some(Pin { side, region, caret: at });
         self.reveal = Some(region);
+        self.held_top = None;
         cx.notify();
     }
 
@@ -1572,8 +1597,19 @@ impl DiffWindow {
         let Some(path) = self.pane(side).origin.path().map(Path::to_path_buf) else {
             return;
         };
+        let before = self.doc.snapshot(side);
         let task = cx.spawn_in(window, async move |this, cx| {
-            let read = cx.background_spawn(async move { merge_session::read_text(&path) }).await;
+            let read = cx
+                .background_spawn(async move {
+                    let text = merge_session::read_text(&path);
+                    let map = text
+                        .as_ref()
+                        .ok()
+                        .filter(|text| before != text.content())
+                        .map(|text| LineMap::from_rope(&before, text));
+                    DiskRead { text, map }
+                })
+                .await;
             ignore_closed_view(this.update_in(cx, |this, window, cx| {
                 this.disk_read(side, read, then, window, cx);
             }));
@@ -1584,18 +1620,18 @@ impl DiffWindow {
     fn disk_read(
         &mut self,
         side: Side,
-        read: Result<Text, SessionError>,
+        read: DiskRead,
         then: OnRead,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.pane_mut(side).reading = None;
-        let Some(text) = self.changed(side, read) else {
+        let Some(text) = self.changed(side, read.text) else {
             return;
         };
         let pane = self.pane(side);
         if then == OnRead::Reload || !pane.modified {
-            self.reload_from(side, &text, window, cx);
+            self.reload_from(side, &text, read.map.as_ref(), window, cx);
             return;
         }
         let question = prompt::changed_on_disk(&pane.origin.name());
@@ -1637,13 +1673,19 @@ impl DiffWindow {
         (!same && !own_save).then_some(text)
     }
 
+    /// Replace `side` with `text`, read from disk. The caret and the view's top move with
+    /// their lines, through `map` from the pane's text to `text`.
     fn reload_from(
         &mut self,
         side: Side,
         text: &Text,
+        map: Option<&LineMap>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let caret = self.editor(side).read(cx).cursor();
+        let top = self.top_anchor(side, cx);
+        let before = self.doc.snapshot(side);
         self.doc.reload(side, text);
         self.pinned = None;
         self.waiting.clear();
@@ -1651,7 +1693,15 @@ impl DiffWindow {
         pane.encoding = text.encoding();
         pane.changes += 1;
         pane.writes.reloaded();
-        self.reload(side, window, cx);
+        let caret =
+            map.map_or(caret, |map| map.offset(before.slice(..), self.doc.text(side), caret));
+        self.reload(side, caret, window, cx);
+        self.held_top = top.map(|anchor| HeldTop {
+            side,
+            anchor: map.map_or(anchor, |map| anchor.on(map.line(anchor.line))),
+            due: true,
+            last: false,
+        });
         self.set_modified(side, false);
         self.schedule_recompute(window, cx);
         self.refresh_bands(side, cx);
@@ -1767,6 +1817,37 @@ impl DiffWindow {
             });
         }
         self.sideways_sync.place(0.0, 0.0);
+    }
+
+    /// Where `side`'s view starts, by line; `None` before its first layout.
+    fn top_anchor(&self, side: Side, cx: &App) -> Option<TopAnchor> {
+        let state = self.editor(side).read(cx);
+        let row_h = f32::from(state.line_height()?);
+        let map = state.display_map();
+        Some(TopAnchor::at(
+            f32::from(self.shared_top(cx)),
+            row_h,
+            |row| map.display_row_to_buffer_line(row),
+            |line| map.buffer_line_to_display_row(line),
+        ))
+    }
+
+    /// Scroll both panes to the view top a reload keeps, when it is due. Runs before the left
+    /// pane lays out, as [`Self::apply_reveal`] does.
+    fn apply_held_top(&mut self, cx: &mut Context<Self>) {
+        let Some(held) = self.held_top.filter(|held| held.due) else {
+            return;
+        };
+        let state = self.editor(held.side).read(cx);
+        let Some(row_h) = state.line_height() else {
+            return;
+        };
+        let map = state.display_map();
+        let top = held.anchor.top(f32::from(row_h), |line| map.buffer_line_to_display_row(line));
+        self.held_top = (!held.last).then_some(HeldTop { due: false, ..held });
+        for side in SIDES {
+            self.scroll_to(side, px(top), cx);
+        }
     }
 
     fn scroll_to(&self, side: Side, top: Pixels, cx: &mut Context<Self>) {
@@ -2059,92 +2140,19 @@ impl DiffWindow {
     }
 }
 
-/// Where `path`, as given on the command line, sits for the watcher: its directory made absolute
-/// and free of symlinks, as the platform's events name it. The file itself may not exist:
-/// a rename may be replacing it. `None` without a file name or an existing directory.
-fn watch_target(path: &Path, cwd: &Path) -> Option<PathBuf> {
-    let absolute = cwd.join(path);
-    let name = absolute.file_name()?;
-    let dir = absolute
-        .parent()?
-        .canonicalize()
-        .inspect_err(|error| tracing::warn!(%error, path = %path.display(), "cannot watch a file"))
-        .ok()?;
-    Some(dir.join(name))
-}
-
-/// Watch both files' directories: editors save by writing a new file and renaming it over
-/// the old one, which a watch on the file itself would lose. Starting a platform watch can
-/// take seconds (`FSEvents` on macOS), so it starts off the UI thread.
+/// Watch both sides' files; a change reaches [`DiffWindow::disk_changed`].
 fn watch(
-    paths: [Option<&Path>; 2],
+    paths: &[Option<&Path>],
     cwd: &Path,
     window: &mut Window,
     cx: &mut Context<DiffWindow>,
 ) -> Watch {
-    let (sender, receiver) = async_channel::unbounded::<Side>();
-    let targets = paths.map(|path| path.and_then(|path| watch_target(path, cwd)));
-    let dirs: Vec<PathBuf> = targets
-        .iter()
-        .flatten()
-        .filter_map(|target| target.parent().map(Path::to_path_buf))
-        .collect();
-    let handler = move |event: notify::Result<notify::Event>| match event {
-        Ok(event) if !event.kind.is_access() => {
-            for side in SIDES {
-                let target = targets[index(side)].as_deref();
-                if event.paths.iter().any(|p| Some(p.as_path()) == target) {
-                    // The window may have closed; then nobody listens.
-                    let _ = sender.try_send(side);
-                }
-            }
+    let changed = |this: &mut DiffWindow, at: usize, window: &mut Window, cx: &mut Context<_>| {
+        if let Some(&side) = SIDES.get(at) {
+            this.disk_changed(side, window, cx);
         }
-        Ok(_) => {}
-        Err(error) => tracing::warn!(%error, "the file watcher failed"),
     };
-    let starting = cx.background_spawn(async move {
-        let mut watcher = notify::recommended_watcher(handler)
-            .inspect_err(|error| tracing::warn!(%error, "cannot watch the files"))
-            .ok()?;
-        for dir in &dirs {
-            if let Err(error) =
-                notify::Watcher::watch(&mut watcher, dir, notify::RecursiveMode::NonRecursive)
-            {
-                tracing::warn!(%error, dir = %dir.display(), "cannot watch a directory");
-            }
-        }
-        Some(watcher)
-    });
-    let events = cx.spawn_in(window, async move |this, cx| {
-        let Some(_watcher) = starting.await else {
-            return;
-        };
-        while let Ok(first) = receiver.recv().await {
-            // A save gives several events; read each file once they settle.
-            cx.background_executor().timer(DISK_SETTLE).await;
-            let gone = this
-                .update_in(cx, |this, window, cx| {
-                    for side in changed_sides(first, &receiver) {
-                        this.disk_changed(side, window, cx);
-                    }
-                })
-                .is_err();
-            if gone {
-                break;
-            }
-        }
-    });
-    Watch { _events: events }
-}
-
-/// The side of `first` and of every event waiting in `receiver`, each once, left first.
-fn changed_sides(first: Side, receiver: &Receiver<Side>) -> impl Iterator<Item = Side> + use<> {
-    let mut changed = [false; SIDES.len()];
-    changed[index(first)] = true;
-    while let Ok(side) = receiver.try_recv() {
-        changed[index(side)] = true;
-    }
-    SIDES.into_iter().filter(move |&side| changed[index(side)])
+    crate::file_watch::watch(paths, cwd, changed, window, cx)
 }
 
 /// The banner for editable files `jj diff --tool` copied, whose edits it throws away
@@ -2322,8 +2330,7 @@ impl Render for DiffWindow {
         let ticks = self.view_ticks();
         self.menu_bar.show(ticks, window, cx);
         let theme = cx.theme();
-        let (ui_font, warning, warning_foreground) =
-            (theme.font_family.clone(), theme.warning, theme.warning_foreground);
+        let ui_font = theme.font_family.clone();
         let status = status_bar::bar(STATUS_ID, self.status.clone(), theme)
             .child(status_bar::item(STATUS_TEXT_ID, self.status.clone()));
         Self::on_go_actions(self.on_view_actions(v_flex(), cx), cx)
@@ -2353,18 +2360,7 @@ impl Render for DiffWindow {
                 window.is_fullscreen(),
             ))
             .children(render_banner(self.settings_errors.as_ref(), |v| &mut v.settings_errors, cx))
-            .when_some(self.banner.clone(), |d, banner| {
-                d.child(
-                    alert::style(div(), warning_foreground)
-                        .id(BANNER_ID)
-                        .test_support()
-                        .role(Role::Alert)
-                        .aria_label(banner.clone())
-                        .px_2()
-                        .bg(warning)
-                        .child(banner),
-                )
-            })
+            .children(self.banner.clone().map(|text| alert::warning_banner(BANNER_ID, text, cx)))
             .child(
                 h_flex()
                     .flex_1()
@@ -2377,6 +2373,7 @@ impl Render for DiffWindow {
                             move |_, window, cx| {
                                 ignore_closed_view(this.update(cx, |this, cx| {
                                     this.sync_left(cx);
+                                    this.apply_held_top(cx);
                                     this.apply_reveal(window, cx);
                                 }));
                             },
@@ -2418,32 +2415,6 @@ mod tests {
 
     use super::*;
 
-    fn changed(events: &[Side]) -> Vec<Side> {
-        let (sender, receiver) = async_channel::unbounded();
-        let (&first, rest) = events.split_first().expect("an event");
-        for &side in rest {
-            sender.try_send(side).expect("open channel");
-        }
-        let sides: Vec<Side> = changed_sides(first, &receiver).collect();
-        assert!(receiver.is_empty(), "every waiting event is taken");
-        sides
-    }
-
-    #[test]
-    fn repeated_events_for_one_side_read_it_once() {
-        assert_eq!(changed(&[Side::Left, Side::Left, Side::Left]), [Side::Left]);
-    }
-
-    #[test]
-    fn events_for_both_sides_read_each_once_left_first() {
-        assert_eq!(changed(&[Side::Right, Side::Left, Side::Right]), [Side::Left, Side::Right]);
-    }
-
-    #[test]
-    fn one_event_reads_its_side_alone() {
-        assert_eq!(changed(&[Side::Right]), [Side::Right]);
-    }
-
     fn copy(path: &str, cwd: &str) -> bool {
         in_jj_diff_copy(Path::new(path), Path::new(cwd))
     }
@@ -2471,70 +2442,5 @@ mod tests {
         assert!(!copy("a.rs", "/tmp/jj-diff-a1b2"));
         // `..` leaves jj's directory before the side.
         assert!(!copy("/tmp/jj-diff-a1b2/../left/a.rs", "/"));
-    }
-
-    fn canonical(dir: &tempfile::TempDir) -> PathBuf {
-        dir.path().canonicalize().expect("the directory exists")
-    }
-
-    #[test]
-    fn a_bare_name_sits_in_the_working_directory() {
-        let cwd = tempfile::tempdir().expect("tempdir");
-        assert_eq!(watch_target(Path::new("x"), cwd.path()), Some(canonical(&cwd).join("x")));
-    }
-
-    #[test]
-    fn a_relative_directory_resolves_against_the_working_directory() {
-        let cwd = tempfile::tempdir().expect("tempdir");
-        std::fs::create_dir(cwd.path().join("sub")).expect("mkdir");
-        assert_eq!(
-            watch_target(Path::new("./sub/../sub/x"), cwd.path()),
-            Some(canonical(&cwd).join("sub").join("x"))
-        );
-    }
-
-    #[test]
-    fn an_absolute_path_ignores_the_working_directory() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let cwd = tempfile::tempdir().expect("tempdir");
-        assert_eq!(
-            watch_target(&dir.path().join("x"), cwd.path()),
-            Some(canonical(&dir).join("x"))
-        );
-    }
-
-    #[test]
-    fn the_file_need_not_exist_for_a_rename_can_replace_it() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        assert!(!dir.path().join("gone").exists());
-        assert_eq!(
-            watch_target(&dir.path().join("gone"), dir.path()),
-            Some(canonical(&dir).join("gone"))
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_symlinked_directory_resolves_to_its_target() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        std::fs::create_dir(dir.path().join("real")).expect("mkdir");
-        std::os::unix::fs::symlink(dir.path().join("real"), dir.path().join("link"))
-            .expect("symlink");
-        assert_eq!(
-            watch_target(&dir.path().join("link").join("x"), dir.path()),
-            Some(canonical(&dir).join("real").join("x"))
-        );
-    }
-
-    #[test]
-    fn a_missing_directory_has_no_target() {
-        let cwd = tempfile::tempdir().expect("tempdir");
-        assert_eq!(watch_target(Path::new("no/such/x"), cwd.path()), None);
-    }
-
-    #[test]
-    fn a_path_without_a_file_name_has_no_target() {
-        let cwd = tempfile::tempdir().expect("tempdir");
-        assert_eq!(watch_target(Path::new(".."), cwd.path()), None);
     }
 }

@@ -717,6 +717,111 @@ fn the_same_text_in_a_new_encoding_reloads(cx: &mut TestAppContext) {
     assert_eq!(std::fs::read(files.path(Side::Right)).expect("readable"), utf16("xb\n"));
 }
 
+#[gpui_kit::test]
+fn a_reload_keeps_the_caret_on_its_line_as_lines_arrive_above(cx: &mut TestAppContext) {
+    let files = Files::new("a\nbcd\n", "a\nbcd\n");
+    let o = open(cx, &files);
+    // After "bc".
+    focus_at(cx, &o, Side::Left, 4);
+    std::fs::write(files.path(Side::Left), "x\ny\na\nbcd\n").expect("left");
+    disk_changed(cx, &o, Side::Left);
+    // "x\ny\na\n" is 6 bytes; the caret stays after "bc".
+    assert_eq!(carets(cx, &o.view).0, 8);
+}
+
+#[gpui_kit::test]
+fn a_reload_puts_a_caret_on_a_changed_line_at_the_start_of_the_change(cx: &mut TestAppContext) {
+    let files = Files::new("a\nbcd\ne\n", "a\n");
+    let o = open(cx, &files);
+    focus_at(cx, &o, Side::Left, 4);
+    std::fs::write(files.path(Side::Left), "a\nzz\nyy\ne\n").expect("left");
+    disk_changed(cx, &o, Side::Left);
+    assert_eq!(carets(cx, &o.view).0, 2);
+}
+
+#[gpui_kit::test]
+fn a_reload_after_keep_mine_maps_the_caret_from_the_edited_text(cx: &mut TestAppContext) {
+    let files = Files::new("a\nb\n", "a\n");
+    let o = open(cx, &files);
+    // "a\nqb\n" with the caret after "q".
+    type_at(cx, &o, Side::Left, 2, "q");
+    std::fs::write(files.path(Side::Left), "n\na\nqb\n").expect("left");
+    disk_changed(cx, &o, Side::Left);
+    cx.simulate_prompt_answer(RELOAD);
+    cx.run_until_parked();
+    assert_eq!(carets(cx, &o.view).0, 5);
+}
+
+/// Lines the file gains above the view in the reload tests.
+const ARRIVING: usize = 10;
+/// Where the reload tests scroll to, in lines.
+const SCROLLED: usize = 50;
+
+#[gpui_kit::test]
+fn a_reload_keeps_the_view_on_the_lines_it_showed(cx: &mut TestAppContext) {
+    let files = Files::new(&numbered(0), &numbered(0));
+    let o = open(cx, &files);
+    let (_, _, line) = scroll_tops(cx, &o.view);
+    wheel(cx, &o, Side::Left, line * to_f32(SCROLLED));
+    let arriving = "new\n".repeat(ARRIVING);
+    std::fs::write(files.path(Side::Left), arriving + &numbered(0)).expect("left");
+    disk_changed(cx, &o, Side::Left);
+    for _ in 0..SETTLE_FRAMES {
+        act(cx, o.window, TestWindowExt::render_frame);
+    }
+    let kept = line * to_f32(SCROLLED + ARRIVING);
+    assert_eq!(scroll_tops(cx, &o.view).0, kept, "l50 stays at the top of the left pane");
+    // The recompute gives the right pane spacers for the new lines; l50 stays put on both.
+    wait(cx, DIFF_DEBOUNCE);
+    for _ in 0..SETTLE_FRAMES {
+        act(cx, o.window, TestWindowExt::render_frame);
+    }
+    assert_eq!(scroll_tops(cx, &o.view), (kept, kept, line));
+}
+
+#[gpui_kit::test]
+fn a_reload_that_drops_lines_above_keeps_the_view_once_the_panes_level(cx: &mut TestAppContext) {
+    let files = Files::new(&numbered(0), &numbered(0));
+    let o = open(cx, &files);
+    let (_, _, line) = scroll_tops(cx, &o.view);
+    wheel(cx, &o, Side::Left, line * to_f32(SCROLLED));
+    std::fs::write(files.path(Side::Left), numbered(ARRIVING)).expect("left");
+    disk_changed(cx, &o, Side::Left);
+    for _ in 0..SETTLE_FRAMES {
+        act(cx, o.window, TestWindowExt::render_frame);
+    }
+    let early = line * to_f32(SCROLLED - ARRIVING);
+    assert_eq!(scroll_tops(cx, &o.view).0, early, "l50 is the left's line 40 until it levels");
+    // The recompute gives the left pane spacers for the lines it lost: l50 is back on row 50.
+    wait(cx, DIFF_DEBOUNCE);
+    for _ in 0..SETTLE_FRAMES {
+        act(cx, o.window, TestWindowExt::render_frame);
+    }
+    let kept = line * to_f32(SCROLLED);
+    assert_eq!(scroll_tops(cx, &o.view), (kept, kept, line));
+}
+
+#[gpui_kit::test]
+fn a_reload_below_the_view_leaves_it_where_it_was(cx: &mut TestAppContext) {
+    let files = Files::new(&numbered(0), &numbered(0));
+    let o = open(cx, &files);
+    let (_, _, line) = scroll_tops(cx, &o.view);
+    wheel(cx, &o, Side::Left, line * to_f32(SCROLLED));
+    std::fs::write(files.path(Side::Left), numbered(0) + "tail\n").expect("left");
+    disk_changed(cx, &o, Side::Left);
+    wait(cx, DIFF_DEBOUNCE);
+    for _ in 0..SETTLE_FRAMES {
+        act(cx, o.window, TestWindowExt::render_frame);
+    }
+    let kept = line * to_f32(SCROLLED);
+    assert_eq!(scroll_tops(cx, &o.view), (kept, kept, line));
+}
+
+#[expect(clippy::cast_precision_loss, reason = "line counts in these tests are tiny")]
+fn to_f32(n: usize) -> f32 {
+    n as f32
+}
+
 /// Regions of these files: 0 a, 1 b→B, 2 c, 3 d→(none), 4 e. Bytes: left lines start at
 /// 0 2 4 6 8, right lines at 0 2 4 6.
 const FIVE_LEFT: &str = "a\nb\nc\nd\ne\n";

@@ -10,6 +10,7 @@ pub mod index;
 pub mod jj;
 pub mod journal;
 pub mod lengths;
+pub mod line_map;
 pub mod markers;
 pub mod merge3;
 pub mod pattern;

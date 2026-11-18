@@ -27,6 +27,7 @@ mod menu_bar;
 mod moves;
 mod open_dialog;
 mod origins;
+mod output_change;
 mod placeholders;
 mod resolve_queue;
 mod ruler;

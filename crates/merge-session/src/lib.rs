@@ -20,6 +20,7 @@ pub mod repository;
 pub mod resolve;
 pub mod semantics;
 pub mod session;
+pub mod stamp;
 
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};

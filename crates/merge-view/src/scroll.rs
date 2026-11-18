@@ -370,6 +370,44 @@ pub fn reveal_top(rows: Range<usize>, row_h: f32, view: f32) -> f32 {
     top.max(0.0)
 }
 
+/// Where a pane's view starts, held by a text line so that it survives a change of text,
+/// as a reload from disk makes (spec §6.1).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TopAnchor {
+    /// The line on the view's top row.
+    pub line: usize,
+    /// How far the view's top sits below the line's first row, in pixels.
+    pub below: f32,
+}
+
+impl TopAnchor {
+    /// The anchor of a view scrolled to `top`, with rows `row_h` tall. `line_at` gives the
+    /// line a display row shows, and `row_of` a line's first display row.
+    #[must_use]
+    pub fn at(
+        top: f32,
+        row_h: f32,
+        line_at: impl Fn(usize) -> usize,
+        row_of: impl Fn(usize) -> usize,
+    ) -> Self {
+        let line = line_at(split(f64::from(top / row_h), usize::MAX).0);
+        Self { line, below: top - to_f32(row_of(line)) * row_h }
+    }
+
+    /// The anchor on `line`, the same distance below it.
+    #[must_use]
+    pub fn on(self, line: usize) -> Self {
+        Self { line, ..self }
+    }
+
+    /// The scroll top that puts the anchor back at the view's top, held at the top of the
+    /// content.
+    #[must_use]
+    pub fn top(self, row_h: f32, row_of: impl Fn(usize) -> usize) -> f32 {
+        (to_f32(row_of(self.line)) * row_h + self.below).max(0.0)
+    }
+}
+
 /// The whole and fractional parts of `position`, with the whole part held in `0..count`.
 fn split(position: f64, count: usize) -> (usize, f64) {
     let position = position.max(0.0);
@@ -429,6 +467,42 @@ mod tests {
     use merge_core::testing::doc;
 
     use super::*;
+
+    const ROW_H: f32 = 20.0;
+
+    #[test]
+    fn a_top_anchor_names_the_line_on_the_top_row_and_the_distance_below_it() {
+        // Two spacer rows sit above line 10, so it starts on row 12, at 240 px.
+        let anchor = TopAnchor::at(250.0, ROW_H, |row| row - 2, |line| line + 2);
+        assert_eq!(anchor, TopAnchor { line: 10, below: 10.0 });
+    }
+
+    #[test]
+    fn a_top_anchor_in_a_spacer_row_keeps_its_distance_from_the_line_below() {
+        // Row 5 is a spacer above line 4, whose first row is 6.
+        let anchor = TopAnchor::at(105.0, ROW_H, |_| 4, |_| 6);
+        assert_eq!(anchor, TopAnchor { line: 4, below: -15.0 });
+        assert_eq!(anchor.top(ROW_H, |_| 6), 105.0);
+    }
+
+    #[test]
+    fn a_top_anchor_moved_to_another_line_keeps_its_distance() {
+        let anchor = TopAnchor { line: 10, below: 10.0 }.on(15);
+        assert_eq!(anchor.top(ROW_H, |line| line + 2), 350.0);
+    }
+
+    #[test]
+    fn a_top_anchor_above_the_content_scrolls_to_the_top() {
+        assert_eq!(TopAnchor { line: 0, below: -30.0 }.top(ROW_H, |line| line), 0.0);
+    }
+
+    #[test]
+    fn a_top_anchor_at_the_top_is_line_zero() {
+        assert_eq!(
+            TopAnchor::at(0.0, ROW_H, |row| row, |line| line),
+            TopAnchor { line: 0, below: 0.0 }
+        );
+    }
 
     #[test]
     fn a_left_offset_stays_within_the_content_past_the_view() {

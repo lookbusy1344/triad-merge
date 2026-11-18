@@ -54,13 +54,15 @@ Resolve a conflict by picking sources, or type in the result. Each region's firs
 
 The toolbar can take one side for every conflict left. The ruler at the right marks each change; click a mark to go there. Closing without a save exits 2; the VCS keeps its conflict.
 
+When another program changes the output file while the window is open, a banner says so at once. Save & Exit then asks before it replaces that file: Overwrite or Keep Editing.
+
 #### Moved and duplicated blocks
 
 A block a side moved from one place to another shows teal at both ends in that side's pane, with a pill on each naming the other end, such as `↓ L40` or `↑ B1`. `B` names a line of base. With the base pane shown, the block's base lines take a pill for each side that moved it. Click the pill, or press ⇧⌘M in a region that holds an end, to go to the other end; going to a base line shows the base pane. The result pane shows no moves: a moved block there is marked with the side it came from, like any other text. When both sides add the same block at different places, by moving it or as new text, the merge holds it twice and reports no conflict. The status bar then counts it, `1 duplicated block`, and the ruler outlines both copies in the conflict colour. Right-click a copy for `Suggested: Drop Duplicate of Line N`, which deletes that copy and keeps the one on line N, in one undo step. Each copy offers it, so you choose which place keeps the block.
 
 ### The diff window
 
-Two aligned, editable panes, each with copy to the other side. A block deleted in one place and inserted once in another shows teal at both ends, with an `M` beside it and a pill naming the other end's line, such as `R5 →`; click the `M` or the pill, or press ⇧⌘M with the caret in the block, to go to the other end. ⌘S writes each edited side to its own file and keeps the window open. Each side has its own undo. A file changed on disk reloads, or asks first when the pane has unsaved edits. When one side is a past revision, that side is read-only.
+Two aligned, editable panes, each with copy to the other side. A block deleted in one place and inserted once in another shows teal at both ends, with an `M` beside it and a pill naming the other end's line, such as `R5 →`; click the `M` or the pill, or press ⇧⌘M with the caret in the block, to go to the other end. ⌘S writes each edited side to its own file and keeps the window open. Each side has its own undo. A file changed on disk reloads, or asks first when the pane has unsaved edits; the caret and the view stay on their lines. When one side is a past revision, that side is read-only.
 
 ### The directory list
 

@@ -112,6 +112,11 @@ pub(crate) enum Profile {
     Release,
 }
 
+/// The merge window's banner after another program changed OUTPUT, named `name` (spec §6.3).
+pub(crate) fn output_changed_banner(name: &str) -> String {
+    t!("output-changed-banner", name = name)
+}
+
 /// The settings banner's accessible label: what it is, then its errors.
 pub(crate) fn settings_errors_label(errors: &str) -> String {
     t!("settings-errors", errors = errors.replace('\n', "; ").as_str())
@@ -151,6 +156,8 @@ pub(crate) mod prompt {
         changed_detail = "prompt-changed-detail";
         reload = "prompt-reload";
         keep_mine = "prompt-keep-mine";
+        overwrite = "prompt-overwrite";
+        output_changed_detail = "prompt-output-changed-detail";
     }
 
     /// The button that closes an alert. It takes the platform's role of OK.
