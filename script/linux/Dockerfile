@@ -17,10 +17,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable \
-        --component clippy --component rustfmt \
-    && curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C /opt/cargo/bin
-
 # The AppImage tools, pinned by digest. FUSE is missing in a container, so appimagetool is
 # unpacked once here.
 ARG APPIMAGETOOL=https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
@@ -36,6 +32,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends file patchelf d
     && echo "$RUNTIME_SHA256  runtime" | sha256sum -c \
     && chmod +x appimagetool && ./appimagetool --appimage-extract > /dev/null \
     && rm appimagetool
+
+# The digest of the stable channel's manifest, from script/linux/run image. A new stable
+# Rust changes it, which rebuilds this layer and the ones after it.
+ARG RUST_STABLE
+RUN echo "stable manifest $RUST_STABLE" \
+    && curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable \
+        --component clippy --component rustfmt \
+    && curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C /opt/cargo/bin
 
 # Root ignores file permissions, and the tests of unreadable and read-only paths need them.
 RUN useradd --create-home triad \

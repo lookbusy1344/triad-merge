@@ -3,18 +3,21 @@
 # provides it. The copy and the build sit on volumes: a Mac bind mount is slow, and file
 # watchers get no events through it.
 #
-#   script/linux/run image                 build the image
+#   script/linux/run image                 build the image; rerun after a new stable Rust
 #   script/linux/run cargo nextest run ... any command, in the copy
 set -euo pipefail
 
 readonly IMAGE=triad-linux
 readonly PLATFORM=linux/amd64
+readonly STABLE_MANIFEST_DIGEST=https://static.rust-lang.org/dist/channel-rust-stable.toml.sha256
 root=$(cd "$(dirname "$0")/../.." && pwd)
 readonly root
 mkdir -p "$root/target/linux"
 
 if [[ ${1:-} == image ]]; then
-    exec docker build --platform "$PLATFORM" -t "$IMAGE" "$root/script/linux"
+    stable=$(curl -fsSL "$STABLE_MANIFEST_DIGEST")
+    exec docker build --platform "$PLATFORM" -t "$IMAGE" \
+        --build-arg "RUST_STABLE=${stable%% *}" "$root/script/linux"
 fi
 
 # The copy has no .jj or .git, so the host names the commit of a package build.

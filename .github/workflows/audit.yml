@@ -32,6 +32,7 @@ jobs:
             echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
             export PATH="$HOME/.cargo/bin:$PATH"
           fi
+          rustup update --no-self-update stable
           rustup toolchain install
       - uses: taiki-e/install-action@v2
         with:

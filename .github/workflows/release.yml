@@ -52,7 +52,7 @@ jobs:
       NAME: triad-merge-${{ needs.version.outputs.version }}-aarch64-apple-darwin
     steps:
       - uses: actions/checkout@v5
-      - run: rustup toolchain install
+      - run: rustup update --no-self-update stable && rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: false
@@ -74,7 +74,7 @@ jobs:
       NAME: triad-merge-${{ needs.version.outputs.version }}-x86_64-pc-windows-msvc
     steps:
       - uses: actions/checkout@v5
-      - run: rustup toolchain install
+      - run: rustup update --no-self-update stable && rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: false

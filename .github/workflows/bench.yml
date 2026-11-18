@@ -34,6 +34,7 @@ jobs:
             echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
             export PATH="$HOME/.cargo/bin:$PATH"
           fi
+          rustup update --no-self-update stable
           rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - run: cargo bench -p merge-core --bench merge --locked -- 'load|toggle|keystroke'
