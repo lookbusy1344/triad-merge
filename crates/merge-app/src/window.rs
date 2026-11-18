@@ -57,6 +57,7 @@ use merge_view::chunks::Limits;
 use merge_view::diff::MOVE_TONE;
 use merge_view::heights::Heights;
 use merge_view::highlight::{CellSpans, Highlights};
+use merge_view::line_pick::{self, LineTarget};
 use merge_view::marks::{self, Band, Tone};
 use merge_view::merge_fold::{self, MergeFold, MergeOpened};
 use merge_view::moves::{self, MoveEnd};
@@ -105,12 +106,13 @@ use crate::toolbar::{self, Badge, GROUPS, Labels, PICKS, Tool};
 use crate::wrap::Wrap;
 use crate::{
     Cancel, CarryMovedEdit, ClearChoice, CopyInput, DropDuplicate, ExitCode, Find, GoToLine,
-    GoToMoveEnd, LINE_HEIGHT, NextConflict, NextDifference, PreviousConflict, PreviousDifference,
-    Redo, SaveAndExit, SaveCopyAs, SelectAllInput, TakeBase, TakeLeft, TakeLeftAllUnresolved,
-    TakeLeftThenRight, TakeRight, TakeRightAllUnresolved, TakeRightThenLeft, TakeSortedUnion,
-    TakeWholeLeft, TakeWholeRight, ToggleBase, ToggleBasePane, ToggleCollapseUnchanged, ToggleLeft,
-    ToggleOriginColumn, ToggleRight, ToggleScrollSync, ToggleSoftWrap, ToggleSyntax,
-    ToggleWhitespace, Typography, Undo, finish, go_to_line, ignore_closed_view, strings,
+    GoToMoveEnd, LINE_HEIGHT, NextConflict, NextDifference, PickSelectedLines, PreviousConflict,
+    PreviousDifference, Redo, SaveAndExit, SaveCopyAs, SelectAllInput, TakeBase, TakeLeft,
+    TakeLeftAllUnresolved, TakeLeftThenRight, TakeRight, TakeRightAllUnresolved, TakeRightThenLeft,
+    TakeSortedUnion, TakeWholeLeft, TakeWholeRight, ToggleBase, ToggleBasePane,
+    ToggleCollapseUnchanged, ToggleLeft, ToggleOriginColumn, ToggleRight, ToggleScrollSync,
+    ToggleSoftWrap, ToggleSyntax, ToggleWhitespace, Typography, Undo, finish, go_to_line,
+    ignore_closed_view, strings,
 };
 use merge_session::recovery::{FoundJournal, Locator, Recovery, WriteMode, Written, prune};
 use merge_session::session::{CannotSave, PreviewJob, Refused, SaveJob, SaveTarget, Session};
@@ -220,6 +222,12 @@ pub const COPY_NOTE_ID: &str = "copy-note";
 #[must_use]
 pub fn pick_id(pane: usize, row: RowIx) -> ElementId {
     ElementId::Name(format!("pick-{pane}-{row}").into())
+}
+
+/// The line target of `pane` on `row`: its line number, in a region that differs.
+#[must_use]
+pub fn line_pick_id(pane: usize, row: RowIx) -> ElementId {
+    ElementId::Name(format!("line-pick-{pane}-{row}").into())
 }
 
 /// The cell of `pane` on `row`.
@@ -562,6 +570,8 @@ pub struct MergeWindow {
     /// The steps that scroll the top panes while a selection drag holds the pointer past
     /// their edge.
     autoscroll: Option<Task<()>>,
+    /// The line last picked by a press on its number, where a shift-press runs from.
+    line_anchor: Option<LineTarget>,
     pinned: Option<Pin>,
     measurement: Measurement,
     /// The inputs' line origins and their column.
@@ -818,6 +828,7 @@ impl MergeWindow {
             input_find: input_find::Found::default(),
             input_select: InputSelect::new(input_focus),
             autoscroll: None,
+            line_anchor: None,
             pinned: None,
             measurement: Measurement::new(settings.measure),
             origin_column,
@@ -2219,6 +2230,43 @@ impl MergeWindow {
         self.go_to(region, window, cx);
     }
 
+    /// Toggle the line `target` names, or with `extend` the run from the line last pressed
+    /// (spec §4.4). The region becomes current.
+    fn pick_line(
+        &mut self,
+        target: LineTarget,
+        extend: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let lines = match (&self.line_anchor, extend) {
+            (Some(anchor), true) => line_pick::extend(anchor, target.clone()),
+            _ => target.clone(),
+        };
+        self.line_anchor = Some(target);
+        self.toggle_lines(lines, window, cx);
+    }
+
+    /// Pick Selected Lines: toggle the lines the top panes' selection touches, in the region
+    /// of its first line. Without a selection, or outside a region that differs, nothing. The
+    /// focus and the selection stay in the top panes, so the key again turns the lines off.
+    fn pick_selected_lines(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(selection) = self.input_select.selection() else {
+            return;
+        };
+        if let Some(LineTarget { region, source, lines }) =
+            line_pick::selected_lines(self.session.document(), selection)
+        {
+            self.run(Command::ToggleLines { region, source, lines }, window, cx);
+        }
+    }
+
+    fn toggle_lines(&mut self, target: LineTarget, window: &mut Window, cx: &mut Context<Self>) {
+        let LineTarget { region, source, lines } = target;
+        self.run(Command::ToggleLines { region, source, lines }, window, cx);
+        self.go_to(region, window, cx);
+    }
+
     fn pick_current(
         &mut self,
         source: Option<Source>,
@@ -2317,7 +2365,10 @@ impl MergeWindow {
 
     /// Bind the Merge menu's commands on `root`.
     fn on_merge_actions(root: Div, cx: &mut Context<Self>) -> Div {
-        root.on_action(cx.listener(|this, _: &ToggleLeft, window, cx| {
+        root.on_action(cx.listener(|this, _: &PickSelectedLines, window, cx| {
+            this.pick_selected_lines(window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &ToggleLeft, window, cx| {
             this.pick_current(Some(Source::Side(0)), window, cx);
         }))
         .on_action(cx.listener(|this, _: &ToggleBase, window, cx| {
@@ -3374,6 +3425,8 @@ impl MergeWindow {
         let (filler, muted, border) = (theme.muted, theme.muted_foreground, theme.border);
         let doc = self.session.document();
         let inputs = doc.inputs();
+        let selection =
+            if head && kind != Kind::Unchanged { doc.line_selection(region) } else { Vec::new() };
         // The theme is borrowed from `cx`, which the pick targets take mutably.
         let highlight_theme = Arc::clone(&theme.highlight_theme);
         let colouring = self.colouring;
@@ -3414,6 +3467,19 @@ impl MergeWindow {
                     };
                     pick_target(target, label, cx)
                 });
+                let line_pick = line
+                    .filter(|_| head)
+                    .and_then(|n| Some((n, line_pick::line_target(doc, source, n)?)))
+                    .map(|(n, target)| {
+                        let picked = line_pick::is_picked(&selection, source, target.lines.start);
+                        let label = strings::line_pick_label(title, n + 1);
+                        LinePick {
+                            id: line_pick_id(pane, index),
+                            picked: picked.then(|| tones.mark(marks::pane_tone(source))),
+                            label,
+                            on_press: line_press(target, cx),
+                        }
+                    });
                 let deleted_colour = deleted.filter(|_| head).map(|_| tones.deleted());
                 let note = deleted.filter(|_| head && first).map(strings::deleted_label);
                 let origin = origins.as_mut().map(|o| o.next().flatten());
@@ -3479,7 +3545,12 @@ impl MergeWindow {
                     .when_some(origin, |d, origin| {
                         d.child(display.origin_slot(pane, origin, muted))
                     })
-                    .child(line_number_cell(line.filter(|_| head), deleted_colour, muted))
+                    .child(line_number_cell(
+                        line.filter(|_| head),
+                        deleted_colour,
+                        muted,
+                        line_pick,
+                    ))
                     .child(cell_text(
                         text_id,
                         text,
@@ -3643,19 +3714,59 @@ fn result_heights(
     heights.fold(&items)
 }
 
+/// A press on a line number that picks its line.
+type LinePress = Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+
+/// A line number that picks its line (spec §4.4): in a region that differs, a toggle drawn in
+/// its pane's tone while its line is picked.
+struct LinePick {
+    id: ElementId,
+    /// The number's colour while its line is picked.
+    picked: Option<gpui_kit::Hsla>,
+    label: String,
+    on_press: LinePress,
+}
+
+/// What a press on `target`'s line number does: pick the line, or with shift the run from
+/// the line last pressed.
+fn line_press(target: LineTarget, cx: &mut Context<MergeWindow>) -> LinePress {
+    Box::new(cx.listener(move |this, event: &ClickEvent, window, cx| {
+        this.pick_line(target.clone(), event.modifiers().shift, window, cx);
+    }))
+}
+
 /// A top pane's line number slot: the line's number, [`DELETED_ROW_MARK`] in `deleted`'s colour
-/// on a filler row of a side that deleted base lines, or nothing on another filler row.
+/// on a filler row of a side that deleted base lines, or nothing on another filler row. With
+/// `pick`, the number is a toggle that picks its line.
 fn line_number_cell(
     line: Option<usize>,
     deleted: Option<gpui_kit::Hsla>,
     muted: gpui_kit::Hsla,
-) -> impl IntoElement {
-    div()
+    pick: Option<LinePick>,
+) -> AnyElement {
+    let cell = div()
         .w(LINE_NUMBER_WIDTH)
         .flex_none()
         .text_color(muted)
         .when_some(line, |d, n| d.child(SharedString::from((n + 1).to_string())))
-        .when_some(deleted, |d, colour| d.text_color(colour).child(DELETED_ROW_MARK))
+        .when_some(deleted, |d, colour| d.text_color(colour).child(DELETED_ROW_MARK));
+    let Some(LinePick { id, picked, label, on_press }) = pick else {
+        return cell.into_any_element();
+    };
+    cell.id(id)
+        .test_support()
+        .role(Role::Button)
+        .aria_toggled(if picked.is_some() { Toggled::True } else { Toggled::False })
+        .aria_label(label)
+        .cursor_pointer()
+        .when_some(picked, |d, colour| d.text_color(colour).font_weight(FontWeight::BOLD))
+        // A press here picks a line; it starts no selection in the cell's text.
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_click(move |event, window, cx| {
+            cx.stop_propagation();
+            on_press(event, window, cx);
+        })
+        .into_any_element()
 }
 
 /// A top pane's conflict mark slot: the mark's letter in its colour, or nothing.

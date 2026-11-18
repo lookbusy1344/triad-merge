@@ -210,6 +210,7 @@ menu-toggle-left = Växla vänster
 menu-toggle-base = Växla bas
 menu-toggle-right = Växla höger
 menu-clear-choice = Rensa val
+menu-pick-selected-lines = Välj markerade rader
 menu-take-base = Ta bas
 menu-take-left = Ta vänster
 menu-take-right = Ta höger
@@ -270,6 +271,7 @@ tool-whitespace = Visa eller dölj blanktecken
 
 pick-label = { $title } i område { $region } av { $regions }
 pick-label-unresolved = { $title } i område { $region } av { $regions }, olöst
+line-pick-label = Rad { $line } i { $title }
 badge-conflict = Konflikt { $number } av { $count }
 badge-sides = { $kept } av { $sides } sidor
 badge-all-resolved = alla lösta

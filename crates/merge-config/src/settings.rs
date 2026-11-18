@@ -2472,6 +2472,7 @@ keybind = cmd+1=toggle-left
 keybind = cmd+2=toggle-base
 keybind = cmd+3=toggle-right
 keybind = cmd+0=clear-choice
+keybind = cmd+shift+l=pick-selected-lines
 keybind = cmd+4=take-left-then-right
 keybind = cmd+5=take-right-then-left
 keybind = cmd+b=toggle-base-pane

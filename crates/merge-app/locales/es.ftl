@@ -210,6 +210,7 @@ menu-toggle-left = Alternar izquierda
 menu-toggle-base = Alternar base
 menu-toggle-right = Alternar derecha
 menu-clear-choice = Borrar elección
+menu-pick-selected-lines = Elegir líneas seleccionadas
 menu-take-base = Tomar base
 menu-take-left = Tomar izquierda
 menu-take-right = Tomar derecha
@@ -270,6 +271,7 @@ tool-whitespace = Mostrar u ocultar espacios en blanco
 
 pick-label = { $title } en la región { $region } de { $regions }
 pick-label-unresolved = { $title } en la región { $region } de { $regions }, sin resolver
+line-pick-label = Línea { $line } de { $title }
 badge-conflict = Conflicto { $number } de { $count }
 badge-sides = { $kept } de { $sides } lados
 badge-all-resolved = todos resueltos

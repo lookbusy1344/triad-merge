@@ -962,6 +962,7 @@ fn the_menus_hold_every_window_action(cx: &mut TestAppContext) {
                     item("Toggle Base", "triad::ToggleBase"),
                     item("Toggle Right", "triad::ToggleRight"),
                     item("Clear Choice", "triad::ClearChoice"),
+                    item("Pick Selected Lines", "triad::PickSelectedLines"),
                     Entry::Other,
                     item("Take Base", "triad::TakeBase"),
                     item("Take Left", "triad::TakeLeft"),

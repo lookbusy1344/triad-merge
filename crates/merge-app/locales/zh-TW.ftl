@@ -167,6 +167,7 @@ menu-toggle-left = 切換左側
 menu-toggle-base = 切換基礎
 menu-toggle-right = 切換右側
 menu-clear-choice = 清除選擇
+menu-pick-selected-lines = 選取所選行
 menu-take-base = 採用基礎
 menu-take-left = 採用左側
 menu-take-right = 採用右側
@@ -227,6 +228,7 @@ tool-whitespace = 顯示或隱藏空白字元
 
 pick-label = { $title }，第 { $region }/{ $regions } 個區域
 pick-label-unresolved = { $title }，第 { $region }/{ $regions } 個區域，未解決
+line-pick-label = { $title }，第 { $line } 行
 badge-conflict = 衝突 { $number }/{ $count }
 badge-sides = { $kept }/{ $sides } 方
 badge-all-resolved = 全部已解決

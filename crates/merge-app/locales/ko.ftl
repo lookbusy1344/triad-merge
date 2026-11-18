@@ -167,6 +167,7 @@ menu-toggle-left = 왼쪽 전환
 menu-toggle-base = 기준 전환
 menu-toggle-right = 오른쪽 전환
 menu-clear-choice = 선택 지우기
+menu-pick-selected-lines = 선택한 줄 고르기
 menu-take-base = 기준 채택
 menu-take-left = 왼쪽 채택
 menu-take-right = 오른쪽 채택
@@ -227,6 +228,7 @@ tool-whitespace = 공백 표시 또는 숨기기
 
 pick-label = { $title }, 영역 { $region }/{ $regions }
 pick-label-unresolved = { $title }, 영역 { $region }/{ $regions }, 해결되지 않음
+line-pick-label = { $title }, { $line }번째 줄
 badge-conflict = 충돌 { $number }/{ $count }
 badge-sides = { $kept }/{ $sides }개 쪽
 badge-all-resolved = 모두 해결됨

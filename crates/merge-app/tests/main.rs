@@ -22,6 +22,7 @@ mod journal;
 mod keybind;
 mod languages;
 mod line_ending;
+mod line_picks;
 mod measure;
 mod menu_bar;
 mod moves;

@@ -210,6 +210,7 @@ menu-toggle-left = Links aan/uit
 menu-toggle-base = Basis aan/uit
 menu-toggle-right = Rechts aan/uit
 menu-clear-choice = Keuze wissen
+menu-pick-selected-lines = Geselecteerde regels kiezen
 menu-take-base = Basis nemen
 menu-take-left = Links nemen
 menu-take-right = Rechts nemen
@@ -270,6 +271,7 @@ tool-whitespace = Witruimte tonen of verbergen
 
 pick-label = { $title } in gebied { $region } van { $regions }
 pick-label-unresolved = { $title } in gebied { $region } van { $regions }, onopgelost
+line-pick-label = Regel { $line } van { $title }
 badge-conflict = Conflict { $number } van { $count }
 badge-sides = { $kept } van { $sides } kanten
 badge-all-resolved = alle opgelost

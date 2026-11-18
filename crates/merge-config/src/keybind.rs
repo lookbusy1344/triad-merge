@@ -62,6 +62,7 @@ const DEFAULT_BINDINGS: &[(&str, KeyAction)] = &[
     ("cmd+2", KeyAction::ToggleBase),
     ("cmd+3", KeyAction::ToggleRight),
     ("cmd+0", KeyAction::ClearChoice),
+    ("cmd+shift+l", KeyAction::PickSelectedLines),
     ("cmd+4", KeyAction::TakeLeftThenRight),
     ("cmd+5", KeyAction::TakeRightThenLeft),
     ("cmd+b", KeyAction::ToggleBasePane),
@@ -132,6 +133,7 @@ pub enum KeyAction {
     ToggleBase,
     ToggleRight,
     ClearChoice,
+    PickSelectedLines,
     TakeBase,
     TakeLeft,
     TakeRight,
@@ -652,7 +654,8 @@ mod tests {
         assert_eq!(actions_of(&bindings, "cmd+s"), [KeyAction::SaveAndExit, KeyAction::Save]);
         assert_eq!(actions_of(&bindings, "cmd+u"), [KeyAction::ToggleCollapseUnchanged]);
         assert_eq!(windows_of(&bindings, "cmd+shift+m"), [(KeyAction::GoToMoveEnd, BOTH)]);
-        assert_eq!(bindings.bound().len(), 32);
+        assert_eq!(windows_of(&bindings, "cmd+shift+l"), [(KeyAction::PickSelectedLines, MERGE)]);
+        assert_eq!(bindings.bound().len(), 33);
         assert_eq!(bindings.unbound().count(), 0);
     }
 
