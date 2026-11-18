@@ -58,6 +58,8 @@ In order. Each is one or more commits.
 | `DiffScroll`: the diff window's eight scroll fields in one component, as `PaneScroll` | A diff scroll bug | §A13.3 |
 | The two-way diff under histogram on a line repeated on every few lines, such as `}`: 2.1 s at 100k lines against Myers's 29 ms (`diff-load-braced`) | — | §A4.7 |
 | A histogram diff that gives git's hunks faster: 1.5 s against jj's 70 ms on the 100k-line `deep` triple | — | §B6 |
+| Deep refinement under jj semantics on one core: `load-deep-rust` at 1M lines takes 517 ms at `main` against 491 ms at the 2026-11-09 import, on the same toolchain; `load-jj` moved under 3%. Parallel refinement hides it (458 ms); bisect it as `align`'s was | — | §B6 |
+| `cargo bench -p merge-cli --bench annotate`: building the 10 000-commit jj history takes over 25 minutes, so the jj row of §C5.5 dates from 2026-10-29. First check: the colocated default fixture exporting to git on each commit | — | §C5.5 |
 | A sideways scrollbar for the top panes: a `ScrollbarHandle` over `Sideways` | — | §E4.4 |
 | A `script/measure-app` mode with a search query open | — | §A14 |
 | The result's search panel in triad's 12 px chrome | A gpui-component release that styles it, or vendoring the crate | `docs/gpui-kit-issues.md` |
