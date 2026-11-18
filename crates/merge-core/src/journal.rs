@@ -18,7 +18,7 @@ use crate::document::{
 use crate::merge3::{Inputs, Kind, Region};
 
 /// The format of the journal. A journal of another version is not restored.
-pub const JOURNAL_VERSION: u32 = 12;
+pub const JOURNAL_VERSION: u32 = 13;
 
 const HEX_DIGITS_PER_BYTE: usize = 2;
 
@@ -484,13 +484,13 @@ mod tests {
     }
 
     #[test]
-    fn the_format_version_is_twelve() {
-        assert_eq!(JOURNAL_VERSION, 12);
+    fn the_format_version_is_thirteen() {
+        assert_eq!(JOURNAL_VERSION, 13);
         let (d, journal) = session();
         let all = bytes(&journal);
         let header =
             std::str::from_utf8(&all).expect("JSON is UTF-8").lines().next().expect("a header");
-        assert!(header.starts_with(r#"{"version":12,"#), "{header}");
+        assert!(header.starts_with(r#"{"version":13,"#), "{header}");
         let alignment = format!(r#""alignment":"{}""#, d.start().alignment);
         assert!(header.contains(&alignment), "{header}");
         assert!(header.contains(r#""refine":"ends""#), "{header}");

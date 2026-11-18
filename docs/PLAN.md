@@ -158,7 +158,10 @@ Done: the matcher, `diff2::moves` (spec §4.6, `DESIGN.md` §A4.7), recomputed a
 ### G8 Line picks inside a conflict
 
 - Each line of a side in a conflict gets a hit target in the top pane. Picked lines go into the result in source order, then line order.
-- A new resolution, `Lines(Vec<(Source, Range)>)`, toggles line by line and keeps each line's origin. It needs a journal version and a change to `inspect`'s schema (§G15).
+- A new resolution, `Lines(Vec<(Source, Range)>)`, toggles line by line and keeps each line's origin (§G15).
+- Steps:
+  1. Done: `Resolution::Lines`, `Command::ToggleLines` and `MergeDocument::line_selection` in `merge-core` (`line_pick`), the marks and line origins of picked lines in `merge-view`, journal format 13 (spec §4.4).
+  2. The top panes: a hit target on each line of a side or base, shift-click for a run, a key for the line under the caret, ticks on picked lines.
 - Tests: every order of picks across two sides; toggling a line off; a line without a newline before another pick (spec §4.4); undo.
 
 ### G9 Unified view in the diff window

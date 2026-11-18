@@ -115,8 +115,8 @@ impl TryFrom<RefineValue> for Refine {
     }
 }
 
-/// One input of a merge.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// One input of a merge. Inputs order as sides by index, then bases by index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Source {
     Side(usize),
     Base(usize),

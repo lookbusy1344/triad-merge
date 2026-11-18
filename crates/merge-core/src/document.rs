@@ -18,6 +18,7 @@ use crate::edit::{apply, caret_after, inverse, prepare, starts_after};
 use crate::index::{ByteOffset, Line, RegionIx};
 use crate::journal::alignment_hash;
 use crate::lengths::RegionLengths;
+use crate::line_pick::{PickedLines, toggle, whole_sources};
 use crate::merge3::{
     Aligned, Alignment, Duplicate, HunkLevel, Inputs, Kind, LEFT, RIGHT, Refine, Region,
     SameChange, Semantics, SideMove, Source, align_bounded, duplicates, side_moves, word_merge,
@@ -154,6 +155,9 @@ pub enum Resolution {
     Auto,
     /// These sources' texts in this order, each at most once. Empty removes the region's text.
     Pick(Vec<Source>),
+    /// Lines of the sources, in the normal form of [`crate::line_pick`]: by source, then by
+    /// line. Never takes every source it names whole; that is a [`Resolution::Pick`].
+    Lines(Vec<PickedLines>),
     /// Text typed in the result pane. It lives in the result text.
     Edited,
     /// A conflict nobody has decided: the result pane shows every side in order, and the
@@ -168,6 +172,14 @@ pub enum Command {
     Toggle {
         region: RegionIx,
         source: Source,
+    },
+    /// Pick `lines` of `source`, counted from the region's first line of it, or turn them off
+    /// when every one is picked. A pick of whole sources becomes their lines. Turning off a
+    /// conflict's last line leaves it unresolved.
+    ToggleLines {
+        region: RegionIx,
+        source: Source,
+        lines: Range<usize>,
     },
     /// Pick nothing: the region contributes no text.
     Clear {
@@ -267,6 +279,8 @@ pub enum CommandError {
     NoRegion { region: RegionIx, regions: usize },
     #[error("the merge has no input {input:?}")]
     NoInput { input: Source },
+    #[error("the region has lines 0..{available} of {input:?}, not {lines:?}")]
+    NoLines { input: Source, lines: Range<usize>, available: usize },
     #[error("input {input:?} is picked twice")]
     RepeatedInput { input: Source },
     #[error(transparent)]
@@ -482,7 +496,7 @@ impl MergeDocument {
         let takes_side = match &self.resolutions[index] {
             Resolution::Auto => region.kind == Kind::OneSide(side),
             Resolution::Pick(sources) => sources[..] == [Source::Side(side)],
-            Resolution::Edited | Resolution::Unresolved => false,
+            Resolution::Lines(_) | Resolution::Edited | Resolution::Unresolved => false,
         };
         takes_side.then(|| {
             let start = self.region_lines(RegionIx::new(index)).start.get() + lines.start
@@ -535,7 +549,41 @@ impl MergeDocument {
                 Kind::AllSame => Some(Cow::Owned(vec![Source::Side(0)])),
                 Kind::Unchanged | Kind::WordMerged | Kind::Conflict => None,
             },
-            Resolution::Edited | Resolution::Unresolved => None,
+            Resolution::Lines(_) | Resolution::Edited | Resolution::Unresolved => None,
+        }
+    }
+
+    /// The lines `region`'s text takes from each source, in the normal form of
+    /// [`crate::line_pick`]. A pick of whole sources, automatic or not, takes all their lines.
+    /// None for a region no source gives the text of: an unchanged or word-merged region, an
+    /// edit, or an unresolved conflict.
+    ///
+    /// # Panics
+    ///
+    /// If the region does not exist.
+    #[must_use]
+    pub fn line_selection(&self, region: RegionIx) -> Vec<PickedLines> {
+        let region = region.get();
+        if let Resolution::Lines(selection) = &self.resolutions[region] {
+            return selection.clone();
+        }
+        let mut selection: Vec<PickedLines> = self
+            .current_pick(region)
+            .unwrap_or_default()
+            .iter()
+            .map(|&source| PickedLines::new(source, 0..self.line_count_of(region, source)))
+            .filter(|p| !p.lines.is_empty())
+            .collect();
+        selection.sort_by_key(|p| p.source);
+        selection
+    }
+
+    /// The lines `source` has in `region`.
+    fn line_count_of(&self, region: usize, source: Source) -> usize {
+        let r = &self.regions[region];
+        match source {
+            Source::Side(i) => r.sides[i].len(),
+            Source::Base(i) => r.bases[i].len(),
         }
     }
 
@@ -576,6 +624,28 @@ impl MergeDocument {
                     Resolution::Pick(picked)
                 };
                 Ok(self.resolve(region, resolution))
+            }
+            Command::ToggleLines { region, source, lines } => {
+                self.check_region(region)?;
+                self.check_input(source)?;
+                let ix = region.get();
+                let available = self.line_count_of(ix, source);
+                if lines.is_empty() || lines.end > available {
+                    return Err(CommandError::NoLines { input: source, lines, available });
+                }
+                let selection = toggle(&self.line_selection(region), source, &lines);
+                let resolution = if selection.is_empty() {
+                    // As with a toggle, a conflict never resolves to nothing: Clear does that.
+                    if self.regions[ix].kind == Kind::Conflict {
+                        Resolution::Unresolved
+                    } else {
+                        Resolution::Pick(Vec::new())
+                    }
+                } else {
+                    whole_sources(&selection, |s| self.line_count_of(ix, s))
+                        .map_or(Resolution::Lines(selection), Resolution::Pick)
+                };
+                Ok(self.resolve(ix, resolution))
             }
             Command::Clear { region } => {
                 self.check_region(region)?;
@@ -838,6 +908,7 @@ impl MergeDocument {
                     self.markers(r, |source| self.source_text(r, source).into(), false).into()
                 }),
             Resolution::Pick(sources) => self.pick_text(r, sources),
+            Resolution::Lines(selection) => self.joined_text(self.line_texts(r, selection)),
             Resolution::Edited => self.region_text(region).into(),
             Resolution::Unresolved => self.pick_text(r, &self.sides()),
         }
@@ -849,25 +920,49 @@ impl MergeDocument {
     }
 
     fn pick_text(&self, region: &Region, sources: &[Source]) -> Cow<'_, str> {
-        match self.pieces(region, sources).as_slice() {
+        self.joined_text(self.source_texts(region, sources))
+    }
+
+    /// Each source's text in `region`.
+    fn source_texts<'s, 'r>(
+        &'s self,
+        region: &'r Region,
+        sources: &'r [Source],
+    ) -> impl Iterator<Item = (Source, &'s str)> + use<'s, 'r> {
+        sources.iter().map(move |&source| (source, self.source_text(region, source)))
+    }
+
+    /// The text of each run of picked lines in `region`.
+    fn line_texts<'s, 'r>(
+        &'s self,
+        region: &'r Region,
+        selection: &'r [PickedLines],
+    ) -> impl Iterator<Item = (Source, &'s str)> + use<'s, 'r> {
+        selection.iter().map(move |p| {
+            let start = match p.source {
+                Source::Side(i) => region.sides[i].start,
+                Source::Base(i) => region.bases[i].start,
+            };
+            let lines = start + p.lines.start..start + p.lines.end;
+            (p.source, self.inputs.text(p.source).span(lines))
+        })
+    }
+
+    fn joined_text<'a>(&self, texts: impl Iterator<Item = (Source, &'a str)>) -> Cow<'a, str> {
+        match self.pieces(texts).as_slice() {
             [] => Cow::Borrowed(""),
             &[(_, text, _)] => Cow::Borrowed(text),
             pieces => pieces.iter().flat_map(|&(_, text, joint)| [text, joint]).collect(),
         }
     }
 
-    /// The sources with text, each with that text and the newline joining it to the next: the
-    /// typed ending when it lacks one and another source with text follows, otherwise none.
+    /// The texts that are not empty, each with the newline joining it to the next: the typed
+    /// ending when it lacks one and another text follows, otherwise none.
     fn pieces<'a>(
-        &'a self,
-        region: &Region,
-        sources: &[Source],
+        &self,
+        texts: impl Iterator<Item = (Source, &'a str)>,
     ) -> Vec<(Source, &'a str, &'static str)> {
-        let texts: Vec<(Source, &str)> = sources
-            .iter()
-            .map(|&source| (source, self.source_text(region, source)))
-            .filter(|(_, t)| !t.is_empty())
-            .collect();
+        let texts: Vec<(Source, &str)> = texts.filter(|(_, t)| !t.is_empty()).collect();
         let ending = self.typed_ending.as_str();
         let last = texts.len().saturating_sub(1);
         texts
@@ -997,9 +1092,9 @@ impl MergeDocument {
         }
     }
 
-    /// The bytes each source's text fills in a picked or unresolved region, in order. A
-    /// newline joining a source to the next belongs to the first. Sources without text get
-    /// none. Automatic and edited regions have none.
+    /// The bytes each source's text fills in a picked or unresolved region, in order, or each
+    /// run of picked lines. A newline joining a piece to the next belongs to the first.
+    /// Sources without text get none. Automatic and edited regions have none.
     ///
     /// # Panics
     ///
@@ -1007,17 +1102,19 @@ impl MergeDocument {
     #[must_use]
     pub fn blocks(&self, region: RegionIx) -> Vec<(Source, Range<usize>)> {
         let region = region.get();
+        let r = &self.regions[region];
         let sides;
-        let sources = match &self.resolutions[region] {
-            Resolution::Pick(sources) => sources.as_slice(),
+        let pieces = match &self.resolutions[region] {
+            Resolution::Pick(sources) => self.pieces(self.source_texts(r, sources)),
             Resolution::Unresolved => {
                 sides = self.sides();
-                sides.as_slice()
+                self.pieces(self.source_texts(r, &sides))
             }
+            Resolution::Lines(selection) => self.pieces(self.line_texts(r, selection)),
             Resolution::Auto | Resolution::Edited => return Vec::new(),
         };
         let mut at = self.bytes_of(region).start;
-        self.pieces(&self.regions[region], sources)
+        pieces
             .into_iter()
             .map(|(source, text, joint)| {
                 let start = at;
@@ -1287,7 +1384,9 @@ impl MergeDocument {
     /// resolution. Undoing them all leaves nothing changed.
     #[must_use]
     pub fn changed(&self) -> bool {
-        self.resolutions.iter().any(|r| matches!(r, Resolution::Pick(_) | Resolution::Edited))
+        self.resolutions
+            .iter()
+            .any(|r| matches!(r, Resolution::Pick(_) | Resolution::Lines(_) | Resolution::Edited))
     }
 
     /// Lines in the result. An unterminated last line counts; an empty text has none.

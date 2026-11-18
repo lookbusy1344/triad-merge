@@ -223,6 +223,8 @@ fn markers_read_back(doc: &MergeDocument) -> Result<(), TestCaseError> {
 #[derive(Debug, Clone)]
 enum Op {
     Toggle(usize, Source),
+    /// Region, source, first line and length, each a fraction of what the region holds.
+    ToggleLines(usize, Source, usize, usize),
     Clear(usize),
     Pick(usize, &'static [Source]),
     Insert(usize, &'static str),
@@ -244,7 +246,7 @@ fn blocks_fill_regions(doc: &MergeDocument) -> bool {
         let bytes = doc.region_bytes(r);
         let blocks = doc.blocks(r);
         match *doc.resolution(r) {
-            Resolution::Pick(_) | Resolution::Unresolved => {
+            Resolution::Pick(_) | Resolution::Lines(_) | Resolution::Unresolved => {
                 blocks.iter().try_fold(bytes.start, |at, (_, b)| {
                     (b.start == at && b.end > b.start).then_some(b.end)
                 }) == Some(bytes.end)
@@ -260,7 +262,9 @@ fn op_strategy() -> impl Strategy<Value = Op> {
     let typed = prop::sample::select(vec!["x", "y", "\n", "z\n", "<", "\r\n"]);
     let picks: Vec<&'static [Source]> = vec![&[], &[L], &[R], &[L, R], &[R, L], &[B, R, L]];
     prop_oneof![
-        (any::<usize>(), source).prop_map(|(r, s)| Op::Toggle(r, s)),
+        (any::<usize>(), source.clone()).prop_map(|(r, s)| Op::Toggle(r, s)),
+        (any::<usize>(), source, any::<usize>(), any::<usize>())
+            .prop_map(|(r, s, start, len)| Op::ToggleLines(r, s, start, len)),
         any::<usize>().prop_map(Op::Clear),
         (any::<usize>(), prop::sample::select(picks)).prop_map(|(r, s)| Op::Pick(r, s)),
         (any::<usize>(), typed.clone()).prop_map(|(at, t)| Op::Insert(at, t)),
@@ -281,6 +285,20 @@ fn command(op: &Op, doc: &MergeDocument) -> Command {
     let regions = doc.regions().len();
     match *op {
         Op::Toggle(r, source) => Command::Toggle { region: RegionIx::new(r % regions), source },
+        Op::ToggleLines(r, source, start, len) => {
+            let region = RegionIx::new(r % regions);
+            let r = doc.region(region);
+            let available = match source {
+                Source::Side(i) => r.sides[i].len(),
+                Source::Base(i) => r.bases[i].len(),
+            };
+            if available == 0 {
+                return Command::Toggle { region, source };
+            }
+            let first = start % available;
+            let end = first + 1 + len % (available - first);
+            Command::ToggleLines { region, source, lines: first..end }
+        }
         Op::Clear(r) => Command::Clear { region: RegionIx::new(r % regions) },
         Op::Pick(r, sources) => {
             Command::Pick { region: RegionIx::new(r % regions), sources: sources.to_vec() }

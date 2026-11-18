@@ -28,7 +28,8 @@ pub struct Placeholder {
 /// A picked, unresolved or one-side region gets one where each shown side deleted base lines,
 /// at that side's place among the region's blocks. Neighbouring deleting sides share one. A
 /// region picked as nothing gets one when any input has lines in it. Unchanged, word-merged
-/// and edited regions get none.
+/// and edited regions, and regions of picked lines, get none: picked lines come from sources
+/// with lines, which deleted none of them.
 #[must_use]
 pub fn placeholders(doc: &MergeDocument) -> Vec<Placeholder> {
     doc.region_ixs().flat_map(|region| in_region(doc, region)).collect()
@@ -38,7 +39,8 @@ fn in_region(doc: &MergeDocument, region: RegionIx) -> Vec<Placeholder> {
     let r = doc.region(region);
     let all_sides = || (0..r.sides.len()).map(Source::Side).collect::<Vec<_>>();
     let shown = match (doc.resolution(region), r.kind) {
-        (Resolution::Edited, _) | (Resolution::Auto, Kind::Unchanged | Kind::WordMerged) => {
+        (Resolution::Edited | Resolution::Lines(_), _)
+        | (Resolution::Auto, Kind::Unchanged | Kind::WordMerged) => {
             return Vec::new();
         }
         (Resolution::Pick(sources), _) if sources.is_empty() => {

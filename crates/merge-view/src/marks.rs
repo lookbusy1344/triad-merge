@@ -192,6 +192,12 @@ pub fn mark(doc: &MergeDocument, region: RegionIx) -> Option<Mark> {
             [source] => source_mark(*source, three_way),
             _ => SEVERAL,
         }),
+        Resolution::Lines(selection) => Some(match selection.as_slice() {
+            [first, rest @ ..] if rest.iter().all(|p| p.source == first.source) => {
+                source_mark(first.source, three_way)
+            }
+            _ => SEVERAL,
+        }),
         Resolution::Edited => Some(EDITED),
         Resolution::Unresolved => Some(UNRESOLVED),
     }
@@ -507,6 +513,24 @@ mod tests {
         // An unchanged region with a pick gets a mark too.
         toggle(&mut d, RegionIx::new(0), Source::Side(1));
         assert_eq!(mark(&d, RegionIx::new(0)), Some(RIGHT));
+    }
+
+    #[test]
+    fn picked_lines_show_their_source_or_several() {
+        let mut d = doc(three("a\nb1\nb2\nb3\n", "a\nL1\nL2\nL3\n", "a\nR1\nR2\nR3\n"));
+        let conflict = RegionIx::new(1);
+        let lines = |d: &mut MergeDocument, source, lines| {
+            d.apply(Command::ToggleLines { region: conflict, source, lines })
+                .expect("the lines exist");
+        };
+        lines(&mut d, Source::Side(0), 0..1);
+        lines(&mut d, Source::Base(0), 1..2);
+        lines(&mut d, Source::Base(0), 1..2);
+        assert_eq!(mark(&d, conflict), Some(LEFT), "one run of left");
+        lines(&mut d, Source::Side(0), 2..3);
+        assert_eq!(mark(&d, conflict), Some(LEFT), "two runs of left");
+        lines(&mut d, Source::Side(1), 0..1);
+        assert_eq!(mark(&d, conflict), Some(SEVERAL));
     }
 
     #[test]
