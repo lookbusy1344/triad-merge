@@ -222,6 +222,7 @@ menu-toggle-left = Переключить левую
 menu-toggle-base = Переключить базу
 menu-toggle-right = Переключить правую
 menu-clear-choice = Сбросить выбор
+menu-pick-selected-lines = Выбрать выделенные строки
 menu-take-base = Взять базу
 menu-take-left = Взять левую
 menu-take-right = Взять правую
@@ -282,6 +283,7 @@ tool-whitespace = Показать или скрыть пробелы
 
 pick-label = { $title } в области { $region } из { $regions }
 pick-label-unresolved = { $title } в области { $region } из { $regions }, не разрешено
+line-pick-label = Строка { $line } в { $title }
 badge-conflict = Конфликт { $number } из { $count }
 badge-sides = { $kept } из { $sides } сторон
 badge-all-resolved = все разрешены

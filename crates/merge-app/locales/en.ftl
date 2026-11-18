@@ -215,6 +215,7 @@ menu-toggle-left = Toggle Left
 menu-toggle-base = Toggle Base
 menu-toggle-right = Toggle Right
 menu-clear-choice = Clear Choice
+menu-pick-selected-lines = Pick Selected Lines
 menu-take-base = Take Base
 menu-take-left = Take Left
 menu-take-right = Take Right
@@ -275,6 +276,7 @@ tool-whitespace = Show or hide whitespace
 
 pick-label = { $title } in region { $region } of { $regions }
 pick-label-unresolved = { $title } in region { $region } of { $regions }, unresolved
+line-pick-label = Line { $line } of { $title }
 badge-conflict = Conflict { $number } of { $count }
 badge-sides = { $kept } of { $sides } sides
 badge-all-resolved = all resolved

@@ -67,7 +67,10 @@ impl Choice {
             Resolution::Pick(sources) => {
                 Self::ALL.into_iter().find(|choice| choice.sources() == sources.as_slice())
             }
-            Resolution::Auto | Resolution::Edited | Resolution::Unresolved => None,
+            Resolution::Auto
+            | Resolution::Lines(_)
+            | Resolution::Edited
+            | Resolution::Unresolved => None,
         }
     }
 }

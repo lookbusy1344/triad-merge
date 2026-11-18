@@ -19,7 +19,7 @@ As of 2026-11-18.
 | M6 native resolution | Done: git stages a resolved save; jj snapshots before the read and after each save | D |
 | M7 syntax highlighting | Done: Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS, C, C++ | F |
 | p4merge parity | Done | E |
-| Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; §G6 done: the files that differ between two directories, or between a revision and the working copy (`diff`, `diff --rev`), in the directory window and printed by `diff --inspect`, and from `jj diff --tool` and `git difftool -d`, with renames and copies paired as jj pairs them; text that is not UTF-8 read and saved as Windows-1252 (§G17); invisible characters drawn as code points and odd spaces shaded in every pane, and escaped in terminal output (§A6.8); moved and duplicated blocks in the merge window and `inspect`, with a suggestion to drop a duplicate (§G16), done; visible whitespace in every pane (§G10) done; a reload from disk keeps the caret and the view on their lines, and the merge window warns at once when another program changes OUTPUT (spec §6.1, §6.2), done; the rest open | G |
+| Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; §G6 done: the files that differ between two directories, or between a revision and the working copy (`diff`, `diff --rev`), in the directory window and printed by `diff --inspect`, and from `jj diff --tool` and `git difftool -d`, with renames and copies paired as jj pairs them; text that is not UTF-8 read and saved as Windows-1252 (§G17); invisible characters drawn as code points and odd spaces shaded in every pane, and escaped in terminal output (§A6.8); moved and duplicated blocks in the merge window and `inspect`, with a suggestion to drop a duplicate (§G16), done; visible whitespace in every pane (§G10) done; line picks inside a region, from the top panes' line numbers and Pick Selected Lines (§G8), done; a reload from disk keeps the caret and the view on their lines, and the merge window warns at once when another program changes OUTPUT (spec §6.1, §6.2), done; the rest open | G |
 | Languages | Done: the windows and their error details in English, Spanish, simplified and traditional Chinese, Japanese, Korean, German, French, Brazilian Portuguese, Russian, Ukrainian, Polish, Dutch and Swedish, from Fluent catalogues, set by `ui-language` or the system; gpui-component's own text, such as Replace and a field's right-click menu, from triad's catalogues; on macOS the system's own controls follow the system's language | §E3.6 |
 | Look after Zed | Done: chrome in the UI font, the Zed status bar, raised surfaces (Go to Line as Zed's card, the menus, the prompt), a 1 px current-region frame, a softer ruler, one style for errors and warnings, and on macOS the toolbar in the title bar | `docs/STYLE.md` |
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
@@ -37,7 +37,7 @@ In order. Each is one or more commits.
 
 1. **Close M3.** Skipped for now by the owner. The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
 2. **Screen-reader support** (part J). Skipped for now by the owner: live status, conflict regions, scrolling the row table, in the order of §J7.
-3. **Review and diff features** (part G): §G7–§G9, §G11–§G14.
+3. **Review and diff features** (part G): §G7, §G9, §G11–§G14.
 4. **More grammars,** one commit each: Java and Kotlin; then Markdown; then Bash, Ruby, PHP and SQL.
 5. **M4b** (§3) once the owner has the machines and the certificate.
 6. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
@@ -76,7 +76,7 @@ In order. Each is one or more commits.
 | Ruler marks with folds: the marks keep their place in the whole file while the thumb follows display rows | A choice between the two | §G2 |
 | A key that opens the fold next to the caret | — | §G2 |
 | A `fallback-encoding` setting to turn the Windows-1252 fallback off | Someone who needs it off | §G17 |
-| Review and diff features: blank lines in a merge (§G4), §G7–§G9, §G11–§G14 | Owner's choices on §G15's open points for §G4 and §G8 | G |
+| Review and diff features: blank lines in a merge (§G4), §G7, §G9, §G11–§G14 | Owner's choice on §G15's open point for §G4 | G |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
 | The absorb oracle's generator builds text files only: no renames, executable bits, symlinks, conflicted inputs or immutable commits | — | §I5 |
 | jj-cli's config defaults other than the revset aliases: none checked for whether triad depends on one | — | §I5 |
@@ -157,8 +157,11 @@ Done: the matcher, `diff2::moves` (spec §4.6, `DESIGN.md` §A4.7), recomputed a
 
 ### G8 Line picks inside a conflict
 
-- Each line of a side in a conflict gets a hit target in the top pane. Picked lines go into the result in source order, then line order.
-- Open: a new resolution, `Lines(Vec<(Source, Range)>)`, that toggles line by line and needs a journal version; or picks that build `Edited` text, which needs no model change but cannot be toggled back. Proposed: the new resolution.
+- Each line of a side in a conflict gets a hit target in the top pane. Picked lines go into the result in click order.
+- A new resolution, `Lines(Vec<(Source, Range)>)`, toggles line by line and keeps each line's origin (§G15).
+- Steps:
+  1. Done: `Resolution::Lines`, `Command::ToggleLines` and `MergeDocument::line_selection` in `merge-core` (`line_pick`), the marks and line origins of picked lines in `merge-view`, journal format 13 (spec §4.4).
+  2. Done: the top panes. Each line number in a region that differs toggles its line, shift-click the run from the line pressed last, and Pick Selected Lines (⇧⌘L) the lines a top-pane selection touches; a picked line's number is bold in its pane's tone (spec §5, `docs/STYLE.md`). The top panes have no caret, so the key acts on the selection.
 - Tests: every order of picks across two sides; toggling a line off; a line without a newline before another pick (spec §4.4); undo.
 
 ### G9 Unified view in the diff window
@@ -244,7 +247,15 @@ A file that is not valid UTF-8 and has no byte order mark decodes as Windows-125
 
 - **G16 duplicates:** decided. A duplicate is reported in the ruler, the status bar and `inspect`, and each copy suggests `Drop Duplicate of Line N`, which deletes that copy as one edit and one undo, as Carry Edit does; the user picks which place keeps the block.
 
-Open: G4's blank lines in a merge, G8's resolution model.
+- **G8 model:** decided. A new resolution, `Lines(Vec<(Source, Range)>)`, not picks that write `Edited` text: the region stays toggleable and keeps each line's origin.
+- **G8 rules:** decided.
+  - Picked lines go into the result in click order, as whole-side picks follow click order, so the sides' lines may interleave. A line picked just after its predecessor in the same source joins its run; a run picked over lines partly picked moves last, whole.
+  - A line pick adds to a whole-side pick: each picked side becomes the run of all its lines, in the pick's order. Runs that are whole sources collapse to `Pick` in the same order, so each state has one form. A region's pick target replaces line picks with its whole source.
+  - Base lines can be picked one at a time; their targets show while the base pane shows.
+  - Turning off a conflict's last picked line leaves it unresolved, as with whole sources (spec §4.4).
+  - A click toggles a line, a shift-click a range, and a key toggles the line under the top pane's caret.
+
+Open: G4's blank lines in a merge.
 
 ## J. Screen-reader support
 

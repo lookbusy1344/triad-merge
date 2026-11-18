@@ -167,6 +167,7 @@ menu-toggle-left = 左を切り替え
 menu-toggle-base = ベースを切り替え
 menu-toggle-right = 右を切り替え
 menu-clear-choice = 選択を解除
+menu-pick-selected-lines = 選択した行を採用
 menu-take-base = ベースを採用
 menu-take-left = 左を採用
 menu-take-right = 右を採用
@@ -227,6 +228,7 @@ tool-whitespace = 空白の表示を切り替え
 
 pick-label = { $title }、領域 { $region }/{ $regions }
 pick-label-unresolved = { $title }、領域 { $region }/{ $regions }、未解決
+line-pick-label = { $title }、{ $line } 行目
 badge-conflict = 競合 { $number }/{ $count }
 badge-sides = { $kept }/{ $sides } 側
 badge-all-resolved = すべて解決済み

@@ -210,6 +210,7 @@ menu-toggle-left = Links umschalten
 menu-toggle-base = Basis umschalten
 menu-toggle-right = Rechts umschalten
 menu-clear-choice = Auswahl löschen
+menu-pick-selected-lines = Ausgewählte Zeilen übernehmen
 menu-take-base = Basis übernehmen
 menu-take-left = Links übernehmen
 menu-take-right = Rechts übernehmen
@@ -270,6 +271,7 @@ tool-whitespace = Leerraum zeigen oder ausblenden
 
 pick-label = { $title } in Bereich { $region } von { $regions }
 pick-label-unresolved = { $title } in Bereich { $region } von { $regions }, ungelöst
+line-pick-label = Zeile { $line } von { $title }
 badge-conflict = Konflikt { $number } von { $count }
 badge-sides = { $kept } von { $sides } Seiten
 badge-all-resolved = alle gelöst

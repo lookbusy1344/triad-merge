@@ -35,7 +35,9 @@ triad finds the repository from the working directory. It reads and writes jj an
 
 Left and right sit side by side, each showing its changes from base. The editable result sits below. Changes on one side, or the same change on both, apply on their own. A conflict, marked `!`, waits for you; until then the result previews both sides, and a save writes conflict markers there.
 
-Resolve a conflict by picking sources, or type in the result. Each region's first row has a pick target per source: `●` picked, `◐` previewed in an unresolved conflict, `○` not picked. Several picks write in the order you click them. The toolbar's Left and Right buttons toggle the same picks in the current region and show pressed while it holds them. Its More menu holds Base, ticked while picked, both sides in either order, and None, which picks nothing. In the result pane, each block of an unresolved conflict carries an orange `!` in the gutter; click it to keep that block's side alone.
+Resolve a conflict by picking sources, or type in the result. Each region's first row has a pick target per source: `●` picked, `◐` previewed in an unresolved conflict, `○` not picked. Several picks write in the order you click them. The toolbar's Left and Right buttons toggle the same picks in the current region and show pressed while it holds them. Its More menu holds Base, ticked while picked, both sides in either order, and None, which picks nothing.
+
+To keep only some of a side's lines, click their line numbers in the top panes. A picked line's number shows bold in its pane's colour. Shift-click picks the run from the line clicked last; a second click turns a line off. Lines go into the result in the order you click them, so left and right lines can interleave. A line clicked right after the one above it in the same side joins it. A region's pick target replaces the lines with that whole side. Merge → Pick Selected Lines (⇧⌘L) picks the lines a selection in a top pane touches. In the result pane, each block of an unresolved conflict carries an orange `!` in the gutter; click it to keep that block's side alone.
 
 | Action | Key |
 |---|---|
@@ -45,6 +47,7 @@ Resolve a conflict by picking sources, or type in the result. Each region's firs
 | Toggle left / base / right in the current region | ⌘1 / ⌘2 / ⌘3 |
 | Take left then right / right then left | ⌘4 / ⌘5 |
 | Clear the pick | ⌘0 |
+| Pick the lines selected in a top pane | ⇧⌘L |
 | Undo / redo (picks and edits share one history) | ⌘Z / ⇧⌘Z |
 | Show the base pane / the line origins | ⌘B / ⌘I |
 | Collapse unchanged regions | ⌘U |

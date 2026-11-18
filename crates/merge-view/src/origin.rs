@@ -203,7 +203,8 @@ pub fn commit_runs<'a>(
 /// The input lines result line `line` shows, each with its line number in that input. An
 /// automatic unchanged line shows base and every side, in that order, unless a side's bytes
 /// differ under a whitespace mode, which then shows that side alone (spec §4.2). A line of a
-/// pick or an unresolved conflict shows its block's source. Edited and word-merged text, and a
+/// pick or an unresolved conflict shows its block's source, and a line of picked lines its
+/// run's input line. Edited and word-merged text, and a
 /// line past the end, show none: no one input line holds them.
 #[must_use]
 pub fn shown_from(doc: &MergeDocument, line: Line) -> Shown {
@@ -226,6 +227,17 @@ pub fn shown_from(doc: &MergeDocument, line: Line) -> Shown {
             .map(|(source, bytes)| {
                 let offset = line.since(doc.line_of_byte(ByteOffset::new(bytes.start)));
                 (source, lines(region, source).start + offset)
+            })
+            .into_iter()
+            .collect(),
+        Resolution::Lines(selection) => doc
+            .blocks(index)
+            .into_iter()
+            .zip(selection)
+            .find(|((_, bytes), _)| bytes.contains(&byte.get()))
+            .map(|((source, bytes), picked)| {
+                let offset = line.since(doc.line_of_byte(ByteOffset::new(bytes.start)));
+                (source, lines(region, source).start + picked.lines.start + offset)
             })
             .into_iter()
             .collect(),
@@ -609,6 +621,20 @@ mod tests {
             .expect("the pick applies");
         assert_eq!(doc.text(), "a\nR1\nR2\nb\nL\nc\n");
         assert_eq!(shown(&doc)[1..5], [vec![(R, 1)], vec![(R, 2)], vec![(B, 1)], vec![(L, 1)]]);
+    }
+
+    #[test]
+    fn picked_lines_show_the_input_lines_they_come_from() {
+        let mut doc = doc("a\nb\nc\n", "a\nL1\nL2\nL3\nc\n", "a\nR1\nR2\nc\n");
+        let mut lines = |source, lines| {
+            doc.apply(Command::ToggleLines { region: RegionIx::new(1), source, lines })
+                .expect("the lines exist");
+        };
+        lines(R, 1..2);
+        lines(L, 1..2);
+        lines(B, 0..1);
+        assert_eq!(doc.text(), "a\nR2\nL2\nb\nc\n");
+        assert_eq!(shown(&doc)[1..4], [vec![(R, 2)], vec![(L, 2)], vec![(B, 1)]]);
     }
 
     #[test]

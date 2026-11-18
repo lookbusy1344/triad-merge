@@ -602,6 +602,7 @@ pub(crate) mod menu {
         toggle_base = "menu-toggle-base";
         toggle_right = "menu-toggle-right";
         clear_choice = "menu-clear-choice";
+        pick_selected_lines = "menu-pick-selected-lines";
         take_base = "menu-take-base";
         take_left = "menu-take-left";
         take_right = "menu-take-right";
@@ -714,6 +715,12 @@ pub(crate) fn pick_label(
     } else {
         t!("pick-label", title = title, region = region, regions = regions)
     }
+}
+
+/// A line number's accessible label when it picks its line: the line's number and the
+/// pane's title. Its toggle state says whether the line is picked.
+pub(crate) fn line_pick_label(title: &str, line: usize) -> String {
+    t!("line-pick-label", line = line, title = title)
 }
 
 /// The toolbar's conflict count: how many conflicts are unresolved out of all of them,

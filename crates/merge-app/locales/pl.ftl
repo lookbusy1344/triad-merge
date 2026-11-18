@@ -222,6 +222,7 @@ menu-toggle-left = Przełącz lewą
 menu-toggle-base = Przełącz bazę
 menu-toggle-right = Przełącz prawą
 menu-clear-choice = Wyczyść wybór
+menu-pick-selected-lines = Wybierz zaznaczone wiersze
 menu-take-base = Weź bazę
 menu-take-left = Weź lewą
 menu-take-right = Weź prawą
@@ -282,6 +283,7 @@ tool-whitespace = Pokaż lub ukryj białe znaki
 
 pick-label = { $title } w obszarze { $region } z { $regions }
 pick-label-unresolved = { $title } w obszarze { $region } z { $regions }, nierozwiązany
+line-pick-label = Wiersz { $line } w { $title }
 badge-conflict = Konflikt { $number } z { $count }
 badge-sides = { $kept } z { $sides } stron
 badge-all-resolved = wszystkie rozwiązane

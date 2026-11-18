@@ -362,6 +362,14 @@ impl Text {
         line
     }
 
+    /// The line holding byte `at`. A terminator belongs to its line; the end of the text, to
+    /// the last line. An empty text's line 0 is its end.
+    #[must_use]
+    pub fn line_of_byte(&self, at: usize) -> usize {
+        let starts = &self.shared.line_starts;
+        starts.partition_point(|&start| start <= at).saturating_sub(1)
+    }
+
     /// Every line in order, each with its terminator.
     pub fn lines(&self) -> impl ExactSizeIterator<Item = &str> + '_ {
         (0..self.line_count()).map(|n| self.line(n))
@@ -556,6 +564,16 @@ pub fn with_endings(text: &str, to: LineEnding) -> Cow<'_, str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_byte_belongs_to_the_line_holding_it() {
+        // "ab\n" is bytes 0..3, "\n" 3..4, "c" 4..5.
+        let t = Text::decode(b"ab\n\nc").unwrap();
+        assert_eq!([0, 1, 2, 3, 4, 5].map(|at| t.line_of_byte(at)), [0, 0, 0, 1, 2, 2]);
+        let terminated = Text::decode(b"a\r\n").unwrap();
+        assert_eq!([0, 1, 2, 3].map(|at| terminated.line_of_byte(at)), [0, 0, 0, 0]);
+        assert_eq!(Text::decode(b"").unwrap().line_of_byte(0), 0);
+    }
 
     #[test]
     fn each_encoding_names_its_byte_order_mark() {
