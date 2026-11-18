@@ -37,7 +37,7 @@ Left and right sit side by side, each showing its changes from base. The editabl
 
 Resolve a conflict by picking sources, or type in the result. Each region's first row has a pick target per source: `●` picked, `◐` previewed in an unresolved conflict, `○` not picked. Several picks write in the order you click them. The toolbar's Left and Right buttons toggle the same picks in the current region and show pressed while it holds them. Its More menu holds Base, ticked while picked, both sides in either order, and None, which picks nothing.
 
-To keep only some of a side's lines, click their line numbers in the top panes. A picked line's number shows bold in its pane's colour. Shift-click picks the run from the line clicked last; a second click turns a line off. Picked lines go into the result left first, then right, then base, each in file order. Merge → Pick Selected Lines (⇧⌘L) picks the lines a selection in a top pane touches. In the result pane, each block of an unresolved conflict carries an orange `!` in the gutter; click it to keep that block's side alone.
+To keep only some of a side's lines, click their line numbers in the top panes. A picked line's number shows bold in its pane's colour. Shift-click picks the run from the line clicked last; a second click turns a line off. Sides go into the result in the order you first pick a line from each, as whole-side picks go in click order; each side's lines stay in file order. Merge → Pick Selected Lines (⇧⌘L) picks the lines a selection in a top pane touches. In the result pane, each block of an unresolved conflict carries an orange `!` in the gutter; click it to keep that block's side alone.
 
 | Action | Key |
 |---|---|

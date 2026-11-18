@@ -155,8 +155,9 @@ pub enum Resolution {
     Auto,
     /// These sources' texts in this order, each at most once. Empty removes the region's text.
     Pick(Vec<Source>),
-    /// Lines of the sources, in the normal form of [`crate::line_pick`]: by source, then by
-    /// line. Never takes every source it names whole; that is a [`Resolution::Pick`].
+    /// Lines of the sources, in the normal form of [`crate::line_pick`]: the sources in the
+    /// order they were first picked, each one's lines in order. Never takes every source it
+    /// names whole; that is a [`Resolution::Pick`].
     Lines(Vec<PickedLines>),
     /// Text typed in the result pane. It lives in the result text.
     Edited,
@@ -554,7 +555,8 @@ impl MergeDocument {
     }
 
     /// The lines `region`'s text takes from each source, in the normal form of
-    /// [`crate::line_pick`]. A pick of whole sources, automatic or not, takes all their lines.
+    /// [`crate::line_pick`]. A pick of whole sources, automatic or not, takes all their lines,
+    /// in the pick's order.
     /// None for a region no source gives the text of: an unchanged or word-merged region, an
     /// edit, or an unresolved conflict.
     ///
@@ -567,15 +569,12 @@ impl MergeDocument {
         if let Resolution::Lines(selection) = &self.resolutions[region] {
             return selection.clone();
         }
-        let mut selection: Vec<PickedLines> = self
-            .current_pick(region)
+        self.current_pick(region)
             .unwrap_or_default()
             .iter()
             .map(|&source| PickedLines::new(source, 0..self.line_count_of(region, source)))
             .filter(|p| !p.lines.is_empty())
-            .collect();
-        selection.sort_by_key(|p| p.source);
-        selection
+            .collect()
     }
 
     /// The lines `source` has in `region`.

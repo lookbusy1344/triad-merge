@@ -633,8 +633,8 @@ mod tests {
         lines(R, 1..2);
         lines(L, 1..2);
         lines(B, 0..1);
-        assert_eq!(doc.text(), "a\nL2\nR2\nb\nc\n");
-        assert_eq!(shown(&doc)[1..4], [vec![(L, 2)], vec![(R, 2)], vec![(B, 1)]]);
+        assert_eq!(doc.text(), "a\nR2\nL2\nb\nc\n");
+        assert_eq!(shown(&doc)[1..4], [vec![(R, 2)], vec![(L, 2)], vec![(B, 1)]]);
     }
 
     #[test]

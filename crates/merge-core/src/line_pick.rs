@@ -1,9 +1,9 @@
 //! Lines picked one by one inside a region (spec §4.4, `PLAN.md` §G8).
 //!
-//! A selection is a list of [`PickedLines`] in normal form: sorted by source, sides by index
-//! then bases, and by line within a source; each range non-empty; no two ranges of one source
-//! overlapping or touching. The result takes the lines in that order, whatever order they were
-//! picked in.
+//! A selection is a list of [`PickedLines`] in normal form: each source's runs together, the
+//! sources in the order they were first picked, and each source's runs in line order; each
+//! range non-empty; no two ranges of one source overlapping or touching. The result takes the
+//! lines in that order.
 
 use std::ops::Range;
 
@@ -26,7 +26,8 @@ impl PickedLines {
 }
 
 /// `selection` with `lines` of `source` toggled: removed when every one of them is picked,
-/// otherwise added. `selection` is in normal form, and so is the result. `lines` is not empty.
+/// otherwise added. A source already picked keeps its place; a new one goes last.
+/// `selection` is in normal form, and so is the result. `lines` is not empty.
 pub(crate) fn toggle(
     selection: &[PickedLines],
     source: Source,
@@ -57,11 +58,12 @@ pub(crate) fn toggle(
         ranges.insert(at, joined);
         ranges
     };
-    let others = selection.iter().filter(|p| p.source != source).cloned();
-    let mut toggled: Vec<PickedLines> =
-        others.chain(ranges.into_iter().map(|lines| PickedLines { source, lines })).collect();
-    toggled.sort_by_key(|p| (p.source, p.lines.start));
-    toggled
+    let runs = ranges.into_iter().map(|lines| PickedLines { source, lines });
+    let place = selection.iter().position(|p| p.source == source).unwrap_or(selection.len());
+    let others = |range: Range<usize>| {
+        selection[range].iter().filter(|p| p.source != source).cloned().collect::<Vec<_>>()
+    };
+    [others(0..place), runs.collect(), others(place..selection.len())].concat()
 }
 
 /// The sources `selection` takes whole, in order, when it takes each of its sources whole:
@@ -136,10 +138,23 @@ mod tests {
     }
 
     #[test]
-    fn sources_keep_sides_by_index_then_bases_whatever_the_pick_order() {
+    fn sources_go_in_the_order_they_were_first_picked() {
         let base_first = toggle(&[], B, &(0..1));
         let then_right = toggle(&base_first, R, &(2..3));
-        assert_eq!(toggle(&then_right, L, &(1..2)), [p(L, 1..2), p(R, 2..3), p(B, 0..1)]);
+        assert_eq!(toggle(&then_right, L, &(1..2)), [p(B, 0..1), p(R, 2..3), p(L, 1..2)]);
+    }
+
+    #[test]
+    fn more_lines_of_a_picked_source_keep_its_place() {
+        let picked = [p(R, 2..3), p(L, 0..1)];
+        assert_eq!(toggle(&picked, R, &(0..1)), [p(R, 0..1), p(R, 2..3), p(L, 0..1)]);
+    }
+
+    #[test]
+    fn a_source_turned_off_and_picked_again_goes_last() {
+        let picked = [p(R, 2..3), p(L, 0..1)];
+        let without_right = toggle(&picked, R, &(2..3));
+        assert_eq!(toggle(&without_right, R, &(1..2)), [p(L, 0..1), p(R, 1..2)]);
     }
 
     #[test]

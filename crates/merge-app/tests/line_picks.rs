@@ -92,7 +92,7 @@ fn a_press_on_a_line_number_picks_that_line(cx: &mut TestAppContext) {
     assert_eq!(resolution(cx, &view), Resolution::Lines(vec![picked(RIGHT, 1..2)]));
     assert_eq!(result(cx, &view), "a\nR2\nc\n");
     press_line(cx, window, LEFT_PANE, 1);
-    assert_eq!(result(cx, &view), "a\nL1\nR2\nc\n", "left's lines go first");
+    assert_eq!(result(cx, &view), "a\nR2\nL1\nc\n", "right was picked first");
 }
 
 #[gpui_kit::test]
@@ -114,7 +114,7 @@ fn a_shift_press_picks_the_run_from_the_last_line_pressed(cx: &mut TestAppContex
     shift_press_line(cx, window, LEFT_PANE, 1);
     assert_eq!(
         resolution(cx, &view),
-        Resolution::Pick(vec![LEFT, RIGHT]),
+        Resolution::Pick(vec![RIGHT, LEFT]),
         "the run starts at the last line pressed, shift or not, and covers all of left"
     );
 }
@@ -126,7 +126,7 @@ fn a_shift_press_in_another_pane_picks_its_line_alone(cx: &mut TestAppContext) {
     shift_press_line(cx, window, LEFT_PANE, 2);
     assert_eq!(
         resolution(cx, &view),
-        Resolution::Lines(vec![picked(LEFT, 1..2), picked(RIGHT, 0..1)])
+        Resolution::Lines(vec![picked(RIGHT, 0..1), picked(LEFT, 1..2)])
     );
 }
 
