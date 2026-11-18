@@ -853,9 +853,9 @@ Measured with a release build. The reference machines are an M4 Pro MacBook Pro,
 
 Panes render only visible rows. Character-level diffs and the rows' layout run on demand.
 
-A word-level merge (`hunk-level = word`, §4.3) of a conflict that spans much of a large file has no target. It costs what jj's word merge of the same hunk costs, since both run `jj-core`'s word diff: about 15 µs per conflicting line on an M4 Pro, 1.6 s for one conflict over 100k lines. Many small conflicts meet the load target. `script/check-bench` holds the large case below its measured cost, so a regression still fails.
+A word-level merge (`hunk-level = word`, §4.3) of a conflict that spans much of a large file has no target. It costs what jj's word merge of the same hunk costs, since both run `jj-core`'s word diff: about 16 µs per conflicting line on an M4 Pro, 1.6 s for one conflict over 100k lines. Many small conflicts meet the load target. `script/check-bench` holds the large case below its measured cost, so a regression still fails.
 
-`resolve`'s repository steps have no target. jj's snapshot scans the working copy and costs what jj's own does: on an M4 Pro with 100k files, `jj util snapshot` takes 108 ms unchanged and 176 ms after one edit; `resolve` takes 105 ms to load a conflict and 168 ms to record a save. git stages a save in 30 ms with 100k index entries (`cargo bench -p merge-cli --bench resolve`).
+`resolve`'s repository steps have no target. jj's snapshot scans the working copy and costs what jj's own does: on an M4 Pro with 100k files, `jj util snapshot` takes 108 ms unchanged and 176 ms after one edit; `resolve` takes 101 ms to load a conflict and 168 ms to record a save. git stages a save in 33 ms with 100k index entries (`cargo bench -p merge-cli --bench resolve`).
 
 Measured (DESIGN.md §A6.7) on 2026-11-08 on an M4 Pro, 120 Hz, with `TRIAD_MEASURE`, `/usr/bin/time -l` and the benchmarks:
 

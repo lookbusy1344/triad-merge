@@ -95,7 +95,7 @@ Region offsets live in a Fenwick tree of region byte lengths, and a second one o
 
 `DiffDocument` holds two buffers, each a rope with its own history and read-only flag, and the regions with a version. `recompute` takes O(1) rope clones for a background diff; `install` takes the result only when its version still matches, which gives spec §4.6's debounce. `copy_region` recomputes first when the regions lag the text.
 
-The moves (spec §4.6) run with the regions in each recompute and install with them as one `Diffed`, so they never name regions of another version. `diff2::moves` keys every right line of a `Changed` region once, by `line_key`, into a map from key to its places. Each block checks only the places of its line with the fewest, shifted back by that line's offset and kept inside the region; a block that matches twice stops at the second. A block of lines that each repeat many times among the inserted lines still checks every place of the rarest. Anchoring on the first line instead is quadratic where many blocks start with `}` or a blank line: 4.3 s at 100k lines. The benchmark `diff-load-braced` (`testing::generate_braced_changes`) builds that case: every block starts with `}`. On an M4 Pro the search costs 1.4 ms at 100k lines and 20 ms at 1M, of a load of 29 ms and 500 ms under Myers; on the generated pair, 0.1 ms and 1.2 ms of 10 ms and 193 ms. Histogram takes 2.1 s to diff the braced pair at 100k lines, Myers 29 ms: imara's histogram slows on a line repeated 20,000 times on each side, as git's does. Places that overlap another block's, found by a sweep in order of start with the largest end so far, drop out. `suggest::carried_edit` keeps its own search: it compares bytes, inside one-side regions of a merge, and needs no map for one conflict.
+The moves (spec §4.6) run with the regions in each recompute and install with them as one `Diffed`, so they never name regions of another version. `diff2::moves` keys every right line of a `Changed` region once, by `line_key`, into a map from key to its places. Each block checks only the places of its line with the fewest, shifted back by that line's offset and kept inside the region; a block that matches twice stops at the second. A block of lines that each repeat many times among the inserted lines still checks every place of the rarest. Anchoring on the first line instead is quadratic where many blocks start with `}` or a blank line: 4.3 s at 100k lines. The benchmark `diff-load-braced` (`testing::generate_braced_changes`) builds that case: every block starts with `}`. On an M4 Pro the search costs 1.3 ms at 100k lines and 21 ms at 1M, of a load of 29 ms and 496 ms under Myers; on the generated pair, 0.1 ms and 1.2 ms of 10 ms and 191 ms. Histogram takes 2.1 s to diff the braced pair at 100k lines, Myers 29 ms: imara's histogram slows on a line repeated 20,000 times on each side, as git's does. Places that overlap another block's, found by a sweep in order of start with the largest end so far, drop out. `suggest::carried_edit` keeps its own search: it compares bytes, inside one-side regions of a merge, and needs no map for one conflict.
 
 The intra-line marks (spec §5) also run in each recompute and install with the regions in `Diffed`. `diff2::marks` pairs each changed region's lines outside the move ends in order, left with right, and gives each side the byte ranges `diff::intraline_hunks` finds, terminators left out. They cost about 1.3 µs per pair on an M4 Pro: 130 ms when all 100k lines differ, 1.3 s at 1M, against a diff of 20 ms and 480 ms. That breaks spec §9's load target, so `DiffDocument::new` leaves the marks empty and the window computes them off the UI thread from `DiffDocument::marking`; `install_marks` takes them only for the current version. `copy_region` while the regions lag runs a recompute, marks included, on the UI thread.
 
@@ -225,18 +225,18 @@ A change to the alignment options re-aligns the open merge while every region ke
 | 100k | 46–50 ms | 210–223 ms | 8.4 / 8.4 ms | 0.3 / 0.5 ms | 0.4 / 0.6 ms | 221 MB |
 | 1M | 521–548 ms | 727–754 ms | 8.4 / 8.4 ms | 1.9 / 5.2 ms | 4.4 / 6.3 ms | 869 MB |
 
-`script/check-bench`, same day:
+`script/check-bench`, 2026-11-18:
 
 | Benchmark | 100k | 1M |
 |---|---|---|
-| `load` | 24 ms | 434 ms |
-| `load-jj` | 41 ms | 498 ms |
-| `load-word-small` | 53 ms | 610 ms |
-| `load-word-large` | 1.57 s | 15.6 s |
-| `load-word-small-rust-bounded` | 47 ms | 511 ms |
-| `load-deep-rust-bounded` | 91 ms | 953 ms |
-| `toggle`, `keystroke` | 0.7 µs | 0.8 µs |
-| Session heap, git / jj | 32 / 56 MB | 362 / 607 MB |
+| `load` | 26 ms | 479 ms |
+| `load-jj` | 42 ms | 516 ms |
+| `load-word-small` | 56 ms | 670 ms |
+| `load-word-large` | 1.61 s | 16.1 s |
+| `load-word-small-rust-bounded` | 50 ms | 546 ms |
+| `load-deep-rust-bounded` | 94 ms | 983 ms |
+| `toggle`, `keystroke` | 0.7 / 0.8 µs | 0.9 / 0.8 µs |
+| Session heap, git / jj | 32 / 56 MB | 363 / 607 MB |
 
 `cargo bench -p merge-cli --bench memory` measures the session's peak heap through a counting allocator (`cap`); `script/check-bench` holds it below spec §9's memory row in git and jj mode. Saving is the peak: `MergeDocument::output` copies the rope into a `String`.
 
@@ -246,7 +246,7 @@ What sets these figures:
 - **Journal hashing** runs once per input on its own thread, so the window shows first.
 - **Incremental refresh.** The editor moves its decorations with each edit; `refresh` compares the new bands with the moved ranges (`marks::bands_unchanged`) and rebuilds only when a range or look differs. The keystroke maximum at 1M is the first key into a region, which changes its look. A pick always rebuilds. Bands, placeholders and status counts still scan every region per command.
 - **Ruler.** `ruler::painted` gives each whole pixel the style of the last mark on it and joins equal neighbours, so a long file paints no more runs than the strip has pixels. One quad per mark took a third of the main thread at 1M.
-- **Alignment** is 368 of load's 449 ms at 1M and grows faster than linear (17 ms at 100k): the first place to look if load nears 1 s.
+- **Alignment** is 391 of load's 479 ms at 1M and grows faster than linear (19 ms at 100k): the first place to look if load nears 1 s.
 - **Known whole-text copies**, each a few milliseconds and one file's size at 1M: `Recompute::run` copies both diff texts twice; `MergeDocument::output` copies the rope to save; `Text` keeps an 8-byte line start per line where `u32` would do under 4 GiB.
 
 **Idle memory.** The caret's blink draws every 500 ms, which keeps the Metal driver's reclaimable blocks in use: a bare GPUI window takes 52 MB idle and 185 MB blinking. The vendored caret rests, shown, after 10 s without a key, click or focus. At rest the demo diff of `fixtures/demo/code_a.py` and `code_b.py` takes 98 MB of physical footprint (p4merge: 121 MB): 37 MB of drawables, 33 MB of heap, and the binary. GPUI counts a window losing the front as a blur, which stops the blink. GPUI's per-window path texture and the drawables remain.
@@ -498,15 +498,15 @@ A region's text, less surrounding whitespace, is its core; a cut is a byte offse
 
 | Measure | 100k lines | 1M lines |
 |---|---|---|
-| `load-jj` | 41 ms | 503 ms |
-| `align-jj` | 34 ms | 437 ms |
-| Session peak heap, jj / git | 56 / 32 MB | 607 / 362 MB |
-| `load-word-small` (a one-line conflict every 20 lines) | 52 ms | 601 ms |
-| `load-word-large` (one conflict over the whole file) | 1.58 s | 15.4 s |
-| `load-word-small-rust`, off / bounded | 43 / 47 ms | 467 / 512 ms |
-| `load-deep-rust`, off / bounded | 45 / 91 ms | 482 / 949 ms |
+| `load-jj` | 42 ms | 516 ms |
+| `align-jj` | 34 ms | 424 ms |
+| Session peak heap, jj / git | 56 / 32 MB | 607 / 363 MB |
+| `load-word-small` (a one-line conflict every 20 lines) | 56 ms | 670 ms |
+| `load-word-large` (one conflict over the whole file) | 1.61 s | 16.1 s |
+| `load-word-small-rust`, off / bounded | 45 / 50 ms | 496 / 546 ms |
+| `load-deep-rust`, off / bounded | 49 / 94 ms | 525 / 983 ms |
 
-- `load-word-large` is one call to jj-core's `ContentDiff::by_word`, about 15 µs per line, as jj's own word merge makes. Spec §9 exempts it (§B7, decision 5); `script/check-bench` holds it below 2 s at 100k and 20 s at 1M.
+- `load-word-large` is one call to jj-core's `ContentDiff::by_word`, about 16 µs per line, as jj's own word merge makes. Spec §9 exempts it (§B7, decision 5); `script/check-bench` holds it below 2 s at 100k and 20 s at 1M.
 - `cargo bench -p merge-syntax --bench boundaries` writes valid Rust: four-line functions with a conflict in every fifth. The deep case parses each conflict's window in both sides, about 9 µs a conflict.
 - **git's histogram on regular input.** The headless merge of the 100k-line `deep` triple takes 1.5 s under git semantics and 70 ms under jj's. Its unchanged runs are all about one length, each region's anchor is the first, so each split takes one function off the front and the recursion goes about 5 000 levels deep. git's `xhistogram.c` does the same: `git merge-file` takes 1.27 s. The hunks must match git's (spec §4.2).
 
@@ -635,14 +635,14 @@ The repository is the working directory's, else PATH's. Inputs are the terms, si
 - In a colocated workspace, `take_snapshot` takes jj's `git_import_export.lock` in the repository directory before it loads the head operation, and `rewrite` takes it before `reset_head`, the export, the commit and the checkout, as jj-cli does. jj-cli waits for the same lock before it loads, so a jj command and triad do not both build on one head and leave two. An internal workspace has no such lock in jj either: a jj command that commits between triad's load and triad's commit leaves two heads, which jj merges on its next command and triad refuses until then.
 - Snapshot options come from the user's jj config: `snapshot.auto-track` with the layers' `[fileset-aliases]`, `snapshot.max-new-file-size` (0 is no limit), and git's ignore files. `fsmonitor` is always `none`: triad's jj-lib has no watchman.
 
-`cargo bench -p merge-cli --bench resolve`, 2026-11-09:
+`cargo bench -p merge-cli --bench resolve`, 2026-11-18:
 
 | | 10k files | 100k files |
 |---|---|---|
-| jj: load a conflict | 12 ms | 105 ms |
-| jj: list conflicts | 11 ms | 99 ms |
-| jj: record a save | 52 ms | 168 ms |
-| git: load / stage | | 6 / 30 ms |
+| jj: load a conflict | 12 ms | 101 ms |
+| jj: list conflicts | 11 ms | 96 ms |
+| jj: record a save | 53 ms | 168 ms |
+| git: load / stage | 1.0 / 3.5 ms | 6 / 33 ms |
 
 `jj util snapshot` on the same shape takes 108 ms unchanged and 176 ms after one edit: the cost is jj's scan, which `jj resolve` pays too. Saves, lists and loads run off the UI thread. `resolve::load` takes `Snapshot::Taken` to read at a snapshot the caller just took, so the queue makes two scans per file.
 
