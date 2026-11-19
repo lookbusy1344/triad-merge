@@ -333,6 +333,7 @@ go-to-line-prompt = Перейти к строке (1–{ $last }):
 go-to-line-current = Текущая строка { $line } из { $last }
 go-to-line-target = Перейти к строке { $line }
 jj-diff-banner = Это временные копии от jj diff --tool. Правки здесь пропадут при закрытии окна.
+snapshot-failed-banner = Сохранено, но jj не записал сохранение: { $error }
 output-changed-banner = { $name } изменён на диске после открытия слияния. «Сохранить и выйти» заменит его.
 copy-to-right = Скопировать это различие вправо
 copy-to-left = Скопировать это различие влево
@@ -384,6 +385,12 @@ copy-saved =
         [0] Копия сохранена, всё разрешено
         [one] Копия сохранена с { $count } конфликтом
        *[many] Копия сохранена с { $count } конфликтами
+    }
+saved =
+    { $count ->
+        [0] Сохранено, всё разрешено
+        [one] Сохранено с { $count } конфликтом
+       *[many] Сохранено с { $count } конфликтами
     }
 
 ## Result pane's right-click menu

@@ -318,6 +318,7 @@ go-to-line-prompt = Ga naar regel (1–{ $last }):
 go-to-line-current = Huidige regel { $line } van { $last }
 go-to-line-target = Ga naar regel { $line }
 jj-diff-banner = Dit zijn tijdelijke kopieën van jj diff --tool. Bewerkingen hier gaan verloren als het venster sluit.
+snapshot-failed-banner = Opgeslagen, maar jj heeft de opslag niet vastgelegd: { $error }
 output-changed-banner = { $name } is op de schijf gewijzigd sinds de samenvoeging openging. Opslaan en stoppen vervangt het.
 copy-to-right = Dit verschil naar rechts kopiëren
 copy-to-left = Dit verschil naar links kopiëren
@@ -369,6 +370,12 @@ copy-saved =
         [0] Kopie opgeslagen, opgelost
         [one] Kopie opgeslagen met { $count } conflict
        *[other] Kopie opgeslagen met { $count } conflicten
+    }
+saved =
+    { $count ->
+        [0] Opgeslagen, opgelost
+        [one] Opgeslagen met { $count } conflict
+       *[other] Opgeslagen met { $count } conflicten
     }
 
 ## Result pane's right-click menu

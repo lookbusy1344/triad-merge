@@ -147,7 +147,7 @@ mod jj {
         let [merging] = merge_windows(cx)[..] else { panic!("one merge window") };
         press(cx, merging, "secondary-alt-down");
         press(cx, merging, "secondary-1");
-        press(cx, merging, "secondary-s");
+        press(cx, merging, "secondary-q");
         cx.simulate_prompt_answer(SAVE);
         cx.run_until_parked();
         assert_eq!(merge_windows(cx), []);
@@ -395,7 +395,7 @@ mod jj {
         let [merging] = merge_windows(cx)[..] else { panic!("one merge window") };
         press(cx, merging, "secondary-alt-down");
         press(cx, merging, "secondary-1");
-        press(cx, merging, "secondary-s");
+        press(cx, merging, "secondary-q");
         cx.simulate_prompt_answer(SAVE);
         cx.run_until_parked();
         assert!(VisualTestContext::from_window(started.window, cx).simulate_close());

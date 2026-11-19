@@ -16,7 +16,7 @@ As of 2026-11-19.
 | M4b Linux and Windows | Linux test machine and packages build; final checks need hardware, Windows a certificate | §E7, §3 |
 | Merge semantics | Done: jj's merge, word level, refinements, syntax-aware boundaries | B |
 | M5 chunk origin | Done, with revision chips | C |
-| M6 native resolution | Done: git stages a resolved save; jj snapshots before the read and after each save | D |
+| M6 native resolution | Done: git stages a resolved save; jj snapshots before the read and after each save. ⌘S saves and keeps the merge open, each save recorded; ⌘Q saves and exits. A diff-window save in triad's own jj runs snapshots the working copy | D |
 | M7 syntax highlighting | Done: Rust, Go, C#, Python, Swift, Java, Kotlin, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS, C, C++, Markdown, Bash, Zig; by extension, else by a script's `#!` line | F |
 | p4merge parity | Done | E |
 | Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; §G6 done: the files that differ between two directories, or between a revision and the working copy (`diff`, `diff --rev`), in the directory window and printed by `diff --inspect`, and from `jj diff --tool` and `git difftool -d`, with renames and copies paired as jj pairs them; text that is not UTF-8 read and saved as Windows-1252 (§G17); invisible characters drawn as code points and odd spaces shaded in every pane, and escaped in terminal output (§A6.8); moved and duplicated blocks in the merge window and `inspect`, with a suggestion to drop a duplicate (§G16), done; visible whitespace in every pane (§G10) done; line picks inside a region, from the top panes' line numbers and Pick Selected Lines (§G8), done; a reload from disk keeps the caret and the view on their lines, and the merge window warns at once when another program changes OUTPUT (spec §6.1, §6.2), done; patch export (§G11) done: `diff --inspect --unified[=N]`, and Copy as Patch and Copy Difference as Patch in the diff window, matching `git diff` byte for byte wherever the two diffs pick the same hunks; a unified view in the diff window (§G9) done; the rest open | G |
@@ -47,6 +47,7 @@ In order. Each is one or more commits.
 | Work | Blocked on | Where |
 |---|---|---|
 | Release checklist: spoken VoiceOver steps | The owner | §2 |
+| git `resolve`: a Save that writes markers after an earlier Save staged the path resolved leaves the stage-0 entry; put the conflict stages back | — | spec §7.4 |
 | Linux: rendering, input and the accessibility tree on real GNOME Wayland and X11; the config path and file watcher there; release checklist and spec §9 on the Linux reference machine | A Linux desktop or a VM with GPU access | §E7.1 |
 | Linux packages: triad's MIT licence file and dependency notices | The release | §E7.1 |
 | Windows: tool runs from `git mergetool`, `git difftool`, `jj resolve` and `jj diff --tool` in a real console; MSI through `cargo-wix`, Authenticode signing, winget manifest; icon resource; rendering, IME and file watching on x64 and ARM64; release checklist and spec §9 | x64 and ARM64 machines, a certificate, permission to install `cargo-wix` | §E7.2 |

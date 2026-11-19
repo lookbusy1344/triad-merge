@@ -263,6 +263,7 @@ go-to-line-prompt = 前往行（1–{ $last }）：
 go-to-line-current = 当前第 { $line } 行，共 { $last } 行
 go-to-line-target = 前往第 { $line } 行
 jj-diff-banner = 这些是来自 jj diff --tool 的临时副本。窗口关闭后，此处的编辑将丢失。
+snapshot-failed-banner = 已保存，但 jj 未记录此次保存：{ $error }
 output-changed-banner = { $name } 在合并打开后于磁盘上被修改。保存并退出会替换它。
 copy-to-right = 将此差异复制到右侧
 copy-to-left = 将此差异复制到左侧
@@ -313,6 +314,11 @@ copy-saved =
     { $count ->
         [0] 副本已保存，已解决
        *[other] 副本已保存，含 { $count } 个冲突
+    }
+saved =
+    { $count ->
+        [0] 已保存，已解决
+       *[other] 已保存，含 { $count } 个冲突
     }
 
 ## Result pane's right-click menu

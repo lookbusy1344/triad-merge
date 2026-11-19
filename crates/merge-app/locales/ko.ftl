@@ -263,6 +263,7 @@ go-to-line-prompt = 줄로 이동(1–{ $last }):
 go-to-line-current = 현재 줄 { $line }/{ $last }
 go-to-line-target = { $line }번째 줄로 이동
 jj-diff-banner = jj diff --tool이 만든 임시 사본입니다. 창을 닫으면 여기서 한 편집은 사라집니다.
+snapshot-failed-banner = 저장했지만 jj가 저장을 기록하지 않았습니다: { $error }
 output-changed-banner = 병합을 연 뒤 디스크에서 { $name }이(가) 변경되었습니다. 저장 후 종료하면 덮어씁니다.
 copy-to-right = 이 차이를 오른쪽으로 복사
 copy-to-left = 이 차이를 왼쪽으로 복사
@@ -313,6 +314,11 @@ copy-saved =
     { $count ->
         [0] 사본 저장됨, 해결됨
        *[other] 사본 저장됨, 충돌 { $count }개
+    }
+saved =
+    { $count ->
+        [0] 저장됨, 해결됨
+       *[other] 저장됨, 충돌 { $count }개
     }
 
 ## Result pane's right-click menu

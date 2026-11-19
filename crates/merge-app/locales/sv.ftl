@@ -318,6 +318,7 @@ go-to-line-prompt = Gå till rad (1–{ $last }):
 go-to-line-current = Aktuell rad { $line } av { $last }
 go-to-line-target = Gå till rad { $line }
 jj-diff-banner = Det här är tillfälliga kopior från jj diff --tool. Redigeringar här går förlorade när fönstret stängs.
+snapshot-failed-banner = Sparad, men jj registrerade inte sparningen: { $error }
 output-changed-banner = { $name } har ändrats på disken sedan sammanslagningen öppnades. Spara och avsluta ersätter den.
 copy-to-right = Kopiera den här skillnaden till höger
 copy-to-left = Kopiera den här skillnaden till vänster
@@ -369,6 +370,12 @@ copy-saved =
         [0] Kopia sparad, löst
         [one] Kopia sparad med { $count } konflikt
        *[other] Kopia sparad med { $count } konflikter
+    }
+saved =
+    { $count ->
+        [0] Sparad, löst
+        [one] Sparad med { $count } konflikt
+       *[other] Sparad med { $count } konflikter
     }
 
 ## Result pane's right-click menu

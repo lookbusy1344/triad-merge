@@ -43,7 +43,7 @@ fn save_writes_the_setting_s_endings_and_the_pane_keeps_the_inputs(cx: &mut Test
     let (dir, window, view, finished) = setup(cx, OutputEnding::Lf);
     let shown = cx.read(|cx| view.read(cx).result_editor().read(cx).text().to_string());
     assert_eq!(shown, "a\r\nB\nc\r\n");
-    act(cx, window, |window, cx| window.press("secondary-s", cx));
+    act(cx, window, |window, cx| window.press("secondary-q", cx));
     cx.run_until_parked();
     assert_eq!(std::fs::read(dir.path().join("out")).expect("written"), b"a\nB\nc\n");
     assert_eq!(finished.codes(), [ExitCode::Resolved]);

@@ -56,7 +56,7 @@ Every error and warning takes `alert::style`: 12 px chrome text on 16 px lines, 
 
 The directory, stack, history and absorb windows are built from `tool_window` and `pick_list`, after Zed's git panel. A new window that lists things uses them too.
 
-- **Frame.** `tool_window::frame` fills the window in the theme's background, at 12 px text, and holds the `ToolWindow` key context. Escape in a list and Cancel (⌘W, ⌘Q) close the window through the same check as its close button.
+- **Frame.** `tool_window::frame` fills the window in the theme's background, at 12 px text, and holds the `ToolWindow` key context. Escape in a list, Cancel (⌘W) and Save & Exit (⌘Q) close the window through the same check as its close button.
 - **Header.** 32 px tall over a 1 px `border`, 12 px in from each side. At the left, a muted summary that counts what the list holds: `10 files`, `4 commits`. At the right, the buttons, 4 px apart: Refresh first, then the window's own; Refresh and a button that only shows something are outlined, the one that writes is the default action.
 - **Status line.** Under the header, 12 px in from the sides with 4 px above and below; it wraps. An outcome is muted; an error is alert text in `danger` (§ Errors).
 - **Lists.** Fill the space under the header, inset 4 px so a selected row's rounded corners show. Two lists side by side, as in absorb, stand on a 1 px `border` between them. The list takes the focus when its window opens: ↑ and ↓ move the selection, Enter opens the selected row, and the selection scrolls into view.

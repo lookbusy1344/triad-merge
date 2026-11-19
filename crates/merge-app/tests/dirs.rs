@@ -593,9 +593,11 @@ mod jj {
         assert!(side(cx, view, Side::Left).2, "the left copy turns read-only");
         assert_eq!(side(cx, view, Side::Right).1, path_text(&working));
         click(cx, *diff, copy_id(RegionIx::new(0), Side::Right));
+        let operations = fixture.operation_count();
         press(cx, *diff, "secondary-s");
         assert_eq!(std::fs::read(&working).expect("a.txt reads"), b"1\n");
         assert_eq!(std::fs::read(right.join("a.txt")).expect("the copy reads"), b"2\n");
+        assert_eq!(fixture.operation_count(), operations, "jj's own command takes the save in");
     }
 
     #[gpui_kit::test]
@@ -614,5 +616,47 @@ mod jj {
         let working = dunce::canonicalize(fixture.root()).expect("the root").join("a.txt");
         assert_eq!(side(cx, view, Side::Left), ("1\n".to_owned(), "@-".to_owned(), true));
         assert_eq!(side(cx, view, Side::Right), ("2\n".to_owned(), path_text(&working), false));
+    }
+
+    #[gpui_kit::test]
+    fn a_save_from_the_listing_snapshots_the_working_copy(cx: &mut TestAppContext) {
+        let fixture = Fixture::new();
+        fixture.commit("one", &[("a.txt", b"1\n")]);
+        fixture.check_out_to_disk();
+        fixture.write("a.txt", b"2\n");
+        let started = open(cx, changes_start(fixture.root(), None));
+        click(cx, started.window, file_id(0));
+        let [(diff, view)] = &diff_windows(cx)[..] else { panic!("one diff window") };
+        click(cx, *diff, copy_id(RegionIx::new(0), Side::Right));
+        let operations = fixture.operation_count();
+        press(cx, *diff, "secondary-s");
+        assert_eq!(fixture.operation_count(), operations + 1, "one snapshot operation");
+        let tree = fixture.tree_text(&fixture.working_copy_commit());
+        assert_eq!(tree.get("a.txt").map(String::as_str), Some("1\n"));
+        assert_eq!(cx.read(|cx| view.read(cx).snapshot_failed().cloned()), None);
+    }
+
+    #[gpui_kit::test]
+    fn a_save_jj_cannot_snapshot_stays_written_and_a_banner_says_why(cx: &mut TestAppContext) {
+        let fixture = Fixture::new();
+        let one = fixture.commit_on(&[], "one", &[("a.txt", b"1\n")]);
+        let other = fixture.commit_on(&[], "other", &[("a.txt", b"o\n")]);
+        fixture.check_out(&[&one]);
+        fixture.check_out_to_disk();
+        fixture.write("a.txt", b"2\n");
+        let started = open(cx, changes_start(fixture.root(), None));
+        click(cx, started.window, file_id(0));
+        let [(diff, view)] = &diff_windows(cx)[..] else { panic!("one diff window") };
+        // The view moves on; the files on disk stay at `one`, so the working copy is stale.
+        fixture.check_out(&[&other]);
+        click(cx, *diff, copy_id(RegionIx::new(0), Side::Right));
+        let operations = fixture.operations();
+        press(cx, *diff, "secondary-s");
+        assert!(!cx.has_pending_prompt(), "a failed snapshot asks nothing");
+        let working = dunce::canonicalize(fixture.root()).expect("the root").join("a.txt");
+        assert_eq!(std::fs::read(&working).expect("a.txt reads"), b"1\n");
+        assert_eq!(fixture.operations(), operations, "jj wrote nothing");
+        let banner = cx.read(|cx| view.read(cx).snapshot_failed().cloned()).expect("a banner");
+        assert!(banner.starts_with("Saved, but jj did not record the save: "), "{banner}");
     }
 }

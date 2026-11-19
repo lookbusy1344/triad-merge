@@ -105,7 +105,7 @@ mod jj {
         let wc = fixture.working_copy_commit();
         let (window, finished) = open_in(cx, &fixture, &merge);
         pick_left(cx, window);
-        press(cx, window, "secondary-s");
+        press(cx, window, "secondary-q");
         let (message, detail) = cx.pending_prompt().expect("the descendants' question");
         assert_eq!(message, TWO_CHANGED);
         assert_eq!(
@@ -132,7 +132,7 @@ mod jj {
         let operations = fixture.operation_count();
         let (window, finished) = open_in(cx, &fixture, &merge);
         pick_left(cx, window);
-        press(cx, window, "secondary-s");
+        press(cx, window, "secondary-q");
         cx.simulate_prompt_answer(KEEP_EDITING);
         cx.run_until_parked();
         assert!(!cx.has_pending_prompt());
@@ -140,7 +140,7 @@ mod jj {
         assert_eq!(fixture.held_in(&fixture.latest(&merge), "a.txt"), Held::Conflict);
         assert_eq!(fixture.operation_count(), operations);
         // The result is unlocked: a second save asks again.
-        press(cx, window, "secondary-s");
+        press(cx, window, "secondary-q");
         let (message, _) = cx.pending_prompt().expect("the question again");
         assert_eq!(message, TWO_CHANGED);
     }
@@ -162,7 +162,7 @@ mod jj {
         fixture.check_out_to_disk();
         let (window, finished) = open_in(cx, &fixture, &merge);
         pick_left(cx, window);
-        press(cx, window, "secondary-s");
+        press(cx, window, "secondary-q");
         assert!(!cx.has_pending_prompt());
         assert_eq!(finished.codes(), [ExitCode::Resolved]);
         assert_eq!(fixture.held_in(&fixture.latest(&child), "a.txt"), Held::Conflict);
@@ -172,7 +172,7 @@ mod jj {
     fn a_save_that_changes_no_descendant_writes_without_asking(cx: &mut TestAppContext) {
         let (fixture, merge, _) = stacked();
         let (window, finished) = open_in(cx, &fixture, &merge);
-        press(cx, window, "secondary-s");
+        press(cx, window, "secondary-q");
         // The markers read back as the conflict the commit holds: nothing rebases.
         let (message, _) = cx.pending_prompt().expect("the unresolved question");
         assert_eq!(message, "Save with unresolved conflicts?");

@@ -43,7 +43,7 @@ use merge_core::patch::{DEFAULT_CONTEXT, Scope, Titles};
 use merge_core::text::{Encoding, Text};
 use merge_session::SessionError;
 use merge_session::origin::carry;
-use merge_session::repository::Handoff;
+use merge_session::repository::{Handoff, WorkingCopy};
 use merge_syntax::language::Language;
 use merge_view::diff::{
     self, MOVE_MARK, Pin, differences, first_change, held_region, move_ends, move_target,
@@ -78,8 +78,8 @@ use crate::window::{
 use crate::wrap::Wrap;
 use crate::{
     Cancel, CopyAsPatch, CopyDifferenceAsPatch, ExitCode, Find, GoToMoveEnd, NextDifference,
-    PreviousDifference, Redo, Save, ToggleCollapseUnchanged, ToggleOriginColumn, ToggleSoftWrap,
-    ToggleSyntax, ToggleUnified, ToggleWhitespace, Typography, Undo, alert, finish,
+    PreviousDifference, Redo, Save, SaveAndExit, ToggleCollapseUnchanged, ToggleOriginColumn,
+    ToggleSoftWrap, ToggleSyntax, ToggleUnified, ToggleWhitespace, Typography, Undo, alert, finish,
     ignore_closed_view,
 };
 
@@ -106,6 +106,8 @@ pub(crate) const PANE_CONTEXT: &str = "DiffPane";
 
 /// The banner's element id.
 pub const BANNER_ID: &str = "banner";
+/// The element id of the banner after a save jj did not snapshot.
+pub const SNAPSHOT_BANNER_ID: &str = "snapshot-banner";
 /// The unified pane (spec §5).
 pub const UNIFIED_PANE_ID: &str = "unified-pane";
 /// The status bar's element id.
@@ -186,6 +188,16 @@ pub enum DiffLookup {
 }
 
 impl DiffLookup {
+    /// The jj working copy a save snapshots: `diff PATH`'s, in a jj repository. A tool diff
+    /// belongs to the jj or git command that ran it, which takes the files in itself.
+    #[must_use]
+    pub fn working_copy(&self) -> Option<WorkingCopy> {
+        match self {
+            Self::Native { repo, .. } => repo.working_copy(),
+            Self::Tool { .. } => None,
+        }
+    }
+
     /// Each side's annotation, and what the VCS records about the commit it shows.
     fn annotate(&self, inputs: [&Text; 2]) -> Result<(Annotated, Described), VcsError> {
         let found = match self {
@@ -250,6 +262,9 @@ pub struct DiffSettings {
     /// The run's working directory, which relative paths resolve against; none when the
     /// process has none.
     pub cwd: Option<PathBuf>,
+    /// The jj working copy each save snapshots: in triad's own runs in a jj repository
+    /// (spec §6.1). None when jj or git ran triad as its tool, since the run is theirs.
+    pub working_copy: Option<WorkingCopy>,
 }
 
 impl Default for DiffSettings {
@@ -274,6 +289,7 @@ impl Default for DiffSettings {
             layout: DiffLayout::SideBySide,
             scrollbars: Scrollbars::Always,
             cwd: None,
+            working_copy: None,
         }
     }
 }
@@ -408,6 +424,10 @@ pub struct DiffWindow {
     found: Flash<(Side, usize, usize)>,
     /// Why edits here do not last, when they do not.
     banner: Option<SharedString>,
+    /// The jj working copy each save snapshots; none outside triad's own jj runs.
+    working_copy: Option<WorkingCopy>,
+    /// Why jj did not snapshot the last save, until a save it snapshots.
+    snapshot_failed: Option<SharedString>,
     /// The config file's bad lines, which the settings banner shows.
     settings_errors: Option<SharedString>,
     /// Each pane's scroll top after the last sync, left then right.
@@ -676,6 +696,8 @@ impl DiffWindow {
             flash: Flash::default(),
             found: Flash::default(),
             banner,
+            working_copy: settings.working_copy.clone(),
+            snapshot_failed: None,
             settings_errors: None,
             synced: [Pixels::ZERO; 2],
             left_top: None,
@@ -761,6 +783,12 @@ impl DiffWindow {
     #[must_use]
     pub fn banner(&self) -> Option<&SharedString> {
         self.banner.as_ref()
+    }
+
+    /// Why jj did not snapshot the last save, if it did not.
+    #[must_use]
+    pub fn snapshot_failed(&self) -> Option<&SharedString> {
+        self.snapshot_failed.as_ref()
     }
 
     #[must_use]
@@ -1598,8 +1626,10 @@ impl DiffWindow {
     }
 
     /// Write each side with unsaved edits to its own path, as it stands now, off the UI
-    /// thread and once the save before has landed. On a failure, an alert says why and the
-    /// side keeps its marker. `after` says whether the window exits once every side is saved.
+    /// thread and once the save before has landed, then snapshot the jj working copy when
+    /// the run owns one. On a failure, an alert says why and the side keeps its marker; a
+    /// failed snapshot leaves the file written and a banner says why. `after` says whether
+    /// the window exits once every side is saved.
     fn save(&mut self, after: AfterSave, window: &mut Window, cx: &mut Context<Self>) {
         for side in SIDES {
             self.send_edits(side, window, cx);
@@ -1610,23 +1640,30 @@ impl DiffWindow {
             let text = write.text.clone();
             self.pane_mut(write.side).writes.start(write.changes, text, write.encoding);
         }
+        let working_copy = self.working_copy.clone();
         let before = self.saving.take();
         self.saving = Some(cx.spawn_in(window, async move |this, cx| {
             if let Some(before) = before {
                 before.await;
             }
-            let written = cx
+            let (written, snapshot) = cx
                 .background_spawn(async move {
-                    writes
+                    let written: Vec<_> = writes
                         .into_iter()
                         .map(|write| {
                             let result = write.run();
                             (write, result)
                         })
-                        .collect::<Vec<_>>()
+                        .collect();
+                    let any_written = written.iter().any(|(_, result)| result.is_ok());
+                    let snapshot = working_copy
+                        .filter(|_| any_written)
+                        .map(|working_copy| working_copy.snapshot());
+                    (written, snapshot)
                 })
                 .await;
             ignore_closed_view(this.update_in(cx, |this, window, cx| {
+                this.snapshotted(snapshot);
                 this.saved(written, after, window, cx);
             }));
         }));
@@ -1651,6 +1688,20 @@ impl DiffWindow {
                 })
             })
             .collect()
+    }
+
+    /// Take the outcome of a save's snapshot: none when it took none. jj snapshots the file
+    /// on its next command, so a failure only says why.
+    fn snapshotted(&mut self, snapshot: Option<Result<(), VcsError>>) {
+        match snapshot {
+            None => {}
+            Some(Ok(())) => self.snapshot_failed = None,
+            Some(Err(error)) => {
+                tracing::warn!(%error, "jj did not snapshot the save; its next command will");
+                let detail = crate::error_text::describe(&error);
+                self.snapshot_failed = Some(strings::snapshot_failed(&detail));
+            }
+        }
     }
 
     /// Take the results of a save's writes. A side edited while its write ran keeps its
@@ -2596,6 +2647,9 @@ impl Render for DiffWindow {
             .on_action(
                 cx.listener(|this, _: &Save, window, cx| this.save(AfterSave::Stay, window, cx)),
             )
+            .on_action(cx.listener(|this, _: &SaveAndExit, window, cx| {
+                this.save(AfterSave::Exit, window, cx);
+            }))
             .on_action(cx.listener(|this, _: &Cancel, window, cx| this.close(window, cx)))
             .font_family(ui_font)
             .text_size(self.typography.size)
@@ -2615,6 +2669,11 @@ impl Render for DiffWindow {
             ))
             .children(render_banner(self.settings_errors.as_ref(), |v| &mut v.settings_errors, cx))
             .children(self.banner.clone().map(|text| alert::warning_banner(BANNER_ID, text, cx)))
+            .children(
+                self.snapshot_failed
+                    .clone()
+                    .map(|text| alert::warning_banner(SNAPSHOT_BANNER_ID, text, cx)),
+            )
             .child(match &self.unified {
                 Some(pane) => self.render_unified(pane, cx).into_any_element(),
                 None => self.render_panes(window, cx).into_any_element(),

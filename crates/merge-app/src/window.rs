@@ -45,7 +45,7 @@ use merge_core::suggest::{self, EditSuggestion};
 use merge_core::text::Text;
 use merge_core::unusual::Unusual;
 use merge_session::SaveError;
-use merge_session::ending::{self, Closing, Next, SaveFailed, Undone, UnresolvedSave};
+use merge_session::ending::{self, After, Closing, Next, SaveFailed, Undone, UnresolvedSave};
 use merge_session::jj_native::CommitEffect;
 use merge_session::origin::{self, find_merge};
 use merge_session::repository::Handoff;
@@ -108,7 +108,7 @@ use crate::wrap::Wrap;
 use crate::{
     Cancel, CarryMovedEdit, ClearChoice, CopyInput, DropDuplicate, ExitCode, Find, GoToLine,
     GoToMoveEnd, LINE_HEIGHT, NextConflict, NextDifference, PickSelectedLines, PreviousConflict,
-    PreviousDifference, Redo, SaveAndExit, SaveCopyAs, SelectAllInput, TakeBase, TakeLeft,
+    PreviousDifference, Redo, Save, SaveAndExit, SaveCopyAs, SelectAllInput, TakeBase, TakeLeft,
     TakeLeftAllUnresolved, TakeLeftThenRight, TakeRight, TakeRightAllUnresolved, TakeRightThenLeft,
     TakeSortedUnion, TakeWholeLeft, TakeWholeRight, ToggleBase, ToggleBasePane,
     ToggleCollapseUnchanged, ToggleLeft, ToggleOriginColumn, ToggleRight, ToggleScrollSync,
@@ -220,8 +220,8 @@ pub const TOOLBAR_ID: &str = "toolbar";
 pub const CONFLICT_BADGE_ID: &str = "conflict-badge";
 /// The status bar's warning that the saved output mixes line endings.
 pub const MIXED_ENDINGS_ID: &str = "mixed-endings";
-/// The status bar's note after Save Copy As.
-pub const COPY_NOTE_ID: &str = "copy-note";
+/// The status bar's note after Save or Save Copy As.
+pub const SAVE_NOTE_ID: &str = "save-note";
 
 /// The pick target of `pane` on `row`, the first row of a region that differs.
 #[must_use]
@@ -586,13 +586,12 @@ pub struct MergeWindow {
     notice: Option<SharedString>,
     /// The conflicts a parent commit holds too, drawn in the inherited tone.
     inherited: Inherited,
-    /// What the last Save Copy As wrote, until the merge next changes.
-    copy_note: Option<SharedString>,
+    /// What the last Save or Save Copy As wrote, until the merge next changes.
+    save_note: Option<SharedString>,
     /// The latest copy being written. Each copy waits for the one before, and the window
     /// exits only once the last has landed.
     copying: Option<Task<()>>,
-    /// Save & Exit's write and record, running off the UI thread while the session is
-    /// saving.
+    /// A save's write and record, running off the UI thread while the session is saving.
     save_task: Option<Task<()>>,
     go_to_line: go_to_line::Field,
     /// The input panes' matches of the result search's query.
@@ -853,7 +852,7 @@ impl MergeWindow {
             settings_errors: None,
             notice: settings.notice.clone(),
             inherited,
-            copy_note: None,
+            save_note: None,
             copying: None,
             save_task: None,
             go_to_line,
@@ -2229,7 +2228,7 @@ impl MergeWindow {
 
     /// Redraw the region bands, marks and status from the core.
     fn refresh(&mut self, cx: &mut Context<Self>) {
-        self.copy_note = None;
+        self.save_note = None;
         let tones = *self.tones(cx);
         let bands = marks::bands(self.session.document(), &self.inherited);
         let (shown, shown_tones) = &self.shown_bands;
@@ -2527,6 +2526,15 @@ impl MergeWindow {
         }
     }
 
+    /// Write and record the output, unresolved conflicts as markers, and go on merging
+    /// (spec §6.2). Without an output, ask for a path as Save Copy As does.
+    fn save(&mut self, _: &Save, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.session.saving() {
+            self.send_edits(window, cx);
+        }
+        self.step(self.session.save_in_place_requested(), window, cx);
+    }
+
     /// Write the output and finish: with 0 when resolved, or with 1 after the user agrees
     /// to save with conflict markers (spec §6.2).
     fn save_and_exit(&mut self, _: &SaveAndExit, window: &mut Window, cx: &mut Context<Self>) {
@@ -2545,14 +2553,26 @@ impl MergeWindow {
             }
             Next::ConfirmClose => Self::confirm_close(window, cx),
             Next::SaveAndExit => self.save_and_exit(&SaveAndExit, window, cx),
-            Next::Write => self.check_descendants(window, cx),
-            Next::Record(code) => self.record_again(code, window, cx),
+            Next::Write(after) => self.check_descendants(after, window, cx),
+            Next::Record(code, after) => self.record_again(code, after, window, cx),
             Next::SaveCopyAs => self.save_copy_as(&SaveCopyAs, window, cx),
-            Next::Failed { undone, error } => {
+            Next::Failed { undone, error, after } => {
                 let detail = crate::error_text::describe(error.error());
                 // The save wrote the journal first; a failed write tries again.
                 self.write_journal(cx);
-                Self::save_failed(undone, detail, window, cx);
+                Self::save_failed(undone, after, detail, window, cx);
+            }
+            Next::Saved(_) => {
+                let unresolved = self.session.document().unresolved();
+                self.save_note = Some(strings::saved(unresolved).into());
+                cx.notify();
+            }
+            Next::SavedUnrecorded { error, .. } => {
+                let error = error.error();
+                tracing::warn!(%error, "the repository did not record the save");
+                // The text says the output is written and why the record failed.
+                self.save_note = Some(crate::error_text::describe(error).into());
+                cx.notify();
             }
             Next::Refused { error } => {
                 let detail = crate::error_text::describe(&error);
@@ -2639,7 +2659,7 @@ impl MergeWindow {
     ) {
         match written {
             Ok(_) => {
-                self.copy_note = Some(strings::copy_saved(unresolved).into());
+                self.save_note = Some(strings::copy_saved(unresolved).into());
                 cx.notify();
             }
             Err(error) => alert(
@@ -2667,12 +2687,13 @@ impl MergeWindow {
     /// Before a save into a jj commit, preview it off the UI thread, and ask first when it
     /// changes the conflicts of a descendant (spec §7.5.1). Any other save writes at once.
     /// The result stays locked while the preview runs, so the save writes what it showed.
-    fn check_descendants(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// The save then goes on as `after` says.
+    fn check_descendants(&mut self, after: After, window: &mut Window, cx: &mut Context<Self>) {
         if self.save_task.is_some() {
             return;
         }
         let Some(job) = self.session.preview() else {
-            return self.write_and_finish(window, cx);
+            return self.write(after, window, cx);
         };
         self.set_saving(true, cx);
         self.save_task = Some(cx.spawn_in(window, async move |this, cx| {
@@ -2693,16 +2714,21 @@ impl MergeWindow {
                     }
                 };
                 if changed.is_empty() {
-                    this.write_and_finish(window, cx);
+                    this.write(after, window, cx);
                 } else {
-                    Self::confirm_descendants(&changed, window, cx);
+                    Self::confirm_descendants(&changed, after, window, cx);
                 }
             }));
         }));
     }
 
     /// Ask before a save that changes the conflicts of the descendants in `changed`.
-    fn confirm_descendants(changed: &[CommitEffect], window: &mut Window, cx: &mut Context<Self>) {
+    fn confirm_descendants(
+        changed: &[CommitEffect],
+        after: After,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let answer = window.prompt(
             PromptLevel::Info,
             &prompt::descendants_changed(changed.len()),
@@ -2714,18 +2740,18 @@ impl MergeWindow {
             let save = answer.await == Ok(GO_AHEAD);
             ignore_closed_view(this.update_in(cx, |this, window, cx| {
                 if save {
-                    this.write_and_finish(window, cx);
+                    this.write(after, window, cx);
                 }
             }));
         })
         .detach();
     }
 
-    /// Write the output and record the save off the UI thread, then finish.
-    fn write_and_finish(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// Write the output and record the save off the UI thread, then go on as `after` says.
+    fn write(&mut self, after: After, window: &mut Window, cx: &mut Context<Self>) {
         // The save writes the journal first; its tasks stop.
         self.journal.cancel();
-        match self.session.start_save() {
+        match self.session.start_save(after) {
             Ok(job) => self.save_in_background(job, window, cx),
             Err(CannotSave::NoOutput) => Self::fail(&prompt::no_output(), window, cx),
             Err(CannotSave::Saving) => {}
@@ -2733,15 +2759,21 @@ impl MergeWindow {
     }
 
     /// Record again, off the UI thread, a save whose output is written with `code`, without
-    /// writing it again.
-    fn record_again(&mut self, code: ExitCode, window: &mut Window, cx: &mut Context<Self>) {
-        if let Ok(job) = self.session.start_record(code) {
+    /// writing it again, then go on as `after` says.
+    fn record_again(
+        &mut self,
+        code: ExitCode,
+        after: After,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Ok(job) = self.session.start_record(code, after) {
             self.save_in_background(job, window, cx);
         }
     }
 
-    /// Run `job` on a background thread with the result locked, then end the session or
-    /// say why it failed.
+    /// Run `job` on a background thread with the result locked, then go on or end the
+    /// session as it says, or say why it failed.
     fn save_in_background(&mut self, job: SaveJob, window: &mut Window, cx: &mut Context<Self>) {
         self.set_saving(true, cx);
         if let Some(watch) = &mut self.output_watch {
@@ -2773,10 +2805,16 @@ impl MergeWindow {
         self.set_saving(self.session.saving(), cx);
     }
 
-    /// Say why a save failed, and offer the answers `undone` allows: try again, save a copy,
-    /// keep editing, or quit with 3 (spec §6.2). The window stays open until the user saves
-    /// or quits; the journal holds the work meanwhile.
-    fn save_failed(undone: Undone, detail: String, window: &mut Window, cx: &mut Context<Self>) {
+    /// Say why a save failed, and offer the answers `undone` allows: try again, which goes
+    /// on as `after` says, save a copy, keep editing, or quit with 3 (spec §6.2). The window
+    /// stays open until the user saves or quits; the journal holds the work meanwhile.
+    fn save_failed(
+        undone: Undone,
+        after: After,
+        detail: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         tracing::error!(detail, "cannot save");
         let answers = undone.answers();
         let labels: Vec<PromptButton> =
@@ -2786,7 +2824,7 @@ impl MergeWindow {
         let handle = window.window_handle();
         cx.spawn(async move |this, cx| {
             let answer = answer.await.ok().and_then(|answer| answers.get(answer).copied());
-            let next = ending::failure_answered(answer, undone);
+            let next = ending::failure_answered(answer, undone, after);
             // Quit, or an alert that closed with its window, ends the session; so does a
             // window gone before the answer could reach it.
             let handled = !matches!(next, Next::Finish { .. })
@@ -2824,8 +2862,9 @@ impl MergeWindow {
         .detach();
     }
 
-    /// Close the window (spec §6.2). With nothing changed, finish with 2 at once. After a
-    /// change, ask: Save & Exit, Discard (finish with 2, writing nothing) or Keep Editing.
+    /// Close the window (spec §6.2). With nothing changed since the last Save, finish at
+    /// once: with that Save's code, or with 2 before any. After a change, ask: Save & Exit,
+    /// Discard (finish as before, writing nothing) or Keep Editing.
     fn cancel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.session.saving() {
             self.send_edits(window, cx);
@@ -2844,8 +2883,10 @@ impl MergeWindow {
         );
         cx.spawn_in(window, async move |this, cx| {
             let choice = answer.await.ok().and_then(|answer| Closing::ALL.get(answer).copied());
-            let next = ending::close_answered(choice);
-            ignore_closed_view(this.update_in(cx, |this, window, cx| this.step(next, window, cx)));
+            ignore_closed_view(this.update_in(cx, |this, window, cx| {
+                let next = this.session.close_answered(choice);
+                this.step(next, window, cx);
+            }));
         })
         .detach();
     }
@@ -4408,13 +4449,13 @@ fn region_decorations(bands: &[Band], tones: &Tones) -> Vec<RangeDecoration> {
 }
 
 impl MergeWindow {
-    /// The status bar: the counts, the copy note and the mixed-endings warning.
+    /// The status bar: the counts, the save note and the mixed-endings warning.
     fn render_status(&self, mixed_tone: Hsla, theme: &Theme) -> impl IntoElement + use<> {
         status_bar::bar(STATUS_ID, self.status.clone(), theme)
             .child(status_bar::item(STATUS_TEXT_ID, self.status.clone()))
-            .children(self.copy_note.clone().map(|note| {
+            .children(self.save_note.clone().map(|note| {
                 div()
-                    .id(COPY_NOTE_ID)
+                    .id(SAVE_NOTE_ID)
                     .test_support()
                     .role(Role::Status)
                     .aria_label(note.clone())
@@ -4487,6 +4528,7 @@ impl Render for MergeWindow {
             })
             .on_action(cx.listener(Self::find))
             .on_action(cx.listener(Self::open_go_to_line))
+            .on_action(cx.listener(Self::save))
             .on_action(cx.listener(Self::save_and_exit))
             .on_action(cx.listener(Self::save_copy_as))
             .on_action(cx.listener(|this, _: &Cancel, window, cx| this.cancel(window, cx)))

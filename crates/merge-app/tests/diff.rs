@@ -554,6 +554,31 @@ fn closing_with_edits_and_save_writes_then_exits(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn save_and_exit_writes_without_asking_then_exits(cx: &mut TestAppContext) {
+    let files = Files::new("a\n", "b\n");
+    let o = open(cx, &files);
+    type_at(cx, &o, Side::Left, 0, "x");
+    press(cx, &o, "secondary-q");
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    assert_eq!(files.read(Side::Left), "xa\n");
+    assert_eq!(files.read(Side::Right), "b\n");
+    assert_eq!(o.finished.codes(), [ExitCode::Resolved]);
+}
+
+#[gpui_kit::test]
+fn save_and_exit_that_fails_alerts_and_stays_open(cx: &mut TestAppContext) {
+    let files = Files::new("a\n", "b\n");
+    let o = open(cx, &files);
+    type_at(cx, &o, Side::Left, 0, "x");
+    std::fs::remove_dir_all(files.path(Side::Left).parent().expect("a parent")).expect("removed");
+    press(cx, &o, "secondary-q");
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt(), "an alert says why");
+    assert_eq!(o.finished.codes(), []);
+}
+
+#[gpui_kit::test]
 fn undo_to_the_saved_text_still_counts_as_an_edit(cx: &mut TestAppContext) {
     // The marker tracks saves, not content: undo after a save leaves the side unsaved.
     let files = Files::new("a\n", "b\n");

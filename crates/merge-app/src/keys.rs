@@ -34,8 +34,8 @@ impl Contexts {
             KeyAction::OpenSettings | KeyAction::About => vec![None],
             // Inside an editor, the editor's own ⌘F opens its search.
             KeyAction::Find => vec![Some(window::WINDOW_CONTEXT), Some(diff_window::DIFF_CONTEXT)],
-            // The tool windows close on Cancel, as the merge and diff windows do.
-            KeyAction::Cancel => {
+            // The tool windows close on Cancel and Save & Exit, having nothing to save.
+            KeyAction::Cancel | KeyAction::SaveAndExit => {
                 self.windows(windows).chain([Some(tool_window::CONTEXT)]).collect()
             }
             _ => self.windows(windows).collect(),
@@ -139,7 +139,7 @@ mod tests {
     }
 
     #[test]
-    fn cancel_binds_in_the_tool_windows_too() {
+    fn cancel_and_save_and_exit_bind_in_the_tool_windows_too() {
         let both = Windows { merge: true, diff: true };
         let contexts = Contexts::new();
         assert_eq!(
@@ -152,8 +152,10 @@ mod tests {
                 Some(tool_window::CONTEXT),
             ]
         );
+        let quit = contexts.of(KeyAction::SaveAndExit, both);
+        assert_eq!(quit.last(), Some(&Some(tool_window::CONTEXT)), "⌘Q closes a tool window");
         let save = contexts.of(KeyAction::Save, both);
-        assert!(!save.contains(&Some(tool_window::CONTEXT)), "only Cancel closes a tool window");
+        assert!(!save.contains(&Some(tool_window::CONTEXT)), "Save has nothing to do there");
     }
 
     #[test]

@@ -323,6 +323,7 @@ go-to-line-prompt = Go to line (1–{ $last }):
 go-to-line-current = Current line { $line } of { $last }
 go-to-line-target = Go to line { $line }
 jj-diff-banner = These are temporary copies from jj diff --tool. Edits here are lost when the window closes.
+snapshot-failed-banner = Saved, but jj did not record the save: { $error }
 output-changed-banner = { $name } changed on disk since the merge opened. Save & Exit replaces it.
 copy-to-right = Copy this difference to the right
 copy-to-left = Copy this difference to the left
@@ -374,6 +375,12 @@ copy-saved =
         [0] Copy saved, resolved
         [one] Copy saved with { $count } conflict
        *[other] Copy saved with { $count } conflicts
+    }
+saved =
+    { $count ->
+        [0] Saved, resolved
+        [one] Saved with { $count } conflict
+       *[other] Saved with { $count } conflicts
     }
 
 ## Result pane's right-click menu

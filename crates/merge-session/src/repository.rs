@@ -33,6 +33,32 @@ pub struct RunRepository {
     jj_config: Option<ConfigEnv>,
 }
 
+/// A jj repository's working copy, which a save in a diff window snapshots (spec §6.1): its
+/// root and the jj config its snapshots read.
+#[derive(Debug, Clone)]
+pub struct WorkingCopy {
+    root: PathBuf,
+    jj_config: Option<ConfigEnv>,
+}
+
+impl WorkingCopy {
+    /// Snapshot the working copy, as a jj command does, in the repository opened afresh at
+    /// its newest state.
+    ///
+    /// # Errors
+    ///
+    /// [`VcsError`] when the repository cannot be opened, or jj refuses the snapshot, as for
+    /// a stale working copy.
+    pub fn snapshot(&self) -> Result<(), VcsError> {
+        let run = RunRepository::find([self.root.as_path()]);
+        let mut run = match &self.jj_config {
+            Some(config) => run.with_jj_config(config.clone()),
+            None => run,
+        };
+        run.require_mut()?.snapshot()
+    }
+}
+
 impl RunRepository {
     /// The repository `dirs` lie in, as [`native::discover`] finds each: from the directory
     /// made canonical, so a directory that does not exist, or the empty path, lies in none.
@@ -118,6 +144,14 @@ impl RunRepository {
     #[must_use]
     pub fn found(&self) -> Option<&Repo> {
         self.found.as_ref()
+    }
+
+    /// The jj working copy a save in this run snapshots; none outside a jj repository. git
+    /// takes the working tree in at `git add`, so a save there records nothing.
+    #[must_use]
+    pub fn working_copy(&self) -> Option<WorkingCopy> {
+        let repo = self.found.as_ref().filter(|repo| repo.kind == RepoKind::Jj)?;
+        Some(WorkingCopy { root: repo.root.clone(), jj_config: self.jj_config.clone() })
     }
 
     /// The kind of the repository found, without opening it.
@@ -251,6 +285,19 @@ impl Handoff {
                 None => again,
             }
         })
+    }
+
+    /// The jj working copy of the run's repository, as [`RunRepository::working_copy`]
+    /// gives it, without taking the repository.
+    #[must_use]
+    pub fn working_copy(&self) -> Option<WorkingCopy> {
+        let held = self
+            .slot
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .map(RunRepository::working_copy);
+        held.unwrap_or_else(|| self.take().working_copy())
     }
 
     /// Whether a take has emptied the slot.

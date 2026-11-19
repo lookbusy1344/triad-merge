@@ -263,6 +263,7 @@ go-to-line-prompt = 行へ移動（1–{ $last }）:
 go-to-line-current = 現在の行 { $line }/{ $last }
 go-to-line-target = { $line } 行目へ移動
 jj-diff-banner = これらは jj diff --tool による一時コピーです。ウィンドウを閉じるとここでの編集は失われます。
+snapshot-failed-banner = 保存しましたが、jj は保存を記録しませんでした: { $error }
 output-changed-banner = { $name } はマージを開いた後にディスク上で変更されました。保存して終了すると置き換えられます。
 copy-to-right = この差分を右へコピー
 copy-to-left = この差分を左へコピー
@@ -313,6 +314,11 @@ copy-saved =
     { $count ->
         [0] コピーを保存しました（解決済み）
        *[other] コピーを保存しました（競合 { $count } 件）
+    }
+saved =
+    { $count ->
+        [0] 保存しました（解決済み）
+       *[other] 保存しました（競合 { $count } 件）
     }
 
 ## Result pane's right-click menu

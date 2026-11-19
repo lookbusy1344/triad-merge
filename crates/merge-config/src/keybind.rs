@@ -74,10 +74,9 @@ const DEFAULT_BINDINGS: &[(&str, KeyAction)] = &[
     ("cmd+k", KeyAction::ToggleScrollSync),
     ("cmd+f", KeyAction::Find),
     ("cmd+l", KeyAction::GoToLine),
-    ("cmd+s", KeyAction::SaveAndExit),
     ("cmd+s", KeyAction::Save),
     ("cmd+shift+s", KeyAction::SaveCopyAs),
-    ("cmd+q", KeyAction::Cancel),
+    ("cmd+q", KeyAction::SaveAndExit),
     ("cmd+w", KeyAction::Cancel),
     ("cmd+,", KeyAction::OpenSettings),
 ];
@@ -170,10 +169,7 @@ impl KeyAction {
     /// Whether the merge window has this command.
     #[must_use]
     pub const fn in_merge_window(self) -> bool {
-        !matches!(
-            self,
-            Self::Save | Self::CopyAsPatch | Self::CopyDifferenceAsPatch | Self::ToggleUnified
-        )
+        !matches!(self, Self::CopyAsPatch | Self::CopyDifferenceAsPatch | Self::ToggleUnified)
     }
 
     /// Whether the diff window has this command.
@@ -196,6 +192,7 @@ impl KeyAction {
                 | Self::ToggleCollapseUnchanged
                 | Self::ToggleUnified
                 | Self::Save
+                | Self::SaveAndExit
                 | Self::Cancel
                 | Self::OpenSettings
                 | Self::About
@@ -661,13 +658,13 @@ mod tests {
         assert_eq!(actions_of(&bindings, "cmd+y"), [KeyAction::ToggleSyntax]);
         assert_eq!(actions_of(&bindings, "cmd+i"), [KeyAction::ToggleOriginColumn]);
         assert_eq!(actions_of(&bindings, "cmd+k"), [KeyAction::ToggleScrollSync]);
-        assert_eq!(actions_of(&bindings, "cmd+q"), [KeyAction::Cancel]);
+        assert_eq!(windows_of(&bindings, "cmd+q"), [(KeyAction::SaveAndExit, BOTH)]);
         assert_eq!(actions_of(&bindings, "cmd+w"), [KeyAction::Cancel]);
-        assert_eq!(actions_of(&bindings, "cmd+s"), [KeyAction::SaveAndExit, KeyAction::Save]);
+        assert_eq!(windows_of(&bindings, "cmd+s"), [(KeyAction::Save, BOTH)]);
         assert_eq!(actions_of(&bindings, "cmd+u"), [KeyAction::ToggleCollapseUnchanged]);
         assert_eq!(windows_of(&bindings, "cmd+shift+m"), [(KeyAction::GoToMoveEnd, BOTH)]);
         assert_eq!(windows_of(&bindings, "cmd+shift+l"), [(KeyAction::PickSelectedLines, MERGE)]);
-        assert_eq!(bindings.bound().len(), 33);
+        assert_eq!(bindings.bound().len(), 32);
         assert_eq!(bindings.unbound().count(), 0);
     }
 
@@ -751,8 +748,8 @@ mod tests {
 
     #[test]
     fn a_diff_only_command_leaves_the_merge_windows_binding_of_the_chord() {
-        let bindings = apply(&["cmd+s=save"]);
-        assert_eq!(actions_of(&bindings, "cmd+s"), [KeyAction::SaveAndExit, KeyAction::Save]);
+        let bindings = apply(&["cmd+s=copy-as-patch"]);
+        assert_eq!(actions_of(&bindings, "cmd+s"), [KeyAction::Save, KeyAction::CopyAsPatch]);
     }
 
     #[test]
@@ -772,10 +769,11 @@ mod tests {
 
     #[test]
     fn a_command_shadowed_in_every_window_is_dropped() {
-        let bindings = apply(&["cmd+j=next-difference", "cmd+j=next-conflict", "cmd+j=save"]);
+        let bindings =
+            apply(&["cmd+j=next-difference", "cmd+j=next-conflict", "cmd+j=copy-as-patch"]);
         assert_eq!(
             windows_of(&bindings, "cmd+j"),
-            [(KeyAction::NextConflict, MERGE), (KeyAction::Save, DIFF)]
+            [(KeyAction::NextConflict, MERGE), (KeyAction::CopyAsPatch, DIFF)]
         );
     }
 

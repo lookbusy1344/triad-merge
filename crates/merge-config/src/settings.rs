@@ -2535,10 +2535,9 @@ keybind = cmd+u=toggle-collapse-unchanged
 keybind = cmd+k=toggle-scroll-sync
 keybind = cmd+f=find
 keybind = cmd+l=go-to-line
-keybind = cmd+s=save-and-exit
 keybind = cmd+s=save
 keybind = cmd+shift+s=save-copy-as
-keybind = cmd+q=cancel
+keybind = cmd+q=save-and-exit
 keybind = cmd+w=cancel
 keybind = cmd+,=open-settings
 syntax-highlighting = true

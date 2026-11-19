@@ -63,7 +63,7 @@ fn setup(
 #[gpui_kit::test]
 fn save_when_resolved_writes_and_exits_0(cx: &mut TestAppContext) {
     let (dir, window, finished) = setup(cx, clean());
-    press(cx, window, "secondary-s");
+    press(cx, window, "secondary-q");
     assert!(!cx.has_pending_prompt());
     assert_eq!(written(&dir).as_deref(), Some("A\nb\nC\n"));
     assert_eq!(finished.codes(), [ExitCode::Resolved]);
@@ -90,7 +90,7 @@ fn save_of_a_character_the_encoding_cannot_hold_alerts_writes_nothing_and_stays_
     cx: &mut TestAppContext,
 ) {
     let (dir, window, finished) = setup(cx, unencodable());
-    press(cx, window, "secondary-s");
+    press(cx, window, "secondary-q");
     let (message, detail) = cx.pending_prompt().expect("an alert");
     assert_eq!(message, CANNOT_WRITE);
     assert_eq!(detail, "Windows-1252 cannot hold 'ł' (U+0142) on line 1");
@@ -99,14 +99,14 @@ fn save_of_a_character_the_encoding_cannot_hold_alerts_writes_nothing_and_stays_
     assert_eq!(written(&dir), None);
     assert_eq!(finished.codes(), []);
     // The window stays: a second save meets the same refusal.
-    press(cx, window, "secondary-s");
+    press(cx, window, "secondary-q");
     assert_eq!(alert(cx), CANNOT_WRITE);
 }
 
 #[gpui_kit::test]
 fn save_with_unresolved_conflicts_asks_then_writes_markers_and_exits_1(cx: &mut TestAppContext) {
     let (dir, window, finished) = setup(cx, conflict());
-    press(cx, window, "secondary-s");
+    press(cx, window, "secondary-q");
     assert!(cx.has_pending_prompt());
     assert_eq!(written(&dir), None, "nothing is written before the answer");
     cx.simulate_prompt_answer(SAVE_WITH_CONFLICTS);
@@ -124,7 +124,7 @@ fn without_the_confirmation_save_writes_markers_and_exits_1_at_once(cx: &mut Tes
         ..merge_app::WindowSettings::default()
     };
     let (window, _view, finished) = common::open_with(cx, conflict(), &settings);
-    press(cx, window, "secondary-s");
+    press(cx, window, "secondary-q");
     assert!(!cx.has_pending_prompt());
     assert_eq!(written(&dir).as_deref(), Some(MARKERS));
     assert_eq!(finished.codes(), [ExitCode::Conflicts]);
@@ -138,7 +138,7 @@ fn press_only(cx: &mut TestAppContext, window: AnyWindowHandle, key: &str) {
 #[gpui_kit::test]
 fn save_and_exit_writes_in_the_background_then_exits(cx: &mut TestAppContext) {
     let (dir, window, finished) = setup(cx, clean());
-    press_only(cx, window, "secondary-s");
+    press_only(cx, window, "secondary-q");
     assert_eq!(written(&dir), None, "the write waits for the background executor");
     assert_eq!(finished.codes(), []);
     cx.run_until_parked();
@@ -150,12 +150,12 @@ fn save_and_exit_writes_in_the_background_then_exits(cx: &mut TestAppContext) {
 fn save_and_exit_while_a_save_is_writing_does_nothing(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().expect("tempdir");
     let (window, view, finished) = open_saving(cx, clean(), &dir.path().join("out"));
-    press_only(cx, window, "secondary-s");
+    press_only(cx, window, "secondary-q");
     // A second save would write the typed text.
     act(cx, window, |window, cx| window.click(RESULT_ID, cx));
     set_caret(cx, &view, 0);
     act(cx, window, |window, cx| window.input("x", cx));
-    press_only(cx, window, "secondary-s");
+    press_only(cx, window, "secondary-q");
     cx.run_until_parked();
     assert_eq!(written(&dir).as_deref(), Some("A\nb\nC\n"));
     assert_eq!(finished.codes(), [ExitCode::Resolved]);
@@ -178,7 +178,7 @@ fn setup_writing_markers(
 #[gpui_kit::test]
 fn a_pick_while_save_and_exit_writes_changes_nothing(cx: &mut TestAppContext) {
     let (dir, window, view, finished) = setup_writing_markers(cx);
-    press_only(cx, window, "secondary-s");
+    press_only(cx, window, "secondary-q");
     // Pick the left side of the conflict while the write runs.
     press_only(cx, window, "secondary-alt-down");
     press_only(cx, window, "secondary-1");
@@ -194,7 +194,7 @@ fn an_undo_while_save_and_exit_writes_changes_nothing(cx: &mut TestAppContext) {
     let (dir, window, view, finished) = setup_writing_markers(cx);
     press(cx, window, "secondary-alt-down");
     press(cx, window, "secondary-1");
-    press_only(cx, window, "secondary-s");
+    press_only(cx, window, "secondary-q");
     press_only(cx, window, "secondary-z");
     let resolutions = cx.read(|cx| view.read(cx).document().resolutions().to_vec());
     assert_eq!(resolutions[1], Resolution::Pick(vec![Source::Side(LEFT)]));
@@ -209,7 +209,7 @@ fn typing_while_save_and_exit_writes_leaves_the_result_as_saved(cx: &mut TestApp
     let (window, view, finished) = open_saving(cx, clean(), &dir.path().join("out"));
     act(cx, window, |window, cx| window.click(RESULT_ID, cx));
     set_caret(cx, &view, 0);
-    press_only(cx, window, "secondary-s");
+    press_only(cx, window, "secondary-q");
     act(cx, window, |window, cx| window.input("x", cx));
     assert_eq!(
         common::texts(cx, &view),
@@ -226,7 +226,7 @@ fn after_a_failed_save_the_result_takes_edits_again(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().expect("tempdir");
     let output = dir.path().join("later").join("out");
     let (window, view, finished) = open_saving(cx, clean(), &output);
-    press(cx, window, "secondary-s");
+    press(cx, window, "secondary-q");
     cx.simulate_prompt_answer(KEEP_EDITING);
     cx.run_until_parked();
     act(cx, window, |window, cx| window.click(RESULT_ID, cx));
@@ -235,7 +235,7 @@ fn after_a_failed_save_the_result_takes_edits_again(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert_eq!(common::texts(cx, &view), ("xA\nb\nC\n".to_owned(), "xA\nb\nC\n".to_owned()));
     make_output_dir(&output);
-    press(cx, window, "secondary-s");
+    press(cx, window, "secondary-q");
     assert_eq!(std::fs::read_to_string(&output).expect("written"), "xA\nb\nC\n");
     assert_eq!(finished.codes(), [ExitCode::Resolved]);
 }
@@ -244,7 +244,7 @@ fn after_a_failed_save_the_result_takes_edits_again(cx: &mut TestAppContext) {
 fn closing_while_a_save_is_writing_leaves_the_end_to_the_save(cx: &mut TestAppContext) {
     // Nothing changed, so a close would exit with 2 at once.
     let (dir, window, finished) = setup(cx, clean());
-    press_only(cx, window, "secondary-s");
+    press_only(cx, window, "secondary-q");
     press_only(cx, window, "secondary-w");
     assert!(!cx.has_pending_prompt());
     cx.run_until_parked();
@@ -255,12 +255,12 @@ fn closing_while_a_save_is_writing_leaves_the_end_to_the_save(cx: &mut TestAppCo
 #[gpui_kit::test]
 fn a_failed_background_save_lets_the_next_save_run(cx: &mut TestAppContext) {
     let (_dir, output, window, finished) = setup_failing(cx, clean());
-    press(cx, window, "secondary-s");
+    press(cx, window, "secondary-q");
     cx.run_until_parked();
     cx.simulate_prompt_answer(KEEP_EDITING);
     cx.run_until_parked();
     make_output_dir(&output);
-    press(cx, window, "secondary-s");
+    press(cx, window, "secondary-q");
     cx.run_until_parked();
     assert_eq!(std::fs::read_to_string(&output).expect("written"), "A\nb\nC\n");
     assert_eq!(finished.codes(), [ExitCode::Resolved]);
@@ -277,7 +277,7 @@ fn the_confirmation_is_on_by_default() {
 #[gpui_kit::test]
 fn keep_editing_writes_nothing_and_stays_open(cx: &mut TestAppContext) {
     let (dir, window, finished) = setup(cx, conflict());
-    press(cx, window, "secondary-s");
+    press(cx, window, "secondary-q");
     cx.simulate_prompt_answer(KEEP_EDITING);
     cx.run_until_parked();
     assert_eq!(written(&dir), None);
@@ -285,7 +285,7 @@ fn keep_editing_writes_nothing_and_stays_open(cx: &mut TestAppContext) {
     // A pick resolves the conflict, and the next save needs no answer.
     press(cx, window, "secondary-alt-down");
     press(cx, window, "secondary-1");
-    press(cx, window, "secondary-s");
+    press(cx, window, "secondary-q");
     assert_eq!(written(&dir).as_deref(), Some("a\nL\nc\n"));
     assert_eq!(finished.codes(), [ExitCode::Resolved]);
 }
@@ -299,7 +299,7 @@ fn save_writes_text_typed_just_before(cx: &mut TestAppContext) {
     // In one update, so the edit still waits when the save runs.
     act(cx, window, |window, cx| {
         window.input("x", cx);
-        window.press("secondary-s", cx);
+        window.press("secondary-q", cx);
     });
     cx.run_until_parked();
     assert_eq!(written(&dir).as_deref(), Some("xA\nb\nC\n"));
@@ -325,7 +325,7 @@ fn cancel_after_a_change_asks_first(cx: &mut TestAppContext) {
     cx.simulate_prompt_answer(KEEP_EDITING);
     cx.run_until_parked();
     assert_eq!(finished.codes(), []);
-    press(cx, window, "secondary-q");
+    press(cx, window, "secondary-w");
     cx.simulate_prompt_answer(DISCARD);
     cx.run_until_parked();
     assert_eq!(written(&dir), None);
@@ -383,7 +383,7 @@ fn save_and_exit_on_close_with_conflicts_left_confirms_then_writes_markers_and_e
 fn keep_editing_in_the_unresolved_confirmation_after_close_stays_open(cx: &mut TestAppContext) {
     let (dir, window, finished) = setup(cx, two_conflicts());
     press(cx, window, "secondary-1");
-    press(cx, window, "secondary-q");
+    press(cx, window, "secondary-w");
     cx.simulate_prompt_answer(SAVE_AND_EXIT);
     cx.run_until_parked();
     cx.simulate_prompt_answer(KEEP_EDITING);
@@ -405,7 +405,7 @@ fn a_write_failure_alerts_and_exits_3(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().expect("tempdir");
     let output = dir.path().join("no-such-dir").join("out");
     let (window, _view, finished) = open_saving(cx, clean(), &output);
-    press(cx, window, "secondary-s");
+    press(cx, window, "secondary-q");
     let (message, detail) = cx.pending_prompt().expect("an alert");
     assert_eq!(message, "Cannot write the output");
     assert!(detail.starts_with(&format!("cannot write {}: ", output.display())), "{detail}");
@@ -439,7 +439,7 @@ fn alert(cx: &mut TestAppContext) -> String {
 #[gpui_kit::test]
 fn try_again_after_the_cause_is_gone_writes_and_exits_0(cx: &mut TestAppContext) {
     let (_dir, output, window, finished) = setup_failing(cx, clean());
-    press(cx, window, "secondary-s");
+    press(cx, window, "secondary-q");
     assert_eq!(alert(cx), CANNOT_WRITE);
     make_output_dir(&output);
     cx.simulate_prompt_answer(TRY_AGAIN);
@@ -452,7 +452,7 @@ fn try_again_after_the_cause_is_gone_writes_and_exits_0(cx: &mut TestAppContext)
 #[gpui_kit::test]
 fn try_again_that_fails_again_alerts_again_and_stays_open(cx: &mut TestAppContext) {
     let (_dir, output, window, finished) = setup_failing(cx, clean());
-    press(cx, window, "secondary-s");
+    press(cx, window, "secondary-q");
     cx.simulate_prompt_answer(TRY_AGAIN);
     cx.run_until_parked();
     assert_eq!(alert(cx), CANNOT_WRITE);
@@ -463,7 +463,7 @@ fn try_again_that_fails_again_alerts_again_and_stays_open(cx: &mut TestAppContex
 #[gpui_kit::test]
 fn try_again_with_conflicts_writes_markers_without_asking_twice(cx: &mut TestAppContext) {
     let (_dir, output, window, finished) = setup_failing(cx, conflict());
-    press(cx, window, "secondary-s");
+    press(cx, window, "secondary-q");
     cx.simulate_prompt_answer(SAVE_WITH_CONFLICTS);
     cx.run_until_parked();
     assert_eq!(alert(cx), CANNOT_WRITE);
@@ -478,13 +478,13 @@ fn try_again_with_conflicts_writes_markers_without_asking_twice(cx: &mut TestApp
 #[gpui_kit::test]
 fn keep_editing_after_a_failure_stays_open_and_a_later_save_writes(cx: &mut TestAppContext) {
     let (_dir, output, window, finished) = setup_failing(cx, clean());
-    press(cx, window, "secondary-s");
+    press(cx, window, "secondary-q");
     cx.simulate_prompt_answer(KEEP_EDITING);
     cx.run_until_parked();
     assert!(!cx.has_pending_prompt());
     assert_eq!(finished.codes(), []);
     make_output_dir(&output);
-    press(cx, window, "secondary-s");
+    press(cx, window, "secondary-q");
     assert_eq!(std::fs::read_to_string(&output).expect("written"), "A\nb\nC\n");
     assert_eq!(finished.codes(), [ExitCode::Resolved]);
 }
@@ -492,7 +492,7 @@ fn keep_editing_after_a_failure_stays_open_and_a_later_save_writes(cx: &mut Test
 #[gpui_kit::test]
 fn save_copy_as_after_a_failure_writes_the_copy_and_stays_open(cx: &mut TestAppContext) {
     let (dir, output, window, finished) = setup_failing(cx, clean());
-    press(cx, window, "secondary-s");
+    press(cx, window, "secondary-q");
     cx.simulate_prompt_answer(SAVE_COPY_AS);
     cx.run_until_parked();
     assert!(cx.did_prompt_for_new_path());
@@ -503,4 +503,98 @@ fn save_copy_as_after_a_failure_writes_the_copy_and_stays_open(cx: &mut TestAppC
     assert!(!output.exists());
     assert!(!cx.has_pending_prompt());
     assert_eq!(finished.codes(), []);
+}
+
+fn save_note(cx: &mut TestAppContext, window: AnyWindowHandle) -> Option<String> {
+    let mut note = None;
+    act(cx, window, |window, _| {
+        note = window
+            .try_find(merge_app::window::SAVE_NOTE_ID)
+            .and_then(|found| found.label().map(str::to_owned));
+    });
+    note
+}
+
+/// Save: ⌘S writes and stays open (spec §6.2).
+const SAVE: &str = "secondary-s";
+
+#[gpui_kit::test]
+fn save_writes_markers_without_asking_and_stays_open(cx: &mut TestAppContext) {
+    let (dir, window, finished) = setup(cx, conflict());
+    press(cx, window, SAVE);
+    assert!(!cx.has_pending_prompt());
+    assert_eq!(written(&dir).as_deref(), Some(MARKERS));
+    assert_eq!(save_note(cx, window).as_deref(), Some("Saved with 1 conflict"));
+    assert_eq!(finished.codes(), []);
+}
+
+#[gpui_kit::test]
+fn the_save_note_goes_with_the_next_change(cx: &mut TestAppContext) {
+    let (_dir, window, _finished) = setup(cx, conflict());
+    press(cx, window, SAVE);
+    press(cx, window, "secondary-alt-down");
+    press(cx, window, "secondary-1");
+    assert_eq!(save_note(cx, window), None);
+    press(cx, window, SAVE);
+    assert_eq!(save_note(cx, window).as_deref(), Some("Saved, resolved"));
+}
+
+#[gpui_kit::test]
+fn close_after_a_save_without_a_change_exits_with_its_code_at_once(cx: &mut TestAppContext) {
+    let (dir, window, finished) = setup(cx, conflict());
+    press(cx, window, "secondary-alt-down");
+    press(cx, window, "secondary-1");
+    press(cx, window, SAVE);
+    press(cx, window, "secondary-w");
+    assert!(!cx.has_pending_prompt());
+    assert_eq!(written(&dir).as_deref(), Some("a\nL\nc\n"));
+    assert_eq!(finished.codes(), [ExitCode::Resolved]);
+}
+
+#[gpui_kit::test]
+fn discard_after_a_save_keeps_what_it_wrote_and_exits_with_its_code(cx: &mut TestAppContext) {
+    let (dir, window, finished) = setup(cx, conflict());
+    press(cx, window, SAVE);
+    press(cx, window, "secondary-alt-down");
+    press(cx, window, "secondary-1");
+    press(cx, window, "secondary-w");
+    assert_eq!(cx.pending_prompt().expect("a prompt").0, SAVE_CHANGES);
+    cx.simulate_prompt_answer(DISCARD);
+    cx.run_until_parked();
+    assert_eq!(written(&dir).as_deref(), Some(MARKERS), "the pick after the save is gone");
+    assert_eq!(finished.codes(), [ExitCode::Conflicts]);
+}
+
+#[gpui_kit::test]
+fn save_and_exit_after_a_save_writes_the_later_change(cx: &mut TestAppContext) {
+    let (dir, window, finished) = setup(cx, conflict());
+    press(cx, window, SAVE);
+    press(cx, window, "secondary-alt-down");
+    press(cx, window, "secondary-1");
+    press(cx, window, "secondary-q");
+    assert!(!cx.has_pending_prompt());
+    assert_eq!(written(&dir).as_deref(), Some("a\nL\nc\n"));
+    assert_eq!(finished.codes(), [ExitCode::Resolved]);
+}
+
+#[gpui_kit::test]
+fn save_without_an_output_asks_for_a_path_as_save_copy_as_does(cx: &mut TestAppContext) {
+    let (window, _view, finished) =
+        common::open_with(cx, conflict(), &merge_app::WindowSettings::default());
+    press(cx, window, SAVE);
+    assert!(cx.did_prompt_for_new_path());
+    assert_eq!(finished.codes(), []);
+}
+
+#[gpui_kit::test]
+fn a_failed_save_alerts_and_try_again_writes_and_stays_open(cx: &mut TestAppContext) {
+    let (_dir, output, window, finished) = setup_failing(cx, clean());
+    press(cx, window, SAVE);
+    assert_eq!(alert(cx), CANNOT_WRITE);
+    make_output_dir(&output);
+    cx.simulate_prompt_answer(TRY_AGAIN);
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    assert_eq!(std::fs::read_to_string(&output).expect("written"), "A\nb\nC\n");
+    assert_eq!(finished.codes(), [], "Try Again saves as Save does");
 }

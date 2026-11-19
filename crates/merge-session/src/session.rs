@@ -9,7 +9,7 @@ use merge_core::journal::{Journal as JournalFile, input_hashes};
 use merge_core::merge3::Inputs;
 use merge_core::text::EncodeError;
 
-use crate::ending::{self, Journal, Next, UnresolvedSave};
+use crate::ending::{self, After, Closing, Journal, Next, UnresolvedSave};
 use crate::recovery::Recovery;
 use crate::resolve::{InCommit, Record};
 use crate::{EncodedOutput, ExitCode, SaveError};
@@ -19,8 +19,8 @@ use vcs_jj::Rewrite;
 /// Why the session did not apply a command.
 #[derive(Debug, thiserror::Error)]
 pub enum Refused {
-    /// Save & Exit is writing the merge as it stood when it started; a later change would
-    /// be lost when the save ends the session.
+    /// A save is writing the merge as it stood when it started; a later change would be
+    /// lost when the save ends the session, or missing from the journal it carries.
     #[error("a save is writing the merge")]
     Saving,
     #[error(transparent)]
@@ -93,12 +93,25 @@ pub struct Session {
     recovery: Option<Recovery>,
     target: SaveTarget,
     saving: bool,
+    /// Commands applied and restores, which mark a change since the last Save.
+    changes: u64,
+    /// The last Save that wrote and recorded the output; none before any.
+    last_saved: Option<LastSaved>,
+}
+
+/// A Save that wrote and recorded the output.
+#[derive(Debug, Clone, Copy)]
+struct LastSaved {
+    code: ExitCode,
+    /// [`Session::changes`] when it started.
+    changes: u64,
 }
 
 /// A save's write and record, to run on a thread of its own. It holds no borrow of the
 /// session.
 pub struct SaveJob {
     work: SaveWork,
+    after: After,
     /// The session's journal, written before the output. The session takes it back in
     /// [`Session::saved`]; it takes no commands while the save runs.
     journal: Option<JournalFlush>,
@@ -121,6 +134,7 @@ struct JournalFlush {
 /// A save's outcome, and the journal it carried.
 pub struct Saved {
     outcome: Result<ExitCode, SaveError>,
+    after: After,
     recovery: Option<Recovery>,
 }
 
@@ -148,7 +162,7 @@ impl SaveJob {
                 record.as_ref().map_or(Ok(code), |record| record.resave(code))
             }
         };
-        Saved { outcome, recovery }
+        Saved { outcome, after: self.after, recovery }
     }
 }
 
@@ -176,7 +190,7 @@ impl Session {
     /// A session on `doc` that saves to `target`, journalled in `recovery` when given.
     #[must_use]
     pub fn new(doc: MergeDocument, target: SaveTarget, recovery: Option<Recovery>) -> Self {
-        Self { doc, recovery, target, saving: false }
+        Self { doc, recovery, target, saving: false, changes: 0, last_saved: None }
     }
 
     #[must_use]
@@ -220,6 +234,7 @@ impl Session {
         // The journal keeps its own copy. An edit's batch is usually one keystroke.
         let recorded = self.recovery.is_some().then(|| command.clone());
         let applied = self.doc.apply(command)?;
+        self.changes += 1;
         if let (Some(recovery), Some(command)) = (&mut self.recovery, recorded) {
             recovery.record(command);
         }
@@ -239,6 +254,7 @@ impl Session {
             recovery.restored(journal);
         }
         self.doc = doc;
+        self.changes += 1;
         Ok(())
     }
 
@@ -287,22 +303,43 @@ impl Session {
         ending::save_requested(self.saving, self.doc.unresolved(), self.target.unresolved_save)
     }
 
-    /// What Close does now (spec §6.2).
+    /// What Save does now (spec §6.2).
     #[must_use]
-    pub fn close_requested(&self) -> Next {
-        ending::close_requested(self.saving, self.doc.changed())
+    pub fn save_in_place_requested(&self) -> Next {
+        ending::save_in_place_requested(self.saving, self.target.output.is_some())
     }
 
-    /// Start Save & Exit, and lock the session until [`Session::saved`]. The job writes the
-    /// journal before the output, so the journal holds the work while the save runs, and
-    /// after it fails.
+    /// What Close does now (spec §6.2): before any Save, whether the merge changed from its
+    /// automatic resolution; after one, whether any command applied since.
+    #[must_use]
+    pub fn close_requested(&self) -> Next {
+        let changed = match self.last_saved {
+            Some(last) => last.changes != self.changes,
+            None => self.doc.changed(),
+        };
+        ending::close_requested(self.saving, changed, self.last_saved_code())
+    }
+
+    /// What the answer to the close question does now (spec §6.2).
+    #[must_use]
+    pub fn close_answered(&self, answer: Option<Closing>) -> Next {
+        ending::close_answered(answer, self.last_saved_code())
+    }
+
+    fn last_saved_code(&self) -> Option<ExitCode> {
+        self.last_saved.map(|last| last.code)
+    }
+
+    /// Start a save that goes on as `after` says, and lock the session until
+    /// [`Session::saved`]. The job writes the journal before the output, so the journal
+    /// holds the work while the save runs, and after it fails.
     ///
     /// # Errors
     ///
     /// [`CannotSave::NoOutput`] without an output, and [`CannotSave::Saving`] while a save
     /// runs. The session is then unchanged. An output the encoding cannot hold fails in the
     /// job, with [`SaveError::Encode`].
-    pub fn start_save(&mut self) -> Result<SaveJob, CannotSave> {
+    pub fn start_save(&mut self, after: After) -> Result<SaveJob, CannotSave> {
         if self.saving {
             return Err(CannotSave::Saving);
         }
@@ -316,33 +353,40 @@ impl Session {
             start: self.doc.start(),
         });
         let work = SaveWork::Write { pending, output, record: self.target.record.clone() };
-        Ok(SaveJob { work, journal })
+        Ok(SaveJob { work, after, journal })
     }
 
-    /// Start recording again a save whose output is written with `code`, and lock the
-    /// session until [`Session::saved`].
+    /// Start recording again a save whose output is written with `code`, which goes on as
+    /// `after` says, and lock the session until [`Session::saved`].
     ///
     /// # Errors
     ///
     /// [`CannotSave::Saving`] while a save runs.
-    pub fn start_record(&mut self, code: ExitCode) -> Result<SaveJob, CannotSave> {
+    pub fn start_record(&mut self, code: ExitCode, after: After) -> Result<SaveJob, CannotSave> {
         if self.saving {
             return Err(CannotSave::Saving);
         }
         self.saving = true;
         Ok(SaveJob {
             work: SaveWork::Record { record: self.target.record.clone(), code },
+            after,
             journal: None,
         })
     }
 
-    /// End a save, take back its journal, unlock the session, and give the next step.
+    /// End a save, take back its journal, unlock the session, and give the next step. A
+    /// Save that wrote and recorded the output is the one Close and Discard end with.
     pub fn saved(&mut self, saved: Saved) -> Next {
         self.saving = false;
         if let Some(recovery) = saved.recovery {
             self.recovery = Some(recovery);
         }
-        ending::saved(saved.outcome)
+        // A save whose record failed still wrote the output. The session took no command
+        // while the save ran.
+        if let Ok(&code) | Err(&SaveError::Record { code, .. }) = saved.outcome.as_ref() {
+            self.last_saved = Some(LastSaved { code, changes: self.changes });
+        }
+        ending::saved(saved.outcome, saved.after)
     }
 
     /// What a save would write into the jj commit `resolve -r` opened, to run on a thread of
@@ -374,6 +418,7 @@ mod tests {
     use merge_core::merge3::{LEFT, Source};
     use merge_core::testing::doc;
 
+    use crate::ending::After;
     use crate::recovery::WriteMode;
 
     const CONFLICT_REGION: RegionIx = RegionIx::new(1);
@@ -437,7 +482,7 @@ mod tests {
     fn while_a_save_runs_every_command_is_refused_and_nothing_is_journalled() {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut session = journalled(dir.path());
-        let _job = session.start_save().expect("starts");
+        let _job = session.start_save(After::Exit).expect("starts");
         for command in [pick_left(), Command::Undo, Command::Clear { region: CONFLICT_REGION }] {
             assert!(matches!(session.apply(command), Err(Refused::Saving)));
         }
@@ -450,7 +495,7 @@ mod tests {
     fn a_save_writes_the_merge_as_it_stood_when_it_started() {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut session = journalled(dir.path());
-        let job = session.start_save().expect("starts");
+        let job = session.start_save(After::Exit).expect("starts");
         assert_eq!(*job.run().outcome().as_ref().expect("writes"), ExitCode::Conflicts);
         assert_eq!(std::fs::read_to_string(dir.path().join("out")).expect("written"), MARKERS);
     }
@@ -463,7 +508,7 @@ mod tests {
         session.target.output = Some(dir.path().join("none").join("out"));
         session.apply(pick_left()).expect("applies");
         let path = session.recovery().and_then(Recovery::path).expect("named").to_owned();
-        let job = session.start_save().expect("starts");
+        let job = session.start_save(After::Exit).expect("starts");
         assert!(!path.exists(), "the UI thread writes nothing");
         let saved = job.run();
         assert!(saved.outcome().is_err());
@@ -478,7 +523,7 @@ mod tests {
         let target = target(Some(dir.path().join("out")), UnresolvedSave::Write);
         let mut session = Session::new(conflict(), target, Some(recovery));
         session.apply(pick_left()).expect("applies");
-        let job = session.start_save().expect("starts");
+        let job = session.start_save(After::Exit).expect("starts");
         let saved = job.run();
         assert_eq!(*saved.outcome().as_ref().expect("writes"), ExitCode::Resolved);
         session.saved(saved);
@@ -491,7 +536,7 @@ mod tests {
         let mut session = journalled(dir.path());
         session.target.output = Some(dir.path().join("none").join("out"));
         session.apply(pick_left()).expect("applies");
-        let saved = session.start_save().expect("starts").run();
+        let saved = session.start_save(After::Exit).expect("starts").run();
         let next = session.saved(saved);
         assert!(matches!(next, Next::Failed { undone: ending::Undone::Write, .. }), "{next:?}");
         assert!(!session.saving());
@@ -505,7 +550,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut session = journalled(dir.path());
         session.apply(pick_left()).expect("applies");
-        let job = session.start_record(ExitCode::Resolved).expect("starts");
+        let job = session.start_record(ExitCode::Resolved, After::Exit).expect("starts");
         assert_eq!(session.recovery().and_then(Recovery::next_write).map(|(_, n)| n), Some(1));
         let saved = job.run();
         assert_eq!(*saved.outcome().as_ref().expect("nothing to record"), ExitCode::Resolved);
@@ -538,7 +583,7 @@ mod tests {
         let mut session = journalled(dir.path());
         session.target.output = Some(dir.path().join("none").join("out"));
         session.apply(Command::Clear { region: CONFLICT_REGION }).expect("applies");
-        let job = session.start_save().expect("starts");
+        let job = session.start_save(After::Exit).expect("starts");
         let (doc, journal) = picked_journal();
         assert!(matches!(session.restore(doc, journal), Err(Refused::Saving)));
         assert_eq!(session.document().resolutions()[1], Resolution::Pick(vec![]), "as cleared");
@@ -552,11 +597,14 @@ mod tests {
     fn a_save_cannot_start_twice_or_without_an_output() {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut session = journalled(dir.path());
-        let _job = session.start_save().expect("starts");
-        assert_eq!(session.start_save().map(drop), Err(CannotSave::Saving));
-        assert_eq!(session.start_record(ExitCode::Resolved).map(drop), Err(CannotSave::Saving));
+        let _job = session.start_save(After::Exit).expect("starts");
+        assert_eq!(session.start_save(After::Exit).map(drop), Err(CannotSave::Saving));
+        assert_eq!(
+            session.start_record(ExitCode::Resolved, After::Exit).map(drop),
+            Err(CannotSave::Saving)
+        );
         let mut unsaved = Session::new(conflict(), SaveTarget::default(), None);
-        assert_eq!(unsaved.start_save().map(drop), Err(CannotSave::NoOutput));
+        assert_eq!(unsaved.start_save(After::Exit).map(drop), Err(CannotSave::NoOutput));
         assert!(!unsaved.saving(), "a save that cannot start leaves the session unlocked");
     }
 
@@ -570,8 +618,8 @@ mod tests {
         );
         assert_eq!(confirm.save_requested(), Next::ConfirmUnresolved { unresolved: 1 });
         confirm.apply(pick_left()).expect("applies");
-        assert_eq!(confirm.save_requested(), Next::Write);
-        let _job = confirm.start_save().expect("starts");
+        assert_eq!(confirm.save_requested(), Next::Write(After::Exit));
+        let _job = confirm.start_save(After::Exit).expect("starts");
         assert_eq!(confirm.save_requested(), Next::Stay);
         assert_eq!(confirm.close_requested(), Next::Stay);
     }
@@ -585,6 +633,54 @@ mod tests {
         assert_eq!(session.close_requested(), Next::ConfirmClose);
         session.apply(Command::Undo).expect("undoes");
         assert_eq!(session.close_requested(), cancel);
+    }
+
+    #[test]
+    fn save_writes_markers_unlocks_and_journals_on() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut session = journalled(dir.path());
+        assert_eq!(session.save_in_place_requested(), Next::Write(After::Stay));
+        let saved = session.start_save(After::Stay).expect("starts").run();
+        assert_eq!(session.saved(saved), Next::Saved(ExitCode::Conflicts));
+        assert_eq!(std::fs::read_to_string(dir.path().join("out")).expect("written"), MARKERS);
+        assert!(!session.saving());
+        session.apply(pick_left()).expect("applies after the save");
+        let (_, upto) = session.recovery().and_then(Recovery::next_write).expect("a write");
+        assert_eq!(upto, 1, "the journal goes on");
+    }
+
+    #[test]
+    fn save_without_an_output_asks_for_a_path() {
+        let session = Session::new(conflict(), SaveTarget::default(), None);
+        assert_eq!(session.save_in_place_requested(), Next::SaveCopyAs);
+    }
+
+    #[test]
+    fn close_after_a_save_ends_with_its_code_until_the_next_change() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut session = journalled(dir.path());
+        session.apply(pick_left()).expect("applies");
+        let saved = session.start_save(After::Stay).expect("starts").run();
+        assert_eq!(session.saved(saved), Next::Saved(ExitCode::Resolved));
+        let resolved = Next::Finish { code: ExitCode::Resolved, journal: Journal::Remove };
+        assert_eq!(session.close_requested(), resolved);
+        session.apply(Command::Undo).expect("undoes");
+        assert_eq!(session.close_requested(), Next::ConfirmClose, "changed since the save");
+        assert_eq!(session.close_answered(Some(ending::Closing::Discard)), resolved);
+    }
+
+    #[test]
+    fn a_failed_save_leaves_the_last_saves_code() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut session = journalled(dir.path());
+        let saved = session.start_save(After::Stay).expect("starts").run();
+        assert_eq!(session.saved(saved), Next::Saved(ExitCode::Conflicts));
+        session.target.output = Some(dir.path().join("none").join("out"));
+        session.apply(pick_left()).expect("applies");
+        let saved = session.start_save(After::Stay).expect("starts").run();
+        assert!(matches!(session.saved(saved), Next::Failed { after: After::Stay, .. }));
+        let conflicts = Next::Finish { code: ExitCode::Conflicts, journal: Journal::Remove };
+        assert_eq!(session.close_answered(Some(ending::Closing::Discard)), conflicts);
     }
 
     #[test]
@@ -653,7 +749,7 @@ mod tests {
         recovery.hashed(input_hashes(doc.inputs()), doc.start());
         let target = target(Some(dir.path().join("out")), UnresolvedSave::Write);
         let mut session = Session::new(doc, target, Some(recovery));
-        let saved = session.start_save().expect("starts").run();
+        let saved = session.start_save(After::Exit).expect("starts").run();
         assert!(
             matches!(saved.outcome(), Err(SaveError::Encode(error)) if *error == UNENCODABLE),
             "{:?}",

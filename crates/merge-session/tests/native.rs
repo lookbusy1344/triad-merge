@@ -446,6 +446,16 @@ fn a_binary_parent_is_refused_with_its_revision() {
     }
 }
 
+/// git takes the working tree in at `git add`, so a save in a git repository snapshots
+/// nothing (spec §6.1).
+#[test]
+fn a_git_repository_has_no_working_copy_to_snapshot() {
+    let fixture = Fixture::new();
+    let path = fixture.write("a.txt", b"edited\n");
+    assert!(RunRepository::of_file(path.as_std_path()).working_copy().is_none());
+    assert!(RunRepository::none().working_copy().is_none());
+}
+
 mod jj {
     use super::{Change, Content, LeftAt, Revision, absent, file, listed, load, named};
     use merge_session::dir_diff::ChangedFile;
@@ -626,6 +636,41 @@ mod jj {
             native::discover(outer_git.root()).expect("the outer one").kind(),
             RepoKind::Git
         );
+    }
+
+    #[test]
+    fn a_saves_snapshot_takes_the_file_into_the_working_copy_commit() {
+        let fixture = Fixture::new();
+        fixture.commit("one", &[("a.txt", b"one\n")]);
+        fixture.check_out_to_disk();
+        let path = fixture.write("a.txt", b"saved\n");
+        let working_copy =
+            RunRepository::of_file(path.as_std_path()).working_copy().expect("a jj working copy");
+        let before = fixture.operation_count();
+        working_copy.snapshot().expect("the snapshot");
+        assert_eq!(fixture.operation_count(), before + 1, "one snapshot operation");
+        let tree = fixture.tree_text(&fixture.working_copy_commit());
+        assert_eq!(tree.get("a.txt").map(String::as_str), Some("saved\n"));
+    }
+
+    #[test]
+    fn a_snapshot_of_a_stale_working_copy_fails_and_names_it() {
+        let fixture = Fixture::new();
+        let one = fixture.commit_on(&[], "one", &[("a.txt", b"one\n")]);
+        let two = fixture.commit_on(&[], "two", &[("a.txt", b"two\n")]);
+        fixture.check_out(&[&one]);
+        fixture.check_out_to_disk();
+        // The view moves on; the files on disk stay at `one`.
+        fixture.check_out(&[&two]);
+        let path = fixture.write("a.txt", b"saved\n");
+        let working_copy =
+            RunRepository::of_file(path.as_std_path()).working_copy().expect("a jj working copy");
+        let operations = fixture.operations();
+        assert!(
+            matches!(working_copy.snapshot(), Err(vcs::VcsError::StaleWorkspace(_))),
+            "the snapshot refuses a stale working copy"
+        );
+        assert_eq!(fixture.operations(), operations, "nothing is written");
     }
 
     #[test]

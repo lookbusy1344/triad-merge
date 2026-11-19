@@ -333,6 +333,7 @@ go-to-line-prompt = Перейти до рядка (1–{ $last }):
 go-to-line-current = Поточний рядок { $line } з { $last }
 go-to-line-target = Перейти до рядка { $line }
 jj-diff-banner = Це тимчасові копії від jj diff --tool. Правки тут зникнуть, коли вікно закриється.
+snapshot-failed-banner = Збережено, але jj не записав збереження: { $error }
 output-changed-banner = { $name } змінено на диску після відкриття злиття. «Зберегти і вийти» замінить його.
 copy-to-right = Скопіювати цю відмінність праворуч
 copy-to-left = Скопіювати цю відмінність ліворуч
@@ -384,6 +385,12 @@ copy-saved =
         [0] Копію збережено, усе розв’язано
         [one] Копію збережено з { $count } конфліктом
        *[many] Копію збережено з { $count } конфліктами
+    }
+saved =
+    { $count ->
+        [0] Збережено, усе розв’язано
+        [one] Збережено з { $count } конфліктом
+       *[many] Збережено з { $count } конфліктами
     }
 
 ## Result pane's right-click menu

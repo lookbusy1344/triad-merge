@@ -9,7 +9,7 @@ use std::time::Duration;
 use common::{act, doc, open_with};
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{AnyWindowHandle, Entity, TestAppContext};
-use merge_app::window::COPY_NOTE_ID;
+use merge_app::window::SAVE_NOTE_ID;
 use merge_app::{ExitCode, MergeWindow, WindowSettings};
 use merge_core::document::{MergeDocument, OutputEnding};
 use tempfile::TempDir;
@@ -71,7 +71,7 @@ impl Session {
     fn note(&self, cx: &mut TestAppContext) -> Option<String> {
         let mut note = None;
         act(cx, self.window, |window, _| {
-            note = window.try_find(COPY_NOTE_ID).and_then(|found| found.label().map(str::to_owned));
+            note = window.try_find(SAVE_NOTE_ID).and_then(|found| found.label().map(str::to_owned));
         });
         note
     }
@@ -115,7 +115,7 @@ fn a_copy_of_a_conflict_holds_what_save_and_exit_writes_under_each_ending(cx: &m
         assert_eq!(s.finished.codes(), [], "{ending:?}: the window stays");
         assert!(!s.path("out").exists(), "{ending:?}: OUTPUT untouched");
         assert_eq!(s.note(cx).as_deref(), Some("Copy saved with 1 conflict"), "{ending:?}");
-        s.press(cx, "secondary-s");
+        s.press(cx, "secondary-q");
         cx.simulate_prompt_answer("Save with Conflicts");
         cx.run_until_parked();
         assert_eq!(read(&s.path("out")), bytes.as_bytes(), "{ending:?}");
@@ -130,7 +130,7 @@ fn a_resolved_copy_leaves_save_and_exit_to_exit_0(cx: &mut TestAppContext) {
     assert_eq!(read(&s.path("copy")), b"A\r\nb\r\nC\r\n");
     assert_eq!(s.note(cx).as_deref(), Some("Copy saved, resolved"));
     assert_eq!(s.finished.codes(), []);
-    s.press(cx, "secondary-s");
+    s.press(cx, "secondary-q");
     assert_eq!(read(&s.path("out")), b"A\r\nb\r\nC\r\n");
     assert_eq!(s.finished.codes(), [ExitCode::Resolved]);
 }
@@ -161,7 +161,7 @@ fn a_failed_copy_alerts_and_leaves_the_window_and_journal_alone(cx: &mut TestApp
     assert_eq!(cx.read(|cx| s.view.read(cx).document().text()), text);
     assert_eq!(s.journal(cx), journal);
     // The window still saves to OUTPUT.
-    s.press(cx, "secondary-s");
+    s.press(cx, "secondary-q");
     assert_eq!(read(&s.path("out")), b"a\nR\nc\n");
     assert_eq!(s.finished.codes(), [ExitCode::Resolved]);
 }
@@ -243,7 +243,7 @@ fn save_and_exit_waits_for_a_copy_being_written(cx: &mut TestAppContext) {
     let copy = s.path("copy");
     act(cx, s.window, |window, cx| {
         view.update(cx, |view, cx| view.save_copy(&copy, window, cx));
-        window.press("secondary-s", cx);
+        window.press("secondary-q", cx);
     });
     assert_eq!(s.finished.codes(), [], "the copy is still being written");
     cx.run_until_parked();

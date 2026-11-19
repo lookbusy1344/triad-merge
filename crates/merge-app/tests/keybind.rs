@@ -157,7 +157,7 @@ fn clear_leaves_only_the_lines_after_it(cx: &mut TestAppContext) {
 fn a_merge_only_command_leaves_the_diff_windows_save_on_the_chord(cx: &mut TestAppContext) {
     let _opened = Opened::new(cx, &[format!("{SECONDARY}+s=take-left")]);
     let chord = format!("{SECONDARY}-s");
-    assert_eq!(chords(cx, &SaveAndExit), NO_CHORDS);
+    // Save keeps the chord in the diff window's two contexts only.
     assert_eq!(chords(cx, &Save), [chord.clone(), chord.clone()]);
     assert_eq!(chords(cx, &TakeLeft), [chord.clone(), chord]);
 }
@@ -172,6 +172,9 @@ fn the_menus_show_the_latest_chord_of_a_command(cx: &mut TestAppContext) {
 fn the_menus_show_the_same_default_chord_as_spec_6_3(cx: &mut TestAppContext) {
     let _opened = Opened::new(cx, &[]);
     assert_eq!(chords(cx, &Cancel)[0], format!("{SECONDARY}-w"));
+    // ⌘Q saves and exits in the merge and diff windows, each with its editor, and closes a
+    // tool window.
+    assert_eq!(chords(cx, &SaveAndExit), vec![format!("{SECONDARY}-q"); 5]);
 }
 
 #[gpui_kit::test]

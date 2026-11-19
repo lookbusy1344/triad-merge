@@ -201,7 +201,7 @@ fn press(cx: &mut TestAppContext, window: AnyWindowHandle, key: &str) {
 
 /// Save the window's conflict with markers.
 fn save_with_markers(cx: &mut TestAppContext, window: AnyWindowHandle) {
-    press(cx, window, "secondary-s");
+    press(cx, window, "secondary-q");
     cx.simulate_prompt_answer(SAVE_WITH_CONFLICTS);
     cx.run_until_parked();
 }
@@ -210,7 +210,7 @@ fn save_with_markers(cx: &mut TestAppContext, window: AnyWindowHandle) {
 fn save_resolved(cx: &mut TestAppContext, window: AnyWindowHandle) {
     press(cx, window, "secondary-alt-down");
     press(cx, window, "secondary-1");
-    press(cx, window, "secondary-s");
+    press(cx, window, "secondary-q");
 }
 
 #[gpui_kit::test]
@@ -245,7 +245,7 @@ fn the_queue_lists_and_loads_off_the_ui_thread(cx: &mut TestAppContext) {
     cx.run_until_parked();
     let (first, file) = the_window(cx);
     assert_eq!(file, root.join("a.txt"));
-    act(cx, first, |window, cx| window.press("secondary-s", cx));
+    act(cx, first, |window, cx| window.press("secondary-q", cx));
     cx.simulate_prompt_answer(SAVE_WITH_CONFLICTS);
     // The save, the close and the next file's list and load each wait for the executor.
     cx.run_until_parked();
@@ -291,6 +291,35 @@ fn a_save_git_cannot_stage_offers_to_try_again(cx: &mut TestAppContext) {
         vcs::Repository::conflicts(&fixture.open()).expect("listed").is_empty(),
         "a.txt is staged"
     );
+}
+
+#[gpui_kit::test]
+fn a_save_git_cannot_stage_says_so_in_the_status_bar_without_an_alert(cx: &mut TestAppContext) {
+    let fixture = stopped(&["a.txt"]);
+    let _lock = fixture.write(".git/index.lock", b"");
+    let exits = start(cx, &fixture);
+    let (window, _) = the_window(cx);
+    press(cx, window, "secondary-alt-down");
+    press(cx, window, "secondary-1");
+    press(cx, window, "secondary-s");
+    assert!(!cx.has_pending_prompt(), "a record that failed only says so");
+    let note = save_note(cx, window).expect("a note");
+    assert!(
+        note.starts_with("a.txt is written, but the repository did not record the save: "),
+        "{note}"
+    );
+    assert_eq!(std::fs::read(fixture.root().join("a.txt")).expect("written"), b"left\n");
+    assert_eq!(exits.borrow().as_slice(), []);
+}
+
+fn save_note(cx: &mut TestAppContext, window: AnyWindowHandle) -> Option<String> {
+    let mut note = None;
+    act(cx, window, |window, _| {
+        note = window
+            .try_find(merge_app::window::SAVE_NOTE_ID)
+            .and_then(|found| found.label().map(str::to_owned));
+    });
+    note
 }
 
 /// The queue on one git conflict, `a.txt`, saved resolved to left while another git command
@@ -431,5 +460,32 @@ mod jj {
         );
         assert_eq!(fixture.held_at(0, "a.txt"), Held::File(LEFT_ONE.to_vec()));
         assert_eq!(fixture.held_at(1, "a.txt"), Held::Conflict);
+    }
+
+    #[gpui_kit::test]
+    fn each_save_is_an_operation_of_its_own_and_the_merge_goes_on(cx: &mut TestAppContext) {
+        let fixture = vcs_jj::testing::Fixture::new();
+        let one = fixture.commit_on(&[], "one", &[("a.txt", ONE)]);
+        let left = fixture.commit_on(&[&one], "left", &[("a.txt", LEFT_ONE)]);
+        let right = fixture.commit_on(&[&one], "right", &[("a.txt", RIGHT_ONE)]);
+        fixture.check_out(&[&left, &right]);
+        fixture.check_out_to_disk();
+        let exits = start_at(cx, fixture.root().as_std_path());
+        let (window, _) = the_window(cx);
+        let saved = Op { description: "save a.txt in triad".to_owned(), is_snapshot: false };
+        // Markers first: no question, since the merge goes on. They match what jj wrote, so
+        // the snapshot finds nothing new and writes no operation.
+        let before = fixture.operation_count();
+        press(cx, window, "secondary-s");
+        assert!(!cx.has_pending_prompt());
+        assert_eq!(fixture.operation_count(), before);
+        assert_eq!(fixture.held_at(0, "a.txt"), Held::Conflict);
+        press(cx, window, "secondary-alt-down");
+        press(cx, window, "secondary-1");
+        press(cx, window, "secondary-s");
+        assert_eq!(fixture.operations()[0], saved);
+        assert_eq!(fixture.held_at(0, "a.txt"), Held::File(LEFT_ONE.to_vec()));
+        assert_eq!(windows(cx).len(), 1, "the window stays open");
+        assert_eq!(exits.borrow().as_slice(), []);
     }
 }

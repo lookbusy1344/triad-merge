@@ -52,10 +52,12 @@ To keep only some of a side's lines, click their line numbers in the top panes. 
 | Show the base pane / the line origins | ⌘B / ⌘I |
 | Collapse unchanged regions | ⌘U |
 | Find / go to line | ⌘F / ⌘L |
-| Save and exit / cancel | ⌘S / ⌘W |
+| Save, leaving the merge open / save and exit / cancel | ⌘S / ⌘Q / ⌘W |
 | Save a copy elsewhere, leaving the merge open | ⇧⌘S |
 
-The toolbar can take one side for every conflict left. The ruler at the right marks each change; click a mark to go there. Closing without a save exits 2; the VCS keeps its conflict.
+⌘S saves as you go, conflicts left as markers, and asks nothing. Under `triad-merge resolve` in a jj repository each save is a jj operation, `save PATH in triad`, so the operation log keeps your progress; in git a fully resolved save stages the file. If the repository cannot record a save, the status bar says so and the file stays written. ⌘Q saves and exits; ⌘W closes, asking first when anything changed since the last save.
+
+The toolbar can take one side for every conflict left. The ruler at the right marks each change; click a mark to go there. Closing without a save exits 2; the VCS keeps its conflict. Closing after a save exits with that save's code: 0 when resolved, 1 with markers.
 
 When another program changes the output file while the window is open, a banner says so at once, and the window asks once whether to go on: Keep Editing or Quit. Until you answer, the merge takes no picks or typing. After Keep Editing, Save & Exit replaces the file.
 
@@ -66,6 +68,8 @@ A block a side moved from one place to another shows teal at both ends in that s
 ### The diff window
 
 Two aligned, editable panes, each with copy to the other side. A block deleted in one place and inserted once in another shows teal at both ends, with an `M` beside it and a pill naming the other end's line, such as `R5 →`; click the `M` or the pill, or press ⇧⌘M with the caret in the block, to go to the other end. ⌘S writes each edited side to its own file and keeps the window open. Each side has its own undo. A file changed on disk reloads, or asks first when the pane has unsaved edits; the caret and the view stay on their lines. When one side is a past revision, that side is read-only. Edit → Copy as Patch copies the whole diff as a unified patch, as `git diff` prints it; Copy Difference as Patch copies the difference at the caret alone. View → Unified shows the diff in one read-only pane, each change's deleted lines above its inserted lines, with both sides' line numbers; choose it again to edit side by side. `diff-layout = unified` opens every diff window that way.
+
+⌘S saves each edited side and keeps the window open; ⌘Q saves and exits; ⌘W closes, asking first about unsaved edits. Under `triad-merge diff PATH`, the `diff` listing and `history` in a jj repository, each save is snapshotted at once, so jj sees it without another command. If jj cannot take the snapshot, a banner says why and the file stays saved. When jj or git runs triad as its diff tool, that command takes the files in.
 
 ### The directory list
 
@@ -210,7 +214,7 @@ resolved src/lib.rs in xyz
   pqr: src/lib.rs -> none
 ```
 
-In the window, Save & Exit first works out what the save would do, changing nothing. When it changes the conflicts of any descendant, it asks first, and lists each such descendant as above: Save writes, Keep Editing writes nothing.
+In the window, Save and Save & Exit first work out what the save would do, changing nothing. When it changes the conflicts of any descendant, it asks first, and lists each such descendant as above: Save writes, Keep Editing writes nothing.
 
 jj refuses a write to an immutable commit, and so does triad, with your `revset-aliases`. A save is also refused when the conflict in the commit changed after triad read it, or after triad's last save, for example by a `jj rebase` while the window was open; nothing is written, and you open it again. If the working copy cannot be updated after a write, the write stands and triad tells you to run `jj workspace update-stale`.
 

@@ -1,8 +1,8 @@
 //! The frame of the tool windows (directory, stack, history, absorb), after the panels of
 //! Zed's git panel and project panel and `docs/STYLE.md`: a header across the top with a
 //! summary at the left and the window's buttons at the right, a status line under it, the
-//! window's lists, and an optional footer. Escape in a list and Cancel (⌘W, ⌘Q) close the
-//! window as its close button does.
+//! window's lists, and an optional footer. Escape in a list, Cancel (⌘W) and Save & Exit (⌘Q)
+//! close the window as its close button does: a tool window has nothing to save.
 
 use gpui_kit::base::ObservedElement;
 
@@ -14,7 +14,7 @@ use gpui_kit::{
     Stateful, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div, px,
 };
 
-/// The key context of a tool window, in which Cancel binds.
+/// The key context of a tool window, in which Cancel and Save & Exit bind.
 pub(crate) const CONTEXT: &str = "ToolWindow";
 /// The header, as tall as Zed's panel headers (`docs/STYLE.md`).
 const HEADER_HEIGHT: Pixels = px(32.);
@@ -25,14 +25,15 @@ const SUMMARY_HEIGHT: Pixels = crate::button::HEIGHT;
 const SIDE: Pixels = px(12.);
 
 /// A tool window's root: it fills the window in the theme's colours at the chrome's text
-/// size, holds the key context, and closes the window on Cancel or a list's Escape when
-/// `close` allows it.
+/// size, holds the key context, and closes the window on Cancel, Save & Exit or a list's
+/// Escape when `close` allows it.
 pub(crate) fn frame(
     cx: &App,
     close: impl Fn(&mut Window, &mut App) -> bool + Clone + 'static,
 ) -> Stateful<Div> {
     let theme = cx.theme();
     let leave = close.clone();
+    let quit = close.clone();
     v_flex()
         .id("tool-window")
         .key_context(CONTEXT)
@@ -41,6 +42,7 @@ pub(crate) fn frame(
         .text_color(theme.foreground)
         .text_xs()
         .on_action(move |_: &crate::Cancel, window, cx| close_if(&close, window, cx))
+        .on_action(move |_: &crate::SaveAndExit, window, cx| close_if(&quit, window, cx))
         .on_action(move |_: &crate::pick_list::Leave, window, cx| close_if(&leave, window, cx))
 }
 

@@ -1065,6 +1065,16 @@ pub(crate) fn copy_saved(unresolved: usize) -> String {
     t!("copy-saved", count = unresolved)
 }
 
+/// The status bar's note after Save: how many conflicts the output holds.
+pub(crate) fn saved(unresolved: usize) -> String {
+    t!("saved", count = unresolved)
+}
+
+/// The diff window's banner after a save jj did not snapshot, and why.
+pub(crate) fn snapshot_failed(error: &str) -> SharedString {
+    t!("snapshot-failed-banner", error = error).into()
+}
+
 /// The status bar's text (spec §5).
 pub(crate) fn status(kind: Option<RepoKind>, status: &Status) -> String {
     let encoding = encoding(status.encoding);

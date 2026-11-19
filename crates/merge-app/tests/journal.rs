@@ -184,7 +184,7 @@ fn ending_before_the_inputs_are_hashed_still_keeps_the_latest_journal(cx: &mut T
     let (window, view, _) = open_with(cx, conflict(MergeOptions::default()), &settings);
     work(cx, window, &view);
     // The save fails. Its job writes the journal first, hashing the inputs itself.
-    press(cx, window, "secondary-s");
+    press(cx, window, "secondary-q");
     cx.run_until_parked();
     assert!(cx.has_pending_prompt(), "the save failed");
     let journal = session.journal_for(&output).expect("written before the alert");
@@ -271,7 +271,7 @@ fn save_and_exit_deletes_the_journal(cx: &mut TestAppContext) {
     work(cx, window, &view);
     wait(cx, JOURNAL_DEBOUNCE);
     assert!(session.journal().is_some());
-    press(cx, window, "secondary-s");
+    press(cx, window, "secondary-q");
     cx.run_until_parked();
     assert_eq!(finished.codes(), [ExitCode::Resolved]);
     assert_eq!(session.journal(), None);
@@ -286,7 +286,7 @@ fn a_save_with_conflicts_keeps_the_journal_for_a_restore(cx: &mut TestAppContext
     set_caret(cx, &view, 0);
     act(cx, window, |window, cx| window.input("x", cx));
     // No wait: the session ends before the journal's pause.
-    press(cx, window, "secondary-s");
+    press(cx, window, "secondary-q");
     cx.simulate_prompt_answer(SAVE_WITH_CONFLICTS);
     cx.run_until_parked();
     assert_eq!(finished.codes(), [ExitCode::Conflicts]);
@@ -337,7 +337,7 @@ fn a_write_failure_keeps_the_latest_journal(cx: &mut TestAppContext) {
     let settings = WindowSettings { output: Some(output.clone()), ..session.settings() };
     let (window, view, finished) = open_with(cx, conflict(MergeOptions::default()), &settings);
     work(cx, window, &view);
-    press(cx, window, "secondary-s");
+    press(cx, window, "secondary-q");
     cx.run_until_parked();
     cx.simulate_prompt_answer("Quit");
     cx.run_until_parked();

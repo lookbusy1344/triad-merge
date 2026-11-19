@@ -318,6 +318,7 @@ go-to-line-prompt = Gehe zu Zeile (1–{ $last }):
 go-to-line-current = Aktuelle Zeile { $line } von { $last }
 go-to-line-target = Gehe zu Zeile { $line }
 jj-diff-banner = Dies sind temporäre Kopien von jj diff --tool. Bearbeitungen hier gehen verloren, wenn das Fenster schließt.
+snapshot-failed-banner = Gespeichert, aber jj hat das Speichern nicht erfasst: { $error }
 output-changed-banner = { $name } wurde auf der Festplatte geändert, seit die Zusammenführung geöffnet wurde. Speichern und beenden ersetzt die Datei.
 copy-to-right = Diesen Unterschied nach rechts kopieren
 copy-to-left = Diesen Unterschied nach links kopieren
@@ -369,6 +370,12 @@ copy-saved =
         [0] Kopie gespeichert, gelöst
         [one] Kopie mit { $count } Konflikt gespeichert
        *[other] Kopie mit { $count } Konflikten gespeichert
+    }
+saved =
+    { $count ->
+        [0] Gespeichert, gelöst
+        [one] Mit { $count } Konflikt gespeichert
+       *[other] Mit { $count } Konflikten gespeichert
     }
 
 ## Result pane's right-click menu

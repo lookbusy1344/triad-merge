@@ -426,6 +426,7 @@ pub(crate) fn diff_settings(
     repo: Option<RepoKind>,
 ) -> DiffSettings {
     DiffSettings {
+        working_copy: origins.working_copy(),
         title,
         options,
         watch: true,

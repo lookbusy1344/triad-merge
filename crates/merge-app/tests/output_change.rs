@@ -75,7 +75,7 @@ fn banner(cx: &mut TestAppContext, o: &Opened) -> Option<(Option<Role>, Option<S
 }
 
 fn save_and_exit(cx: &mut TestAppContext, o: &Opened) {
-    act(cx, o.window, |window, cx| window.press("secondary-s", cx));
+    act(cx, o.window, |window, cx| window.press("secondary-q", cx));
     cx.run_until_parked();
 }
 

@@ -333,6 +333,7 @@ go-to-line-prompt = Przejdź do wiersza (1–{ $last }):
 go-to-line-current = Bieżący wiersz { $line } z { $last }
 go-to-line-target = Przejdź do wiersza { $line }
 jj-diff-banner = To tymczasowe kopie z jj diff --tool. Edycje tutaj przepadną po zamknięciu okna.
+snapshot-failed-banner = Zapisano, ale jj nie zarejestrował zapisu: { $error }
 output-changed-banner = { $name } zmienił się na dysku od otwarcia scalania. Zapisz i zakończ go zastąpi.
 copy-to-right = Skopiuj tę różnicę na prawo
 copy-to-left = Skopiuj tę różnicę na lewo
@@ -384,6 +385,12 @@ copy-saved =
         [0] Kopia zapisana, rozwiązana
         [one] Kopia zapisana z { $count } konfliktem
        *[many] Kopia zapisana z konfliktami: { $count }
+    }
+saved =
+    { $count ->
+        [0] Zapisano, rozwiązano
+        [one] Zapisano z { $count } konfliktem
+       *[many] Zapisano z konfliktami: { $count }
     }
 
 ## Result pane's right-click menu
