@@ -40,6 +40,10 @@ triad 0.2 is a beta. [Releases](https://github.com/lookbusy1344/triad-merge/rele
 
 **File diff.** Two editable, aligned panes with copy to the other side. Moved blocks show at both ends. `triad-merge diff PATH` compares a working-copy file with its parent revision and saves edits to the working copy.
 
+The diff window below shows a block moved between the files, with a pill at each end that jumps to the other.
+
+![The triad diff window: two Python files side by side, with a moved function marked at both ends](images/diff.png)
+
 **Directory diff.** Two directories, a revision against the working copy, `jj diff --tool` or `git difftool -d` open a list of the files that differ, with renames and copies paired as jj pairs them. Each opens in the diff window.
 
 **Resolve from the repository.** `triad-merge resolve` opens each conflicted file in turn, from jj's working-copy commit or git's index. git stages a resolved save; jj records each save as its own operation, which `jj undo` reverts.
@@ -69,6 +73,10 @@ These rely on jj features missing from git; in a git repository each exits 3. [`
 - **Absorb.** `triad-merge absorb` sends each working-copy hunk to the commit that last changed its lines. A window shows where each hunk goes and lets you send it elsewhere or keep it. A hunk that would conflict in its target stays, with the reason.
 
 Each has a form for scripts: `--list`, `--json` or `--headless`.
+
+The stack window lists each conflicted commit and its conflicted files; an inherited conflict comes from an ancestor.
+
+<img src="images/stack.png" width="532" alt="The triad stack window: four conflicted commits, each with its conflicted files">
 
 ## Performance
 
