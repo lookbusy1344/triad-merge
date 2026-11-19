@@ -3,8 +3,8 @@
 //!
 //! git and jj hand a merge tool temporary inputs such as `BASE_1234.rs`, and jj's diff tool
 //! files in a temporary directory, so the caller lists every name it knows, best first: the
-//! inputs, then the output, then the `--title` path. The first name whose extension triad
-//! knows gives the language. Without one, a script's `#!` line names it. None is plain
+//! inputs, then the output, then the `--title` path. The first name whose whole name or
+//! extension triad knows gives the language. Without one, a script's `#!` line names it. None is plain
 //! text.
 
 use std::path::Path;
@@ -35,7 +35,7 @@ pub enum Language {
 }
 
 /// Each language's file extensions, in lowercase.
-const EXTENSIONS: [(&str, Language); 44] = [
+const EXTENSIONS: [(&str, Language); 45] = [
     ("rs", Language::Rust),
     ("go", Language::Go),
     ("cs", Language::CSharp),
@@ -81,7 +81,27 @@ const EXTENSIONS: [(&str, Language); 44] = [
     ("bash", Language::Bash),
     ("zsh", Language::Bash),
     ("bats", Language::Bash),
+    ("ebuild", Language::Bash),
     ("zig", Language::Zig),
+];
+
+/// Files whose whole name gives their language, in their own case: shell startup files and
+/// package build scripts, as in Zed.
+const FILE_NAMES: [(&str, Language); 14] = [
+    (".bashrc", Language::Bash),
+    (".bash_profile", Language::Bash),
+    (".bash_aliases", Language::Bash),
+    (".bash_login", Language::Bash),
+    (".bash_logout", Language::Bash),
+    (".profile", Language::Bash),
+    (".zshrc", Language::Bash),
+    (".zshenv", Language::Bash),
+    (".zprofile", Language::Bash),
+    (".zlogin", Language::Bash),
+    (".zlogout", Language::Bash),
+    (".envrc", Language::Bash),
+    ("PKGBUILD", Language::Bash),
+    ("APKBUILD", Language::Bash),
 ];
 
 /// The bytes that open a script's interpreter line.
@@ -160,9 +180,14 @@ impl Language {
         .into()
     }
 
-    /// The language of a file named `path`, by its extension in any case.
+    /// The language of a file named `path`: by its whole name, else by its extension in any
+    /// case.
     #[must_use]
     pub fn of(path: &Path) -> Option<Self> {
+        let name = path.file_name()?.to_str()?;
+        if let Some(&(_, language)) = FILE_NAMES.iter().find(|(known, _)| *known == name) {
+            return Some(language);
+        }
         let extension = path.extension()?.to_str()?;
         EXTENSIONS
             .iter()
@@ -261,6 +286,56 @@ mod tests {
     }
 
     #[test]
+    fn a_shell_startup_file_or_build_script_is_bash_by_its_name() {
+        for name in [
+            ".bashrc",
+            "home/.bash_profile",
+            ".bash_aliases",
+            ".bash_login",
+            ".bash_logout",
+            ".profile",
+            "dotfiles/.zshrc",
+            ".zshenv",
+            ".zprofile",
+            ".zlogin",
+            ".zlogout",
+            ".envrc",
+            "PKGBUILD",
+            "aports/main/zlib/APKBUILD",
+            "dev-libs/zlib-1.3.ebuild",
+            "A.EBUILD",
+        ] {
+            assert_eq!(of(name), Some(Language::Bash), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_file_name_matches_only_whole_and_in_its_own_case() {
+        for name in [
+            "bashrc",
+            ".bashrc.orig",
+            ".bashrc_BASE_1234",
+            "a.bashrc",
+            ".BASHRC",
+            "profile",
+            ".profiles",
+            "pkgbuild",
+            "PKGBUILD.orig",
+            ".PKGBUILD",
+            "PKGBUILD/a",
+        ] {
+            assert_eq!(of(name), None, "{name}");
+        }
+    }
+
+    #[test]
+    fn gits_temporary_inputs_of_a_dotfile_take_the_outputs_name() {
+        let inputs = [".bashrc_LOCAL_1234", ".bashrc_BASE_1234", ".bashrc_REMOTE_1234"];
+        let language = Language::of_run(inputs.map(Path::new), Some(Path::new(".bashrc")), None);
+        assert_eq!(language, Some(Language::Bash));
+    }
+
+    #[test]
     fn the_extension_matches_in_any_case() {
         assert_eq!(of("A.RS"), Some(Language::Rust));
         assert_eq!(of("x.Go"), Some(Language::Go));
@@ -348,8 +423,6 @@ mod tests {
             "a.ps1",
             "a.sh.orig",
             "a.shx",
-            ".bashrc",
-            ".zshrc",
             "a.zi",
             "a.zigx",
             "a.zig.orig",

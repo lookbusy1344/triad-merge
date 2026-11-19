@@ -813,7 +813,7 @@ Below `syntax-whole-file-max-lines` (20 000) gpui-component's highlighter parses
 
 ### F5 Language detection
 
-`merge_syntax::language::Language::of_run` holds spec §4.3's order of names: the inputs', then the output's, then the title. git and jj pass temporary inputs (`BASE_1234.rs`), so the fallbacks matter. The first match wins. Without a name, `Language::of_shebang` reads the first line of each side, then each base: a script without an extension, such as a git hook, names its interpreter there. A name wins over the first line, since an extension is the stronger sign. `merge_session::language` holds the order once, for the merge's syntax boundaries and the merge window's colours alike; the diff window applies it to its two texts.
+`merge_syntax::language::Language::of_run` holds spec §4.3's order of names: the inputs', then the output's, then the title. git and jj pass temporary inputs (`BASE_1234.rs`), so the fallbacks matter. A name matches by a whole file name first, in its own case (`.bashrc`, `PKGBUILD`), then by its extension in any case. git names a dotfile's temporary inputs `.bashrc_BASE_1234`, which match nothing, so the output's name gives the language. The first match wins. Without a name, `Language::of_shebang` reads the first line of each side, then each base: a script without an extension, such as a git hook, names its interpreter there. A name wins over the first line, since an extension is the stronger sign. `merge_session::language` holds the order once, for the merge's syntax boundaries and the merge window's colours alike; the diff window applies it to its two texts.
 
 ### F6 Measurements
 
