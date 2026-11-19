@@ -36,6 +36,7 @@ gpui-kit = { workspace = true, features = [
     "tree-sitter-java",
     "tree-sitter-kotlin",
     "tree-sitter-markdown",
+    "tree-sitter-bash",
 ] }
 merge-config.workspace = true
 merge-session.workspace = true

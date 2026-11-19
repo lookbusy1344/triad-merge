@@ -29,10 +29,11 @@ pub enum Language {
     Java,
     Kotlin,
     Markdown,
+    Bash,
 }
 
 /// Each language's file extensions, in lowercase.
-const EXTENSIONS: [(&str, Language); 39] = [
+const EXTENSIONS: [(&str, Language); 43] = [
     ("rs", Language::Rust),
     ("go", Language::Go),
     ("cs", Language::CSharp),
@@ -73,11 +74,16 @@ const EXTENSIONS: [(&str, Language); 39] = [
     ("kts", Language::Kotlin),
     ("md", Language::Markdown),
     ("markdown", Language::Markdown),
+    // zsh scripts parse as Bash, as in Zed.
+    ("sh", Language::Bash),
+    ("bash", Language::Bash),
+    ("zsh", Language::Bash),
+    ("bats", Language::Bash),
 ];
 
 impl Language {
     /// Every language, in declaration order.
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 19] = [
         Self::Rust,
         Self::Go,
         Self::CSharp,
@@ -96,6 +102,7 @@ impl Language {
         Self::Java,
         Self::Kotlin,
         Self::Markdown,
+        Self::Bash,
     ];
 
     /// The language's tree-sitter grammar.
@@ -120,6 +127,7 @@ impl Language {
             Self::Java => tree_sitter_java::LANGUAGE,
             Self::Kotlin => tree_sitter_kotlin_sg::LANGUAGE,
             Self::Markdown => tree_sitter_md::LANGUAGE,
+            Self::Bash => tree_sitter_bash::LANGUAGE,
         }
         .into()
     }
@@ -190,6 +198,10 @@ mod tests {
         assert_eq!(of("build.gradle.kts"), Some(Language::Kotlin));
         assert_eq!(of("README.md"), Some(Language::Markdown));
         assert_eq!(of("notes.markdown"), Some(Language::Markdown));
+        assert_eq!(of("script/build.sh"), Some(Language::Bash));
+        assert_eq!(of("install.bash"), Some(Language::Bash));
+        assert_eq!(of("prompt.zsh"), Some(Language::Bash));
+        assert_eq!(of("test/cli.bats"), Some(Language::Bash));
         for name in [
             "a.cc", "a.cpp", "a.cxx", "a.c++", "a.h", "a.hh", "a.hpp", "a.hxx", "a.h++", "a.inl",
             "a.ipp",
@@ -223,6 +235,10 @@ mod tests {
         assert_eq!(of("b.Kts"), Some(Language::Kotlin));
         assert_eq!(of("README.MD"), Some(Language::Markdown));
         assert_eq!(of("a.MarkDown"), Some(Language::Markdown));
+        assert_eq!(of("A.SH"), Some(Language::Bash));
+        assert_eq!(of("a.Bash"), Some(Language::Bash));
+        assert_eq!(of("A.ZSH"), Some(Language::Bash));
+        assert_eq!(of("a.BATS"), Some(Language::Bash));
     }
 
     #[test]
@@ -275,6 +291,14 @@ mod tests {
             "a.m",
             "a.md.orig",
             "a.mkdn",
+            "a.csh",
+            "a.fish",
+            "a.ksh",
+            "a.ps1",
+            "a.sh.orig",
+            "a.shx",
+            ".bashrc",
+            ".zshrc",
         ] {
             assert_eq!(of(name), None, "{name}");
         }
@@ -306,7 +330,7 @@ mod tests {
     }
 
     /// Each language's sample, and the kind of its tree's root.
-    const SAMPLES: [(Language, &str, &str); 18] = [
+    const SAMPLES: [(Language, &str, &str); 19] = [
         (Language::Rust, "fn a() -> u8 { 1 }\n", "source_file"),
         (Language::Go, "package a\nfunc b() {}\n", "source_file"),
         (Language::CSharp, "class A { void B() {} }\n", "compilation_unit"),
@@ -325,6 +349,7 @@ mod tests {
         (Language::Java, "// c\nclass A { int b() { return 1; } }\n", "program"),
         (Language::Kotlin, "// c\nfun a(): Int = 1\n", "source_file"),
         (Language::Markdown, "# A\n\n- b\n\n```rust\nc\n```\n", "document"),
+        (Language::Bash, "# c\nf() { echo \"$1\" | wc -l; }\n", "program"),
     ];
 
     fn root_kind(language: Language, source: &str) -> (String, bool) {

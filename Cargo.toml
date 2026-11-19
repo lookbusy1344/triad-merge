@@ -119,6 +119,7 @@ tree-sitter-cpp = "=0.23.4"
 tree-sitter-c-sharp = "=0.23.5"
 tree-sitter-swift = "=0.7.4"
 # The versions gpui-component 0.8.1 links, so each grammar builds once.
+tree-sitter-bash = "=0.23.3"
 tree-sitter-go = "=0.23.4"
 tree-sitter-html = "=0.23.2"
 tree-sitter-java = "=0.23.5"

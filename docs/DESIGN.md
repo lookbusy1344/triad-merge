@@ -780,7 +780,7 @@ The console and GUI binaries forward as §A4.13 gives. `images/triad.ico` goes i
 ### F1 Goal
 
 - Every pane colours its text by syntax; bands draw under the colours, intra-line marks over them (spec §5).
-- Grammars: Rust, Go, C#, Python, Swift, Java, Kotlin, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS, C, C++, Markdown.
+- Grammars: Rust, Go, C#, Python, Swift, Java, Kotlin, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS, C, C++, Markdown, Bash.
 - The window never waits for a parse.
 
 Not covered: Razor, which has no grammar that covers its code blocks; styles inside JavaScript templates tagged `sql` or `graphql`, whose grammars triad does not build.

@@ -40,6 +40,7 @@ pub(crate) const fn registry_name(language: Language) -> &'static str {
         Language::Java => "java",
         Language::Kotlin => "kotlin",
         Language::Markdown => "markdown",
+        Language::Bash => "bash",
     }
 }
 
@@ -473,7 +474,7 @@ mod tests {
         bytes
     }
 
-    const LANGUAGES: [Language; 18] = [
+    const LANGUAGES: [Language; 19] = [
         Language::Rust,
         Language::Go,
         Language::CSharp,
@@ -492,6 +493,7 @@ mod tests {
         Language::Java,
         Language::Kotlin,
         Language::Markdown,
+        Language::Bash,
     ];
     /// Chunks that cut the Go and C# samples only before top-level lines: no shorter than
     /// their longest run of lines without one (34 in Go, 56 in C#), shorter than the sample.
@@ -522,6 +524,7 @@ mod tests {
         assert_eq!(registry_name(Language::Java), "java");
         assert_eq!(registry_name(Language::Kotlin), "kotlin");
         assert_eq!(registry_name(Language::Markdown), "markdown");
+        assert_eq!(registry_name(Language::Bash), "bash");
     }
 
     #[test]
@@ -570,7 +573,7 @@ mod tests {
     }
 
     /// Each language's sample and the chunk sizes it parses in.
-    fn samples() -> [(Language, &'static str, &'static [usize]); 18] {
+    fn samples() -> [(Language, &'static str, &'static [usize]); 19] {
         [
             (
                 Language::Rust,
@@ -665,6 +668,11 @@ mod tests {
                 include_str!("../../../fixtures/syntax/sample.md"),
                 &[syntax::CHUNK_LINES][..],
             ),
+            (
+                Language::Bash,
+                include_str!("../../../fixtures/syntax/sample.sh"),
+                &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
+            ),
         ]
     }
 
@@ -704,6 +712,19 @@ mod tests {
             line.contains(&(color, style(&theme, "property"))),
             "`color` is a CSS property: {line:?}"
         );
+    }
+
+    #[test]
+    fn a_markdown_fence_named_bash_or_sh_takes_the_bash_colours() {
+        register_queries();
+        let theme = HighlightTheme::default_light();
+        for info in ["bash", "sh"] {
+            let source = text(&format!("```{info}\necho a\n```\n"));
+            let syntax = chunked(Language::Markdown, Source::Base(0), &source, syntax::CHUNK_LINES);
+            let line = per_byte("echo a".len(), &syntax.line(Source::Base(0), 1, &theme));
+            // `echo` is a command name, which Bash's query captures as a function.
+            assert_eq!(line[0..4], [style(&theme, "function"); 4], "{info}: {line:?}");
+        }
     }
 
     #[test]
