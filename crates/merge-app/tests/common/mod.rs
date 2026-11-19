@@ -6,7 +6,7 @@ use gpui_kit::test::TestWindowExt;
 use gpui_kit::{AnyWindowHandle, App, AppContext as _, Entity, TestAppContext};
 use merge_app::{MergeWindow, WindowSettings};
 use merge_core::document::MergeDocument;
-pub use merge_core::testing::{doc, text};
+pub use merge_core::testing::{doc, text, three};
 
 pub fn open(cx: &mut TestAppContext, doc: MergeDocument) -> (AnyWindowHandle, Entity<MergeWindow>) {
     let opened = cx.update(|cx| {
