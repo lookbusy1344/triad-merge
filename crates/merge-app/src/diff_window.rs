@@ -26,11 +26,11 @@ use gpui_kit::component::input::{
 };
 use gpui_kit::component::{ActiveTheme as _, h_flex, v_flex};
 use gpui_kit::{
-    AnyWindowHandle, App, AppContext as _, Bounds, ClickEvent, Context, Div, ElementId, Entity,
-    Focusable as _, Hsla, InteractiveElement as _, IntoElement, ParentElement as _, Pixels,
-    PromptButton, PromptLevel, Render, Role, SharedString, Size, StatefulInteractiveElement as _,
-    Styled as _, Subscription, Task, TestSupportExt as _, Window, WindowOptions, canvas, div,
-    point, prelude::FluentBuilder as _, px,
+    AnyWindowHandle, App, AppContext as _, Bounds, ClickEvent, ClipboardItem, Context, Div,
+    ElementId, Entity, Focusable as _, Hsla, InteractiveElement as _, IntoElement,
+    ParentElement as _, Pixels, PromptButton, PromptLevel, Render, Role, SharedString, Size,
+    StatefulInteractiveElement as _, Styled as _, Subscription, Task, TestSupportExt as _, Window,
+    WindowOptions, canvas, div, point, prelude::FluentBuilder as _, px,
 };
 use merge_config::settings::{Colours, DEFAULT_COLOURS, Scrollbars};
 use merge_core::diff::DiffOptions;
@@ -39,6 +39,7 @@ use merge_core::edit::TextPatch;
 use merge_core::index::RegionIx;
 use merge_core::line_map::LineMap;
 use merge_core::merge3::Source;
+use merge_core::patch::{DEFAULT_CONTEXT, Scope, Titles};
 use merge_core::text::{Encoding, Text};
 use merge_session::SessionError;
 use merge_session::origin::carry;
@@ -75,9 +76,9 @@ use crate::window::{
 };
 use crate::wrap::Wrap;
 use crate::{
-    Cancel, ExitCode, Find, GoToMoveEnd, NextDifference, PreviousDifference, Redo, Save,
-    ToggleCollapseUnchanged, ToggleOriginColumn, ToggleSoftWrap, ToggleSyntax, ToggleWhitespace,
-    Typography, Undo, alert, finish, ignore_closed_view,
+    Cancel, CopyAsPatch, CopyDifferenceAsPatch, ExitCode, Find, GoToMoveEnd, NextDifference,
+    PreviousDifference, Redo, Save, ToggleCollapseUnchanged, ToggleOriginColumn, ToggleSoftWrap,
+    ToggleSyntax, ToggleWhitespace, Typography, Undo, alert, finish, ignore_closed_view,
 };
 
 /// How long edits must pause before the regions are recomputed (spec §4.6).
@@ -381,9 +382,9 @@ pub struct DiffWindow {
     save_failed: bool,
     /// Whether the recompute task has taken its snapshot and is diffing it.
     computing: bool,
-    /// Navigations asked for while the regions lag the text, in order. Each runs once the
-    /// recompute installs; an edit drops them.
-    waiting: Vec<Navigation>,
+    /// Navigations and patch copies asked for while the regions lag the text, in order. Each
+    /// runs once the recompute installs; an edit drops them.
+    waiting: Vec<Waiting>,
     /// The region navigation last made current, on the side it started from, and the caret
     /// it left there. While that caret stays put, the region is current: an empty region
     /// holds no line, so the caret alone cannot name it.
@@ -505,6 +506,22 @@ impl Collapse {
 struct Navigation {
     step: fn(&DiffDocument, RegionIx) -> Option<RegionIx>,
     side: Side,
+}
+
+/// What a patch copy holds (spec §6.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PatchTarget {
+    /// Every difference.
+    File,
+    /// The difference holding the caret of the pane it started from.
+    Difference,
+}
+
+/// A command that needs the regions of the current text.
+#[derive(Clone, Copy)]
+enum Waiting {
+    Step(Navigation),
+    CopyPatch(PatchTarget, Side),
 }
 
 /// Open a diff window.
@@ -898,7 +915,7 @@ impl DiffWindow {
     }
 
     /// Recompute the regions [`DIFF_DEBOUNCE`] after the last edit, or at once while a
-    /// navigation waits for them.
+    /// navigation or a patch copy waits for them.
     fn schedule_recompute(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let delay = self.waiting.is_empty().then_some(DIFF_DEBOUNCE);
         self.start_recompute(delay, window, cx);
@@ -934,8 +951,13 @@ impl DiffWindow {
                 if this.doc.install(diffed) {
                     this.install_origins(carried);
                     this.refresh(cx);
-                    for navigation in std::mem::take(&mut this.waiting) {
-                        this.step(navigation, window, cx);
+                    for waiting in std::mem::take(&mut this.waiting) {
+                        match waiting {
+                            Waiting::Step(navigation) => this.step(navigation, window, cx),
+                            Waiting::CopyPatch(target, side) => {
+                                this.copy_patch(target, side, window, cx);
+                            }
+                        }
                     }
                 } else {
                     this.schedule_recompute(window, cx);
@@ -1255,10 +1277,58 @@ impl DiffWindow {
             self.step(navigation, window, cx);
             return;
         }
-        self.waiting.push(navigation);
+        self.wait_for_regions(Waiting::Step(navigation), window, cx);
+    }
+
+    /// Run `waiting` once the regions catch up with the text, recomputing them at once unless a
+    /// recompute is already diffing.
+    fn wait_for_regions(&mut self, waiting: Waiting, window: &mut Window, cx: &mut Context<Self>) {
+        self.waiting.push(waiting);
         if !self.computing {
             self.start_recompute(None, window, cx);
         }
+    }
+
+    /// Copy `target` as a patch from the focused pane, once the regions are current.
+    fn ask_copy_patch(&mut self, target: PatchTarget, window: &mut Window, cx: &mut Context<Self>) {
+        let side = self.focused(window, cx).unwrap_or(Side::Left);
+        if self.doc.regions_current() {
+            self.copy_patch(target, side, window, cx);
+        } else {
+            self.wait_for_regions(Waiting::CopyPatch(target, side), window, cx);
+        }
+    }
+
+    /// Write `target`'s patch to the clipboard, built off the UI thread, its headers the panes'
+    /// titles without the modified marker. A patch with no change leaves the clipboard alone,
+    /// as does a difference copy from a caret outside any difference.
+    fn copy_patch(
+        &mut self,
+        target: PatchTarget,
+        side: Side,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let scope = match target {
+            PatchTarget::File => Scope::File,
+            PatchTarget::Difference => Scope::Region(self.current(side, cx)),
+        };
+        let Some(patching) = self.doc.patching(scope) else {
+            return;
+        };
+        let [left, right] = SIDES.map(|side| self.pane(side).origin.name().into_owned());
+        cx.spawn_in(window, async move |_, cx| {
+            let patch = cx
+                .background_spawn(async move {
+                    patching.run(DEFAULT_CONTEXT, Titles { left: &left, right: &right })
+                })
+                .await;
+            if !patch.is_empty() {
+                // Only a closed app fails the update, and then no clipboard is left to fill.
+                let _ = cx.update(|_, cx| cx.write_to_clipboard(ClipboardItem::new_string(patch)));
+            }
+        })
+        .detach();
     }
 
     /// Take `navigation`'s step over the installed regions and blink the region it reaches.
@@ -2337,6 +2407,12 @@ impl Render for DiffWindow {
             .size_full()
             .key_context(DIFF_CONTEXT)
             .on_action(cx.listener(Self::find))
+            .on_action(cx.listener(|this, _: &CopyAsPatch, window, cx| {
+                this.ask_copy_patch(PatchTarget::File, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &CopyDifferenceAsPatch, window, cx| {
+                this.ask_copy_patch(PatchTarget::Difference, window, cx);
+            }))
             .on_action(cx.listener(Self::undo))
             .on_action(cx.listener(Self::redo))
             .on_action(

@@ -598,6 +598,8 @@ pub(crate) mod menu {
         redo = "menu-redo";
         find = "menu-find";
         go_to_line = "menu-go-to-line";
+        copy_as_patch = "menu-copy-as-patch";
+        copy_difference_as_patch = "menu-copy-difference-as-patch";
         toggle_left = "menu-toggle-left";
         toggle_base = "menu-toggle-base";
         toggle_right = "menu-toggle-right";

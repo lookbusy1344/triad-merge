@@ -208,6 +208,8 @@ commands!(
     ToggleScrollSync,
     Find,
     GoToLine,
+    CopyAsPatch,
+    CopyDifferenceAsPatch,
     SaveAndExit,
     SaveCopyAs,
     Save,
@@ -305,6 +307,9 @@ pub(crate) fn menus(ticks: ViewTicks) -> Vec<Menu> {
             MenuItem::separator(),
             MenuItem::action(menu::find(), Find),
             MenuItem::action(menu::go_to_line(), GoToLine),
+            MenuItem::separator(),
+            MenuItem::action(menu::copy_as_patch(), CopyAsPatch),
+            MenuItem::action(menu::copy_difference_as_patch(), CopyDifferenceAsPatch),
         ]),
         Menu::new(menu::merge()).items([
             MenuItem::action(menu::toggle_left(), ToggleLeft),

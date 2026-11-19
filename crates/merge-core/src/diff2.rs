@@ -11,6 +11,7 @@ use crate::diff::{BlankLineRule, DiffOptions, Hunk, diff_lines, intraline_hunks,
 pub use crate::edit::{BatchError, EditBatch, TextPatch};
 use crate::edit::{apply, caret_after, inverse, prepare};
 use crate::index::RegionIx;
+use crate::patch::{self, Scope, Titles};
 use crate::text::{Encoding, LineEnding, Text};
 
 mod moves;
@@ -335,6 +336,26 @@ impl Marking {
     }
 }
 
+/// A snapshot of both texts and their regions, to write a patch off the UI thread. Cloning a
+/// rope is O(1).
+#[derive(Debug, Clone)]
+pub struct Patching {
+    left: Rope,
+    right: Rope,
+    regions: Vec<Region2>,
+    scope: Scope,
+}
+
+impl Patching {
+    /// The unified diff of the snapshot's `scope`, with `context` lines around each change.
+    #[must_use]
+    pub fn run(self, context: usize, titles: Titles<'_>) -> String {
+        let text = |rope: Rope| Text::new(Encoding::Utf8, rope.to_string());
+        let (left, right) = (text(self.left), text(self.right));
+        patch::unified(&left, &right, &self.regions, context, self.scope, titles)
+    }
+}
+
 impl Recompute {
     /// The regions, moves and marks, and the version they belong to.
     #[must_use]
@@ -413,6 +434,18 @@ impl DiffDocument {
             right: self.right.text.clone(),
             regions: self.regions.clone(),
             moves: self.moves.clone(),
+        })
+    }
+
+    /// A snapshot to write `scope`'s patch off the UI thread, or `None` while the regions lag
+    /// the text, so a region index names a region of the text the patch shows.
+    #[must_use]
+    pub fn patching(&self, scope: Scope) -> Option<Patching> {
+        self.regions_current().then(|| Patching {
+            left: self.left.text.clone(),
+            right: self.right.text.clone(),
+            regions: self.regions.clone(),
+            scope,
         })
     }
 
@@ -575,6 +608,32 @@ mod tests {
 
     fn changed(left: Range<usize>, right: Range<usize>) -> Region2 {
         Region2 { kind: Kind2::Changed, left, right }
+    }
+
+    const TITLES: Titles<'static> = Titles { left: "l", right: "r" };
+
+    #[test]
+    fn patching_writes_the_current_texts_and_waits_for_current_regions() {
+        let mut d = doc("a\nb\nc\n", "a\nB\nc\n");
+        let whole = d.patching(Scope::File).expect("regions are current").run(1, TITLES);
+        assert_eq!(whole, "--- l\n+++ r\n@@ -1,3 +1,3 @@\n a\n-b\n+B\n c\n");
+        d.edit(Side::Right, insert(0, "z\n")).expect("edits");
+        assert!(d.patching(Scope::File).is_none(), "the regions lag the edit");
+        assert!(d.install(d.recompute().run()));
+        assert_eq!(
+            d.patching(Scope::File).expect("current again").run(0, TITLES),
+            "--- l\n+++ r\n@@ -0,0 +1 @@\n+z\n@@ -2 +3 @@ a\n-b\n+B\n"
+        );
+    }
+
+    #[test]
+    fn patching_a_region_writes_that_change_alone() {
+        let d = doc("a\nb\nc\nd\n", "A\nb\nc\nD\n");
+        // Regions: 0 changed, 1 unchanged, 2 changed.
+        let region =
+            |n| d.patching(Scope::Region(RegionIx::new(n))).expect("current").run(1, TITLES);
+        assert_eq!(region(2), "--- l\n+++ r\n@@ -3,2 +3,2 @@ b\n c\n-d\n+D\n");
+        assert_eq!(region(1), "");
     }
 
     #[test]

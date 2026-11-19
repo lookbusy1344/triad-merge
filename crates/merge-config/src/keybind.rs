@@ -155,6 +155,8 @@ pub enum KeyAction {
     ToggleScrollSync,
     Find,
     GoToLine,
+    CopyAsPatch,
+    CopyDifferenceAsPatch,
     SaveAndExit,
     SaveCopyAs,
     Save,
@@ -167,7 +169,7 @@ impl KeyAction {
     /// Whether the merge window has this command.
     #[must_use]
     pub const fn in_merge_window(self) -> bool {
-        !matches!(self, Self::Save)
+        !matches!(self, Self::Save | Self::CopyAsPatch | Self::CopyDifferenceAsPatch)
     }
 
     /// Whether the diff window has this command.
@@ -181,6 +183,8 @@ impl KeyAction {
                 | Self::PreviousDifference
                 | Self::GoToMoveEnd
                 | Self::Find
+                | Self::CopyAsPatch
+                | Self::CopyDifferenceAsPatch
                 | Self::ToggleOriginColumn
                 | Self::ToggleSyntax
                 | Self::ToggleSoftWrap
@@ -625,6 +629,8 @@ mod tests {
             ("toggle-whitespace", KeyAction::ToggleWhitespace),
             ("toggle-collapse-unchanged", KeyAction::ToggleCollapseUnchanged),
             ("go-to-move-end", KeyAction::GoToMoveEnd),
+            ("copy-as-patch", KeyAction::CopyAsPatch),
+            ("copy-difference-as-patch", KeyAction::CopyDifferenceAsPatch),
         ] {
             assert_eq!(KeyAction::from_name(name), Some(action));
         }
@@ -706,6 +712,21 @@ mod tests {
     fn both_windows_collapse_unchanged_regions() {
         assert!(KeyAction::ToggleCollapseUnchanged.in_diff_window());
         assert!(KeyAction::ToggleCollapseUnchanged.in_merge_window());
+    }
+
+    /// The merge window's result has no second side to diff against (spec §6.3).
+    #[test]
+    fn the_diff_window_alone_copies_a_patch_and_binds_no_key_to_it() {
+        for action in [KeyAction::CopyAsPatch, KeyAction::CopyDifferenceAsPatch] {
+            assert_eq!(action.windows(), DIFF, "{action:?}");
+            for platform in [MacOs, Platform::Other] {
+                let bindings = KeyBindings::for_platform(platform);
+                assert!(
+                    bindings.bound().iter().all(|b| b.action != action),
+                    "{action:?} {platform:?}"
+                );
+            }
+        }
     }
 
     #[test]

@@ -4,7 +4,7 @@ Where the project stands and what comes next. [SPEC.md](SPEC.md) sets the behavi
 
 ## 1. Status
 
-As of 2026-11-18.
+As of 2026-11-19.
 
 | Milestone | State | Part |
 |---|---|---|
@@ -19,7 +19,7 @@ As of 2026-11-18.
 | M6 native resolution | Done: git stages a resolved save; jj snapshots before the read and after each save | D |
 | M7 syntax highlighting | Done: Rust, Go, C#, Python, Swift, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS, C, C++ | F |
 | p4merge parity | Done | E |
-| Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; §G6 done: the files that differ between two directories, or between a revision and the working copy (`diff`, `diff --rev`), in the directory window and printed by `diff --inspect`, and from `jj diff --tool` and `git difftool -d`, with renames and copies paired as jj pairs them; text that is not UTF-8 read and saved as Windows-1252 (§G17); invisible characters drawn as code points and odd spaces shaded in every pane, and escaped in terminal output (§A6.8); moved and duplicated blocks in the merge window and `inspect`, with a suggestion to drop a duplicate (§G16), done; visible whitespace in every pane (§G10) done; line picks inside a region, from the top panes' line numbers and Pick Selected Lines (§G8), done; a reload from disk keeps the caret and the view on their lines, and the merge window warns at once when another program changes OUTPUT (spec §6.1, §6.2), done; the rest open | G |
+| Review and diff features | Bulk takes (§G3), line endings, case, ignore patterns and two-way blank lines in comparison (§G4), collapsed unchanged regions in both windows (§G2) and moved blocks in the diff window and `diff --inspect` (§G5) done; §G6 done: the files that differ between two directories, or between a revision and the working copy (`diff`, `diff --rev`), in the directory window and printed by `diff --inspect`, and from `jj diff --tool` and `git difftool -d`, with renames and copies paired as jj pairs them; text that is not UTF-8 read and saved as Windows-1252 (§G17); invisible characters drawn as code points and odd spaces shaded in every pane, and escaped in terminal output (§A6.8); moved and duplicated blocks in the merge window and `inspect`, with a suggestion to drop a duplicate (§G16), done; visible whitespace in every pane (§G10) done; line picks inside a region, from the top panes' line numbers and Pick Selected Lines (§G8), done; a reload from disk keeps the caret and the view on their lines, and the merge window warns at once when another program changes OUTPUT (spec §6.1, §6.2), done; patch export (§G11) done: `diff --inspect --unified[=N]`, and Copy as Patch and Copy Difference as Patch in the diff window, matching `git diff` byte for byte wherever the two diffs pick the same hunks; the rest open | G |
 | Languages | Done: the windows and their error details in English, Spanish, simplified and traditional Chinese, Japanese, Korean, German, French, Brazilian Portuguese, Russian, Ukrainian, Polish, Dutch and Swedish, from Fluent catalogues, set by `ui-language` or the system; gpui-component's own text, such as Replace and a field's right-click menu, from triad's catalogues; on macOS the system's own controls follow the system's language | §E3.6 |
 | Look after Zed | Done: chrome in the UI font, the Zed status bar, raised surfaces (Go to Line as Zed's card, the menus, the prompt), a 1 px current-region frame, a softer ruler, one style for errors and warnings, and on macOS the toolbar in the title bar | `docs/STYLE.md` |
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
@@ -37,7 +37,7 @@ In order. Each is one or more commits.
 
 1. **Close M3.** Skipped for now by the owner. The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
 2. **Screen-reader support** (part J). Skipped for now by the owner: live status, conflict regions, scrolling the row table, in the order of §J7.
-3. **Review and diff features** (part G): §G7, §G9, §G11–§G14.
+3. **Review and diff features** (part G): §G9, then §G7 and §G12–§G14.
 4. **More grammars,** one commit each: Java and Kotlin; then Markdown; then Bash, Ruby, PHP and SQL.
 5. **M4b** (§3) once the owner has the machines and the certificate.
 6. **Diff editor** (part H), in the order of §H12: `triad-merge edit`, file by file, first.
@@ -76,7 +76,7 @@ In order. Each is one or more commits.
 | Ruler marks with folds: the marks keep their place in the whole file while the thumb follows display rows | A choice between the two | §G2 |
 | A key that opens the fold next to the caret | — | §G2 |
 | A `fallback-encoding` setting to turn the Windows-1252 fallback off | Someone who needs it off | §G17 |
-| Review and diff features: blank lines in a merge (§G4), §G7, §G9, §G11–§G14 | Owner's choice on §G15's open point for §G4 | G |
+| Review and diff features: blank lines in a merge (§G4), §G7, §G9, §G12–§G14 | Owner's choice on §G15's open point for §G4 | G |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
 | The absorb oracle's generator builds text files only: no renames, executable bits, symlinks, conflicted inputs or immutable commits | — | §I5 |
 | jj-cli's config defaults other than the revset aliases: none checked for whether triad depends on one | — | §I5 |
@@ -174,7 +174,7 @@ Done: View → Show Whitespace (⌘E), the toolbar's Whitespace button and `show
 
 ### G11 Patch export
 
-`diff --inspect --unified[=N]` prints a unified diff with the pane titles as `---` and `+++` headers. The diff window's Edit → Copy as Patch copies the current region or the whole file. Oracle: `git diff --no-index` on the corpus pairs, histogram with the indent heuristic.
+Done: `diff --inspect --unified[=N]` and Edit → Copy as Patch and Copy Difference as Patch in the diff window (spec §6.1, `DESIGN.md` §A4.7). The oracle is `git diff --no-index` on the corpus pairs, histogram with the indent heuristic (`DESIGN.md` §A4.8).
 
 ### G12 Swap sides
 

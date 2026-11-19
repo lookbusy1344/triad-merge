@@ -953,6 +953,9 @@ fn the_menus_hold_every_window_action(cx: &mut TestAppContext) {
                     Entry::Other,
                     item("Find…", "triad::Find"),
                     item("Go to Line…", "triad::GoToLine"),
+                    Entry::Other,
+                    item("Copy as Patch", "triad::CopyAsPatch"),
+                    item("Copy Difference as Patch", "triad::CopyDifferenceAsPatch"),
                 ]
             ),
             (

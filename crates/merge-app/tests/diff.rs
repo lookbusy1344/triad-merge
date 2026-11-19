@@ -3101,3 +3101,103 @@ fn both_diff_editors_mark_unusual_characters(cx: &mut TestAppContext) {
     });
     assert_eq!(marks, [Some(crate::unusual::EDITOR_MARKS); 2]);
 }
+
+/// What the clipboard holds before a patch copy, so a copy of nothing shows.
+const CLIPBOARD_BEFORE: &str = "before";
+
+/// Lines 1 to 11 against the same with lines 2 and 10 changed: two hunks at 3 lines of
+/// context, since 7 lines lie between the changes, one more than twice the context. Digits
+/// start no function name.
+const ELEVEN_LEFT: &str = "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n";
+const ELEVEN_RIGHT: &str = "1\ntwo\n3\n4\n5\n6\n7\n8\n9\nten\n11\n";
+const FIRST_HUNK: &str = "@@ -1,5 +1,5 @@\n 1\n-2\n+two\n 3\n 4\n 5\n";
+const SECOND_HUNK: &str = "@@ -7,5 +7,5 @@\n 7\n 8\n 9\n-10\n+ten\n 11\n";
+
+/// Fill the clipboard with [`CLIPBOARD_BEFORE`], run `action` from the focus, let the copy
+/// land, and give the clipboard's text.
+fn copy_patch(cx: &mut TestAppContext, o: &Opened, action: impl gpui_kit::Action) -> String {
+    cx.update(|cx| {
+        cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(CLIPBOARD_BEFORE.to_owned()));
+    });
+    act(cx, o.window, |window, cx| window.dispatch_action(Box::new(action), cx));
+    cx.run_until_parked();
+    cx.read_from_clipboard().and_then(|item| item.text()).expect("the clipboard holds text")
+}
+
+fn headers(files: &Files) -> String {
+    format!("--- {}\n+++ {}\n", files.path(Side::Left).display(), files.path(Side::Right).display())
+}
+
+#[gpui_kit::test]
+fn copy_as_patch_copies_every_change_headed_by_the_pane_titles(cx: &mut TestAppContext) {
+    let files = Files::new(ELEVEN_LEFT, ELEVEN_RIGHT);
+    let o = open(cx, &files);
+    focus_at(cx, &o, Side::Right, 0);
+    assert_eq!(
+        copy_patch(cx, &o, merge_app::CopyAsPatch),
+        format!("{}{FIRST_HUNK}{SECOND_HUNK}", headers(&files))
+    );
+}
+
+#[gpui_kit::test]
+fn copy_difference_as_patch_copies_the_change_at_the_caret(cx: &mut TestAppContext) {
+    let files = Files::new(ELEVEN_LEFT, ELEVEN_RIGHT);
+    let o = open(cx, &files);
+    // Right byte 20 is the start of `ten`: 1, two and 3 to 9 take 2 + 4 + 7 × 2 bytes.
+    focus_at(cx, &o, Side::Right, 20);
+    assert_eq!(
+        copy_patch(cx, &o, merge_app::CopyDifferenceAsPatch),
+        format!("{}{SECOND_HUNK}", headers(&files))
+    );
+    // Left byte 2 is the start of `2`.
+    focus_at(cx, &o, Side::Left, 2);
+    assert_eq!(
+        copy_patch(cx, &o, merge_app::CopyDifferenceAsPatch),
+        format!("{}{FIRST_HUNK}", headers(&files))
+    );
+}
+
+#[gpui_kit::test]
+fn copy_difference_as_patch_outside_a_difference_copies_nothing(cx: &mut TestAppContext) {
+    let files = Files::new(ELEVEN_LEFT, ELEVEN_RIGHT);
+    let o = open(cx, &files);
+    // Left byte 8 is the start of `5`, unchanged.
+    focus_at(cx, &o, Side::Left, 8);
+    assert_eq!(copy_patch(cx, &o, merge_app::CopyDifferenceAsPatch), CLIPBOARD_BEFORE);
+}
+
+#[gpui_kit::test]
+fn copy_as_patch_of_equal_files_copies_nothing(cx: &mut TestAppContext) {
+    let files = Files::new("a\n", "a\n");
+    let o = open(cx, &files);
+    focus_at(cx, &o, Side::Left, 0);
+    assert_eq!(copy_patch(cx, &o, merge_app::CopyAsPatch), CLIPBOARD_BEFORE);
+}
+
+#[gpui_kit::test]
+fn copy_as_patch_after_an_edit_waits_for_the_recompute_and_shows_the_edit(cx: &mut TestAppContext) {
+    let files = Files::new("a\nb\nc\n", "a\nb\nc\n");
+    let o = open(cx, &files);
+    type_at(cx, &o, Side::Right, 2, "x");
+    assert!(title(cx, &o.view, Side::Right).ends_with(MODIFIED));
+    // No clock advance: the copy does not wait out the debounce.
+    assert_eq!(
+        copy_patch(cx, &o, merge_app::CopyAsPatch),
+        format!("{}@@ -1,3 +1,3 @@\n a\n-b\n+xb\n c\n", headers(&files))
+    );
+}
+
+#[gpui_kit::test]
+fn an_edit_drops_a_copy_waiting_for_the_recompute(cx: &mut TestAppContext) {
+    let files = Files::new("a\nb\nc\n", "a\nb\nc\n");
+    let o = open(cx, &files);
+    type_at(cx, &o, Side::Right, 2, "x");
+    cx.update(|cx| {
+        cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(CLIPBOARD_BEFORE.to_owned()));
+    });
+    act(cx, o.window, |window, cx| window.dispatch_action(Box::new(merge_app::CopyAsPatch), cx));
+    type_at(cx, &o, Side::Right, 0, "y");
+    wait(cx, DIFF_DEBOUNCE);
+    let copied = cx.read_from_clipboard().and_then(|item| item.text());
+    assert_eq!(copied.as_deref(), Some(CLIPBOARD_BEFORE));
+}
