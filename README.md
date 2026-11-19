@@ -137,12 +137,12 @@ Exit codes: 0 all conflicts resolved, 1 conflicts left, 2 cancelled, 3 error.
 
 ## Code size
 
-About 88,000 lines of Rust in `crates/`, blank lines and comments excluded, as `script/code-size` counts them. Tests make up more than half.
+About 91,000 lines of Rust in `crates/`, blank lines and comments excluded, as `script/code-size` counts them. Tests make up more than half.
 
 | Part | Lines |
 |---|---|
-| Product code | 34,000 |
-| Tests: `tests/`, `#[cfg(test)]` modules and test-support modules | 52,000 |
+| Product code | 36,000 |
+| Tests: `tests/`, `#[cfg(test)]` modules and test-support modules | 53,000 |
 | Benchmarks and examples | 2,000 |
 
 The GPUI shell, `merge-app`, holds 15,000 lines of product code; `merge-core` holds 5,000. `vendor/gpui-base` is left out.
