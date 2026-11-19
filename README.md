@@ -20,7 +20,7 @@ triad is a native 3-way merge and 2-way diff tool, written in Rust and GPUI, bui
 
 ## Status
 
-triad 0.2 is an early beta, tested on macOS 27 on Apple Silicon. [Releases](https://github.com/lookbusy1344/triad-merge/releases) also carry Linux x64 and Windows x64 builds; they pass CI but are untested on real desktops.
+triad 0.2 is a beta. [Releases](https://github.com/lookbusy1344/triad-merge/releases) carry builds for macOS on Apple Silicon, Linux x64 and Windows x64.
 
 ## Why triad
 

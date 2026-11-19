@@ -31,7 +31,7 @@ Fixes:
 
 ## 0.1.0 — 2026-11-12
 
-The first release, an early beta tested on macOS on Apple Silicon. Linux x64 and Windows x64 builds pass CI.
+The first release, a beta.
 
 - Three-way merge window and two-way diff window, with jj's merge semantics in a jj repository and `git merge-file`'s in a git repository.
 - `triad-merge resolve` from jj's working-copy commit or git's index; `jj resolve`, `jj diff --tool`, `git mergetool` and `git difftool` through `triad-merge install`.
