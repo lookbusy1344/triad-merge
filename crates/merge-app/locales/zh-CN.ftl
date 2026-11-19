@@ -193,6 +193,7 @@ menu-syntax = 语法高亮
 menu-soft-wrap = 自动换行
 menu-whitespace = 显示空白字符
 menu-collapse-unchanged = 折叠未更改
+menu-unified = 统一视图
 menu-scroll-sync = 同步结果滚动
 
 ## Toolbar
@@ -270,6 +271,7 @@ moved-to-left = 移动的块：前往其另一端，左侧第 { $line } 行
 moved-to-right = 移动的块：前往其另一端，右侧第 { $line } 行
 diff-pane-left = 左侧：{ $name }
 diff-pane-right = 右侧：{ $name }
+diff-pane-unified = 统一视图：{ $left } 对比 { $right }
 
 ## Status bar
 

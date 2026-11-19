@@ -193,6 +193,7 @@ menu-syntax = 語法突顯
 menu-soft-wrap = 自動換行
 menu-whitespace = 顯示空白字元
 menu-collapse-unchanged = 摺疊未變更
+menu-unified = 統一檢視
 menu-scroll-sync = 同步結果捲動
 
 ## Toolbar
@@ -270,6 +271,7 @@ moved-to-left = 移動的區塊：前往其另一端，左側第 { $line } 行
 moved-to-right = 移動的區塊：前往其另一端，右側第 { $line } 行
 diff-pane-left = 左側：{ $name }
 diff-pane-right = 右側：{ $name }
+diff-pane-unified = 統一檢視：{ $left } 對比 { $right }
 
 ## Status bar
 

@@ -153,6 +153,7 @@ pub enum KeyAction {
     ToggleWhitespace,
     ToggleCollapseUnchanged,
     ToggleScrollSync,
+    ToggleUnified,
     Find,
     GoToLine,
     CopyAsPatch,
@@ -169,7 +170,10 @@ impl KeyAction {
     /// Whether the merge window has this command.
     #[must_use]
     pub const fn in_merge_window(self) -> bool {
-        !matches!(self, Self::Save | Self::CopyAsPatch | Self::CopyDifferenceAsPatch)
+        !matches!(
+            self,
+            Self::Save | Self::CopyAsPatch | Self::CopyDifferenceAsPatch | Self::ToggleUnified
+        )
     }
 
     /// Whether the diff window has this command.
@@ -190,6 +194,7 @@ impl KeyAction {
                 | Self::ToggleSoftWrap
                 | Self::ToggleWhitespace
                 | Self::ToggleCollapseUnchanged
+                | Self::ToggleUnified
                 | Self::Save
                 | Self::Cancel
                 | Self::OpenSettings
@@ -631,6 +636,7 @@ mod tests {
             ("go-to-move-end", KeyAction::GoToMoveEnd),
             ("copy-as-patch", KeyAction::CopyAsPatch),
             ("copy-difference-as-patch", KeyAction::CopyDifferenceAsPatch),
+            ("toggle-unified", KeyAction::ToggleUnified),
         ] {
             assert_eq!(KeyAction::from_name(name), Some(action));
         }
@@ -716,8 +722,10 @@ mod tests {
 
     /// The merge window's result has no second side to diff against (spec §6.3).
     #[test]
-    fn the_diff_window_alone_copies_a_patch_and_binds_no_key_to_it() {
-        for action in [KeyAction::CopyAsPatch, KeyAction::CopyDifferenceAsPatch] {
+    fn the_diff_window_alone_copies_a_patch_or_shows_unified_and_binds_no_key_to_them() {
+        for action in
+            [KeyAction::CopyAsPatch, KeyAction::CopyDifferenceAsPatch, KeyAction::ToggleUnified]
+        {
             assert_eq!(action.windows(), DIFF, "{action:?}");
             for platform in [MacOs, Platform::Other] {
                 let bindings = KeyBindings::for_platform(platform);

@@ -1002,6 +1002,7 @@ fn the_menus_hold_every_window_action(cx: &mut TestAppContext) {
                     item("Soft Wrap", "triad::ToggleSoftWrap"),
                     item("Show Whitespace", "triad::ToggleWhitespace"),
                     item("Collapse Unchanged", "triad::ToggleCollapseUnchanged"),
+                    item("Unified", "triad::ToggleUnified"),
                     item("Sync Result Scrolling", "triad::ToggleScrollSync"),
                 ]
             ),
@@ -1026,14 +1027,15 @@ fn view_ticks(cx: &mut TestAppContext) -> Vec<(String, bool)> {
 }
 
 /// The View menu's items in order, with `ticked`: base pane, syntax, soft wrap, whitespace,
-/// collapse unchanged and scroll sync. A merge without origins has no Blame item.
-fn ticks(ticked: [bool; 6]) -> Vec<(String, bool)> {
+/// collapse unchanged, unified and scroll sync. A merge without origins has no Blame item.
+fn ticks(ticked: [bool; 7]) -> Vec<(String, bool)> {
     [
         "Base Pane",
         "Syntax Highlighting",
         "Soft Wrap",
         "Show Whitespace",
         "Collapse Unchanged",
+        "Unified",
         "Sync Result Scrolling",
     ]
     .into_iter()
@@ -1061,45 +1063,45 @@ fn the_view_menu_ticks_what_the_merge_window_shows(cx: &mut TestAppContext) {
     let (window, _) = open(cx, mixed());
     activate(cx, window);
     // The defaults: syntax colours and scroll sync on (spec §6.4).
-    assert_eq!(view_ticks(cx), ticks([false, true, false, false, false, true]));
+    assert_eq!(view_ticks(cx), ticks([false, true, false, false, false, false, true]));
     dispatch(cx, window, &merge_app::ToggleBasePane);
-    assert_eq!(view_ticks(cx), ticks([true, true, false, false, false, true]));
+    assert_eq!(view_ticks(cx), ticks([true, true, false, false, false, false, true]));
     // A merge without origins has no blame to show: the key does nothing.
     dispatch(cx, window, &merge_app::ToggleOriginColumn);
-    assert_eq!(view_ticks(cx), ticks([true, true, false, false, false, true]));
+    assert_eq!(view_ticks(cx), ticks([true, true, false, false, false, false, true]));
     dispatch(cx, window, &merge_app::ToggleSyntax);
-    assert_eq!(view_ticks(cx), ticks([true, false, false, false, false, true]));
+    assert_eq!(view_ticks(cx), ticks([true, false, false, false, false, false, true]));
     dispatch(cx, window, &merge_app::ToggleSoftWrap);
-    assert_eq!(view_ticks(cx), ticks([true, false, true, false, false, true]));
+    assert_eq!(view_ticks(cx), ticks([true, false, true, false, false, false, true]));
     dispatch(cx, window, &merge_app::ToggleCollapseUnchanged);
-    assert_eq!(view_ticks(cx), ticks([true, false, true, false, true, true]));
+    assert_eq!(view_ticks(cx), ticks([true, false, true, false, true, false, true]));
     dispatch(cx, window, &merge_app::ToggleCollapseUnchanged);
-    assert_eq!(view_ticks(cx), ticks([true, false, true, false, false, true]));
+    assert_eq!(view_ticks(cx), ticks([true, false, true, false, false, false, true]));
     dispatch(cx, window, &merge_app::ToggleWhitespace);
-    assert_eq!(view_ticks(cx), ticks([true, false, true, true, false, true]));
+    assert_eq!(view_ticks(cx), ticks([true, false, true, true, false, false, true]));
     dispatch(cx, window, &merge_app::ToggleWhitespace);
-    assert_eq!(view_ticks(cx), ticks([true, false, true, false, false, true]));
+    assert_eq!(view_ticks(cx), ticks([true, false, true, false, false, false, true]));
     dispatch(cx, window, &merge_app::ToggleScrollSync);
-    assert_eq!(view_ticks(cx), ticks([true, false, true, false, false, false]));
+    assert_eq!(view_ticks(cx), ticks([true, false, true, false, false, false, false]));
     dispatch(cx, window, &merge_app::ToggleBasePane);
-    assert_eq!(view_ticks(cx), ticks([false, false, true, false, false, false]));
+    assert_eq!(view_ticks(cx), ticks([false, false, true, false, false, false, false]));
 }
 
 #[gpui_kit::test]
 fn the_view_menu_follows_the_active_window(cx: &mut TestAppContext) {
     let (first, _) = open(cx, mixed());
     activate(cx, first);
-    assert_eq!(view_ticks(cx), ticks([false, true, false, false, false, true]));
+    assert_eq!(view_ticks(cx), ticks([false, true, false, false, false, false, true]));
     let settings = WindowSettings { base_pane: true, soft_wrap: true, ..WindowSettings::default() };
     let (second, _) =
         cx.update(|cx| merge_app::open(mixed(), &settings, cx).expect("window opens"));
     activate(cx, second);
-    assert_eq!(view_ticks(cx), ticks([true, true, true, false, false, true]));
+    assert_eq!(view_ticks(cx), ticks([true, true, true, false, false, false, true]));
     activate(cx, first);
-    assert_eq!(view_ticks(cx), ticks([false, true, false, false, false, true]));
+    assert_eq!(view_ticks(cx), ticks([false, true, false, false, false, false, true]));
     // A window that is not active leaves the menu to the one that is.
     dispatch(cx, second, &merge_app::ToggleSyntax);
-    assert_eq!(view_ticks(cx), ticks([false, true, false, false, false, true]));
+    assert_eq!(view_ticks(cx), ticks([false, true, false, false, false, false, true]));
     activate(cx, second);
-    assert_eq!(view_ticks(cx), ticks([true, false, true, false, false, true]));
+    assert_eq!(view_ticks(cx), ticks([true, false, true, false, false, false, true]));
 }

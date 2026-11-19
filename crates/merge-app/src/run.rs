@@ -442,6 +442,7 @@ pub(crate) fn diff_settings(
         soft_wrap: base.soft_wrap,
         whitespace: base.whitespace,
         collapsing: base.collapsing,
+        layout: base.diff_layout,
         scrollbars: base.scrollbars,
         cwd: base.cwd,
     }
@@ -499,6 +500,7 @@ fn window_settings(stored: &Stored) -> WindowSettings {
             on: stored.collapse_unchanged,
             context_lines: stored.context_lines,
         },
+        diff_layout: stored.diff_layout,
         scroll_sync: stored.scroll_sync,
         scrollbars: stored.scrollbars,
         base_pane: stored.base_pane,
@@ -611,6 +613,7 @@ mod tests {
             soft_wrap: true,
             whitespace: Visibility::Shown,
             collapsing: crate::diff_window::Collapsing { on: true, context_lines: 0 },
+            diff_layout: merge_config::settings::DiffLayout::Unified,
             scrollbars: merge_config::settings::Scrollbars::WhenScrolling,
             window_size: gpui_kit::size(px(1024.), px(768.)),
             ..WindowSettings::default()
@@ -629,6 +632,7 @@ mod tests {
         assert!(diff.soft_wrap);
         assert_eq!(diff.whitespace, Visibility::Shown);
         assert_eq!(diff.collapsing, crate::diff_window::Collapsing { on: true, context_lines: 0 });
+        assert_eq!(diff.layout, merge_config::settings::DiffLayout::Unified);
         assert_eq!(diff.scrollbars, merge_config::settings::Scrollbars::WhenScrolling);
         assert_eq!(diff.window_size, gpui_kit::size(px(1024.), px(768.)));
     }
@@ -679,6 +683,7 @@ mod tests {
             show_whitespace: true,
             collapse_unchanged: true,
             context_lines: 9,
+            diff_layout: merge_config::settings::DiffLayout::Unified,
             key_bindings: merge_config::keybind::KeyBindings::default(),
         };
         let settings = window_settings(&stored);
@@ -706,6 +711,7 @@ mod tests {
             settings.collapsing,
             crate::diff_window::Collapsing { on: true, context_lines: 9 }
         );
+        assert_eq!(settings.diff_layout, merge_config::settings::DiffLayout::Unified);
         assert!(settings.base_pane);
         assert_eq!(settings.origin_column, Visibility::Shown);
         assert_eq!(settings.revision_id, vcs::IdKind::Commit);

@@ -237,6 +237,7 @@ menu-syntax = Coloration syntaxique
 menu-soft-wrap = Retour à la ligne
 menu-whitespace = Afficher les espaces
 menu-collapse-unchanged = Replier l’inchangé
+menu-unified = Unifiée
 menu-scroll-sync = Synchroniser le défilement du résultat
 
 ## Toolbar
@@ -326,6 +327,7 @@ moved-to-left = Bloc déplacé : aller à son autre bout, ligne { $line } de gau
 moved-to-right = Bloc déplacé : aller à son autre bout, ligne { $line } de droite
 diff-pane-left = Gauche : { $name }
 diff-pane-right = Droite : { $name }
+diff-pane-unified = Unifiée : { $left } contre { $right }
 
 ## Status bar
 

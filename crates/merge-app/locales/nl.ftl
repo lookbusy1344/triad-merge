@@ -236,6 +236,7 @@ menu-syntax = Syntaxiskleuring
 menu-soft-wrap = Regelomloop
 menu-whitespace = Witruimte tonen
 menu-collapse-unchanged = Ongewijzigd invouwen
+menu-unified = Samengevoegd
 menu-scroll-sync = Resultaat synchroon scrollen
 
 ## Toolbar
@@ -325,6 +326,7 @@ moved-to-left = Verplaatst blok: naar het andere eind, links regel { $line }
 moved-to-right = Verplaatst blok: naar het andere eind, rechts regel { $line }
 diff-pane-left = Links: { $name }
 diff-pane-right = Rechts: { $name }
+diff-pane-unified = Samengevoegd: { $left } tegen { $right }
 
 ## Status bar
 

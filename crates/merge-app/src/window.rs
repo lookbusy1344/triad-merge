@@ -340,6 +340,8 @@ pub struct WindowSettings {
     pub whitespace: Visibility,
     /// Whether the diff window opens with its unchanged regions collapsed (spec §5).
     pub collapsing: crate::diff_window::Collapsing,
+    /// How the diff window lays out the two sides (spec §5).
+    pub diff_layout: merge_config::settings::DiffLayout,
     /// Where Save & Exit writes (spec §6.2).
     pub output: Option<PathBuf>,
     /// The VCS conflict each Save & Exit to `output` is recorded in (spec §7.4); none
@@ -409,6 +411,7 @@ impl Default for WindowSettings {
             soft_wrap: false,
             whitespace: Visibility::Hidden,
             collapsing: crate::diff_window::Collapsing::default(),
+            diff_layout: merge_config::settings::DiffLayout::SideBySide,
             output: None,
             record: None,
             journal_dir: None,
@@ -1763,6 +1766,7 @@ impl MergeWindow {
             whitespace: self.whitespace.shown(),
             collapse_unchanged: self.collapse.on,
             scroll_sync: self.scroll.syncing(),
+            unified: false,
         }
     }
 

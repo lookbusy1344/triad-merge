@@ -248,6 +248,7 @@ menu-syntax = Підсвічування синтаксису
 menu-soft-wrap = Перенесення рядків
 menu-whitespace = Показувати пробіли
 menu-collapse-unchanged = Згорнути незмінене
+menu-unified = Єдиний вигляд
 menu-scroll-sync = Синхронне прокручування результату
 
 ## Toolbar
@@ -340,6 +341,7 @@ moved-to-left = Переміщений блок: до іншого кінця, �
 moved-to-right = Переміщений блок: до іншого кінця, рядок { $line } праворуч
 diff-pane-left = Ліворуч: { $name }
 diff-pane-right = Праворуч: { $name }
+diff-pane-unified = Єдиний вигляд: { $left } проти { $right }
 
 ## Status bar
 

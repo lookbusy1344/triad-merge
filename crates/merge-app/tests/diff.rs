@@ -2598,6 +2598,7 @@ fn the_view_menu_ticks_what_the_diff_window_shows(cx: &mut TestAppContext) {
             ("Soft Wrap", wrap),
             ("Show Whitespace", whitespace),
             ("Collapse Unchanged", false),
+            ("Unified", false),
             ("Sync Result Scrolling", false),
         ]
         .map(|(name, ticked)| (name.to_owned(), ticked))
@@ -3200,4 +3201,126 @@ fn an_edit_drops_a_copy_waiting_for_the_recompute(cx: &mut TestAppContext) {
     wait(cx, DIFF_DEBOUNCE);
     let copied = cx.read_from_clipboard().and_then(|item| item.text());
     assert_eq!(copied.as_deref(), Some(CLIPBOARD_BEFORE));
+}
+
+/// The unified pane's text, or none while it is hidden.
+fn unified_text(cx: &mut TestAppContext, o: &Opened) -> Option<String> {
+    cx.read(|cx| o.view.read(cx).unified_editor().map(|e| e.read(cx).text().to_string()))
+}
+
+fn unified_labels(cx: &mut TestAppContext, o: &Opened) -> Vec<String> {
+    cx.read(|cx| {
+        let view = o.view.read(cx).unified_view().expect("the unified pane shows");
+        (0..view.line_count()).map(|line| view.label(line)).collect()
+    })
+}
+
+fn unified_caret(cx: &mut TestAppContext, o: &Opened) -> usize {
+    cx.read(|cx| o.view.read(cx).unified_editor().expect("shown").read(cx).cursor())
+}
+
+fn toggle_unified(cx: &mut TestAppContext, o: &Opened) {
+    act(cx, o.window, |window, cx| window.dispatch_action(Box::new(merge_app::ToggleUnified), cx));
+    cx.run_until_parked();
+    act(cx, o.window, TestWindowExt::render_frame);
+}
+
+#[gpui_kit::test]
+fn view_unified_shows_each_change_deleted_above_inserted_with_both_numbers(
+    cx: &mut TestAppContext,
+) {
+    let files = Files::new("a\nb\nc\n", "a\nB\nc\n");
+    let o = open(cx, &files);
+    // The menu bar shows the active window's ticks.
+    act(cx, o.window, |window, _| window.activate_window());
+    cx.run_until_parked();
+    assert_eq!(unified_text(cx, &o), None);
+    toggle_unified(cx, &o);
+    assert_eq!(unified_text(cx, &o).as_deref(), Some("a\nb\nB\nc\n"));
+    assert_eq!(unified_labels(cx, &o), ["  1   1", "  2    ", "      2", "  3   3"]);
+    let mut bands = cx.read(|cx| o.view.read(cx).unified_band_ranges(cx));
+    bands.sort_by_key(|range| range.start);
+    // `b` deleted, then `B` inserted.
+    assert_eq!(bands, [2..4, 4..6]);
+    let ticked = view_ticks(cx).into_iter().find(|(name, _)| name == "Unified");
+    assert_eq!(ticked, Some(("Unified".to_owned(), true)));
+    toggle_unified(cx, &o);
+    assert_eq!(unified_text(cx, &o), None);
+}
+
+#[gpui_kit::test]
+fn the_diff_layout_setting_opens_the_unified_pane(cx: &mut TestAppContext) {
+    let files = Files::new("a\n", "b\n");
+    let settings = DiffSettings {
+        layout: merge_config::settings::DiffLayout::Unified,
+        ..DiffSettings::default()
+    };
+    let o = open_files_with(
+        cx,
+        files.file(Side::Left, false),
+        files.file(Side::Right, false),
+        &settings,
+    );
+    assert_eq!(unified_text(cx, &o).as_deref(), Some("a\nb\n"));
+    assert_eq!(unified_labels(cx, &o), ["  1    ", "      1"]);
+}
+
+#[gpui_kit::test]
+fn next_and_previous_difference_move_the_unified_caret(cx: &mut TestAppContext) {
+    // Unified: 1, 2 → two, 3 4 5 6, 7 → seven; changes start at unified lines 1 and 7.
+    let files = Files::new("1\n2\n3\n4\n5\n6\n7\n", "1\ntwo\n3\n4\n5\n6\nseven\n");
+    let o = open(cx, &files);
+    toggle_unified(cx, &o);
+    assert_eq!(unified_text(cx, &o).as_deref(), Some("1\n2\ntwo\n3\n4\n5\n6\n7\nseven\n"));
+    press(cx, &o, "secondary-down");
+    // Line 1 starts at byte 2.
+    assert_eq!(unified_caret(cx, &o), 2);
+    press(cx, &o, "secondary-down");
+    // Line 7 starts at byte 2 + 2 + 4 + 4 × 2 = 16.
+    assert_eq!(unified_caret(cx, &o), 16);
+    press(cx, &o, "secondary-down");
+    assert_eq!(unified_caret(cx, &o), 16, "no difference after the last");
+    press(cx, &o, "secondary-up");
+    assert_eq!(unified_caret(cx, &o), 2);
+}
+
+#[gpui_kit::test]
+fn the_unified_pane_follows_a_reload_from_disk(cx: &mut TestAppContext) {
+    let files = Files::new("a\nb\n", "a\nb\n");
+    let o = open(cx, &files);
+    toggle_unified(cx, &o);
+    assert_eq!(unified_text(cx, &o).as_deref(), Some("a\nb\n"));
+    std::fs::write(files.path(Side::Right), "a\nc\n").expect("written");
+    disk_changed(cx, &o, Side::Right);
+    wait(cx, DIFF_DEBOUNCE);
+    assert_eq!(unified_text(cx, &o).as_deref(), Some("a\nb\nc\n"));
+    assert_eq!(unified_labels(cx, &o), ["  1   1", "  2    ", "      2"]);
+}
+
+#[gpui_kit::test]
+fn copy_difference_as_patch_in_the_unified_pane_takes_its_caret(cx: &mut TestAppContext) {
+    let files = Files::new(ELEVEN_LEFT, ELEVEN_RIGHT);
+    let o = open(cx, &files);
+    toggle_unified(cx, &o);
+    press(cx, &o, "secondary-down");
+    press(cx, &o, "secondary-down");
+    assert_eq!(
+        copy_patch(cx, &o, merge_app::CopyDifferenceAsPatch),
+        format!("{}{SECOND_HUNK}", headers(&files))
+    );
+}
+
+#[gpui_kit::test]
+fn the_view_toggles_reach_the_unified_pane(cx: &mut TestAppContext) {
+    let files = Files::new("a\n", "b\n");
+    let o = open(cx, &files);
+    toggle_unified(cx, &o);
+    let whitespace = |cx: &mut TestAppContext| {
+        cx.read(|cx| o.view.read(cx).unified_editor().expect("shown").read(cx).shows_whitespaces())
+    };
+    assert!(!whitespace(cx));
+    act(cx, o.window, |window, cx| {
+        window.dispatch_action(Box::new(merge_app::ToggleWhitespace), cx);
+    });
+    assert!(whitespace(cx));
 }

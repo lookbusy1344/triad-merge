@@ -53,6 +53,7 @@ mod tones;
 mod tool_window;
 pub mod toolbar;
 mod tooltip;
+mod unified_pane;
 pub mod window;
 mod wrap;
 
@@ -206,6 +207,7 @@ commands!(
     ToggleWhitespace,
     ToggleCollapseUnchanged,
     ToggleScrollSync,
+    ToggleUnified,
     Find,
     GoToLine,
     CopyAsPatch,
@@ -285,6 +287,8 @@ pub(crate) struct ViewTicks {
     pub whitespace: bool,
     pub collapse_unchanged: bool,
     pub scroll_sync: bool,
+    /// Whether the diff window shows its unified pane (spec §5).
+    pub unified: bool,
 }
 
 /// The menu bar. Each item runs the same action as its key.
@@ -357,6 +361,7 @@ pub(crate) fn menus(ticks: ViewTicks) -> Vec<Menu> {
                     MenuItem::action(menu::collapse_unchanged(), ToggleCollapseUnchanged)
                         .checked(ticks.collapse_unchanged),
                 ),
+                Some(MenuItem::action(menu::unified(), ToggleUnified).checked(ticks.unified)),
                 Some(
                     MenuItem::action(menu::scroll_sync(), ToggleScrollSync)
                         .checked(ticks.scroll_sync),

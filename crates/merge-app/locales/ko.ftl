@@ -193,6 +193,7 @@ menu-syntax = 구문 강조
 menu-soft-wrap = 자동 줄 바꿈
 menu-whitespace = 공백 표시
 menu-collapse-unchanged = 변경되지 않은 부분 접기
+menu-unified = 통합 보기
 menu-scroll-sync = 결과 스크롤 동기화
 
 ## Toolbar
@@ -270,6 +271,7 @@ moved-to-left = 이동된 블록: 다른 끝, 왼쪽 { $line }번째 줄로
 moved-to-right = 이동된 블록: 다른 끝, 오른쪽 { $line }번째 줄로
 diff-pane-left = 왼쪽: { $name }
 diff-pane-right = 오른쪽: { $name }
+diff-pane-unified = 통합 보기: { $left } 대 { $right }
 
 ## Status bar
 

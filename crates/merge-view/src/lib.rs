@@ -21,3 +21,4 @@ pub mod search;
 pub mod selection;
 pub mod status;
 pub mod tabs;
+pub mod unified;

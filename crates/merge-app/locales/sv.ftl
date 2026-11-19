@@ -236,6 +236,7 @@ menu-syntax = Syntaxmarkering
 menu-soft-wrap = Radbrytning
 menu-whitespace = Visa blanktecken
 menu-collapse-unchanged = Fäll ihop oförändrat
+menu-unified = Sammanslagen
 menu-scroll-sync = Synkronisera resultatets rullning
 
 ## Toolbar
@@ -325,6 +326,7 @@ moved-to-left = Flyttat block: gå till andra änden, vänster rad { $line }
 moved-to-right = Flyttat block: gå till andra änden, höger rad { $line }
 diff-pane-left = Vänster: { $name }
 diff-pane-right = Höger: { $name }
+diff-pane-unified = Sammanslagen: { $left } mot { $right }
 
 ## Status bar
 

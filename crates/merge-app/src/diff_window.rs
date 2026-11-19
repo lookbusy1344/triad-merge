@@ -32,7 +32,7 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, Subscription, Task, TestSupportExt as _, Window,
     WindowOptions, canvas, div, point, prelude::FluentBuilder as _, px,
 };
-use merge_config::settings::{Colours, DEFAULT_COLOURS, Scrollbars};
+use merge_config::settings::{Colours, DEFAULT_COLOURS, DiffLayout, Scrollbars};
 use merge_core::diff::DiffOptions;
 use merge_core::diff2::{DiffDocument, Edited, Kind2, Marking, Region2, Rope, Side};
 use merge_core::edit::TextPatch;
@@ -70,6 +70,7 @@ use crate::strings::{self, prompt};
 use crate::syntax::Colouring;
 use crate::tones::{Palette, Tones};
 use crate::toolbar::{self, DIFF_GROUPS, Labels};
+use crate::unified_pane::{UnifiedLook, UnifiedPane};
 use crate::window::{
     INTRALINE_ALPHA, OpenError, SCROLL_EPSILON, SOFT_WRAP_MAX_LINES, Syntax, revision_chip_element,
     revision_chip_id,
@@ -78,7 +79,8 @@ use crate::wrap::Wrap;
 use crate::{
     Cancel, CopyAsPatch, CopyDifferenceAsPatch, ExitCode, Find, GoToMoveEnd, NextDifference,
     PreviousDifference, Redo, Save, ToggleCollapseUnchanged, ToggleOriginColumn, ToggleSoftWrap,
-    ToggleSyntax, ToggleWhitespace, Typography, Undo, alert, finish, ignore_closed_view,
+    ToggleSyntax, ToggleUnified, ToggleWhitespace, Typography, Undo, alert, finish,
+    ignore_closed_view,
 };
 
 /// How long edits must pause before the regions are recomputed (spec §4.6).
@@ -104,6 +106,8 @@ pub(crate) const PANE_CONTEXT: &str = "DiffPane";
 
 /// The banner's element id.
 pub const BANNER_ID: &str = "banner";
+/// The unified pane (spec §5).
+pub const UNIFIED_PANE_ID: &str = "unified-pane";
 /// The status bar's element id.
 pub const STATUS_ID: &str = "diff-status";
 /// The status bar's text.
@@ -239,6 +243,8 @@ pub struct DiffSettings {
     pub whitespace: Visibility,
     /// Whether the panes open with their unchanged regions collapsed (spec §5).
     pub collapsing: Collapsing,
+    /// Whether the window opens side by side or unified (spec §5).
+    pub layout: DiffLayout,
     /// When the panes show their scrollbars (spec §6.4).
     pub scrollbars: Scrollbars,
     /// The run's working directory, which relative paths resolve against; none when the
@@ -265,6 +271,7 @@ impl Default for DiffSettings {
             soft_wrap: false,
             whitespace: Visibility::Hidden,
             collapsing: Collapsing::default(),
+            layout: DiffLayout::SideBySide,
             scrollbars: Scrollbars::Always,
             cwd: None,
         }
@@ -385,6 +392,12 @@ pub struct DiffWindow {
     /// Navigations and patch copies asked for while the regions lag the text, in order. Each
     /// runs once the recompute installs; an edit drops them.
     waiting: Vec<Waiting>,
+    /// Whether the window shows the two panes or the unified pane (spec §5).
+    layout: DiffLayout,
+    /// The unified pane while it shows; made again each time it opens.
+    unified: Option<UnifiedPane>,
+    /// When the panes' scrollbars show, for a unified pane made later.
+    scrollbar_mode: ScrollbarMode,
     /// The region navigation last made current, on the side it started from, and the caret
     /// it left there. While that caret stays put, the region is current: an empty region
     /// holds no line, so the caret alone cannot name it.
@@ -552,6 +565,9 @@ pub fn open(
                 this.set_spacers(cx);
             }
             this.open_on_first_difference(window, cx);
+            if this.layout == DiffLayout::Unified {
+                this.show_unified(window, cx);
+            }
         });
         let this = view.downgrade();
         window.on_window_should_close(cx, move |window, cx| {
@@ -655,6 +671,9 @@ impl DiffWindow {
             save_failed: false,
             computing: false,
             waiting: Vec::new(),
+            layout: settings.layout,
+            unified: None,
+            scrollbar_mode: look.scrollbars,
             pinned: None,
             flash: Flash::default(),
             found: Flash::default(),
@@ -700,6 +719,25 @@ impl DiffWindow {
     #[must_use]
     pub fn editor(&self, side: Side) -> &Entity<EditorState> {
         &self.pane(side).editor
+    }
+
+    /// The unified pane's editor while it shows.
+    #[must_use]
+    pub fn unified_editor(&self) -> Option<&Entity<EditorState>> {
+        self.unified.as_ref().map(UnifiedPane::editor)
+    }
+
+    /// The unified pane's lines while it shows.
+    #[must_use]
+    pub fn unified_view(&self) -> Option<&merge_view::unified::Unified> {
+        self.unified.as_ref().map(UnifiedPane::view)
+    }
+
+    /// The byte ranges of the unified pane's bands, as its editor holds them; none while it
+    /// is hidden.
+    #[must_use]
+    pub fn unified_band_ranges(&self, cx: &App) -> Vec<Range<usize>> {
+        self.unified.as_ref().map_or_default(|pane| pane.band_ranges(cx))
     }
 
     /// The byte ranges of `side`'s marks on the characters that differ, as the editor holds
@@ -951,6 +989,9 @@ impl DiffWindow {
                 if this.doc.install(diffed) {
                     this.install_origins(carried);
                     this.refresh(cx);
+                    if this.layout == DiffLayout::Unified {
+                        this.show_unified(window, cx);
+                    }
                     for waiting in std::mem::take(&mut this.waiting) {
                         match waiting {
                             Waiting::Step(navigation) => this.step(navigation, window, cx),
@@ -1002,8 +1043,8 @@ impl DiffWindow {
             return;
         }
         let wrap = self.wrap.wraps();
-        for side in SIDES {
-            self.editor(side).update(cx, |state, cx| state.set_soft_wrap(wrap, window, cx));
+        for editor in self.editors() {
+            editor.update(cx, |state, cx| state.set_soft_wrap(wrap, window, cx));
         }
         // Wrapped panes level once laid out (`level_wrapped`); unwrapped ones level by lines.
         self.set_spacers(cx);
@@ -1018,8 +1059,8 @@ impl DiffWindow {
     ) {
         self.whitespace = self.whitespace.toggled();
         let shown = self.whitespace.shown();
-        for side in SIDES {
-            self.editor(side).update(cx, |state, cx| state.set_show_whitespaces(shown, window, cx));
+        for editor in self.editors() {
+            editor.update(cx, |state, cx| state.set_show_whitespaces(shown, window, cx));
         }
         cx.notify();
     }
@@ -1065,9 +1106,57 @@ impl DiffWindow {
     fn toggle_syntax(&mut self, _: &ToggleSyntax, _: &mut Window, cx: &mut Context<Self>) {
         self.colouring.toggle();
         let language = self.colouring.editor_language();
-        for side in SIDES {
-            self.editor(side).update(cx, |state, cx| state.set_highlighter(language, cx));
+        for editor in self.editors() {
+            editor.update(cx, |state, cx| state.set_highlighter(language, cx));
         }
+    }
+
+    /// Both panes' editors, then the unified pane's while it shows.
+    fn editors(&self) -> impl Iterator<Item = Entity<EditorState>> + use<> {
+        let unified = self.unified.as_ref().map(|pane| pane.editor().clone());
+        SIDES.map(|side| self.editor(side).clone()).into_iter().chain(unified)
+    }
+
+    /// Show the unified pane or the two panes (spec §5).
+    fn toggle_unified(&mut self, _: &ToggleUnified, window: &mut Window, cx: &mut Context<Self>) {
+        match self.layout {
+            DiffLayout::SideBySide => {
+                self.layout = DiffLayout::Unified;
+                self.show_unified(window, cx);
+            }
+            DiffLayout::Unified => {
+                self.layout = DiffLayout::SideBySide;
+                self.unified = None;
+                self.editor(Side::Left).update(cx, |state, cx| state.focus(window, cx));
+            }
+        }
+        cx.notify();
+    }
+
+    /// Bring the unified pane up to the current text and regions, or make it with the focus
+    /// in it. While the regions lag the text, the recompute that catches up shows it.
+    fn show_unified(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.doc.regions_current() {
+            self.start_recompute(None, window, cx);
+            return;
+        }
+        let tones = *self.palette.tones(cx.theme().is_dark());
+        if let Some(pane) = &mut self.unified {
+            pane.update(&self.doc, &tones, window, cx);
+            return;
+        }
+        let look = UnifiedLook {
+            soft_wrap: self.wrap.wraps(),
+            whitespace: self.whitespace.shown(),
+            scrollbars: self.scrollbar_mode,
+            typography: &self.typography,
+            tones: &tones,
+            language: self.colouring.editor_language(),
+        };
+        let pane = UnifiedPane::new(&self.doc, &look, window, cx);
+        pane.editor().update(cx, |state, cx| state.focus(window, cx));
+        self.unified = Some(pane);
+        cx.notify();
     }
 
     /// The View menu items this window ticks. It has no base pane and no result.
@@ -1079,6 +1168,7 @@ impl DiffWindow {
             soft_wrap: self.wrap.wraps(),
             whitespace: self.whitespace.shown(),
             collapse_unchanged: self.collapse.on,
+            unified: self.layout == DiffLayout::Unified,
             ..crate::ViewTicks::default()
         }
     }
@@ -1231,7 +1321,11 @@ impl DiffWindow {
     /// Open the search of the focused pane, else the left pane's.
     fn find(&mut self, _: &Find, window: &mut Window, cx: &mut Context<Self>) {
         let side = self.focused(window, cx).unwrap_or(Side::Left);
-        self.pane(side).editor.update(cx, |state, cx| {
+        let editor = match &self.unified {
+            Some(pane) => pane.editor(),
+            None => &self.pane(side).editor,
+        };
+        editor.update(cx, |state, cx| {
             state.focus(window, cx);
             state.open_search(false, cx);
         });
@@ -1257,8 +1351,14 @@ impl DiffWindow {
         self.follow(before, &edited, Caret::AtChange, window, cx);
     }
 
-    /// The region holding `side`'s caret, or the pinned one.
+    /// The region holding the unified pane's caret while it shows, else `side`'s, or the
+    /// pinned one.
     fn current(&self, side: Side, cx: &App) -> RegionIx {
+        if let Some(pane) = &self.unified
+            && let Some(region) = pane.view().region_at(pane.caret_line(cx))
+        {
+            return region;
+        }
         let caret = self.pane(side).editor.read(cx).cursor();
         held_region(&self.doc, self.pinned, side, caret)
     }
@@ -1344,9 +1444,17 @@ impl DiffWindow {
                 .is_some_and(|region| region.kind == Kind2::Changed)
                 .then_some(from)
         });
-        if let Some(region) = to {
-            self.go_to(region, side, window, cx);
-            self.start_flash(region, cx);
+        match (to, &self.unified) {
+            (Some(region), Some(pane)) => {
+                if let Some(line) = pane.view().first_line(region) {
+                    pane.go_to_line(line, window, cx);
+                }
+            }
+            (Some(region), None) => {
+                self.go_to(region, side, window, cx);
+                self.start_flash(region, cx);
+            }
+            (None, _) => {}
         }
     }
 
@@ -2381,6 +2489,7 @@ impl DiffWindow {
         .on_action(cx.listener(Self::toggle_soft_wrap))
         .on_action(cx.listener(Self::toggle_whitespace))
         .on_action(cx.listener(Self::toggle_collapse_unchanged))
+        .on_action(cx.listener(Self::toggle_unified))
     }
 
     /// Bind the Go menu's commands on `root`.
@@ -2392,6 +2501,77 @@ impl DiffWindow {
             this.navigate(previous_change, window, cx);
         }))
         .on_action(cx.listener(Self::go_to_move_end))
+    }
+}
+
+impl DiffWindow {
+    /// The two panes, the gutter between them and the ruler.
+    fn render_panes(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        h_flex()
+            .flex_1()
+            .min_h_0()
+            .w_full()
+            .child({
+                // Before the left pane lays out.
+                let this = cx.entity().downgrade();
+                canvas(
+                    move |_, window, cx| {
+                        ignore_closed_view(this.update(cx, |this, cx| {
+                            this.sync_left(cx);
+                            this.apply_held_top(cx);
+                            this.apply_reveal(window, cx);
+                        }));
+                    },
+                    |_, (), _, _| {},
+                )
+                .absolute()
+                .size_0()
+            })
+            .child(self.render_pane(Side::Left, cx))
+            .child({
+                // Between the panes: after the left's prepaint, and before the
+                // right's, which applies a scroll offset set here.
+                let this = cx.entity().downgrade();
+                canvas(
+                    move |_, window, cx| {
+                        ignore_closed_view(
+                            this.update(cx, |this, cx| this.sync_scroll(window, cx)),
+                        );
+                    },
+                    |_, (), _, _| {},
+                )
+                .absolute()
+                .size_0()
+            })
+            .child(self.render_gutter(window, cx))
+            .child(self.render_pane(Side::Right, cx))
+            .child(self.render_ruler(cx))
+    }
+
+    /// The unified pane across the window (spec §5): read-only, its keys the panes' keys.
+    fn render_unified(
+        &self,
+        pane: &UnifiedPane,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let name = |side| self.pane(side).origin.name().into_owned();
+        div()
+            .id(UNIFIED_PANE_ID)
+            .test_support()
+            .key_context(PANE_CONTEXT)
+            .flex_1()
+            .min_h_0()
+            .w_full()
+            .child(
+                Editor::new(pane.editor())
+                    .aria_label(strings::unified_pane_label(&name(Side::Left), &name(Side::Right)))
+                    .readonly(true)
+                    .font_family(self.typography.editor_font(cx.theme()))
+                    .text_size(self.typography.size)
+                    .line_height(gpui_kit::relative(self.typography.spacing))
+                    .bordered(false)
+                    .h(gpui_kit::relative(1.)),
+            )
     }
 }
 
@@ -2437,47 +2617,10 @@ impl Render for DiffWindow {
             ))
             .children(render_banner(self.settings_errors.as_ref(), |v| &mut v.settings_errors, cx))
             .children(self.banner.clone().map(|text| alert::warning_banner(BANNER_ID, text, cx)))
-            .child(
-                h_flex()
-                    .flex_1()
-                    .min_h_0()
-                    .w_full()
-                    .child({
-                        // Before the left pane lays out.
-                        let this = cx.entity().downgrade();
-                        canvas(
-                            move |_, window, cx| {
-                                ignore_closed_view(this.update(cx, |this, cx| {
-                                    this.sync_left(cx);
-                                    this.apply_held_top(cx);
-                                    this.apply_reveal(window, cx);
-                                }));
-                            },
-                            |_, (), _, _| {},
-                        )
-                        .absolute()
-                        .size_0()
-                    })
-                    .child(self.render_pane(Side::Left, cx))
-                    .child({
-                        // Between the panes: after the left's prepaint, and before the
-                        // right's, which applies a scroll offset set here.
-                        let this = cx.entity().downgrade();
-                        canvas(
-                            move |_, window, cx| {
-                                ignore_closed_view(
-                                    this.update(cx, |this, cx| this.sync_scroll(window, cx)),
-                                );
-                            },
-                            |_, (), _, _| {},
-                        )
-                        .absolute()
-                        .size_0()
-                    })
-                    .child(self.render_gutter(window, cx))
-                    .child(self.render_pane(Side::Right, cx))
-                    .child(self.render_ruler(cx)),
-            )
+            .child(match &self.unified {
+                Some(pane) => self.render_unified(pane, cx).into_any_element(),
+                None => self.render_panes(window, cx).into_any_element(),
+            })
             .child(status)
     }
 }

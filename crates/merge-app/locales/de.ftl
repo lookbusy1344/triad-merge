@@ -236,6 +236,7 @@ menu-syntax = Syntaxhervorhebung
 menu-soft-wrap = Zeilenumbruch
 menu-whitespace = Leerraum zeigen
 menu-collapse-unchanged = Unverändertes einklappen
+menu-unified = Einheitlich
 menu-scroll-sync = Ergebnis synchron scrollen
 
 ## Toolbar
@@ -325,6 +326,7 @@ moved-to-left = Verschobener Block: zum anderen Ende, links Zeile { $line }
 moved-to-right = Verschobener Block: zum anderen Ende, rechts Zeile { $line }
 diff-pane-left = Links: { $name }
 diff-pane-right = Rechts: { $name }
+diff-pane-unified = Einheitlich: { $left } gegen { $right }
 
 ## Status bar
 

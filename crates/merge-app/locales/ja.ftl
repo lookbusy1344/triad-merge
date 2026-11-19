@@ -193,6 +193,7 @@ menu-syntax = シンタックスハイライト
 menu-soft-wrap = ソフトラップ
 menu-whitespace = 空白を表示
 menu-collapse-unchanged = 変更のない行を折りたたむ
+menu-unified = 統合表示
 menu-scroll-sync = 結果のスクロールを同期
 
 ## Toolbar
@@ -270,6 +271,7 @@ moved-to-left = 移動したブロック: もう一方の端、左の { $line } 
 moved-to-right = 移動したブロック: もう一方の端、右の { $line } 行目へ
 diff-pane-left = 左: { $name }
 diff-pane-right = 右: { $name }
+diff-pane-unified = 統合表示: { $left } と { $right }
 
 ## Status bar
 

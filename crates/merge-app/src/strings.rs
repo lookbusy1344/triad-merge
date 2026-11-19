@@ -599,6 +599,7 @@ pub(crate) mod menu {
         find = "menu-find";
         go_to_line = "menu-go-to-line";
         copy_as_patch = "menu-copy-as-patch";
+        unified = "menu-unified";
         copy_difference_as_patch = "menu-copy-difference-as-patch";
         toggle_left = "menu-toggle-left";
         toggle_base = "menu-toggle-base";
@@ -973,6 +974,11 @@ pub(crate) fn move_pill_label(side: Side, other_line: usize) -> String {
 /// A diff pane's accessible label: its side and its file.
 pub(crate) fn diff_pane_label(left: bool, name: &str) -> String {
     if left { t!("diff-pane-left", name = name) } else { t!("diff-pane-right", name = name) }
+}
+
+/// The unified pane's accessible name: both sides' files.
+pub(crate) fn unified_pane_label(left: &str, right: &str) -> String {
+    t!("diff-pane-unified", left = left, right = right)
 }
 
 /// The status bars' first item: the repository the files lie in (spec §5).

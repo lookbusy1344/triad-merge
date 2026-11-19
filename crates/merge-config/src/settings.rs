@@ -159,6 +159,8 @@ pub struct Settings {
     pub collapse_unchanged: bool,
     /// The lines a collapsed unchanged region keeps at each end that faces a change.
     pub context_lines: usize,
+    /// How the diff window lays out the two sides (spec §5).
+    pub diff_layout: DiffLayout,
     /// The keys and the commands they run (`docs/DESIGN.md` §E9).
     pub key_bindings: KeyBindings,
 }
@@ -349,6 +351,17 @@ pub enum UiLanguage {
     Uk,
 }
 
+/// How the diff window lays out the two sides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, VariantArray, IntoStaticStr, EnumMessage)]
+#[strum(serialize_all = "kebab-case")]
+pub enum DiffLayout {
+    /// Two editable panes, left and right.
+    #[default]
+    SideBySide,
+    /// One read-only pane, each change's deleted lines above its inserted lines.
+    Unified,
+}
+
 /// When the panes show their scrollbars.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, VariantArray, IntoStaticStr, EnumMessage)]
 #[strum(serialize_all = "kebab-case")]
@@ -408,6 +421,7 @@ impl Default for Settings {
             show_whitespace: false,
             collapse_unchanged: false,
             context_lines: DEFAULT_CONTEXT_LINES,
+            diff_layout: DiffLayout::SideBySide,
             key_bindings: KeyBindings::default(),
         }
     }
@@ -1100,6 +1114,12 @@ const KEYS: &[Key] = &[
         context_lines,
         |s| s.context_lines.to_string()
     ),
+    named_key!(
+        "diff-layout",
+        "How the diff window lays out the two sides: side-by-side (two editable panes) or \
+         unified (one read-only pane, each change's deleted lines above its inserted lines).",
+        diff_layout = DiffLayout::default()
+    ),
 ];
 
 /// `settings` in the file's form, one `key = value` line per key in the order of spec §6.4.
@@ -1431,6 +1451,7 @@ mod tests {
                 show_whitespace: false,
                 collapse_unchanged: false,
                 context_lines: 3,
+                diff_layout: DiffLayout::SideBySide,
                 key_bindings: KeyBindings::default(),
             }
         );
@@ -1482,6 +1503,7 @@ mod tests {
             show-whitespace = true
             collapse-unchanged = true
             context-lines = 12
+            diff-layout = unified
         ";
 
     #[test]
@@ -1539,6 +1561,7 @@ mod tests {
                 show_whitespace: true,
                 collapse_unchanged: true,
                 context_lines: 12,
+                diff_layout: DiffLayout::Unified,
                 key_bindings: KeyBindings::default(),
             }
         );
@@ -1957,6 +1980,21 @@ mod tests {
         assert_eq!(
             problem("collapse-unchanged = on"),
             (1, invalid("collapse-unchanged", "on", "true or false"))
+        );
+    }
+
+    #[test]
+    fn diff_layout_reads_each_name_and_is_side_by_side_by_default() {
+        assert_eq!(Settings::default().diff_layout, DiffLayout::SideBySide);
+        assert_eq!(settings("diff-layout = unified").diff_layout, DiffLayout::Unified);
+        assert_eq!(settings("diff-layout = side-by-side").diff_layout, DiffLayout::SideBySide);
+        assert_eq!(
+            settings("diff-layout = unified\ndiff-layout =").diff_layout,
+            DiffLayout::SideBySide
+        );
+        assert_eq!(
+            problem("diff-layout = split"),
+            (1, invalid("diff-layout", "split", "side-by-side or unified"))
         );
     }
 
@@ -2496,6 +2534,7 @@ soft-wrap = false
 show-whitespace = false
 collapse-unchanged = false
 context-lines = 3
+diff-layout = side-by-side
 ";
 
     /// [`DEFAULTS`] on this platform: its chords are macOS's.
@@ -2567,6 +2606,7 @@ context-lines = 3
             show_whitespace: true,
             collapse_unchanged: true,
             context_lines: 0,
+            diff_layout: DiffLayout::Unified,
             key_bindings: added_binding(),
         }
     }
@@ -2636,6 +2676,7 @@ soft-wrap = true
 show-whitespace = true
 collapse-unchanged = true
 context-lines = 0
+diff-layout = unified
 "
             .replace("DEFAULT_KEYBINDS\n", &default_keybinds)
         );
@@ -2729,6 +2770,9 @@ collapse-unchanged = false
 
 # The lines a collapsed unchanged region keeps at each end that faces a change, 0–100.
 context-lines = 3
+
+# How the diff window lays out the two sides: side-by-side (two editable panes) or unified (one read-only pane, each change's deleted lines above its inserted lines).
+diff-layout = side-by-side
 "
             ),
             "{text}"
@@ -2860,7 +2904,7 @@ context-lines = 3
             ),
             "{text}"
         );
-        assert!(text.ends_with("# context-lines = 3\n"), "{text}");
+        assert!(text.ends_with("# diff-layout = side-by-side\n"), "{text}");
         for line in defaults().lines() {
             assert!(text.contains(&format!("\n# {line}\n")), "{line}");
         }

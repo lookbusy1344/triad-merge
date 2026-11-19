@@ -241,6 +241,7 @@ menu-syntax = Syntax Highlighting
 menu-soft-wrap = Soft Wrap
 menu-whitespace = Show Whitespace
 menu-collapse-unchanged = Collapse Unchanged
+menu-unified = Unified
 menu-scroll-sync = Sync Result Scrolling
 
 ## Toolbar
@@ -330,6 +331,7 @@ moved-to-left = Moved block: go to its other end, left line { $line }
 moved-to-right = Moved block: go to its other end, right line { $line }
 diff-pane-left = Left: { $name }
 diff-pane-right = Right: { $name }
+diff-pane-unified = Unified: { $left } against { $right }
 
 ## Status bar
 

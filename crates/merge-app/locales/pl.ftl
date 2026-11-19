@@ -248,6 +248,7 @@ menu-syntax = Podświetlanie składni
 menu-soft-wrap = Zawijanie wierszy
 menu-whitespace = Pokaż białe znaki
 menu-collapse-unchanged = Zwiń niezmienione
+menu-unified = Ujednolicony
 menu-scroll-sync = Synchronizuj przewijanie wyniku
 
 ## Toolbar
@@ -340,6 +341,7 @@ moved-to-left = Przeniesiony blok: do drugiego końca, lewa wiersz { $line }
 moved-to-right = Przeniesiony blok: do drugiego końca, prawa wiersz { $line }
 diff-pane-left = Lewa: { $name }
 diff-pane-right = Prawa: { $name }
+diff-pane-unified = Ujednolicony: { $left } względem { $right }
 
 ## Status bar
 
