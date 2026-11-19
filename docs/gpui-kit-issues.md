@@ -132,3 +132,7 @@ GPUI's `FallbackPromptRenderer` cuts off a detail wider than its card, draws a w
 ## A button's tooltip cannot be styled
 
 `gpui-component` 0.8.1's `Tooltip` draws 14 px text (`text_sm`) on the default line height (`src/tooltip.rs`). `Tooltip` is `Styled`, so a tooltip triad builds takes `merge_app::tooltip`'s style. `Button::tooltip` and `tooltip_with_action` build their own `Tooltip`, and the `tooltip_builder` that would take triad's is private (`src/button/button.rs`). A button with a tooltip sits in `tooltip::wrap`, a box as large as the button that shows triad's tooltip.
+
+## The Kotlin highlight query does not compile
+
+`gpui-component`'s `src/highlighter/languages/kotlin/highlights.scm` names `interpolation_identifier_start` and other nodes that `tree-sitter-kotlin-sg` 0.4.0, the grammar it links, does not have. The query fails to compile, and Kotlin text shows plain. triad registers Kotlin again with `tree_sitter_kotlin_sg::HIGHLIGHTS_QUERY` (`merge_app::syntax::register_queries`).

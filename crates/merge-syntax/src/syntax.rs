@@ -14,6 +14,7 @@
 //! `highlight.allow-overlap`. Injections of languages without a grammar are left plain, as
 //! are combined injections.
 
+use std::collections::HashSet;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -438,7 +439,9 @@ enum Nesting {
 }
 
 /// The captures of `query` under `node`, in match order, as (bytes, capture), each capture
-/// index raised by `first`.
+/// index raised by `first`. A capture an earlier match gave the same bytes counts once,
+/// however many matches lie between: a pattern with several captures under one node matches
+/// once per combination of them.
 fn captures(
     query: &Query,
     node: Node<'_>,
@@ -449,6 +452,7 @@ fn captures(
     let mut cursor = QueryCursor::new();
     let mut matches = cursor.matches(query, node, source);
     let mut last = 0..0;
+    let mut seen = HashSet::new();
     while let Some(found) = matches.next() {
         let overlap = query
             .property_settings(found.pattern_index)
@@ -460,7 +464,7 @@ fn captures(
                 Nesting::All => range == last,
                 Nesting::Outermost => !overlap && range.start < last.end,
             };
-            if skip {
+            if skip || !seen.insert((range.clone(), capture.index)) {
                 continue;
             }
             // Fewer than `NO_CAPTURE` captures in all, as `Grammar::inject` checks.
@@ -1032,6 +1036,41 @@ struct C;
                 [9, NO_CAPTURE, NO_CAPTURE],
                 [9, NO_CAPTURE, NO_CAPTURE],
             ]
+        );
+    }
+
+    #[test]
+    fn a_capture_repeated_in_later_matches_counts_once() {
+        // Kotlin's query matches `"${" … "}"` once per pair of interpolations in a string,
+        // so `${` is captured again in matches between which other captures fall. Repeated,
+        // it would fill the stack and push out the string under it.
+        let grammar = Grammar::new(
+            tree_sitter_kotlin_sg::LANGUAGE.into(),
+            "kotlin",
+            tree_sitter_kotlin_sg::HIGHLIGHTS_QUERY,
+            "",
+        )
+        .expect("Kotlin's query compiles");
+        let spans = highlight(&grammar, &text("val a = \"${b} ${c}\"\n"), CHUNK_LINES);
+        let stacks = stacks(&grammar, &spans, 0);
+        let at = |bytes: Range<usize>| {
+            stacks.iter().find(|(range, _)| *range == bytes).map(|(_, names)| names.clone())
+        };
+        // `${` at 9..11 and 14..16, `}` at 12..13 and 17..18.
+        for bytes in [9..11, 12..13, 14..16] {
+            assert_eq!(
+                at(bytes.clone()),
+                Some(vec!["string", "punctuation.special"]),
+                "{bytes:?}: {stacks:?}"
+            );
+        }
+        // The query's list of brackets captures the last `}` too, in a match after other
+        // captures, so it counts as a second capture of the node; the first `}`'s comes
+        // straight after its special capture and drops.
+        assert_eq!(
+            at(17..18),
+            Some(vec!["string", "punctuation.special", "punctuation.bracket"]),
+            "{stacks:?}"
         );
     }
 

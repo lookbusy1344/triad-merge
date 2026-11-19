@@ -37,6 +37,8 @@ pub(crate) const fn registry_name(language: Language) -> &'static str {
         Language::Cpp => "cpp",
         Language::Toml => "toml",
         Language::Yaml => "yaml",
+        Language::Java => "java",
+        Language::Kotlin => "kotlin",
     }
 }
 
@@ -116,9 +118,11 @@ impl Colouring {
     }
 }
 
-/// Register the highlight queries gpui-component leaves out (`docs/gpui-kit-issues.md`). Its
-/// C# and Swift grammars come with empty queries, which colour nothing. C# has no
-/// injections; Swift's inject only grammars triad does not build. Its C++ grammar comes with
+/// Register the highlight queries gpui-component leaves out or breaks
+/// (`docs/gpui-kit-issues.md`). Its C# and Swift grammars come with empty queries, which
+/// colour nothing. C# has no injections; Swift's inject only grammars triad does not build.
+/// Its Kotlin query names nodes its Kotlin grammar lacks, so it fails to compile; Kotlin
+/// takes its grammar crate's own query. Its C++ grammar comes with
 /// only the lines `tree-sitter-cpp` adds to C's query, so C++ takes C's query, then its own,
 /// in the order `tree-sitter-cpp` lists them; its raw-string injections name a grammar by
 /// the string's delimiter, which triad leaves plain. Its TSX grammar comes with
@@ -130,6 +134,7 @@ pub(crate) fn register_queries() {
     let queries = [
         (Language::CSharp, tree_sitter_c_sharp::HIGHLIGHTS_QUERY),
         (Language::Swift, tree_sitter_swift::HIGHLIGHTS_QUERY),
+        (Language::Kotlin, tree_sitter_kotlin_sg::HIGHLIGHTS_QUERY),
         (Language::Cpp, cpp.as_str()),
     ];
     for (language, highlights) in queries {
@@ -438,7 +443,7 @@ mod tests {
         bytes
     }
 
-    const LANGUAGES: [Language; 15] = [
+    const LANGUAGES: [Language; 17] = [
         Language::Rust,
         Language::Go,
         Language::CSharp,
@@ -454,6 +459,8 @@ mod tests {
         Language::Css,
         Language::C,
         Language::Cpp,
+        Language::Java,
+        Language::Kotlin,
     ];
     /// Chunks that cut the Go and C# samples only before top-level lines: no shorter than
     /// their longest run of lines without one (34 in Go, 56 in C#), shorter than the sample.
@@ -481,6 +488,8 @@ mod tests {
         assert_eq!(registry_name(Language::Css), "css");
         assert_eq!(registry_name(Language::C), "c");
         assert_eq!(registry_name(Language::Cpp), "cpp");
+        assert_eq!(registry_name(Language::Java), "java");
+        assert_eq!(registry_name(Language::Kotlin), "kotlin");
     }
 
     #[test]
@@ -496,6 +505,7 @@ mod tests {
 
     #[test]
     fn every_language_loads_its_grammar() {
+        register_queries();
         for language in LANGUAGES {
             let loaded = grammar(language);
             assert!(loaded.is_ok(), "{language:?}: {:?}", loaded.err());
@@ -527,11 +537,9 @@ mod tests {
         None
     }
 
-    #[test]
-    fn the_spans_draw_what_the_editors_highlighter_draws() {
-        register_queries();
-        let theme = HighlightTheme::default_light();
-        let samples = [
+    /// Each language's sample and the chunk sizes it parses in.
+    fn samples() -> [(Language, &'static str, &'static [usize]); 17] {
+        [
             (
                 Language::Rust,
                 include_str!("../../../fixtures/demo/base.txt"),
@@ -607,7 +615,24 @@ mod tests {
                 include_str!("../../../fixtures/syntax/sample.cpp"),
                 &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
             ),
-        ];
+            (
+                Language::Java,
+                include_str!("../../../fixtures/syntax/sample.java"),
+                &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
+            ),
+            (
+                Language::Kotlin,
+                include_str!("../../../fixtures/syntax/sample.kt"),
+                &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
+            ),
+        ]
+    }
+
+    #[test]
+    fn the_spans_draw_what_the_editors_highlighter_draws() {
+        register_queries();
+        let theme = HighlightTheme::default_light();
+        let samples = samples();
         for (language, source, chunks) in samples {
             // Each sample opens with a line comment, so a grammar that styles nothing fails.
             let first = source.lines().next().unwrap_or_default();

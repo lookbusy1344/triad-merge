@@ -33,6 +33,8 @@ gpui-kit = { workspace = true, features = [
     "tree-sitter-css",
     "tree-sitter-c",
     "tree-sitter-cpp",
+    "tree-sitter-java",
+    "tree-sitter-kotlin",
 ] }
 merge-config.workspace = true
 merge-session.workspace = true
@@ -45,10 +47,12 @@ ropey.workspace = true
 serde_json.workspace = true
 sys-locale.workspace = true
 thiserror.workspace = true
-# C#'s and Swift's highlight queries, which gpui-component registers empty.
+# Highlight queries gpui-component registers empty (C#, Swift), partly (C++) or broken
+# (Kotlin).
 tree-sitter-c.workspace = true
 tree-sitter-c-sharp.workspace = true
 tree-sitter-cpp.workspace = true
+tree-sitter-kotlin-sg.workspace = true
 tree-sitter-swift.workspace = true
 tracing.workspace = true
 unic-langid.workspace = true

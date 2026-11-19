@@ -26,10 +26,12 @@ pub enum Language {
     Css,
     C,
     Cpp,
+    Java,
+    Kotlin,
 }
 
 /// Each language's file extensions, in lowercase.
-const EXTENSIONS: [(&str, Language); 34] = [
+const EXTENSIONS: [(&str, Language); 37] = [
     ("rs", Language::Rust),
     ("go", Language::Go),
     ("cs", Language::CSharp),
@@ -65,6 +67,9 @@ const EXTENSIONS: [(&str, Language); 34] = [
     ("h++", Language::Cpp),
     ("inl", Language::Cpp),
     ("ipp", Language::Cpp),
+    ("java", Language::Java),
+    ("kt", Language::Kotlin),
+    ("kts", Language::Kotlin),
 ];
 
 impl Language {
@@ -87,6 +92,8 @@ impl Language {
             Self::Css => tree_sitter_css::LANGUAGE,
             Self::C => tree_sitter_c::LANGUAGE,
             Self::Cpp => tree_sitter_cpp::LANGUAGE,
+            Self::Java => tree_sitter_java::LANGUAGE,
+            Self::Kotlin => tree_sitter_kotlin_sg::LANGUAGE,
         }
         .into()
     }
@@ -152,6 +159,9 @@ mod tests {
         assert_eq!(of("rust-toolchain.toml"), Some(Language::Toml));
         assert_eq!(of("style.css"), Some(Language::Css));
         assert_eq!(of("src/main.c"), Some(Language::C));
+        assert_eq!(of("src/Main.java"), Some(Language::Java));
+        assert_eq!(of("App.kt"), Some(Language::Kotlin));
+        assert_eq!(of("build.gradle.kts"), Some(Language::Kotlin));
         for name in [
             "a.cc", "a.cpp", "a.cxx", "a.c++", "a.h", "a.hh", "a.hpp", "a.hxx", "a.h++", "a.inl",
             "a.ipp",
@@ -180,6 +190,9 @@ mod tests {
         assert_eq!(of("MAIN.C"), Some(Language::C));
         assert_eq!(of("A.CPP"), Some(Language::Cpp));
         assert_eq!(of("A.H"), Some(Language::Cpp));
+        assert_eq!(of("MAIN.JAVA"), Some(Language::Java));
+        assert_eq!(of("App.KT"), Some(Language::Kotlin));
+        assert_eq!(of("b.Kts"), Some(Language::Kotlin));
     }
 
     #[test]
@@ -221,6 +234,13 @@ mod tests {
             "a.cp",
             "a.hpp.orig",
             "a.c+",
+            "a.class",
+            "a.jar",
+            "a.jav",
+            "a.java.orig",
+            "a.k",
+            "a.ktm",
+            "build.gradle",
         ] {
             assert_eq!(of(name), None, "{name}");
         }
@@ -252,7 +272,7 @@ mod tests {
     }
 
     /// Each language's sample, and the kind of its tree's root.
-    const SAMPLES: [(Language, &str, &str); 15] = [
+    const SAMPLES: [(Language, &str, &str); 17] = [
         (Language::Rust, "fn a() -> u8 { 1 }\n", "source_file"),
         (Language::Go, "package a\nfunc b() {}\n", "source_file"),
         (Language::CSharp, "class A { void B() {} }\n", "compilation_unit"),
@@ -268,6 +288,8 @@ mod tests {
         (Language::Css, "/* c */\na > b { color: #fff; }\n", "stylesheet"),
         (Language::C, "// c\nstatic int a(void) { return 1; }\n", "translation_unit"),
         (Language::Cpp, "// c\nclass A { int b() const; };\n", "translation_unit"),
+        (Language::Java, "// c\nclass A { int b() { return 1; } }\n", "program"),
+        (Language::Kotlin, "// c\nfun a(): Int = 1\n", "source_file"),
     ];
 
     fn root_kind(language: Language, source: &str) -> (String, bool) {
