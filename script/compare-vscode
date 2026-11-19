@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+# Compare triad's merge window with VS Code's merge editor on the 100k- and 1M-line triples of
+# script/measure-app (DESIGN.md §A6.7, README § Performance). Each run launches the tool, polls the
+# CPU time of its process tree, and stops once the tree goes idle. Open time is the last poll with
+# work before the idle window; memory is the summed phys_footprint of the tree at that point.
+# A window opens for each run; keep it frontmost and leave the machine alone. macOS only.
+# Usage: script/compare-vscode [runs]   (default 3)
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+VSCODE=${VSCODE:-"/Applications/Visual Studio Code.app/Contents/MacOS/Code"}
+SIZES=(100000 1000000)
+DEFAULT_RUNS=3
+POLL_S=0.1
+# Idle: under IDLE_CPU_S of CPU time over the last IDLE_POLLS polls (1.5 s).
+IDLE_POLLS=15
+IDLE_CPU_S=0.03
+# One poll with more CPU time than this counts as work.
+BUSY_CPU_S=0.02
+TIMEOUT_POLLS=1800
+PAUSE_S=2
+BYTES_PER_MB=1048576
+
+runs=${1:-$DEFAULT_RUNS}
+[[ -x $VSCODE ]] || { echo "VS Code not found at $VSCODE; set VSCODE" >&2; exit 1; }
+
+cargo build --release -p triad-merge
+for lines in "${SIZES[@]}"; do
+  dir=target/measure/$lines
+  [[ -f $dir/base.txt ]] ||
+    cargo run -q --release -p merge-core --features testing --example generate -- "$lines" "$dir"
+  # VS Code opens the result as given; git and jj hand it the file with conflict markers.
+  git merge-file -p "$dir/left.txt" "$dir/base.txt" "$dir/right.txt" >"$dir/result.txt" || true
+done
+
+# VS Code's IPC socket path inside the profile must stay under 104 bytes, so the profile sits in /tmp.
+profile=$(mktemp -d /tmp/vsc.XXXXXX)
+trap 'rm -rf "$profile"' EXIT
+mkdir -p "$profile/User"
+cat >"$profile/User/settings.json" <<'EOF'
+{
+  "workbench.startupEditor": "none",
+  "telemetry.telemetryLevel": "off",
+  "update.mode": "none",
+  "extensions.autoCheckUpdates": false,
+  "extensions.autoUpdate": false,
+  "workbench.enableExperiments": false,
+  "workbench.tips.enabled": false,
+  "security.workspace.trust.enabled": false,
+  "window.restoreWindows": "none",
+  "git.enabled": false,
+  "chat.disableAIFeatures": true
+}
+EOF
+
+# The pids of the tree under "$1", one per line.
+tree() {
+  ps -A -o pid=,ppid= | awk -v root="$1" '
+    { kids[$2] = kids[$2] " " $1; seen[$1] = 1 }
+    END { if (!(root in seen)) exit; n = split(root, todo); while (n) { p = todo[n--]; print p
+          m = split(kids[p], k, " "); for (i = 1; i <= m; i++) todo[++n] = k[i] } }'
+}
+# Total CPU seconds of the pids on stdin.
+cpu_seconds() {
+  local pids
+  pids=$(paste -sd, -)
+  [[ -n $pids ]] || { echo 0; return; }
+  ps -o time= -p "$pids" | awk '{ n = split($1, t, ":"); s = 0; for (i = 1; i <= n; i++) s = s * 60 + t[i]; sum += s }
+    END { printf "%.2f", sum }'
+}
+footprint_mb() {
+  local args=()
+  for pid in "$@"; do args+=(-p "$pid"); done
+  footprint --noCategories -f bytes "${args[@]}" |
+    awk -v mb="$BYTES_PER_MB" '/phys_footprint:/ { sum += $2 } END { printf "%d", sum / mb }'
+}
+
+# Run "$@", print "<open-seconds> <memory-mb>".
+measure() {
+  local start pid polls=0 cpu busy_at=0 times=() cpus=() pids
+  start=$(perl -MTime::HiRes=time -e 'printf "%.3f", time')
+  "$@" >/dev/null 2>&1 &
+  pid=$!
+  while :; do
+    sleep "$POLL_S"
+    pids=$(tree "$pid")
+    cpu=$(cpu_seconds <<<"$pids")
+    times+=("$(perl -MTime::HiRes=time -e "printf '%.1f', time - $start")")
+    cpus+=("$cpu")
+    polls=${#cpus[@]}
+    if ((polls > 1)) && awk -v a="$cpu" -v b="${cpus[polls - 2]}" -v t="$BUSY_CPU_S" 'BEGIN { exit !(a - b > t) }'; then
+      busy_at=${times[polls - 1]}
+    fi
+    if ((polls > IDLE_POLLS)) &&
+      awk -v a="$cpu" -v b="${cpus[polls - 1 - IDLE_POLLS]}" -v t="$IDLE_CPU_S" 'BEGIN { exit !(a - b <= t) }'; then
+      break
+    fi
+    ((polls < TIMEOUT_POLLS)) || { busy_at=timeout; break; }
+  done
+  # shellcheck disable=SC2086
+  echo "$busy_at $(footprint_mb $pids)"
+  # shellcheck disable=SC2086
+  kill -KILL $pids 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  sleep "$PAUSE_S"
+}
+
+printf '%-8s %-8s %-8s %-10s\n' lines tool open-s memory-mb
+for lines in "${SIZES[@]}"; do
+  dir=$PWD/target/measure/$lines
+  # The first VS Code launch on a fresh profile builds its caches; it does not count.
+  measure "$VSCODE" --user-data-dir "$profile" --extensions-dir "$profile/ext" --disable-extensions \
+    --new-window --merge "$dir/left.txt" "$dir/right.txt" "$dir/base.txt" "$dir/result.txt" >/dev/null
+  for tool in triad vscode; do
+    for ((run = 0; run < runs; run++)); do
+      if [[ $tool == triad ]]; then
+        read -r open mb < <(measure target/release/triad-merge "$dir/base.txt" "$dir/left.txt" "$dir/right.txt" "$dir/out.txt")
+      else
+        read -r open mb < <(measure "$VSCODE" --user-data-dir "$profile" --extensions-dir "$profile/ext" \
+          --disable-extensions --new-window --merge "$dir/left.txt" "$dir/right.txt" "$dir/base.txt" "$dir/result.txt")
+      fi
+      printf '%-8s %-8s %-8s %-10s\n' "$lines" "$tool" "$open" "$mb"
+    done
+  done
+done
+echo "VS Code $("$VSCODE" --version 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1)"

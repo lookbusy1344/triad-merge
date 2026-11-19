@@ -10,6 +10,7 @@ Manual checks before a release. A run that changes a measured figure replaces it
 4. The script prints a table and exits 0 when every target is met. On a failure, rerun the failing mode alone to rule out interference:
    `TRIAD_MEASURE=<mode> target/release/triad-merge target/measure/<lines>/{base,left,right}.txt target/measure/<lines>/out.txt`
 5. Full reports are in `target/measure/measure-app.log`. Replace the table in DESIGN.md §A6.7 and the measured table in spec §9.
+6. Run `script/compare-vscode`, under the same conditions, and replace the table in README § Performance › Against VS Code with its figures and VS Code's version.
 
 | Check | 100k lines | 1M lines |
 |---|---|---|

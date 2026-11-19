@@ -14,7 +14,7 @@
 [![CodeQL](https://github.com/lookbusy1344/triad-merge/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/lookbusy1344/triad-merge/actions/workflows/github-code-scanning/codeql)
 [![Cargo audit](https://github.com/lookbusy1344/triad-merge/actions/workflows/audit.yml/badge.svg)](https://github.com/lookbusy1344/triad-merge/actions/workflows/audit.yml)
 
-triad is a native 3-way merge and 2-way diff tool, written in Rust and GPUI, built for [Jujutsu](https://www.jj-vcs.dev/latest/) with full Git support. It runs on macOS, Linux and Windows. It opens a million-line merge in under a second, merges as your VCS does, and resolves conflicts in the repository. The binary is `triad-merge`.
+triad is a **fast** native 3-way merge and 2-way diff tool, written in Rust and GPUI, built for [Jujutsu](https://www.jj-vcs.dev/latest/) with full Git support. It runs on macOS, Linux and Windows. It opens a million-line merge x10 faster than VS Code, merges as your VCS does, and resolves conflicts in the repository. The binary is `triad-merge`.
 
 ![The triad merge window: left and right inputs above, the result below, with conflict 1 of 20 selected](images/merge.png)
 
@@ -25,9 +25,9 @@ triad 0.2 is a beta. [Releases](https://github.com/lookbusy1344/triad-merge/rele
 ## Why triad
 
 - **Jujutsu first.** In a Jujutsu (jj) repository triad merges with jj's rules. It also resolves conflicts in any commit, walks a file through the operation log and absorbs edits into the commits that wrote the lines (§ Jujutsu-enabled features).
+- **Fast.** triad opens a 1M-line merge in 1.3 s. VS Code takes 13–24 s, and turns off highlighting and folding to do it. triad uses a quarter of VS Code's memory at 100k lines and under half at 1M. Scrolling stays smooth at 1M lines (§ Performance).
 - **Git parity.** In a git repository triad merges as `git merge-file` does, byte for byte. Every feature git can support works in both.
 - **Checked semantics.** Two oracle corpora pin the engine: about 1,970 merges from jj-lib and 1,950 triples from `git merge-file`.
-- **Fast on large files.** Panes draw only the rows on screen; scrolling holds the display's refresh rate at 1M lines.
 - **No jj or git binaries.** triad reads and writes repositories in-process through jj-lib and gix.
 - **Scriptable.** A headless mode and `--json` output expose the merge model to scripts, tests and agents.
 - **No unsafe code.** The workspace forbids it.
@@ -92,6 +92,19 @@ Release build on a Mac M4 Pro, 120 Hz display, plain text. [Spec](docs/SPEC.md) 
 | Peak resident memory | 221 MB | 869 MB | 300 MB / 2 GB |
 
 An idle window draws nothing.
+
+### Against VS Code
+
+The same merges in VS Code 1.147's merge editor, with extensions off, on the same machine. Open time runs from launch until the app goes idle. Memory covers all of each app's processes.
+
+| | 100k lines, 261 conflicts | 1M lines, 2537 conflicts |
+|---|---|---|
+| triad, open | 0.3–1.4 s | 1.3 s |
+| VS Code, open | 4.4–5.8 s | 13–24 s |
+| triad, memory | 296 MB | 890 MB |
+| VS Code, memory | 1.2 GB | 2.2–2.3 GB |
+
+At 1M lines VS Code turns off syntax highlighting to cope; triad keeps it on.
 
 ## Install
 

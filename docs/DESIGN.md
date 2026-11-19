@@ -255,6 +255,8 @@ What sets these figures:
 
 **Idle memory.** The caret's blink draws every 500 ms, which keeps the Metal driver's reclaimable blocks in use: a bare GPUI window takes 52 MB idle and 185 MB blinking. The vendored caret rests, shown, after 10 s without a key, click or focus. At rest the demo diff of `fixtures/demo/code_a.py` and `code_b.py` takes 98 MB of physical footprint (p4merge: 121 MB): 37 MB of drawables, 33 MB of heap, and the binary. GPUI counts a window losing the front as a blur, which stops the blink. GPUI's per-window path texture and the drawables remain.
 
+**Against VS Code** (README § Performance). `script/compare-vscode` runs the 100k and 1M triples, VS Code's `--merge` given `git merge-file`'s output as its result, a fresh `--user-data-dir` with `--disable-extensions`. It launches the tool, samples the CPU time of its process tree every 100 ms through `ps`, and takes as ready the last sample with more than 20 ms of work before 1.5 s with under 30 ms. Memory is the sum of `footprint`'s `phys_footprint` over the tree at that point; it counts GPU surfaces, so triad's figure exceeds its peak RSS. The first VS Code launch on the fresh profile builds its caches and does not count.
+
 #### A6.8 Unusual characters
 
 `merge_core::unusual` holds spec §5's lists in two sorted range tables and classifies a character by binary search; `escaped` writes the classified characters of terminal output as JSON escapes, so `report` in `merge-cli` and the app's error line need no JSON-aware path.
