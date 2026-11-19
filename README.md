@@ -5,9 +5,14 @@
 
 # triad-merge
 
+[![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-blue)](https://github.com/lookbusy1344/triad-merge/releases)
+[![Linux](https://img.shields.io/badge/Linux-x64-blue)](https://github.com/lookbusy1344/triad-merge/releases)
+[![Windows](https://img.shields.io/badge/Windows-x64-blue)](https://github.com/lookbusy1344/triad-merge/releases)
+[![Release](https://img.shields.io/github/v/release/lookbusy1344/triad-merge?include_prereleases)](https://github.com/lookbusy1344/triad-merge/releases)
+
 [![Build & test](https://github.com/lookbusy1344/triad-merge/actions/workflows/triad.yml/badge.svg)](https://github.com/lookbusy1344/triad-merge/actions/workflows/triad.yml)
 [![CodeQL](https://github.com/lookbusy1344/triad-merge/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/lookbusy1344/triad-merge/actions/workflows/github-code-scanning/codeql)
-[![Audit](https://github.com/lookbusy1344/triad-merge/actions/workflows/audit.yml/badge.svg)](https://github.com/lookbusy1344/triad-merge/actions/workflows/audit.yml)
+[![Cargo audit](https://github.com/lookbusy1344/triad-merge/actions/workflows/audit.yml/badge.svg)](https://github.com/lookbusy1344/triad-merge/actions/workflows/audit.yml)
 
 triad is a native 3-way merge and 2-way diff tool, written in Rust and GPUI, built for [Jujutsu](https://www.jj-vcs.dev/latest/) with full Git support. It runs on macOS, Linux and Windows. It opens a million-line merge in under a second, merges as your VCS does, and resolves conflicts in the repository. The binary is `triad-merge`.
 
