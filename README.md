@@ -72,7 +72,7 @@ Each has a form for scripts: `--list`, `--json` or `--headless`.
 
 ## Performance
 
-Release build on a Mac M4 Pro, 120 Hz display, plain text. Spec §9 holds the targets; `script/measure-app` and the benchmarks check them.
+Release build on a Mac M4 Pro, 120 Hz display, plain text. [Spec](docs/SPEC.md) §9 holds the targets; `script/measure-app` and the benchmarks check them.
 
 | Operation | 100k lines | 1M lines | Target, 100k / 1M |
 |---|---|---|---|
@@ -133,7 +133,7 @@ triad follows the repository: jj's semantics in a jj repository, git's elsewhere
 
 Exit codes: 0 all conflicts resolved, 1 conflicts left, 2 cancelled, 3 error.
 
-`fixtures/demo` holds merges and directories to try by hand (`fixtures/demo/README.md`).
+`fixtures/demo` holds merges and directories to try by hand ([`fixtures/demo/README.md`](fixtures/demo/README.md)).
 
 ## Code size
 
@@ -151,26 +151,26 @@ The GPUI shell, `merge-app`, holds 15,000 lines of product code; `merge-core` ho
 
 | File | Contents |
 |---|---|
-| `docs/USER-GUIDE.md` | How to use triad, jj then git |
-| `docs/DEVELOPMENT.md` | How to build and test triad |
-| `docs/SPEC.md` | Behaviour |
-| `docs/PLAN.md` | Status, next steps and open work |
-| `docs/DESIGN.md` | Design: reasons, decisions, measurements |
-| `AGENTS.md` | Rules for changes, the commit gate and commands |
-| `docs/STYLE.md` | UI style |
-| `docs/json-schema.md` | JSON output and merge commands |
-| `docs/PLAN-diff-editor.md` | The diff editor plan, part H |
-| `CHANGELOG.md` | What changed in each release |
-| `docs/release.md` | The steps of a release |
-| `docs/release-checklist.md` | Manual checks before a release |
-| `docs/jj-upgrade.md` | The steps of a jj upgrade |
-| `docs/gpui-kit-issues.md`, `docs/gix-issues.md` | UI toolkit and gix problems, and triad's answers |
-| `docs/mark-colours.md` | The mark's colour schemes and geometry |
-| `docs/scroll-debugging.md` | Trackpad scrolling: failure modes and how to reproduce them |
-| `docs/residue.md` | Files triad and its scripts leave behind |
-| `docs/test-repos.md` | Scripts that build test repositories, and what they check |
-| `docs/human-testing.md` | Testing by hand, step by step: diff, merge and the jj features, with the output to expect |
-| `fixtures/demo/README.md`, `fixtures/conflict-repo/README.md` | Inputs for trying triad by hand |
+| [`docs/USER-GUIDE.md`](docs/USER-GUIDE.md) | How to use triad, jj then git |
+| [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | How to build and test triad |
+| [`docs/SPEC.md`](docs/SPEC.md) | Behaviour |
+| [`docs/PLAN.md`](docs/PLAN.md) | Status, next steps and open work |
+| [`docs/DESIGN.md`](docs/DESIGN.md) | Design: reasons, decisions, measurements |
+| [`AGENTS.md`](AGENTS.md) | Rules for changes, the commit gate and commands |
+| [`docs/STYLE.md`](docs/STYLE.md) | UI style |
+| [`docs/json-schema.md`](docs/json-schema.md) | JSON output and merge commands |
+| [`docs/PLAN-diff-editor.md`](docs/PLAN-diff-editor.md) | The diff editor plan, part H |
+| [`CHANGELOG.md`](CHANGELOG.md) | What changed in each release |
+| [`docs/release.md`](docs/release.md) | The steps of a release |
+| [`docs/release-checklist.md`](docs/release-checklist.md) | Manual checks before a release |
+| [`docs/jj-upgrade.md`](docs/jj-upgrade.md) | The steps of a jj upgrade |
+| [`docs/gpui-kit-issues.md`](docs/gpui-kit-issues.md), [`docs/gix-issues.md`](docs/gix-issues.md) | UI toolkit and gix problems, and triad's answers |
+| [`docs/mark-colours.md`](docs/mark-colours.md) | The mark's colour schemes and geometry |
+| [`docs/scroll-debugging.md`](docs/scroll-debugging.md) | Trackpad scrolling: failure modes and how to reproduce them |
+| [`docs/residue.md`](docs/residue.md) | Files triad and its scripts leave behind |
+| [`docs/test-repos.md`](docs/test-repos.md) | Scripts that build test repositories, and what they check |
+| [`docs/human-testing.md`](docs/human-testing.md) | Testing by hand, step by step: diff, merge and the jj features, with the output to expect |
+| [`fixtures/demo/README.md`](fixtures/demo/README.md), [`fixtures/conflict-repo/README.md`](fixtures/conflict-repo/README.md) | Inputs for trying triad by hand |
 
 ## Licence
 
