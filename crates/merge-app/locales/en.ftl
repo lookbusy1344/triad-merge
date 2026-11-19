@@ -128,6 +128,7 @@ inherited = (inherited)
 stack-resolved = Resolved { $path } in { $change }.
 stack-saved-conflicts = Saved { $path } in { $change } with conflicts.
 stack-error = The merge of { $path } in { $change } ended with an error.
+stack-inherited = { $path } in { $change } inherits its conflict from { $origin }. Resolving it in { $origin } first clears it here; a resolution saved here first will likely conflict again.
 preview-resolves = Saving resolves the path in { $change }.
 preview-keeps = Saving keeps conflicts in { $change }.
 preview-no-rebase = No descendant is rebased.

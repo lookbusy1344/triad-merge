@@ -10,7 +10,7 @@ use vcs_jj::config::ConfigEnv;
 /// The reports the front ends show.
 pub use vcs_jj::{
     AbsorbHunk, Absorbed, CommitEffect, Destination, FileVersion, Goes, HunkChoice, JjError,
-    Rewrite, SHORT_OPERATION, StackCommit, StackPath, Stay, VersionState,
+    Origin, Rewrite, SHORT_OPERATION, StackCommit, StackPath, Stay, VersionState,
 };
 
 use crate::resolve::ResolveError;

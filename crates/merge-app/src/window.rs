@@ -203,6 +203,7 @@ pub use crate::input_find::{input_match_count_id, input_match_next_id, input_mat
 pub const RESULT_ID: &str = "result";
 /// The banner after another program changed OUTPUT (spec §6.3).
 pub const OUTPUT_BANNER_ID: &str = "output-banner";
+pub const NOTICE_BANNER_ID: &str = "notice-banner";
 /// The overview ruler beside the result.
 pub const RULER_ID: &str = "ruler";
 pub const ROWS_ID: &str = "rows";
@@ -393,6 +394,9 @@ pub struct WindowSettings {
     pub cwd: Option<PathBuf>,
     /// Whether the window watches `output` for changes another program makes (spec §6.3).
     pub watch_output: Watching,
+    /// A warning the window shows above its panes while it is open, such as the stack
+    /// window's word that a path's conflict arises in another commit.
+    pub notice: Option<SharedString>,
 }
 
 /// Whether a merge window watches OUTPUT for changes another program makes (spec §6.3).
@@ -437,6 +441,7 @@ impl Default for WindowSettings {
             repo: None,
             cwd: None,
             watch_output: Watching::Off,
+            notice: None,
         }
     }
 }
@@ -557,6 +562,8 @@ pub struct MergeWindow {
     whitespace: Visibility,
     /// The config file's bad lines, which the settings banner shows.
     settings_errors: Option<SharedString>,
+    /// The opener's warning, which a banner shows while the window is open.
+    notice: Option<SharedString>,
     /// What the last Save Copy As wrote, until the merge next changes.
     copy_note: Option<SharedString>,
     /// The latest copy being written. Each copy waits for the one before, and the window
@@ -825,6 +832,7 @@ impl MergeWindow {
             whitespace: settings.whitespace,
             palette,
             settings_errors: None,
+            notice: settings.notice.clone(),
             copy_note: None,
             copying: None,
             save_task: None,
@@ -2147,6 +2155,12 @@ impl MergeWindow {
     pub fn set_settings_errors(&mut self, errors: &[String], cx: &mut Context<Self>) {
         self.settings_errors = settings_banner::text(errors);
         cx.notify();
+    }
+
+    /// The opener's warning, which a banner shows while the window is open.
+    #[must_use]
+    pub fn notice(&self) -> Option<&SharedString> {
+        self.notice.as_ref()
     }
 
     /// The settings banner's text, if it shows.
@@ -4370,6 +4384,9 @@ impl Render for MergeWindow {
                 window.is_fullscreen(),
             ))
             .children(render_banner(self.settings_errors.as_ref(), |v| &mut v.settings_errors, cx))
+            .children(
+                self.notice.clone().map(|text| alert::warning_banner(NOTICE_BANNER_ID, text, cx)),
+            )
             .children(
                 self.output_banner().map(|text| alert::warning_banner(OUTPUT_BANNER_ID, text, cx)),
             )

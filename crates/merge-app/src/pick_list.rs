@@ -127,6 +127,9 @@ pub(crate) struct Row {
     pub placeholder: bool,
     /// A heading's mark, before its lead, on [`MARKED_BAND`]: the stack window's `@`.
     pub mark: Option<SharedString>,
+    /// The row needs no action of its own, such as a conflict its parent's resolution
+    /// resolves: its icon and text muted.
+    pub quiet: bool,
 }
 
 /// `path`'s file name and the directory holding it; none at the top.
@@ -170,10 +173,11 @@ pub(crate) fn row(id: impl Into<ElementId>, content: &Row, state: State, cx: &Ap
     let part = |text: &SharedString| div().flex_none().text_color(muted).child(text.clone());
     let left = if state.indented { ROW_PADDING + INDENT } else { ROW_PADDING };
     let icon = content.status.map(|status| {
+        let colour = if content.quiet { muted } else { status.colour(theme) };
         div()
             .id(STATUS_ID)
             .flex_none()
-            .child(Icon::new(status.icon()).xsmall().text_color(status.colour(theme)))
+            .child(Icon::new(status.icon()).xsmall().text_color(colour))
             .tooltip(crate::tooltip::build(strings::status_tooltip(status)))
     });
     ListItem::new(id)
@@ -197,7 +201,11 @@ pub(crate) fn row(id: impl Into<ElementId>, content: &Row, state: State, cx: &Ap
                 .gap_2()
                 .children(icon)
                 .children(content.lead.as_ref().map(part))
-                .child(main_text(content, muted))
+                .child(if content.quiet {
+                    main_text(content, muted).text_color(muted)
+                } else {
+                    main_text(content, muted)
+                })
                 .children(content.trail.as_ref().map(part)),
         )
 }

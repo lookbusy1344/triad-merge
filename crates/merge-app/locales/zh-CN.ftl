@@ -80,6 +80,7 @@ inherited = （继承）
 stack-resolved = 已在 { $change } 中解决 { $path }。
 stack-saved-conflicts = 已在 { $change } 中带冲突保存 { $path }。
 stack-error = { $change } 中 { $path } 的合并以错误结束。
+stack-inherited = { $change } 中的 { $path } 继承了 { $origin } 的冲突。先在 { $origin } 中解决，这里的冲突也会随之消失；先在这里保存的解决很可能会再次冲突。
 preview-resolves = 保存会解决 { $change } 中的该路径。
 preview-keeps = 保存后 { $change } 中仍有冲突。
 preview-no-rebase = 没有后代被变基。

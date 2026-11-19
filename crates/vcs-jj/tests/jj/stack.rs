@@ -5,7 +5,7 @@ use camino::Utf8Path;
 use vcs::{IdKind, VcsError};
 use vcs_jj::config::ConfigEnv;
 use vcs_jj::testing::{Committed, Fixture, Held};
-use vcs_jj::{CommitEffect, JjRepository, StackPath};
+use vcs_jj::{CommitEffect, JjRepository, Origin, StackPath};
 
 const BASE: &[u8] = b"a\n";
 const LEFT: &[u8] = b"left\n";
@@ -52,8 +52,8 @@ fn id(commit: &Committed) -> vcs::CommitId {
     vcs::CommitId::new(commit.commit.clone())
 }
 
-fn path(name: &str, inherited: bool) -> StackPath {
-    StackPath { path: name.into(), inherited }
+fn path(name: &str, origin: Origin, untouched: bool) -> StackPath {
+    StackPath { path: name.into(), origin, untouched }
 }
 
 fn a_txt() -> &'static Utf8Path {
@@ -95,13 +95,39 @@ fn the_stack_lists_conflicted_commits_newest_first_marking_inherited_paths() {
             let listed = open(&fixture).stack(revset).expect("the stack is listed");
             let ids: Vec<&str> = listed.iter().map(|c| c.id.as_str()).collect();
             assert_eq!(ids, [&wc.commit, &child.commit, &merge.commit], "{store} {revset:?}");
-            assert_eq!(listed[0].paths, [path("a.txt", true)], "{store}");
-            assert_eq!(listed[1].paths, [path("a.txt", true)], "{store}");
-            assert_eq!(listed[2].paths, [path("a.txt", false)], "{store}");
+            let from_merge = path("a.txt", Origin::Listed(id(&merge)), true);
+            assert_eq!(listed[0].paths, std::slice::from_ref(&from_merge), "{store}");
+            assert_eq!(listed[1].paths, [from_merge], "{store}");
+            assert_eq!(listed[2].paths, [path("a.txt", Origin::Here, false)], "{store}");
             assert_eq!(listed[1].change.summary.as_deref(), Some("child"), "{store}");
             let working_copy: Vec<bool> = listed.iter().map(|c| c.working_copy).collect();
             assert_eq!(working_copy, [true, false, false], "{store}: only @ is the working copy");
         }
+    }
+}
+
+#[test]
+fn a_conflict_that_arises_outside_the_listed_commits_is_unlisted() {
+    for (Stack { fixture, child, .. }, store) in both_stores() {
+        let wc = fixture.working_copy_commit();
+        let revset = format!("{}::", child.commit);
+        let listed = open(&fixture).stack(Some(&revset)).expect("the stack is listed");
+        let ids: Vec<&str> = listed.iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(ids, [&wc.commit, &child.commit], "{store}");
+        assert_eq!(listed[0].paths, [path("a.txt", Origin::Unlisted, true)], "{store}");
+        assert_eq!(listed[1].paths, [path("a.txt", Origin::Unlisted, true)], "{store}");
+    }
+}
+
+#[test]
+fn a_commit_that_changes_an_inherited_conflict_leaves_it_touched() {
+    for (Stack { fixture, base, merge, .. }, store) in both_stores() {
+        // Merging a third side into `merge` widens its conflict in a.txt.
+        let third = fixture.commit_on(&[&base], "third", &[("a.txt", b"third\n")]);
+        let wider = fixture.commit_merged(&[&merge, &third], "wider", &[]);
+        let listed = open(&fixture).stack(Some(&wider.commit)).expect("the stack is listed");
+        assert_eq!(listed.len(), 1, "{store}");
+        assert_eq!(listed[0].paths, [path("a.txt", Origin::Unlisted, false)], "{store}");
     }
 }
 

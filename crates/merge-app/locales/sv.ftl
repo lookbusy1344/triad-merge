@@ -123,6 +123,7 @@ inherited = (ärvd)
 stack-resolved = { $path } löst i { $change }.
 stack-saved-conflicts = { $path } sparad i { $change } med konflikter.
 stack-error = Sammanslagningen av { $path } i { $change } slutade med ett fel.
+stack-inherited = { $path } i { $change } ärver sin konflikt från { $origin }. Löses den först i { $origin } försvinner den även här; en lösning som sparas här först ger troligen en ny konflikt.
 preview-resolves = Att spara löser sökvägen i { $change }.
 preview-keeps = Att spara lämnar konflikter i { $change }.
 preview-no-rebase = Ingen ättling flyttas om.

@@ -135,6 +135,7 @@ inherited = (odziedziczony)
 stack-resolved = Rozwiązano { $path } w { $change }.
 stack-saved-conflicts = Zapisano { $path } w { $change } z konfliktami.
 stack-error = Scalanie { $path } w { $change } zakończyło się błędem.
+stack-inherited = { $path } w { $change } dziedziczy konflikt z { $origin }. Rozwiązanie go najpierw w { $origin } usuwa go także tutaj; rozwiązanie zapisane najpierw tutaj prawdopodobnie znów wywoła konflikt.
 preview-resolves = Zapis rozwiąże ścieżkę w { $change }.
 preview-keeps = Po zapisie w { $change } zostaną konflikty.
 preview-no-rebase = Żaden potomek nie zostanie przebazowany.

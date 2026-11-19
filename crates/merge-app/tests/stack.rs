@@ -112,7 +112,8 @@ mod jj {
                 .iter()
                 .map(|c| {
                     let change = c.change.change_id.clone().expect("jj names the change");
-                    let paths = c.paths.iter().map(|p| (p.path.to_string(), p.inherited)).collect();
+                    let paths =
+                        c.paths.iter().map(|p| (p.path.to_string(), p.inherited())).collect();
                     (short(&change).to_owned(), paths)
                 })
                 .collect()
@@ -157,6 +158,60 @@ mod jj {
         let note = cx.read(|cx| started.view.read(cx).note().map(str::to_owned));
         assert_eq!(note, Some(format!("Resolved a.txt in {}.", short(&merge.change_id))));
         assert_eq!(started.exits.borrow().as_slice(), [], "the run goes on");
+    }
+
+    fn note(cx: &mut TestAppContext, started: &Started) -> Option<String> {
+        cx.read(|cx| started.view.read(cx).note().map(str::to_owned))
+    }
+
+    /// The banner of the one open merge window.
+    fn banner(cx: &mut TestAppContext) -> Option<String> {
+        let windows = merge_windows(cx);
+        assert_eq!(windows.len(), 1, "one merge window");
+        let root = windows.first().and_then(AnyWindowHandle::downcast::<Root>).expect("a root");
+        cx.read(|cx| {
+            let view = root.read(cx).expect("the root").view().clone();
+            let view = view.downcast::<MergeWindow>().expect("a merge window");
+            view.read(cx).notice().map(ToString::to_string)
+        })
+    }
+
+    #[gpui_kit::test]
+    fn an_inherited_path_opens_with_a_banner_naming_where_its_conflict_arises(
+        cx: &mut TestAppContext,
+    ) {
+        let (fixture, merge, child) = stacked();
+        let started = start(cx, &fixture);
+        click(cx, started.window, path_id(1, 0));
+        let (change, origin) = (short(&child.change_id), short(&merge.change_id));
+        assert_eq!(
+            banner(cx),
+            Some(format!(
+                "a.txt in {change} inherits its conflict from {origin}. Resolving it in \
+                 {origin} first clears it here; a resolution saved here first will likely \
+                 conflict again."
+            ))
+        );
+        assert_eq!(note(cx, &started), None, "the stack window says nothing");
+    }
+
+    #[gpui_kit::test]
+    fn a_path_whose_conflict_arises_in_its_own_commit_opens_without_a_banner(
+        cx: &mut TestAppContext,
+    ) {
+        let (fixture, ..) = stacked();
+        let started = start(cx, &fixture);
+        click(cx, started.window, path_id(MERGE, 0));
+        assert_eq!(banner(cx), None);
+    }
+
+    #[gpui_kit::test]
+    fn a_conflict_from_outside_the_list_opens_without_a_banner(cx: &mut TestAppContext) {
+        let (fixture, _, child) = stacked();
+        let started = start_on(cx, &fixture, Some(&format!("{}::", child.commit)));
+        assert_eq!(listed(cx, &started.view).len(), 2);
+        click(cx, started.window, path_id(1, 0));
+        assert_eq!(banner(cx), None);
     }
 
     #[gpui_kit::test]

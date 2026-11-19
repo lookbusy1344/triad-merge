@@ -80,6 +80,7 @@ inherited = (상속됨)
 stack-resolved = { $change }에서 { $path }을(를) 해결했습니다.
 stack-saved-conflicts = { $change }에 { $path }을(를) 충돌과 함께 저장했습니다.
 stack-error = { $change }에서 { $path }의 병합이 오류로 끝났습니다.
+stack-inherited = { $change }의 { $path }은(는) { $origin }에서 충돌을 물려받았습니다. { $origin }에서 먼저 해결하면 여기서도 사라집니다. 여기서 먼저 저장한 해결은 다시 충돌할 가능성이 높습니다.
 preview-resolves = 저장하면 { $change }에서 이 경로가 해결됩니다.
 preview-keeps = 저장 후에도 { $change }에 충돌이 남습니다.
 preview-no-rebase = 리베이스되는 후손이 없습니다.

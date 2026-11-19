@@ -123,6 +123,7 @@ inherited = (heredado)
 stack-resolved = { $path } resuelto en { $change }.
 stack-saved-conflicts = { $path } guardado en { $change } con conflictos.
 stack-error = La fusión de { $path } en { $change } terminó con un error.
+stack-inherited = { $path } en { $change } hereda su conflicto de { $origin }. Resolverlo primero en { $origin } lo elimina aquí; una resolución guardada aquí primero probablemente volverá a entrar en conflicto.
 preview-resolves = Guardar resuelve la ruta en { $change }.
 preview-keeps = Guardar mantiene conflictos en { $change }.
 preview-no-rebase = No se rebasa ningún descendiente.
