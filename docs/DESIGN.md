@@ -780,7 +780,7 @@ The console and GUI binaries forward as §A4.13 gives. `images/triad.ico` goes i
 ### F1 Goal
 
 - Every pane colours its text by syntax; bands draw under the colours, intra-line marks over them (spec §5).
-- Grammars: Rust, Go, C#, Python, Swift, Java, Kotlin, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS, C, C++.
+- Grammars: Rust, Go, C#, Python, Swift, Java, Kotlin, HTML, JavaScript, TypeScript, TSX, JSON, YAML, TOML, CSS, C, C++, Markdown.
 - The window never waits for a parse.
 
 Not covered: Razor, which has no grammar that covers its code blocks; styles inside JavaScript templates tagged `sql` or `graphql`, whose grammars triad does not build.
@@ -803,7 +803,9 @@ The top panes are rows triad draws, and their texts never change.
 
 - Each input is cut into chunks of about 2 000 lines (`CHUNK_LINES`, `merge_syntax::syntax::chunk_starts`). A chunk ends before the first top-level line at or after its 2 000th: a line at column 0, after a blank line, not starting with `}`, `)`, `]` or `</`; without one, at its 2 000th line. A chunk's spans equal those of the whole parse unless a construct crosses a forced cut. A long HTML document is one element and a long JSON document one value, so the first closing tags or brackets after each cut draw plain.
 - A chunk parses alone, off the UI thread, when a row of it shows. A row on screen queues its chunk and one on each side; the nearest parses first; each input runs at most two parses at once; a queued chunk more than two from the screen drops when the rows move. Each input keeps 16 chunks' spans, dropping the farthest. A failed chunk draws plain and does not parse again.
-- Each line keeps capture spans: byte ranges with up to three captures, outermost first. Overlaps follow gpui-component: of two captures of one node in a row the first wins, and a capture an earlier match gave the same bytes counts once, since a pattern with several captures under one node matches once per combination of them; a capture paints over those starting before it; an injection parses one level deep when its language is built in (Rust macros, HTML scripts and styles, JavaScript `html`, `css`, `json` and `yaml` templates).
+- Each line keeps capture spans: byte ranges with up to three captures, outermost first. Overlaps follow gpui-component: of two captures of one node in a row the first wins, and a capture an earlier match gave the same bytes counts once, since a pattern with several captures under one node matches once per combination of them; a capture paints over those starting before it; an injection parses one level deep when its language is built in (Rust macros, HTML scripts and styles, JavaScript `html`, `css`, `json` and `yaml` templates, Markdown's inline text, HTML blocks and fences).
+- A Markdown fence names its language in its info string. The name resolves as gpui-component's registry resolves it, aliases such as `rs` and `py` included. Each language a fence may name builds its grammar the first time a parse meets it, off the UI thread, and reserves 1 024 capture indexes: Markdown's grammar builds in 5 ms, against 214 ms with all 17 others built at once (release build).
+- A combined injection, Markdown's inline text, parses the ranges of all its matches as one text. As in the editors, inline Markdown leaves out the ranges with no markup byte and keeps the bytes between the rest.
 
 #### F4.1 The editors past `syntax-whole-file-max-lines`
 
@@ -831,6 +833,8 @@ A full parse costs about 90 bytes per byte of text: one 3.2 MB file of real Rust
 | Scrolling the result, frame p95 | 8.4 ms | 8.5 ms |
 | Keystroke / pick, max | 0.6 / 0.5 ms | 5.3 / 5.2 ms |
 | Peak resident memory | 208–263 MB | 911–934 MB |
+
+The editors parse inline Markdown as one text from the first range with markup to the last, so a block line between two, such as a link reference definition, takes inline colours from text a chunk of the top panes may not hold. There the two can differ; whole, they match.
 
 The rows on screen colour 110–185 ms after the first frame at any length; a chunk scrolled to parses in about 60 ms. Spans take about 12 bytes per capture run: the top panes stay within about 50 MB of plain text at 1M lines, the chunked result within 70 MB.
 

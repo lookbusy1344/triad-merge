@@ -39,6 +39,7 @@ pub(crate) const fn registry_name(language: Language) -> &'static str {
         Language::Yaml => "yaml",
         Language::Java => "java",
         Language::Kotlin => "kotlin",
+        Language::Markdown => "markdown",
     }
 }
 
@@ -172,7 +173,9 @@ pub(crate) enum GrammarError {
 }
 
 /// `language`'s grammar and highlight query, as the editors' highlighter has them, with the
-/// grammars of the other languages its injections name. As in the editors, an injected
+/// grammars of the other languages its injections name. When an injection takes its
+/// language from the text, as a Markdown fence does, every built-in grammar is injected, and
+/// names resolve as the editors' registry resolves them. As in the editors, an injected
 /// grammar's own injections do not run, and a language that is not built in shows plain.
 pub(crate) fn grammar(language: Language) -> Result<Arc<Grammar>, GrammarError> {
     let name = registry_name(language);
@@ -185,21 +188,48 @@ pub(crate) fn grammar(language: Language) -> Result<Arc<Grammar>, GrammarError> 
     let mut grammar = Grammar::new(host, name, &highlights, &config.injections)
         .map_err(|source| GrammarError::Load { name, source })?;
     let others: Vec<Box<str>> = grammar.injected_languages().map(Box::from).collect();
-    for other in others {
-        let Some(config) = registry.language(&other) else {
+    for other in &others {
+        let Some(injected) = injected_grammar(other) else {
             continue;
         };
-        let Some(language) = config.language else {
-            continue;
-        };
-        let injected = Grammar::new(language, &other, &config.highlights, "")
-            .and_then(|injected| grammar.inject(&other, Arc::new(injected)));
-        if let Err(error) = injected {
+        if let Err(error) = grammar.inject(other, Arc::new(injected)) {
             // The host's own captures do not depend on it.
-            tracing::warn!(%error, language = &*other, host = name, "an injected grammar does not load; its injections show plain");
+            tracing::warn!(%error, language = &**other, host = name, "an injected grammar does not fit; its injections show plain");
+        }
+    }
+    if grammar.names_languages() {
+        // Any language may be named, so each builds the first time a parse meets it, off
+        // the UI thread: building them all costs about 200 ms.
+        grammar.set_resolver(resolve_name);
+        let unnamed = Language::ALL
+            .into_iter()
+            .map(registry_name)
+            .filter(|&other| other != name && !others.iter().any(|known| &**known == other));
+        for other in unnamed {
+            if let Err(error) = grammar.inject_lazy(other, injected_grammar) {
+                tracing::warn!(%error, language = other, host = name, "an injected grammar does not fit; its injections show plain");
+            }
         }
     }
     Ok(Arc::new(grammar))
+}
+
+/// The grammar the editors inject for `name`, with its highlight query alone; none when it
+/// is not built in or does not load.
+fn injected_grammar(name: &str) -> Option<Grammar> {
+    let config = LanguageRegistry::singleton().language(name)?;
+    Grammar::new(config.language?, name, &config.highlights, "")
+        .inspect_err(|error| {
+            tracing::warn!(%error, language = name, "an injected grammar does not load; its injections show plain");
+        })
+        .ok()
+}
+
+/// The built-in grammar a language name in the text names, as the editors' registry
+/// resolves it: by its own name, else by an alias such as `rs` or `py`.
+fn resolve_name(name: &str) -> Option<&'static str> {
+    let config = LanguageRegistry::singleton().language(name)?;
+    Language::ALL.into_iter().map(registry_name).find(|&known| *known == *config.name)
 }
 
 /// One input's text and its spans, parsed a chunk at a time as its rows show.
@@ -443,7 +473,7 @@ mod tests {
         bytes
     }
 
-    const LANGUAGES: [Language; 17] = [
+    const LANGUAGES: [Language; 18] = [
         Language::Rust,
         Language::Go,
         Language::CSharp,
@@ -461,6 +491,7 @@ mod tests {
         Language::Cpp,
         Language::Java,
         Language::Kotlin,
+        Language::Markdown,
     ];
     /// Chunks that cut the Go and C# samples only before top-level lines: no shorter than
     /// their longest run of lines without one (34 in Go, 56 in C#), shorter than the sample.
@@ -490,6 +521,7 @@ mod tests {
         assert_eq!(registry_name(Language::Cpp), "cpp");
         assert_eq!(registry_name(Language::Java), "java");
         assert_eq!(registry_name(Language::Kotlin), "kotlin");
+        assert_eq!(registry_name(Language::Markdown), "markdown");
     }
 
     #[test]
@@ -538,7 +570,7 @@ mod tests {
     }
 
     /// Each language's sample and the chunk sizes it parses in.
-    fn samples() -> [(Language, &'static str, &'static [usize]); 17] {
+    fn samples() -> [(Language, &'static str, &'static [usize]); 18] {
         [
             (
                 Language::Rust,
@@ -624,6 +656,14 @@ mod tests {
                 Language::Kotlin,
                 include_str!("../../../fixtures/syntax/sample.kt"),
                 &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
+            ),
+            // The editors parse inline Markdown as one text from the first range with
+            // markup to the last, so a block line between two takes inline colours from
+            // text a chunk may not hold (`DESIGN.md` §F6.3). Whole, the spans match.
+            (
+                Language::Markdown,
+                include_str!("../../../fixtures/syntax/sample.md"),
+                &[syntax::CHUNK_LINES][..],
             ),
         ]
     }

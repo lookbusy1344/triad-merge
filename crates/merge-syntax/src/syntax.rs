@@ -11,12 +11,15 @@
 //! A grammar's injections parse too, one level deep: Rust's macro bodies parse as Rust, and
 //! HTML's scripts as JavaScript once [`Grammar::inject`] gives it that grammar. In an injected
 //! parse, a capture that starts inside the previous one is skipped, unless its pattern sets
-//! `highlight.allow-overlap`. Injections of languages without a grammar are left plain, as
-//! are combined injections.
+//! `highlight.allow-overlap`. Injections of languages without a grammar are left plain. A
+//! pattern names its language with `injection.language`, or captures the name in the text,
+//! as a fence's info string does; a resolver maps such a name to a grammar's. A combined
+//! injection parses the ranges of all its matches as one text. Inline Markdown, as the
+//! editors parse it, leaves out ranges with no markup and keeps the bytes between the rest.
 
 use std::collections::HashSet;
 use std::ops::Range;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use merge_core::text::Text;
 use tree_sitter::{Language, Node, Parser, Query, QueryCursor, StreamingIterator as _};
@@ -39,21 +42,82 @@ pub struct Grammar {
     /// The grammars of other languages its injections name. Their captures follow the
     /// grammar's own in [`Span::captures`], in this order.
     injected: Vec<Injected>,
+    /// Maps a captured language name that names no injected grammar to one that does.
+    resolver: Option<Resolver>,
 }
 
-/// The injection patterns and their content capture.
+/// The injection patterns, their content capture, and the capture that names a language.
 #[derive(Debug)]
 struct Injections {
     query: Query,
     content: u32,
+    language: Option<u32>,
 }
 
-/// Another language's grammar, and the index its first capture takes.
+/// The longest language name a capture gives, in bytes, as in the editors. A longer capture
+/// names no language.
+pub const MAX_LANGUAGE_BYTES: usize = 64;
+/// The editors' name of the inline Markdown grammar, whose injections take [`includes`] and
+/// [`joined_ranges`].
+const MARKDOWN_INLINE: &str = "markdown_inline";
+/// The bytes that can start inline Markdown markup, as the editors list them.
+const MARKDOWN_INLINE_TRIGGERS: &[u8] = b"*_`[]()<>!~$";
+
+/// Maps a language name a capture gives to the name of a grammar that parses it.
+pub type Resolver = fn(&str) -> Option<&'static str>;
+
+/// Builds the grammar of an injected language, named by its name, on first use.
+pub type Builder = fn(&str) -> Option<Grammar>;
+
+/// The capture indexes a lazily built grammar reserves. One with more captures shows plain.
+pub const LAZY_CAPTURES: usize = 1024;
+
+/// Another language's grammar, the index its first capture takes, and the indexes it holds.
 #[derive(Debug)]
 struct Injected {
     name: Box<str>,
-    grammar: Arc<Grammar>,
+    grammar: InjectedGrammar,
     first: u16,
+    captures: usize,
+}
+
+#[derive(Debug)]
+enum InjectedGrammar {
+    Built(Arc<Grammar>),
+    /// Built on first use; none when it does not build or holds too many captures.
+    Lazy(Builder, OnceLock<Option<Arc<Grammar>>>),
+}
+
+impl Injected {
+    /// The grammar, built now if it is lazy and not built yet.
+    fn grammar(&self) -> Option<&Grammar> {
+        match &self.grammar {
+            InjectedGrammar::Built(grammar) => Some(grammar),
+            InjectedGrammar::Lazy(build, cell) => cell
+                .get_or_init(|| {
+                    let grammar = build(&self.name)?;
+                    let captures = grammar.capture_count();
+                    if captures > LAZY_CAPTURES {
+                        tracing::warn!(
+                            captures,
+                            name = &*self.name,
+                            "an injected grammar has too many captures; it shows plain"
+                        );
+                        return None;
+                    }
+                    Some(Arc::new(grammar))
+                })
+                .as_deref(),
+        }
+    }
+
+    /// The grammar if it is built.
+    fn built(&self) -> Option<&Grammar> {
+        match &self.grammar {
+            InjectedGrammar::Built(grammar) => Some(grammar),
+            InjectedGrammar::Lazy(_, cell) => cell.get()?.as_deref(),
+        }
+    }
 }
 
 const CONTENT: &str = "injection.content";
@@ -97,9 +161,32 @@ impl Grammar {
             None
         } else {
             let query = Query::new(&language, injections).map_err(GrammarError::Injections)?;
-            query.capture_index_for_name(CONTENT).map(|content| Injections { query, content })
+            let language = query.capture_index_for_name(LANGUAGE);
+            query.capture_index_for_name(CONTENT).map(|content| Injections {
+                query,
+                content,
+                language,
+            })
         };
-        Ok(Self { language, name: name.into(), query, injections, injected: Vec::new() })
+        Ok(Self {
+            language,
+            name: name.into(),
+            query,
+            injections,
+            injected: Vec::new(),
+            resolver: None,
+        })
+    }
+
+    /// Map the language names the text gives through `resolver`.
+    pub fn set_resolver(&mut self, resolver: Resolver) {
+        self.resolver = Some(resolver);
+    }
+
+    /// Whether an injection takes its language from the text, so any grammar may be named.
+    #[must_use]
+    pub fn names_languages(&self) -> bool {
+        self.injections.as_ref().is_some_and(|injections| injections.language.is_some())
     }
 
     /// Parse the injections of `name` with `grammar`'s highlight query. `grammar`'s own
@@ -110,8 +197,29 @@ impl Grammar {
     /// With `grammar`'s captures, the grammar has more than a [`Span`] names. It keeps the
     /// grammars injected before.
     pub fn inject(&mut self, name: &str, grammar: Arc<Grammar>) -> Result<(), GrammarError> {
+        let captures = grammar.query.capture_names().len();
+        self.push_injected(name, InjectedGrammar::Built(grammar), captures)
+    }
+
+    /// Parse the injections of `name` with the grammar `build` gives, built the first time
+    /// a parse needs it, which reserves [`LAZY_CAPTURES`] capture indexes.
+    ///
+    /// # Errors
+    ///
+    /// With the reserved indexes, the grammar has more captures than a [`Span`] names. It
+    /// keeps the grammars injected before.
+    pub fn inject_lazy(&mut self, name: &str, build: Builder) -> Result<(), GrammarError> {
+        self.push_injected(name, InjectedGrammar::Lazy(build, OnceLock::new()), LAZY_CAPTURES)
+    }
+
+    fn push_injected(
+        &mut self,
+        name: &str,
+        grammar: InjectedGrammar,
+        captures: usize,
+    ) -> Result<(), GrammarError> {
         let first = self.capture_count();
-        let total = first + grammar.query.capture_names().len();
+        let total = first + captures;
         if total >= usize::from(NO_CAPTURE) {
             return Err(GrammarError::Captures(total));
         }
@@ -119,6 +227,7 @@ impl Grammar {
             name: name.into(),
             grammar,
             first: u16::try_from(first).map_err(|_| GrammarError::Captures(total))?,
+            captures,
         });
         Ok(())
     }
@@ -129,7 +238,7 @@ impl Grammar {
         let patterns = query.map_or(0, Query::pattern_count);
         let mut seen = Vec::new();
         (0..patterns)
-            .filter_map(move |pattern| injected_language(query?, pattern))
+            .filter_map(move |pattern| injected_language(query?, pattern).0)
             .filter(|&name| name != &*self.name)
             .filter(move |&name| {
                 let first = !seen.contains(&name);
@@ -147,15 +256,23 @@ impl Grammar {
         }
         let injected =
             self.injected.iter().rev().find(|injected| usize::from(injected.first) <= capture)?;
-        let names = injected.grammar.query.capture_names();
+        let names = injected.built()?.query.capture_names();
         names.get(capture - usize::from(injected.first)).copied()
     }
 
-    /// Captures of the grammar and its injected grammars.
+    /// Capture indexes of the grammar and its injected grammars.
     fn capture_count(&self) -> usize {
         self.injected.last().map_or(self.query.capture_names().len(), |last| {
-            usize::from(last.first) + last.grammar.query.capture_names().len()
+            usize::from(last.first) + last.captures
         })
+    }
+
+    /// The grammar of the language `name`, through the resolver when no grammar has that
+    /// name, with the grammar's name and its first capture index.
+    fn resolve<'a>(&'a self, name: &'a str) -> Option<(&'a str, &'a Self, u16)> {
+        let named =
+            |name: &'a str| self.injecting(name).map(|(grammar, first)| (name, grammar, first));
+        named(name).or_else(|| named((self.resolver?)(name)?))
     }
 
     /// The grammar that parses an injection of `name`, and the index its first capture takes.
@@ -163,10 +280,8 @@ impl Grammar {
         if name == &*self.name {
             return Some((self, 0));
         }
-        self.injected
-            .iter()
-            .find(|injected| &*injected.name == name)
-            .map(|injected| (&*injected.grammar, injected.first))
+        let injected = self.injected.iter().find(|injected| &*injected.name == name)?;
+        Some((injected.grammar()?, injected.first))
     }
 }
 
@@ -419,14 +534,61 @@ pub(crate) fn top_level(text: &Text, n: usize) -> bool {
     top_level_line(text.line(n), text.line(n - 1).trim().is_empty())
 }
 
-/// The language pattern `pattern` injects into each match on its own; none for a combined
-/// injection.
-fn injected_language(query: &Query, pattern: usize) -> Option<&str> {
+/// The language pattern `pattern` names, if any, and whether it combines its matches.
+fn injected_language(query: &Query, pattern: usize) -> (Option<&str>, bool) {
     let settings = query.property_settings(pattern);
-    if settings.iter().any(|setting| &*setting.key == COMBINED) {
+    let combined = settings.iter().any(|setting| &*setting.key == COMBINED);
+    let name = settings.iter().find(|setting| &*setting.key == LANGUAGE);
+    (name.and_then(|setting| setting.value.as_deref()), combined)
+}
+
+/// The language name a match captures in the text: trimmed, at most [`MAX_LANGUAGE_BYTES`]
+/// before trimming, and not empty.
+fn captured_language<'s>(
+    injections: &Injections,
+    found: &tree_sitter::QueryMatch<'_, '_>,
+    source: &'s [u8],
+) -> Option<&'s str> {
+    let index = injections.language?;
+    let capture = found.captures.iter().find(|capture| capture.index == index)?;
+    let bytes = source.get(capture.node.byte_range())?;
+    if bytes.len() > MAX_LANGUAGE_BYTES {
         return None;
     }
-    settings.iter().find(|setting| &*setting.key == LANGUAGE)?.value.as_deref()
+    let name = std::str::from_utf8(bytes).ok()?.trim();
+    (!name.is_empty()).then_some(name)
+}
+
+/// Whether an injection of `language` parses `range`: inline Markdown only where it holds a
+/// byte that can start markup.
+fn includes(language: &str, range: &tree_sitter::Range, source: &[u8]) -> bool {
+    language != MARKDOWN_INLINE
+        || source
+            .get(range.start_byte..range.end_byte)
+            .is_some_and(|bytes| bytes.iter().any(|byte| MARKDOWN_INLINE_TRIGGERS.contains(byte)))
+}
+
+/// The ranges a combined injection of `language` parses, from its matches' sorted ranges.
+/// Inline Markdown keeps the bytes between two ranges, so markup cannot join across them.
+fn joined_ranges(language: &str, ranges: Vec<tree_sitter::Range>) -> Vec<tree_sitter::Range> {
+    if language != MARKDOWN_INLINE {
+        return ranges;
+    }
+    let mut joined: Vec<tree_sitter::Range> = Vec::with_capacity(2 * ranges.len());
+    for range in ranges {
+        if let Some(last) = joined.last().copied()
+            && last.end_byte < range.start_byte
+        {
+            joined.push(tree_sitter::Range {
+                start_byte: last.end_byte,
+                end_byte: range.start_byte,
+                start_point: last.end_point,
+                end_point: range.start_point,
+            });
+        }
+        joined.push(range);
+    }
+    joined
 }
 
 /// Whether a capture may start inside the one before it in an injected parse.
@@ -493,11 +655,15 @@ fn injected(
         return;
     };
     let mut layers = Vec::new();
+    // Each combined language's ranges, in the order the language first matches.
+    let mut combined_layers: Vec<(&str, &Grammar, u16, Vec<tree_sitter::Range>)> = Vec::new();
     let mut cursor = QueryCursor::new();
     let mut matches = cursor.matches(&injections.query, tree.root_node(), source);
     while let Some(found) = matches.next() {
-        let Some(injecting) = injected_language(&injections.query, found.pattern_index)
-            .and_then(|name| grammar.injecting(name))
+        let (named, combines) = injected_language(&injections.query, found.pattern_index);
+        let Some((name, injecting, first)) = named
+            .or_else(|| captured_language(injections, found, source))
+            .and_then(|name| grammar.resolve(name))
         else {
             continue;
         };
@@ -506,12 +672,27 @@ fn injected(
             .iter()
             .filter(|capture| capture.index == injections.content)
             .map(|capture| capture.node.range())
+            .filter(|range| includes(name, range, source))
             .collect();
-        ranges.sort_by_key(|range| (range.start_byte, range.end_byte));
-        if !ranges.is_empty() {
-            layers.push((injecting, ranges));
+        if ranges.is_empty() {
+            continue;
+        }
+        if combines {
+            match combined_layers.iter_mut().find(|(known, ..)| *known == name) {
+                Some((.., all)) => all.append(&mut ranges),
+                None => combined_layers.push((name, injecting, first, ranges)),
+            }
+        } else {
+            ranges.sort_by_key(|range| (range.start_byte, range.end_byte));
+            layers.push(((injecting, first), ranges));
         }
     }
+    for (name, injecting, first, mut ranges) in combined_layers {
+        ranges.sort_by_key(|range| (range.start_byte, range.end_byte));
+        layers.push(((injecting, first), joined_ranges(name, ranges)));
+    }
+    // As the editors order their layers. Stable, so layers that start together keep theirs.
+    layers.sort_by_key(|(_, ranges)| ranges.first().map(|range| range.start_byte));
     for ((injecting, first), ranges) in layers {
         if let Err(error) = parser.set_language(&injecting.language) {
             tracing::warn!(%error, name = &*injecting.name, "an injected grammar does not load; it shows plain");
@@ -996,8 +1177,228 @@ struct C;
              ((raw_string_literal) @injection.content
                (#set! injection.language \"combined\") (#set! injection.combined))",
         );
-        assert_eq!(grammar.injected_languages().collect::<Vec<_>>(), ["inner", "other"]);
+        assert_eq!(
+            grammar.injected_languages().collect::<Vec<_>>(),
+            ["inner", "other", "combined"]
+        );
         assert_eq!(rust().injected_languages().count(), 0);
+    }
+
+    const MARKDOWN: &str = "markdown";
+    /// Markdown's injections as gpui-component has them: fences by their info string, and
+    /// inline text combined.
+    const MARKDOWN_INJECTIONS: &str = "
+        (fenced_code_block
+          (info_string (language) @injection.language)
+          (code_fence_content) @injection.content)
+        ((inline) @injection.content
+          (#set! injection.language \"markdown_inline\")
+          (#set! injection.combined))";
+
+    /// Markdown with an inline grammar that captures code spans and emphasis, and Rust.
+    fn markdown() -> Grammar {
+        let mut grammar = Grammar::new(
+            tree_sitter_md::LANGUAGE.into(),
+            MARKDOWN,
+            "(fenced_code_block_delimiter) @delimiter",
+            MARKDOWN_INJECTIONS,
+        )
+        .expect("the Markdown queries compile");
+        let inline = Grammar::new(
+            tree_sitter_md::INLINE_LANGUAGE.into(),
+            MARKDOWN_INLINE,
+            "(code_span) @code (emphasis) @em",
+            "",
+        )
+        .expect("the inline query compiles");
+        grammar.inject(MARKDOWN_INLINE, Arc::new(inline)).unwrap();
+        grammar.inject(RUST, Arc::new(rust())).unwrap();
+        grammar
+    }
+
+    #[test]
+    fn a_combined_injection_parses_its_matches_as_one_text() {
+        let grammar = markdown();
+        let spans = highlight(&grammar, &text("a *b*\n\n`c` d\n"), CHUNK_LINES);
+        assert_eq!(stacks(&grammar, &spans, 0), [(2..5, vec!["em"])]);
+        assert_eq!(stacks(&grammar, &spans, 2), [(0..3, vec!["code"])]);
+    }
+
+    #[test]
+    fn a_fence_parses_with_the_grammar_its_info_string_names() {
+        let grammar = markdown();
+        let spans = highlight(&grammar, &text("```rust\nfn a() {}\n```\n"), CHUNK_LINES);
+        assert_eq!(stacks(&grammar, &spans, 0), [(0..3, vec!["delimiter"])]);
+        let body = named(&grammar, &spans, 1);
+        assert!(body.contains(&(0..2, "keyword")), "{body:?}");
+        assert!(body.contains(&(3..4, "function")), "{body:?}");
+    }
+
+    /// Resolves `rs` to Rust, as the editors' registry does.
+    fn rs_is_rust(name: &str) -> Option<&'static str> {
+        (name == "rs").then_some(RUST)
+    }
+
+    #[test]
+    fn a_fence_takes_the_language_its_alias_resolves_to() {
+        let source = text("```rs\nfn a() {}\n```\n");
+        let grammar = markdown();
+        let spans = highlight(&grammar, &source, CHUNK_LINES);
+        assert_eq!(stacks(&grammar, &spans, 1), [], "no resolver, no alias");
+        let mut grammar = markdown();
+        grammar.set_resolver(rs_is_rust);
+        let spans = highlight(&grammar, &source, CHUNK_LINES);
+        assert!(named(&grammar, &spans, 1).contains(&(0..2, "keyword")));
+    }
+
+    #[test]
+    fn an_info_string_past_the_longest_name_is_no_language() {
+        let mut grammar = markdown();
+        grammar.set_resolver(|_| Some(RUST));
+        let at_limit = "r".repeat(MAX_LANGUAGE_BYTES);
+        let past = "r".repeat(MAX_LANGUAGE_BYTES + 1);
+        for (info, coloured) in [(at_limit, true), (past, false)] {
+            let spans =
+                highlight(&grammar, &text(&format!("```{info}\nfn a() {{}}\n```\n")), CHUNK_LINES);
+            assert_eq!(!stacks(&grammar, &spans, 1).is_empty(), coloured, "{} bytes", info.len());
+        }
+    }
+
+    /// Builds made by [`counted_rust`].
+    static BUILDS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+    fn counted_rust(name: &str) -> Option<Grammar> {
+        BUILDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        (name == RUST).then(rust)
+    }
+
+    fn builds() -> usize {
+        BUILDS.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Markdown with Rust injected lazily, through [`counted_rust`].
+    fn markdown_lazy_rust() -> Grammar {
+        let mut grammar = markdown_md_host();
+        grammar.inject_lazy(RUST, counted_rust).unwrap();
+        grammar
+    }
+
+    #[test]
+    fn a_lazy_grammar_builds_once_and_only_when_the_text_names_it() {
+        let grammar = markdown_lazy_rust();
+        let python = highlight(&grammar, &text("# a\n\n```py\nb\n```\n"), CHUNK_LINES);
+        assert_eq!(stacks(&grammar, &python, 3), [], "no grammar for `py`");
+        assert_eq!(builds(), 0, "no fence names Rust");
+        let source = text("```rust\nfn a() {}\n```\n");
+        let spans = highlight(&grammar, &source, CHUNK_LINES);
+        assert_eq!(builds(), 1);
+        let body = named(&grammar, &spans, 1);
+        assert!(body.contains(&(0..2, "keyword")), "{body:?}");
+        assert_eq!(highlight(&grammar, &source, CHUNK_LINES), spans);
+        assert_eq!(builds(), 1, "built once");
+    }
+
+    #[test]
+    fn a_lazy_grammar_takes_a_block_of_capture_indexes() {
+        // The host has one capture; each lazy grammar after it takes `LAZY_CAPTURES`.
+        let mut grammar = markdown_lazy_rust();
+        grammar.inject_lazy("other", |_| None).unwrap();
+        assert_eq!(grammar.capture_count(), 1 + 2 * LAZY_CAPTURES);
+        let spans = highlight(&grammar, &text("```rust\nfn a() {}\n```\n"), CHUNK_LINES);
+        let rust = rust();
+        assert_eq!(grammar.capture_name(1), rust.query.capture_names().first().copied());
+        assert_eq!(grammar.capture_name(1 + LAZY_CAPTURES), None, "`other` never builds");
+        assert!(named(&grammar, &spans, 1).contains(&(0..2, "keyword")));
+    }
+
+    #[test]
+    fn a_lazy_grammar_that_does_not_build_or_overflows_its_block_is_plain() {
+        let fence = text("```rust\nfn a() {}\n```\n");
+        let mut none = markdown_md_host();
+        none.inject_lazy(RUST, |_| None).unwrap();
+        assert_eq!(stacks(&none, &highlight(&none, &fence, CHUNK_LINES), 1), []);
+        let mut wide = markdown_md_host();
+        wide.inject_lazy(RUST, |_| {
+            let query: String = (0..=LAZY_CAPTURES)
+                .map(|n| "(identifier) @c".to_owned() + &n.to_string() + "\n")
+                .collect();
+            Grammar::new(tree_sitter_rust::LANGUAGE.into(), RUST, &query, "").ok()
+        })
+        .unwrap();
+        assert_eq!(stacks(&wide, &highlight(&wide, &fence, CHUNK_LINES), 1), []);
+    }
+
+    #[test]
+    fn a_lazy_grammar_past_the_capture_limit_is_refused() {
+        let mut grammar = markdown_md_host();
+        let fits = (usize::from(NO_CAPTURE) - 1 - 1) / LAZY_CAPTURES;
+        for _ in 0..fits {
+            grammar.inject_lazy(RUST, |_| None).unwrap();
+        }
+        let error = grammar.inject_lazy(RUST, |_| None).expect_err("the block overflows a span");
+        assert!(
+            matches!(error, GrammarError::Captures(total) if total == 1 + (fits + 1) * LAZY_CAPTURES),
+            "{error:?}"
+        );
+    }
+
+    fn markdown_md_host() -> Grammar {
+        Grammar::new(
+            tree_sitter_md::LANGUAGE.into(),
+            MARKDOWN,
+            "(fenced_code_block_delimiter) @delimiter",
+            MARKDOWN_INJECTIONS,
+        )
+        .expect("the Markdown queries compile")
+    }
+
+    #[test]
+    fn a_grammar_names_languages_when_its_injections_capture_one() {
+        assert!(markdown().names_languages());
+        assert!(!host(INJECT_INNER).names_languages());
+        assert!(!rust().names_languages());
+    }
+
+    /// A `tree_sitter::Range` over `bytes` on row 0.
+    fn ts_range(bytes: Range<usize>) -> tree_sitter::Range {
+        let point = |column| tree_sitter::Point { row: 0, column };
+        tree_sitter::Range {
+            start_byte: bytes.start,
+            end_byte: bytes.end,
+            start_point: point(bytes.start),
+            end_point: point(bytes.end),
+        }
+    }
+
+    fn ranges(bytes: &[Range<usize>]) -> Vec<tree_sitter::Range> {
+        bytes.iter().cloned().map(ts_range).collect()
+    }
+
+    fn bytes(ranges: &[tree_sitter::Range]) -> Vec<Range<usize>> {
+        ranges.iter().map(|range| range.start_byte..range.end_byte).collect()
+    }
+
+    #[test]
+    fn inline_markdown_keeps_the_bytes_between_its_ranges() {
+        let joined = joined_ranges(MARKDOWN_INLINE, ranges(&[2..4, 7..9, 9..12]));
+        assert_eq!(bytes(&joined), [2..4, 4..7, 7..9, 9..12]);
+        assert_eq!(joined[1].start_point.column, 4);
+        assert_eq!(joined[1].end_point.column, 7);
+        let other = joined_ranges(RUST, ranges(&[2..4, 7..9]));
+        assert_eq!(bytes(&other), [2..4, 7..9]);
+    }
+
+    #[test]
+    fn inline_markdown_skips_a_range_with_no_markup() {
+        let source = b"plain words. *a* `b` [c](d) <e> !f ~g~ $h$ _i_";
+        let kept = |range: Range<usize>| includes(MARKDOWN_INLINE, &ts_range(range), source);
+        assert!(!kept(0..12), "prose alone");
+        for (at, byte) in source.iter().enumerate().skip(12) {
+            if !byte.is_ascii_whitespace() && !byte.is_ascii_alphabetic() {
+                assert!(kept(at..at + 1), "{:?}", char::from(*byte));
+            }
+        }
+        assert!(includes(RUST, &ts_range(0..12), source), "other languages keep all");
     }
 
     #[test]

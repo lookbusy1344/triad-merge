@@ -28,10 +28,11 @@ pub enum Language {
     Cpp,
     Java,
     Kotlin,
+    Markdown,
 }
 
 /// Each language's file extensions, in lowercase.
-const EXTENSIONS: [(&str, Language); 37] = [
+const EXTENSIONS: [(&str, Language); 39] = [
     ("rs", Language::Rust),
     ("go", Language::Go),
     ("cs", Language::CSharp),
@@ -70,9 +71,33 @@ const EXTENSIONS: [(&str, Language); 37] = [
     ("java", Language::Java),
     ("kt", Language::Kotlin),
     ("kts", Language::Kotlin),
+    ("md", Language::Markdown),
+    ("markdown", Language::Markdown),
 ];
 
 impl Language {
+    /// Every language, in declaration order.
+    pub const ALL: [Self; 18] = [
+        Self::Rust,
+        Self::Go,
+        Self::CSharp,
+        Self::Python,
+        Self::Swift,
+        Self::Html,
+        Self::JavaScript,
+        Self::TypeScript,
+        Self::Tsx,
+        Self::Json,
+        Self::Yaml,
+        Self::Toml,
+        Self::Css,
+        Self::C,
+        Self::Cpp,
+        Self::Java,
+        Self::Kotlin,
+        Self::Markdown,
+    ];
+
     /// The language's tree-sitter grammar.
     #[must_use]
     pub fn grammar(self) -> tree_sitter::Language {
@@ -94,6 +119,7 @@ impl Language {
             Self::Cpp => tree_sitter_cpp::LANGUAGE,
             Self::Java => tree_sitter_java::LANGUAGE,
             Self::Kotlin => tree_sitter_kotlin_sg::LANGUAGE,
+            Self::Markdown => tree_sitter_md::LANGUAGE,
         }
         .into()
     }
@@ -162,6 +188,8 @@ mod tests {
         assert_eq!(of("src/Main.java"), Some(Language::Java));
         assert_eq!(of("App.kt"), Some(Language::Kotlin));
         assert_eq!(of("build.gradle.kts"), Some(Language::Kotlin));
+        assert_eq!(of("README.md"), Some(Language::Markdown));
+        assert_eq!(of("notes.markdown"), Some(Language::Markdown));
         for name in [
             "a.cc", "a.cpp", "a.cxx", "a.c++", "a.h", "a.hh", "a.hpp", "a.hxx", "a.h++", "a.inl",
             "a.ipp",
@@ -193,6 +221,8 @@ mod tests {
         assert_eq!(of("MAIN.JAVA"), Some(Language::Java));
         assert_eq!(of("App.KT"), Some(Language::Kotlin));
         assert_eq!(of("b.Kts"), Some(Language::Kotlin));
+        assert_eq!(of("README.MD"), Some(Language::Markdown));
+        assert_eq!(of("a.MarkDown"), Some(Language::Markdown));
     }
 
     #[test]
@@ -241,6 +271,10 @@ mod tests {
             "a.k",
             "a.ktm",
             "build.gradle",
+            "a.mdx",
+            "a.m",
+            "a.md.orig",
+            "a.mkdn",
         ] {
             assert_eq!(of(name), None, "{name}");
         }
@@ -272,7 +306,7 @@ mod tests {
     }
 
     /// Each language's sample, and the kind of its tree's root.
-    const SAMPLES: [(Language, &str, &str); 17] = [
+    const SAMPLES: [(Language, &str, &str); 18] = [
         (Language::Rust, "fn a() -> u8 { 1 }\n", "source_file"),
         (Language::Go, "package a\nfunc b() {}\n", "source_file"),
         (Language::CSharp, "class A { void B() {} }\n", "compilation_unit"),
@@ -290,6 +324,7 @@ mod tests {
         (Language::Cpp, "// c\nclass A { int b() const; };\n", "translation_unit"),
         (Language::Java, "// c\nclass A { int b() { return 1; } }\n", "program"),
         (Language::Kotlin, "// c\nfun a(): Int = 1\n", "source_file"),
+        (Language::Markdown, "# A\n\n- b\n\n```rust\nc\n```\n", "document"),
     ];
 
     fn root_kind(language: Language, source: &str) -> (String, bool) {
@@ -298,6 +333,11 @@ mod tests {
         let tree = parser.parse(source, None).expect("the parse runs");
         let root = tree.root_node();
         (root.kind().to_owned(), root.has_error())
+    }
+
+    #[test]
+    fn all_lists_each_language_once() {
+        assert_eq!(SAMPLES.map(|(language, ..)| language), Language::ALL);
     }
 
     #[test]
