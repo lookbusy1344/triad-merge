@@ -2,7 +2,7 @@
 //! through `JjRepository`'s own API. Every write snapshots the working copy first, rewrites
 //! in one transaction, rebases the descendants, and checks out a moved working-copy commit.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use camino::{Utf8Path, Utf8PathBuf};
 use futures::{StreamExt as _, TryStreamExt as _};
@@ -78,8 +78,61 @@ pub struct StackCommit {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StackPath {
     pub path: Utf8PathBuf,
+    pub origin: Origin,
+    /// The commit holds the path as a parent holds it: the conflict is the parent's alone,
+    /// and resolving it there resolves it here.
+    pub untouched: bool,
+}
+
+impl StackPath {
     /// A parent holds a conflict at the same path: the conflict came with the parent.
-    pub inherited: bool,
+    #[must_use]
+    pub fn inherited(&self) -> bool {
+        self.origin != Origin::Here
+    }
+}
+
+/// Where a listed path's conflict arises.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Origin {
+    /// In this commit: no parent holds a conflict at the path.
+    Here,
+    /// In this listed ancestor, through a chain of listed commits that inherit it.
+    Listed(vcs::CommitId),
+    /// A parent holds the conflict, and no chain of listed commits leads to where it arises.
+    Unlisted,
+}
+
+/// Link each inherited path of `commits`, children first, to the listed commit its
+/// conflict arises in. `parents[i]` holds the parents of `commits[i]`; every inherited path
+/// starts as [`Origin::Unlisted`]. A merge takes its first parent that leads to one.
+fn link_origins(commits: &mut [StackCommit], parents: &[Vec<vcs::CommitId>]) {
+    let index: HashMap<vcs::CommitId, usize> =
+        commits.iter().enumerate().map(|(ix, commit)| (commit.id.clone(), ix)).collect();
+    // Parents follow their children, so each parent's origins are linked before a child's.
+    for ix in (0..commits.len()).rev() {
+        for p in 0..commits[ix].paths.len() {
+            let path = &commits[ix].paths[p];
+            if path.origin != Origin::Unlisted {
+                continue;
+            }
+            let found = parents[ix]
+                .iter()
+                .filter_map(|id| index.get(id).copied())
+                .filter(|&parent| parent > ix)
+                .find_map(|parent| {
+                    let held = commits[parent].paths.iter().find(|q| q.path == path.path)?;
+                    match &held.origin {
+                        Origin::Here => Some(commits[parent].id.clone()),
+                        Origin::Listed(origin) => Some(origin.clone()),
+                        Origin::Unlisted => None,
+                    }
+                });
+            if let Some(origin) = found {
+                commits[ix].paths[p].origin = Origin::Listed(origin);
+            }
+        }
+    }
 }
 
 /// What a rewrite did, or would do on a dry run.
@@ -151,9 +204,17 @@ impl JjRepository {
         let revsets = self.revsets()?;
         vcs::Repository::snapshot(self)?;
         let working_copy = self.repo.view().get_wc_commit_id(&self.workspace).cloned();
-        self.evaluate(self.repo.as_ref(), revset.unwrap_or(DEFAULT_STACK), &revsets)?
+        let conflicted: Vec<Commit> = self
+            .evaluate(self.repo.as_ref(), revset.unwrap_or(DEFAULT_STACK), &revsets)?
+            .into_iter()
+            .filter(Commit::has_conflict)
+            .collect();
+        let parent_ids: Vec<Vec<vcs::CommitId>> = conflicted
             .iter()
-            .filter(|commit| commit.has_conflict())
+            .map(|commit| commit.parent_ids().iter().map(crate::commit_id).collect())
+            .collect();
+        let mut commits = conflicted
+            .iter()
             .map(|commit| {
                 let parents: Vec<Commit> = commit
                     .parent_ids()
@@ -166,18 +227,20 @@ impl JjRepository {
                     .map(|path| {
                         let repo_path = RepoPathBuf::from_internal_string(path.as_str())
                             .map_err(backend("naming a conflicted path"))?;
-                        let inherited = parents.iter().try_fold(false, |found, parent| {
-                            Ok::<_, VcsError>(
-                                found
-                                    || !parent
-                                        .tree()
-                                        .path_value(&repo_path)
-                                        .block_on()
-                                        .map_err(backend("finding a path in a tree"))?
-                                        .is_resolved(),
-                            )
-                        })?;
-                        Ok(StackPath { path, inherited })
+                        let value = |commit: &Commit| {
+                            commit
+                                .tree()
+                                .path_value(&repo_path)
+                                .block_on()
+                                .map_err(backend("finding a path in a tree"))
+                        };
+                        let own = value(commit)?;
+                        let held: Vec<MergedTreeValue> =
+                            parents.iter().map(value).collect::<Result<_, _>>()?;
+                        let inherited = held.iter().any(|parent| !parent.is_resolved());
+                        let origin = if inherited { Origin::Unlisted } else { Origin::Here };
+                        let untouched = inherited && held.contains(&own);
+                        Ok(StackPath { path, origin, untouched })
                     })
                     .collect::<Result<_, VcsError>>()?;
                 Ok(StackCommit {
@@ -190,7 +253,9 @@ impl JjRepository {
                     paths,
                 })
             })
-            .collect()
+            .collect::<Result<Vec<_>, VcsError>>()?;
+        link_origins(&mut commits, &parent_ids);
+        Ok(commits)
     }
 
     /// The one commit `revset` names, with the user's aliases, after a snapshot of the
@@ -235,6 +300,27 @@ impl JjRepository {
         path: &Utf8Path,
     ) -> Result<Option<vcs::Conflict>, VcsError> {
         self.conflict_in(&self.commit_by_id(id)?, path)
+    }
+
+    /// The conflict each parent of the commit `id` holds at `path`, in parent order: none for
+    /// a parent where the path is resolved.
+    ///
+    /// # Errors
+    ///
+    /// As [`JjRepository::conflict_at`].
+    pub fn parent_conflicts_at(
+        &self,
+        id: &vcs::CommitId,
+        path: &Utf8Path,
+    ) -> Result<Vec<vcs::Conflict>, VcsError> {
+        let commit = self.commit_by_id(id)?;
+        let mut conflicts = Vec::with_capacity(commit.parent_ids().len());
+        for parent in commit.parent_ids() {
+            let parent =
+                self.repo.store().get_commit(parent).map_err(backend("reading a parent commit"))?;
+            conflicts.extend(self.conflict_in(&parent, path)?);
+        }
+        Ok(conflicts)
     }
 
     /// Write `content` as `path` in the commit `id`'s change, as `jj resolve -r` does: markers
@@ -719,5 +805,111 @@ mod tests {
         }
         assert!(aliases.function_names().any(|name| name == "mutable"));
         assert!(DEFAULT_STACK.contains("mutable()"));
+    }
+
+    fn id(name: &str) -> vcs::CommitId {
+        vcs::CommitId::new(name.to_owned())
+    }
+
+    /// A listed commit `name` with `paths`, each inherited or not.
+    fn listed(name: &str, paths: &[(&str, bool)]) -> StackCommit {
+        StackCommit {
+            id: id(name),
+            change_id: name.to_owned(),
+            change: ChangeInfo {
+                commit: name.to_owned(),
+                change_id: Some(name.to_owned()),
+                summary: None,
+            },
+            description: String::new(),
+            time: vcs::Timestamp { seconds: 0, offset_seconds: 0 },
+            working_copy: false,
+            paths: paths
+                .iter()
+                .map(|&(path, inherited)| StackPath {
+                    path: path.into(),
+                    origin: if inherited { Origin::Unlisted } else { Origin::Here },
+                    untouched: false,
+                })
+                .collect(),
+        }
+    }
+
+    fn origins(commits: &[StackCommit]) -> Vec<Vec<Origin>> {
+        commits.iter().map(|c| c.paths.iter().map(|p| p.origin.clone()).collect()).collect()
+    }
+
+    fn parents(names: &[&[&str]]) -> Vec<Vec<vcs::CommitId>> {
+        names.iter().map(|p| p.iter().copied().map(id).collect()).collect()
+    }
+
+    #[test]
+    fn a_chain_of_inherited_paths_links_each_to_the_commit_it_arises_in() {
+        // The stack window's screenshot: s1 conflicts in a.txt, s3 in b.txt, @ on top.
+        let mut commits = [
+            listed("wc", &[("a.txt", true), ("b.txt", true)]),
+            listed("s3", &[("a.txt", true), ("b.txt", false)]),
+            listed("s2", &[("a.txt", true)]),
+            listed("s1", &[("a.txt", false)]),
+        ];
+        link_origins(&mut commits, &parents(&[&["s3"], &["s2"], &["s1"], &["base"]]));
+        let from = |name| Origin::Listed(id(name));
+        assert_eq!(
+            origins(&commits),
+            [
+                vec![from("s1"), from("s3")],
+                vec![from("s1"), Origin::Here],
+                vec![from("s1")],
+                vec![Origin::Here],
+            ]
+        );
+    }
+
+    #[test]
+    fn a_conflict_from_an_unlisted_parent_stays_unlisted() {
+        let mut commits = [listed("child", &[("a.txt", true)]), listed("tip", &[])];
+        link_origins(&mut commits, &parents(&[&["immutable"], &["child"]]));
+        assert_eq!(origins(&commits), [vec![Origin::Unlisted], vec![]]);
+    }
+
+    #[test]
+    fn a_listed_parent_without_the_path_leads_nowhere() {
+        // `child` inherits a.txt from its unlisted second parent; its listed first parent
+        // conflicts only in b.txt.
+        let mut commits = [
+            listed("child", &[("a.txt", true), ("b.txt", true)]),
+            listed("p", &[("b.txt", false)]),
+        ];
+        link_origins(&mut commits, &parents(&[&["p", "outside"], &["base"]]));
+        assert_eq!(
+            origins(&commits),
+            [vec![Origin::Unlisted, Origin::Listed(id("p"))], vec![Origin::Here]]
+        );
+    }
+
+    #[test]
+    fn a_merge_takes_its_first_parent_that_leads_to_a_listed_origin() {
+        // `left` inherits a.txt from outside the list; `right` is where it arises.
+        let mut commits = [
+            listed("merge", &[("a.txt", true)]),
+            listed("left", &[("a.txt", true)]),
+            listed("right", &[("a.txt", false)]),
+        ];
+        link_origins(&mut commits, &parents(&[&["left", "right"], &["outside"], &["base"]]));
+        assert_eq!(
+            origins(&commits),
+            [vec![Origin::Listed(id("right"))], vec![Origin::Unlisted], vec![Origin::Here]]
+        );
+    }
+
+    #[test]
+    fn of_two_parents_that_lead_to_origins_the_first_wins() {
+        let mut commits = [
+            listed("merge", &[("a.txt", true)]),
+            listed("left", &[("a.txt", false)]),
+            listed("right", &[("a.txt", false)]),
+        ];
+        link_origins(&mut commits, &parents(&[&["right", "left"], &["base"], &["base"]]));
+        assert_eq!(origins(&commits)[0], [Origin::Listed(id("right"))]);
     }
 }

@@ -17,7 +17,7 @@ use gpui_kit::{
 };
 use merge_core::document::MergeOptions;
 use merge_session::jj_config::ConfigEnv;
-use merge_session::jj_native::{Rewrite, StackCommit, Stacked};
+use merge_session::jj_native::{Origin, Rewrite, StackCommit, Stacked};
 use merge_session::repository::RunRepository;
 use merge_session::resolve::{Opened, ResolveError};
 use vcs::IdKind;
@@ -252,6 +252,7 @@ impl StackWindow {
         let rev = listed.id.as_str().to_owned();
         let change = listed.change.id(IdKind::Change).to_owned();
         let path = conflict.path.to_string();
+        let notice = self.inherited_notice(&conflict.origin, &path, &change);
         let (options, config) = (self.start.options.clone(), self.start.jj_config.clone());
         let load_path = PathBuf::from(&path);
         let loaded = cx.background_spawn(async move {
@@ -268,7 +269,9 @@ impl StackWindow {
         });
         cx.spawn(async move |this, cx| {
             let loaded = loaded.await;
-            ignore_closed_view(this.update(cx, |this, cx| this.arrived(loaded, change, path, cx)));
+            ignore_closed_view(this.update(cx, |this, cx| {
+                this.arrived(loaded, change, path, notice, cx);
+            }));
         })
         .detach();
         self.preview = None;
@@ -280,6 +283,7 @@ impl StackWindow {
         loaded: Result<(Opened, RunRepository, PathBuf), String>,
         change: String,
         path: String,
+        notice: Option<String>,
         cx: &mut Context<Self>,
     ) {
         self.loading = false;
@@ -298,6 +302,7 @@ impl StackWindow {
         };
         let (doc, settings) =
             crate::resolve_queue::window_settings(opened, &root, repo, self.start.settings.clone());
+        let settings = WindowSettings { notice: notice.map(SharedString::from), ..settings };
         match crate::window::open(doc, &settings, cx) {
             Ok((window, view)) => {
                 self.open = Some(OpenMerge { window, view: view.downgrade(), change, path });
@@ -306,6 +311,16 @@ impl StackWindow {
             Err(error) => self.note = Some(Note::Error(crate::error_text::describe(&error).into())),
         }
         cx.notify();
+    }
+
+    /// The merge window's banner for `path` in `change`, when its conflict arises in a listed
+    /// commit: resolving that commit first clears it here.
+    fn inherited_notice(&self, origin: &Origin, path: &str, change: &str) -> Option<String> {
+        let Origin::Listed(origin) = origin else {
+            return None;
+        };
+        let origin = self.commits.iter().find(|commit| &commit.id == origin)?;
+        Some(strings::stack_inherited(path, change, origin.change.id(IdKind::Change)))
     }
 
     /// The open merge window finished with `code`: close it, say what the save did, and list

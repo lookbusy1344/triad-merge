@@ -191,6 +191,7 @@ pub fn window_settings(
         title: Some(title),
         output: Some(file),
         record: opened.record,
+        parents: opened.parents,
         journal_name,
         ..base
     };

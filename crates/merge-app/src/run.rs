@@ -515,6 +515,7 @@ fn window_settings(stored: &Stored) -> WindowSettings {
             ..MergeOptions::default()
         },
         watch_output: Watching::On,
+        notice: None,
         ..WindowSettings::default()
     }
 }

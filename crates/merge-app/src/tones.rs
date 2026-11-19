@@ -4,7 +4,7 @@
 //!
 //! A window builds its [`Palette`] from the settings' colours (spec §6.4) when it opens.
 
-use gpui_kit::{Hsla, hsla, rgb};
+use gpui_kit::{Hsla, Rgba, hsla, rgb};
 use merge_config::settings::{Colour, Colours, DEFAULT_COLOURS, Themed};
 use merge_view::marks::Tone;
 
@@ -12,6 +12,9 @@ const OPAQUE: f32 = 1.;
 /// A move's band opacity as a share of the others': fainter than a side's band, since a move
 /// explains where text came from and needs no action.
 const MOVED_BAND_SHARE: f32 = 0.5;
+/// The inherited colour's share when a side's tone blends toward it: an inherited conflict's
+/// blocks keep a trace of their side's hue.
+const INHERITED_SHARE: f32 = 0.6;
 /// The grey of the cleared tone, which has no setting.
 const CLEARED_LIGHTNESS: f32 = 0.45;
 const CLEARED_LIGHTNESS_DARK: f32 = 0.65;
@@ -30,6 +33,7 @@ pub(crate) struct Tones {
     current: Hsla,
     deleted: Hsla,
     resolved: Hsla,
+    inherited: Hsla,
     band_opacity: f32,
 }
 
@@ -49,6 +53,7 @@ impl Tones {
             current: pick(colours.current),
             deleted: pick(colours.deleted),
             resolved: pick(colours.resolved),
+            inherited: pick(colours.inherited),
             band_opacity: colours.band_opacity.get(dark),
         }
     }
@@ -64,6 +69,7 @@ impl Tones {
             Tone::Both | Tone::Moved => self.both,
             Tone::WordMerged => self.word_merged,
             Tone::Cleared => self.cleared,
+            Tone::Inherited => self.inherited,
         }
     }
 
@@ -75,6 +81,16 @@ impl Tones {
             Tone::Moved => Hsla { a: band.a * MOVED_BAND_SHARE, ..band },
             _ => band,
         }
+    }
+
+    /// The band behind an inherited conflict's rows in `tone`: the tone's mark blended
+    /// [`INHERITED_SHARE`] of the way toward the inherited colour, at the band opacity.
+    pub(crate) fn inherited_band(&self, tone: Tone) -> Hsla {
+        let (from, to) = (Rgba::from(self.mark(tone)), Rgba::from(self.inherited));
+        let mix = |a: f32, b: f32| a + (b - a) * INHERITED_SHARE;
+        let blended =
+            Rgba { r: mix(from.r, to.r), g: mix(from.g, to.g), b: mix(from.b, to.b), a: 1. };
+        self.translucent(Hsla::from(blended))
     }
 
     /// The colour of the current region's bars in the top panes and frame in the result.
@@ -126,7 +142,7 @@ impl Default for Palette {
 mod tests {
     use super::*;
 
-    const TONES: [Tone; 8] = [
+    const TONES: [Tone; 9] = [
         Tone::Left,
         Tone::Right,
         Tone::Base,
@@ -135,7 +151,10 @@ mod tests {
         Tone::Edited,
         Tone::Cleared,
         Tone::WordMerged,
+        Tone::Inherited,
     ];
+    /// The tones without a hue, which the hue tests leave out.
+    const GREYS: [Tone; 2] = [Tone::Cleared, Tone::Inherited];
     const THEMES: [bool; 2] = [false, true];
     const DEGREES: f32 = 360.;
     /// Hues closer than this read as one colour in a translucent band. The default hues
@@ -240,6 +259,7 @@ mod tests {
             current: Themed::both(Colour::rgb(0x08_00_00)),
             deleted: Themed::both(Colour::rgb(0x09_00_00)),
             resolved: Themed::both(Colour::rgb(0x0a_00_00)),
+            inherited: Themed::both(Colour::rgb(0x0b_00_00)),
             band_opacity: Themed::both(0.5),
         };
         let tones = *Palette::new(&colours).tones(false);
@@ -256,6 +276,7 @@ mod tests {
             tones.deleted(),
         ];
         assert!(got.into_iter().eq((1..=9).map(red)), "{got:?}");
+        assert_eq!(tones.mark(Tone::Inherited), red(11));
         assert_eq!(tones.conflict_badge(true), Hsla { a: 0.5, ..red(10) });
         assert_eq!(tones.conflict_badge(false), Hsla { a: 0.5, ..red(4) });
     }
@@ -282,6 +303,39 @@ mod tests {
     }
 
     #[test]
+    fn an_inherited_band_blends_its_tone_six_tenths_toward_the_inherited_colour() {
+        // Black left and white inherited: 0.6 of the way is a grey of 0.6, at the opacity.
+        let colours = Colours {
+            left: Themed::both(Colour::rgb(0x00_00_00)),
+            inherited: Themed::both(Colour::rgb(0xff_ff_ff)),
+            band_opacity: Themed::both(0.5),
+            ..DEFAULT_COLOURS
+        };
+        let band = Palette::new(&colours).tones(false).inherited_band(Tone::Left);
+        assert_eq!(band.s, 0.);
+        assert!((band.l - 0.6).abs() < 1e-6, "{band:?}");
+        assert_eq!(band.a, 0.5);
+        // The other way round: a white side toward a black inherited colour leaves 0.4.
+        let colours = Colours {
+            left: Themed::both(Colour::rgb(0xff_ff_ff)),
+            inherited: Themed::both(Colour::rgb(0x00_00_00)),
+            ..colours
+        };
+        let band = Palette::new(&colours).tones(false).inherited_band(Tone::Left);
+        assert!((band.l - 0.4).abs() < 1e-6, "{band:?}");
+    }
+
+    #[test]
+    fn the_default_inherited_tone_is_the_cleared_grey() {
+        // Spec §6.4: `color-inherited` is `light:#737373,dark:#a6a6a6`, grey at the tones'
+        // lightness.
+        for (dark, l) in [(false, 0.45), (true, 0.65)] {
+            let grey = Palette::default().tones(dark).mark(Tone::Inherited);
+            assert!(rounds_from(grey, 0., 0., l), "{grey:?} dark {dark}");
+        }
+    }
+
+    #[test]
     fn a_deletion_is_red_in_both_themes() {
         for dark in THEMES {
             let colour = Palette::default().tones(dark).deleted();
@@ -297,7 +351,7 @@ mod tests {
             let palette = Palette::default();
             let tones = palette.tones(dark);
             let highlight = hue_of(tones.current());
-            for tone in TONES.into_iter().filter(|&t| t != Tone::Cleared) {
+            for tone in TONES.into_iter().filter(|t| !GREYS.contains(t)) {
                 let gap = hue_gap(highlight, hue_of(tones.mark(tone)));
                 assert!(
                     gap + 2. * HEX_HUE_ROUNDING >= MIN_HUE_GAP,
@@ -338,7 +392,7 @@ mod tests {
             let tones = palette.tones(dark);
             let hues: Vec<(Tone, f32)> = TONES
                 .iter()
-                .filter(|&&t| t != Tone::Cleared)
+                .filter(|t| !GREYS.contains(t))
                 .map(|&t| (t, hue_of(tones.mark(t))))
                 .collect();
             for (i, &(a, ha)) in hues.iter().enumerate() {

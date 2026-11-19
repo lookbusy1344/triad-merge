@@ -36,6 +36,9 @@ pub struct Loaded {
     /// Where each save is recorded: the VCS's conflict at the path. None for a file the VCS
     /// holds no conflict for.
     pub record: Option<Record>,
+    /// The conflict each parent commit holds at the path, for `resolve -r` (spec §7.5.1):
+    /// the merge window draws the conflicts the commit inherits in their own tone.
+    pub parents: Vec<Inputs>,
 }
 
 /// The VCS's conflict at one path, which records each save of its working-tree file
@@ -230,6 +233,8 @@ pub struct Opened {
     pub repo: Option<RepoKind>,
     /// As [`Loaded::record`].
     pub record: Option<Record>,
+    /// As [`Loaded::parents`].
+    pub parents: Vec<Inputs>,
 }
 
 impl Loaded {
@@ -251,6 +256,7 @@ impl Loaded {
             file: self.file,
             repo: self.repo,
             record: self.record,
+            parents: self.parents,
         })
     }
 }
@@ -427,6 +433,7 @@ pub fn load(
         repo: Some(repo.kind()),
         marker_length,
         record,
+        parents: Vec::new(),
     })
 }
 
@@ -465,6 +472,18 @@ pub fn load_at_commit(
     let inputs = Inputs::new(sides, bases)
         .map_err(|source| ResolveError::Shape { path: relative.clone(), source })?;
     let marker_length = merge_core::jj::marker_length(&inputs);
+    let parents = repo
+        .parent_conflicts_at(&id, &relative)?
+        .into_iter()
+        .filter_map(|parent| match parent_inputs(&relative, parent) {
+            Ok(inputs) => Some(inputs),
+            Err(error) => {
+                // The parents only mark which conflicts are inherited; the merge goes on.
+                tracing::warn!(%error, path = %relative, "a parent's conflict does not load");
+                None
+            }
+        })
+        .collect();
     let dir = tempfile::Builder::new()
         .prefix("triad-resolve-")
         .tempdir()
@@ -489,7 +508,16 @@ pub fn load_at_commit(
         labels: Labels::new(side_labels, base_labels),
         repo: Some(RepoKind::Jj),
         marker_length: Some(marker_length),
+        parents,
     })
+}
+
+/// A parent's conflict at `path` as inputs to align.
+fn parent_inputs(path: &Utf8Path, conflict: vcs::Conflict) -> Result<Inputs, ResolveError> {
+    let (sides, _) = decode(path, "side", conflict.sides)?;
+    let (bases, _) = decode(path, "base", conflict.bases)?;
+    Inputs::new(sides, bases)
+        .map_err(|source| ResolveError::Shape { path: path.to_owned(), source })
 }
 
 /// [`Record::preview`] writes nothing.
@@ -604,6 +632,7 @@ fn from_parsed(
         // The VCS reads the markers back at any length.
         marker_length: None,
         record: None,
+        parents: Vec::new(),
     }
 }
 
@@ -700,6 +729,7 @@ mod tests {
             repo: None,
             marker_length: None,
             record: None,
+            parents: Vec::new(),
         }
     }
 

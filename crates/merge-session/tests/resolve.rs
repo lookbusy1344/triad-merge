@@ -1032,6 +1032,17 @@ mod jj {
     }
 
     #[test]
+    fn resolve_at_a_revision_carries_each_parent_s_conflict_at_the_path() {
+        let (fixture, merge) = stacked();
+        let child = at_commit(&fixture, &format!("{}+", merge.commit));
+        let parents: Vec<_> =
+            child.parents.iter().map(|p| (content(p.sides()), content(p.bases()))).collect();
+        assert_eq!(parents, [(vec!["left\n", "right\n"], vec!["a\n"])]);
+        // `merge`'s parents hold a.txt resolved.
+        assert!(at_commit(&fixture, &merge.commit).parents.is_empty());
+    }
+
+    #[test]
     fn resolve_at_a_revision_takes_the_user_s_revset_aliases() {
         let (fixture, merge) = stacked();
         let dir = tempfile::tempdir().expect("a temporary directory");

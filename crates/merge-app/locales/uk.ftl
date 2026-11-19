@@ -135,6 +135,7 @@ inherited = (успадкований)
 stack-resolved = { $path } розв’язано в { $change }.
 stack-saved-conflicts = { $path } збережено в { $change } з конфліктами.
 stack-error = Злиття { $path } у { $change } завершилося помилкою.
+stack-inherited = { $path } у { $change } успадковує конфлікт від { $origin }. Якщо спершу розвʼязати його в { $origin }, він зникне й тут; розвʼязання, збережене спершу тут, найімовірніше, знову спричинить конфлікт.
 preview-resolves = Збереження розв’яже шлях у { $change }.
 preview-keeps = Після збереження в { $change } лишаться конфлікти.
 preview-no-rebase = Жоден нащадок не перебазовується.
@@ -286,6 +287,8 @@ tool-whitespace = Показати або сховати пробіли
 
 pick-label = { $title } в області { $region } з { $regions }
 pick-label-unresolved = { $title } в області { $region } з { $regions }, не розв’язано
+pick-label-inherited = { $title } в області { $region } з { $regions }, не розв’язано, успадковано
+inherited-pill = успадкований
 line-pick-label = Рядок { $line } у { $title }
 badge-conflict = Конфлікт { $number } з { $count }
 badge-sides = { $kept } з { $sides } сторін

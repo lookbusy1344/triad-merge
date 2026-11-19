@@ -69,7 +69,7 @@ mod tests {
     use gpui_kit::{Hsla, Rgba, TestAppContext};
     use merge_view::marks::Tone;
 
-    const TONES: [Tone; 9] = [
+    const TONES: [Tone; 10] = [
         Tone::Left,
         Tone::Right,
         Tone::Base,
@@ -79,6 +79,7 @@ mod tests {
         Tone::Edited,
         Tone::Cleared,
         Tone::WordMerged,
+        Tone::Inherited,
     ];
     /// WCAG's floor for large text and user-interface parts, the user's target for captures.
     const MIN_CONTRAST: f32 = 3.0;

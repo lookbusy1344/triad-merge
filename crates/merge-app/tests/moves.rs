@@ -2,10 +2,10 @@
 
 use crate::common;
 
-use common::{act, bounds, doc, label, open, open_with, set_caret};
+use common::{act, bounds, doc, label, open, open_with, set_caret, three};
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{Action as _, TestAppContext, px};
-use merge_app::window::{cell_id, move_pill_id};
+use merge_app::window::{cell_id, inherited_pane_pill_id, move_pill_id};
 use merge_app::{GoToMoveEnd, TakeBase, WindowSettings};
 use merge_core::index::RegionIx;
 use merge_core::merge3::Source;
@@ -17,6 +17,9 @@ const BLOCK_LAST: &str = "a\nb\nc\nm1\nm2\n";
 /// Both sides move `m1 m2` from the top: left to the end, right before `d`.
 const TWICE: [&str; 3] =
     ["m1\nm2\na\nb\nc\nd\ne\n", "a\nb\nc\nd\ne\nm1\nm2\n", "a\nb\nc\nm1\nm2\nd\ne\n"];
+
+/// The space between two pills on one row (`STYLE.md`, Pill).
+const MOVE_PILL_GAP: gpui_kit::Pixels = px(4.);
 
 const LEFT: Source = Source::Side(0);
 const RIGHT: Source = Source::Side(1);
@@ -68,6 +71,35 @@ fn each_end_of_a_left_move_shows_a_pill_naming_the_other_ends_line(cx: &mut Test
     );
     assert_eq!(pill(cx, window, 1, 0), None, "right moved nothing");
     assert_eq!(pill(cx, window, 0, 1), None, "one pill per end, on its first row");
+}
+
+/// Left moves `m1 m2` from the top over `x`, which right changes to `y`: the move's far end
+/// starts the conflict at `x`.
+const MOVE_INTO_CONFLICT: [&str; 3] =
+    ["m1\nm2\na\nb\nc\nx\n", "a\nb\nc\nm1\nm2\n", "m1\nm2\na\nb\nc\ny\n"];
+
+#[gpui_kit::test]
+fn an_inherited_pill_follows_a_move_pill_on_the_same_row(cx: &mut TestAppContext) {
+    let [base, left, right] = MOVE_INTO_CONFLICT;
+    // Regions: left deletes `m1 m2` (rows 0–1), `a b c` (rows 2–4), the conflict of left's
+    // `m1 m2` and right's `y` over `x` (rows 5–6), region 2. A parent holds the same conflict.
+    let settings =
+        WindowSettings { parents: vec![three(base, left, right)], ..WindowSettings::default() };
+    let (window, ..) = open_with(cx, doc(base, left, right), &settings);
+    let conflict = RegionIx::new(2);
+    let moved = pill_to(cx, window, 0, 5, BASE).expect("the move pill shows");
+    let inherited = bounds(cx, window, inherited_pane_pill_id(0, conflict));
+    let cell = bounds(cx, window, cell_id(0, RowIx::new(5)));
+    assert_eq!((moved.top(), inherited.top()), (cell.top(), cell.top()), "both on the row");
+    // The run reads move pill, gap, inherited pill, against the pane's right edge.
+    assert_eq!(inherited.left() - moved.right(), MOVE_PILL_GAP);
+    assert!(moved.size.width > px(0.) && inherited.size.width > px(0.));
+    // Right's pane holds no move end on the row: the inherited pill stands alone there.
+    assert_eq!(pill(cx, window, 1, 5), None);
+    assert_eq!(
+        bounds(cx, window, inherited_pane_pill_id(1, conflict)).top(),
+        bounds(cx, window, cell_id(1, RowIx::new(5))).top()
+    );
 }
 
 #[gpui_kit::test]

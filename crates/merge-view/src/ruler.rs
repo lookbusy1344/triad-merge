@@ -11,6 +11,7 @@ use merge_core::index::{Line, RegionIx};
 use merge_core::merge3::Kind;
 
 use crate::diff::pieces;
+use crate::inherited::Inherited;
 use crate::marks::{Tone, mark};
 
 /// How a mark paints.
@@ -20,6 +21,8 @@ pub enum Style {
     Plain(Tone),
     /// An unresolved conflict: the full width in the conflict tone.
     Unresolved,
+    /// An unresolved conflict a parent holds too: the full width in the inherited tone.
+    Inherited,
     /// A resolved conflict: half the width in the conflict tone, half in the resolution's.
     Resolved(Tone),
     /// One copy of a block the result holds twice: the copy's tone, outlined in the conflict
@@ -37,19 +40,26 @@ pub struct RulerMark {
 
 /// The marks beside the result pane: each region's, in region order, then both copies of each
 /// block the result holds twice, left's then right's, which paint over them.
-pub fn marks(doc: &MergeDocument) -> impl Iterator<Item = RulerMark> + '_ {
-    region_marks(doc).chain(doc.held_duplicates().flatten().filter_map(|lines| {
+pub fn marks<'a>(
+    doc: &'a MergeDocument,
+    inherited: &'a Inherited,
+) -> impl Iterator<Item = RulerMark> + 'a {
+    region_marks(doc, inherited).chain(doc.held_duplicates().flatten().filter_map(|lines| {
         let region = doc.region_at_byte(doc.byte_of_line(Line::new(lines.start)));
-        let tone = mark(doc, region)?.tone;
+        let tone = mark(doc, region, inherited)?.tone;
         Some(RulerMark { region, lines, style: Style::Duplicate(tone) })
     }))
 }
 
-fn region_marks(doc: &MergeDocument) -> impl Iterator<Item = RulerMark> + '_ {
+fn region_marks<'a>(
+    doc: &'a MergeDocument,
+    inherited: &'a Inherited,
+) -> impl Iterator<Item = RulerMark> + 'a {
     doc.region_ixs().filter_map(move |region| {
-        let shown = mark(doc, region)?;
+        let shown = mark(doc, region, inherited)?;
         let style = match shown.tone {
             Tone::Conflict => Style::Unresolved,
+            Tone::Inherited => Style::Inherited,
             tone if doc.region(region).kind == Kind::Conflict => Style::Resolved(tone),
             tone => Style::Plain(tone),
         };
@@ -282,7 +292,18 @@ mod tests {
     }
 
     fn all(doc: &MergeDocument) -> Vec<RulerMark> {
-        marks(doc).collect()
+        marks(doc, &Inherited::NONE).collect()
+    }
+
+    #[test]
+    fn an_inherited_conflict_takes_the_inherited_style() {
+        let d = doc("a\nb\n", "a\nL\n", "a\nR\n");
+        let parent = three("a\nb\n", "a\nL\n", "a\nR\n");
+        let inherited = Inherited::find(&d, &[parent]);
+        let styles: Vec<Style> = marks(&d, &inherited).map(|m| m.style).collect();
+        assert_eq!(styles, [Style::Inherited]);
+        let styles: Vec<Style> = marks(&d, &Inherited::NONE).map(|m| m.style).collect();
+        assert_eq!(styles, [Style::Unresolved]);
     }
 
     #[test]

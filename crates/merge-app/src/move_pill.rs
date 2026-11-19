@@ -1,10 +1,13 @@
 //! The pill over one end of a moved block, in the diff window and the merge window's top panes
-//! (spec §5): translucent pale blue with bold deep blue text, naming the other end's line.
+//! (spec §5): translucent pale blue with bold deep blue text, naming the other end's line. The
+//! inherited pill over an inherited conflict in the result takes the same shape in the
+//! inherited colour.
 
 use gpui_kit::base::ObservedElement;
 use gpui_kit::{
     Div, ElementId, FontWeight, Hsla, InteractiveElement as _, ParentElement as _, Pixels, Role,
-    Stateful, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, div, hsla, px,
+    SharedString, Stateful, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, div,
+    hsla, px,
 };
 
 /// How far a pill stands in from its pane's right edge: past the 12 px ruler and the
@@ -28,20 +31,44 @@ pub(crate) fn move_pill(
     height: Pixels,
     text_size: Pixels,
 ) -> ObservedElement<Stateful<Div>> {
+    pill(id, text, label, Role::Button, height, text_size, [MOVE_PILL_FILL, MOVE_PILL_TEXT])
+        .cursor_pointer()
+}
+
+/// A pill one row tall showing `text` in `colours`, fill then text, read as a label. The
+/// caller places it.
+pub(crate) fn label_pill(
+    id: ElementId,
+    text: SharedString,
+    height: Pixels,
+    text_size: Pixels,
+    colours: [Hsla; 2],
+) -> ObservedElement<Stateful<Div>> {
+    pill(id, text.clone(), text, Role::Label, height, text_size, colours)
+}
+
+fn pill(
+    id: ElementId,
+    text: impl Into<SharedString>,
+    label: impl Into<SharedString>,
+    role: Role,
+    height: Pixels,
+    text_size: Pixels,
+    [fill, colour]: [Hsla; 2],
+) -> ObservedElement<Stateful<Div>> {
     div()
         .id(id)
         .test_support()
-        .role(Role::Button)
-        .aria_label(label)
+        .role(role)
+        .aria_label(label.into())
         .h(height)
         .px(MOVE_PILL_PADDING)
         .flex()
         .items_center()
         .rounded_full()
-        .bg(MOVE_PILL_FILL)
-        .text_color(MOVE_PILL_TEXT)
+        .bg(fill)
+        .text_color(colour)
         .font_weight(FontWeight::BOLD)
         .text_size(text_size)
-        .cursor_pointer()
-        .child(text)
+        .child(text.into())
 }

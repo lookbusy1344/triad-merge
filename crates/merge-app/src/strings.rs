@@ -269,9 +269,21 @@ pub(crate) fn stack_path(path: &StackPath) -> Row {
         status: Some(pick_list::Status::Conflict),
         text: path.path.to_string().into(),
         shown: Shown::Path,
-        trail: path.inherited.then(|| t!("inherited")),
+        trail: path.inherited().then(|| t!("inherited")),
+        quiet: path.untouched,
         ..Row::default()
     }
+}
+
+/// The pill over an inherited conflict in the result (spec §5).
+pub(crate) fn inherited_pill() -> SharedString {
+    t!("inherited-pill")
+}
+
+/// What the stack window says while the merge window is open on `path` in `change`, whose
+/// conflict arises in the listed commit `origin`.
+pub(crate) fn stack_inherited(path: &str, change: &str, origin: &str) -> String {
+    t!("stack-inherited", path = path, change = change, origin = origin)
 }
 
 /// The stack window's summary: the conflicted commits listed.
@@ -703,20 +715,35 @@ pub(crate) fn tool_name(tool: Tool) -> SharedString {
     }
 }
 
+/// Whether a pick target's region waits on the user.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Pending {
+    /// Resolved, or never a conflict.
+    No,
+    /// An unresolved conflict.
+    Unresolved,
+    /// An unresolved conflict a parent commit holds too (spec §7.5.1).
+    Inherited,
+}
+
 /// A pick target's accessible label: the pane's title, where its region sits, and whether
-/// the region is an unresolved conflict. The label carries that state because macOS reads a
-/// mixed toggle as on.
+/// the region is an unresolved conflict, and an inherited one. The label carries that state
+/// because macOS reads a mixed toggle as on.
 pub(crate) fn pick_label(
     title: &str,
     region: RegionIx,
     regions: usize,
-    unresolved: bool,
+    pending: Pending,
 ) -> String {
     let region = region.next().get();
-    if unresolved {
-        t!("pick-label-unresolved", title = title, region = region, regions = regions)
-    } else {
-        t!("pick-label", title = title, region = region, regions = regions)
+    match pending {
+        Pending::No => t!("pick-label", title = title, region = region, regions = regions),
+        Pending::Unresolved => {
+            t!("pick-label-unresolved", title = title, region = region, regions = regions)
+        }
+        Pending::Inherited => {
+            t!("pick-label-inherited", title = title, region = region, regions = regions)
+        }
     }
 }
 
@@ -1122,6 +1149,8 @@ pub(crate) mod edit_menu {
 
 #[cfg(test)]
 mod tests {
+    use merge_session::jj_native::Origin;
+
     use super::*;
 
     /// The message ids this file names outside its tests: in `t!`, `texts!`, `format_in` (after
@@ -1820,13 +1849,51 @@ mod tests {
     }
 
     #[test]
+    fn a_pick_target_says_whether_its_conflict_waits_and_is_inherited() {
+        let region = RegionIx::new(1);
+        assert_eq!(pick_label("Left", region, 3, Pending::No), "Left in region 2 of 3");
+        assert_eq!(
+            pick_label("Left", region, 3, Pending::Unresolved),
+            "Left in region 2 of 3, unresolved"
+        );
+        assert_eq!(
+            pick_label("Left", region, 3, Pending::Inherited),
+            "Left in region 2 of 3, unresolved, inherited"
+        );
+    }
+
+    #[test]
+    fn an_inherited_path_names_where_its_conflict_arises() {
+        assert_eq!(
+            stack_inherited("a.txt", "royxmykx", "mzvwutvl"),
+            "a.txt in royxmykx inherits its conflict from mzvwutvl. Resolving it in mzvwutvl \
+             first clears it here; a resolution saved here first will likely conflict again."
+        );
+    }
+
+    #[test]
     fn an_inherited_path_is_marked() {
-        let path = |inherited| StackPath { path: "src/a.rs".into(), inherited };
-        assert_eq!(stack_path(&path(false)).label(), "src/a.rs");
-        assert_eq!(stack_path(&path(true)).label(), "src/a.rs (inherited)");
-        assert_eq!(stack_path(&path(true)).text, "src/a.rs");
-        assert_eq!(stack_path(&path(false)).status, Some(pick_list::Status::Conflict));
-        assert_eq!(stack_path(&path(false)).shown, Shown::Path);
+        let path = |origin| StackPath { path: "src/a.rs".into(), origin, untouched: false };
+        let listed = || Origin::Listed(vcs::CommitId::new("1a2b".to_owned()));
+        assert_eq!(stack_path(&path(Origin::Here)).label(), "src/a.rs");
+        assert_eq!(stack_path(&path(listed())).label(), "src/a.rs (inherited)");
+        assert_eq!(stack_path(&path(Origin::Unlisted)).label(), "src/a.rs (inherited)");
+        assert_eq!(stack_path(&path(listed())).text, "src/a.rs");
+        assert_eq!(stack_path(&path(Origin::Here)).status, Some(pick_list::Status::Conflict));
+        assert_eq!(stack_path(&path(Origin::Here)).shown, Shown::Path);
+        assert!(!stack_path(&path(Origin::Here)).quiet);
+        assert!(!stack_path(&path(listed())).quiet);
+    }
+
+    #[test]
+    fn a_path_whose_conflict_is_its_parent_s_alone_is_quiet() {
+        let path = StackPath {
+            path: "src/a.rs".into(),
+            origin: Origin::Listed(vcs::CommitId::new("1a2b".to_owned())),
+            untouched: true,
+        };
+        assert!(stack_path(&path).quiet);
+        assert_eq!(stack_path(&path).label(), "src/a.rs (inherited)");
     }
 
     fn changed(path: &str, change: Change, content: Content) -> ChangedFile {

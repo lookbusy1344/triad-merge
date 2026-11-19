@@ -123,6 +123,7 @@ inherited = (heredado)
 stack-resolved = { $path } resuelto en { $change }.
 stack-saved-conflicts = { $path } guardado en { $change } con conflictos.
 stack-error = La fusión de { $path } en { $change } terminó con un error.
+stack-inherited = { $path } en { $change } hereda su conflicto de { $origin }. Resolverlo primero en { $origin } lo elimina aquí; una resolución guardada aquí primero probablemente volverá a entrar en conflicto.
 preview-resolves = Guardar resuelve la ruta en { $change }.
 preview-keeps = Guardar mantiene conflictos en { $change }.
 preview-no-rebase = No se rebasa ningún descendiente.
@@ -274,6 +275,8 @@ tool-whitespace = Mostrar u ocultar espacios en blanco
 
 pick-label = { $title } en la región { $region } de { $regions }
 pick-label-unresolved = { $title } en la región { $region } de { $regions }, sin resolver
+pick-label-inherited = { $title } en la región { $region } de { $regions }, sin resolver, heredado
+inherited-pill = heredado
 line-pick-label = Línea { $line } de { $title }
 badge-conflict = Conflicto { $number } de { $count }
 badge-sides = { $kept } de { $sides } lados

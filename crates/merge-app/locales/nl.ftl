@@ -123,6 +123,7 @@ inherited = (geërfd)
 stack-resolved = { $path } opgelost in { $change }.
 stack-saved-conflicts = { $path } opgeslagen in { $change } met conflicten.
 stack-error = De samenvoeging van { $path } in { $change } eindigde met een fout.
+stack-inherited = { $path } in { $change } erft zijn conflict van { $origin }. Wie het eerst in { $origin } oplost, lost het ook hier op; een oplossing die hier eerst wordt opgeslagen, geeft waarschijnlijk opnieuw een conflict.
 preview-resolves = Opslaan lost het pad op in { $change }.
 preview-keeps = Opslaan laat conflicten in { $change }.
 preview-no-rebase = Geen afstammeling wordt gerebased.
@@ -274,6 +275,8 @@ tool-whitespace = Witruimte tonen of verbergen
 
 pick-label = { $title } in gebied { $region } van { $regions }
 pick-label-unresolved = { $title } in gebied { $region } van { $regions }, onopgelost
+pick-label-inherited = { $title } in gebied { $region } van { $regions }, onopgelost, geërfd
+inherited-pill = geërfd
 line-pick-label = Regel { $line } van { $title }
 badge-conflict = Conflict { $number } van { $count }
 badge-sides = { $kept } van { $sides } kanten

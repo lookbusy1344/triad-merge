@@ -123,6 +123,7 @@ inherited = (ärvd)
 stack-resolved = { $path } löst i { $change }.
 stack-saved-conflicts = { $path } sparad i { $change } med konflikter.
 stack-error = Sammanslagningen av { $path } i { $change } slutade med ett fel.
+stack-inherited = { $path } i { $change } ärver sin konflikt från { $origin }. Löses den först i { $origin } försvinner den även här; en lösning som sparas här först ger troligen en ny konflikt.
 preview-resolves = Att spara löser sökvägen i { $change }.
 preview-keeps = Att spara lämnar konflikter i { $change }.
 preview-no-rebase = Ingen ättling flyttas om.
@@ -274,6 +275,8 @@ tool-whitespace = Visa eller dölj blanktecken
 
 pick-label = { $title } i område { $region } av { $regions }
 pick-label-unresolved = { $title } i område { $region } av { $regions }, olöst
+pick-label-inherited = { $title } i område { $region } av { $regions }, olöst, ärvd
+inherited-pill = ärvd
 line-pick-label = Rad { $line } i { $title }
 badge-conflict = Konflikt { $number } av { $count }
 badge-sides = { $kept } av { $sides } sidor

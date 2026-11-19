@@ -80,6 +80,7 @@ inherited = （継承）
 stack-resolved = { $change } の { $path } を解決しました。
 stack-saved-conflicts = { $change } の { $path } を競合を残して保存しました。
 stack-error = { $change } の { $path } のマージはエラーで終了しました。
+stack-inherited = { $change } の { $path } は { $origin } からコンフリクトを引き継いでいます。先に { $origin } で解決すると、ここでも解消されます。先にここで保存した解決は、再びコンフリクトする可能性が高いです。
 preview-resolves = 保存すると { $change } のこのパスは解決します。
 preview-keeps = 保存しても { $change } に競合が残ります。
 preview-no-rebase = リベースされる子孫はありません。
@@ -231,6 +232,8 @@ tool-whitespace = 空白の表示を切り替え
 
 pick-label = { $title }、領域 { $region }/{ $regions }
 pick-label-unresolved = { $title }、領域 { $region }/{ $regions }、未解決
+pick-label-inherited = { $title }、領域 { $region }/{ $regions }、未解決、継承
+inherited-pill = 継承
 line-pick-label = { $title }、{ $line } 行目
 badge-conflict = 競合 { $number }/{ $count }
 badge-sides = { $kept }/{ $sides } 側

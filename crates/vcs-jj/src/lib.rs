@@ -12,7 +12,7 @@ pub mod tool_config;
 
 pub use absorb::{AbsorbHunk, Absorbed, DEFAULT_INTO, Destination, Goes, HunkChoice, Stay};
 pub use history::{FileVersion, SHORT_OPERATION, VersionState};
-pub use native::{CommitEffect, DEFAULT_ALIASES, Rewrite, StackCommit, StackPath};
+pub use native::{CommitEffect, DEFAULT_ALIASES, Origin, Rewrite, StackCommit, StackPath};
 
 use std::collections::HashMap;
 use std::error::Error;

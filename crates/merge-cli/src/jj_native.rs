@@ -7,8 +7,8 @@ use merge_session::jj_native::stays;
 use serde_json::json;
 use vcs::IdKind;
 use vcs_jj::{
-    AbsorbHunk, Absorbed, CommitEffect, FileVersion, Goes, Rewrite, SHORT_OPERATION, StackCommit,
-    Stay, VersionState,
+    AbsorbHunk, Absorbed, CommitEffect, FileVersion, Goes, Origin, Rewrite, SHORT_OPERATION,
+    StackCommit, Stay, VersionState,
 };
 
 use crate::ExitCode;
@@ -37,7 +37,12 @@ pub fn stack_report(
                     "summary": commit.change.summary,
                     "paths": commit.paths.iter().map(|p| json!({
                         "path": p.path.as_str(),
-                        "inherited": p.inherited,
+                        "inherited": p.inherited(),
+                        "origin": match &p.origin {
+                            Origin::Listed(origin) => Some(origin.as_str()),
+                            Origin::Here | Origin::Unlisted => None,
+                        },
+                        "untouched": p.untouched,
                     })).collect::<Vec<_>>(),
                 })
             })
@@ -60,7 +65,7 @@ pub fn stack_report(
         .join(" ");
         line(&mut text, format_args!("{heading}"));
         for p in &commit.paths {
-            let mark = if p.inherited { " (inherited)" } else { "" };
+            let mark = if p.inherited() { " (inherited)" } else { "" };
             line(&mut text, format_args!("  {}{mark}", p.path));
         }
     }
@@ -287,7 +292,11 @@ mod tests {
                 description: "merge\n".to_owned(),
                 time: vcs::Timestamp { seconds: 0, offset_seconds: 0 },
                 working_copy: false,
-                paths: vec![StackPath { path: "a.txt".into(), inherited: false }],
+                paths: vec![StackPath {
+                    path: "a.txt".into(),
+                    origin: Origin::Here,
+                    untouched: false,
+                }],
             },
             StackCommit {
                 id: vcs::CommitId::new("bbbb".to_owned()),
@@ -297,8 +306,13 @@ mod tests {
                 time: vcs::Timestamp { seconds: 0, offset_seconds: 0 },
                 working_copy: false,
                 paths: vec![
-                    StackPath { path: "a.txt".into(), inherited: true },
-                    StackPath { path: "b.txt".into(), inherited: false },
+                    StackPath {
+                        path: "a.txt".into(),
+                        origin: Origin::Listed(vcs::CommitId::new("aaaa".to_owned())),
+                        untouched: true,
+                    },
+                    StackPath { path: "b.txt".into(), origin: Origin::Here, untouched: false },
+                    StackPath { path: "c.txt".into(), origin: Origin::Unlisted, untouched: false },
                 ],
             },
         ]
@@ -307,7 +321,11 @@ mod tests {
     #[test]
     fn the_stack_prints_each_commit_then_its_paths_and_exits_one() {
         let (text, code) = stack_report(&listed(), false).expect("a report");
-        assert_eq!(text, "kkkk c-kkkk merge\n  a.txt\nllll c-llll\n  a.txt (inherited)\n  b.txt\n");
+        assert_eq!(
+            text,
+            "kkkk c-kkkk merge\n  a.txt\nllll c-llll\n  a.txt (inherited)\n  b.txt\n  \
+             c.txt (inherited)\n"
+        );
         assert_eq!(code, ExitCode::Conflicts);
     }
 
@@ -330,7 +348,18 @@ mod tests {
         assert_eq!(value[1]["commit"], "bbbb");
         assert_eq!(value[1]["change_id"], "llll");
         assert_eq!(value[1]["summary"], serde_json::Value::Null);
-        assert_eq!(value[1]["paths"][0], json!({"path": "a.txt", "inherited": true}));
+        assert_eq!(
+            value[0]["paths"][0],
+            json!({"path": "a.txt", "inherited": false, "origin": null, "untouched": false})
+        );
+        assert_eq!(
+            value[1]["paths"],
+            json!([
+                {"path": "a.txt", "inherited": true, "origin": "aaaa", "untouched": true},
+                {"path": "b.txt", "inherited": false, "origin": null, "untouched": false},
+                {"path": "c.txt", "inherited": true, "origin": null, "untouched": false},
+            ])
+        );
     }
 
     fn rewrite(resolved: bool, written: bool) -> Rewrite {
