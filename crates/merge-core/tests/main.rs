@@ -10,4 +10,5 @@ mod hostile_input;
 mod jj_oracle;
 mod line_picks;
 mod oracle;
+mod patch_oracle;
 mod properties;

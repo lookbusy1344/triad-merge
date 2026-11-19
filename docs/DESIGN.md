@@ -101,11 +101,15 @@ The intra-line marks (spec §5) also run in each recompute and install with the 
 
 `merge_core::edit` holds what both documents share: `TextPatch`, `EditBatch`, batch checks, inverse patches and line-ending fixes.
 
+`merge_core::patch::unified` writes a two-way diff's regions as a unified diff, in `git diff`'s format: hunk headers counted from 1, with a count of 1 left out and an empty range naming the line before it; `\ No newline at end of file` after a line without a terminator; and git's default function name after the header, the nearest left line above the hunk that starts with an ASCII letter, `_` or `$`, cut to 80 bytes and trimmed of trailing whitespace. git cuts at byte 80; triad cuts at the character boundary at or before it. Two changes share a hunk when at most twice the context lies between them. Context comes from unchanged regions alone and prints from the right side, as `git diff -w` prints it. A change the comparison ignores starts no hunk; inside one it prints as a change, and context stops at it. `Scope::Region` gives one changed region with its context.
+
 #### A4.8 Oracle corpus
 
 `fixtures/oracle/corpus.jsonl` holds about 2,000 triples from `script/gen-oracle`: hand seeds, seeded mutations, and the first 200 lines of triad's own files at pinned commits. It needs git 2.54 or later and records `git merge-file -p --diff-algorithm=histogram` under `--diff3` and `--zdiff3`, with the marker size computed by spec §4.4's rule and passed as `--marker-size`, since git keeps the requested size. The exit code is the conflict count.
 
 The test checks every case in both modes: a clean merge matches byte for byte; a conflicted one matches the conflict count and the text outside the markers.
+
+`fixtures/oracle/patch-corpus.jsonl`, from `script/gen-patch-oracle`, holds `git diff --no-index --histogram --indent-heuristic` of two pairs of each triple, base against left and left against right, at context 0, 1 and 3, without the user's or the system's git config: 11,730 patches, hunks only. The two-way diff picks other hunks than git's histogram on 58 of the 3,910 pairs (spec §4.4); the test holds that count. On every other pair `unified` gives git's patch byte for byte at all three sizes.
 
 libgit2's file-merge tests (`merge/files.c`, `merge/trees/whitespace.c`, `merge/trees/automerge.c`) give a case list, not data. libgit2 is GPL-2.0 and its linking exception does not cover its tests, so each scenario is a hand seed written from scratch, `seed-libgit2-<scenario>`, with git's output as the expected value. The jj corpus is §B5.2.
 

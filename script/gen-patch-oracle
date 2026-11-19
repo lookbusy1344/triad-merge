@@ -1,0 +1,85 @@
+#!/usr/bin/env -S python3 -I
+"""gen-patch-oracle — generate fixtures/oracle/patch-corpus.jsonl from `git diff --no-index`.
+
+Dev-time only; the product never runs git. Reads the triples of fixtures/oracle/corpus.jsonl
+and diffs two pairs of each, base against left and left against right, at each context size
+in CONTEXTS, under histogram with the indent heuristic. Each line of the output is one case:
+the triple's id, the pair, the context size, git's exit code and its hunks: the output from
+the first `@@` line on, without the `diff --git`, `index`, `---` and `+++` headers, which
+name git's temporary files. The inputs stay in corpus.jsonl.
+
+git runs without the user's or the system's config, so no setting moves a hunk.
+
+Run from anywhere: script/gen-patch-oracle
+"""
+
+import json
+import os
+import pathlib
+import subprocess
+import sys
+import tempfile
+
+CONTEXTS = (0, 1, 3)
+PAIRS = (("base", "left"), ("left", "right"))
+GIT_FLAGS = [
+    "--no-index", "--no-color", "--no-ext-diff", "--no-textconv",
+    "--histogram", "--indent-heuristic",
+]
+HUNK_START = "@@ "
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+CORPUS = ROOT / "fixtures" / "oracle" / "corpus.jsonl"
+OUT = ROOT / "fixtures" / "oracle" / "patch-corpus.jsonl"
+ENV = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+
+
+def git_version():
+    out = subprocess.run(["git", "--version"], capture_output=True, check=True, env=ENV)
+    return out.stdout.decode().strip()
+
+
+def hunks(output):
+    """git's output from the first hunk header on; empty when the files are equal."""
+    at = output.find("\n" + HUNK_START)
+    return "" if at < 0 else output[at + 1:]
+
+
+def diff(before, after, context, workdir):
+    old, new = workdir / "old", workdir / "new"
+    old.write_bytes(before.encode())
+    new.write_bytes(after.encode())
+    result = subprocess.run(
+        ["git", "diff", *GIT_FLAGS, f"-U{context}", str(old), str(new)],
+        capture_output=True, env=ENV,
+    )
+    if result.returncode not in (0, 1) or result.stderr:
+        sys.exit(f"git diff failed: {result.stderr.decode()}")
+    return result.returncode, hunks(result.stdout.decode())
+
+
+def main():
+    git = git_version()
+    cases = [json.loads(line) for line in CORPUS.read_text().splitlines()]
+    count = 0
+    with tempfile.TemporaryDirectory() as tmp, OUT.open("w") as out:
+        workdir = pathlib.Path(tmp)
+        for case in cases:
+            for before, after in PAIRS:
+                for context in CONTEXTS:
+                    code, patch = diff(case[before], case[after], context, workdir)
+                    record = {
+                        "id": case["id"],
+                        "before": before,
+                        "after": after,
+                        "context": context,
+                        "exit": code,
+                        "hunks": patch,
+                    }
+                    out.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+                    count += 1
+    print(f"{count} cases written to {OUT.relative_to(ROOT)} with {git}")
+
+
+if __name__ == "__main__":
+    main()

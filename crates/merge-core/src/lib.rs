@@ -14,6 +14,7 @@ pub mod line_map;
 pub mod line_pick;
 pub mod markers;
 pub mod merge3;
+pub mod patch;
 pub mod pattern;
 mod region_lines;
 pub mod rename;
