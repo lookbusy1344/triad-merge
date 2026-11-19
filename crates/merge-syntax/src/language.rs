@@ -30,10 +30,11 @@ pub enum Language {
     Kotlin,
     Markdown,
     Bash,
+    Zig,
 }
 
 /// Each language's file extensions, in lowercase.
-const EXTENSIONS: [(&str, Language); 43] = [
+const EXTENSIONS: [(&str, Language); 44] = [
     ("rs", Language::Rust),
     ("go", Language::Go),
     ("cs", Language::CSharp),
@@ -79,11 +80,12 @@ const EXTENSIONS: [(&str, Language); 43] = [
     ("bash", Language::Bash),
     ("zsh", Language::Bash),
     ("bats", Language::Bash),
+    ("zig", Language::Zig),
 ];
 
 impl Language {
     /// Every language, in declaration order.
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 20] = [
         Self::Rust,
         Self::Go,
         Self::CSharp,
@@ -103,6 +105,7 @@ impl Language {
         Self::Kotlin,
         Self::Markdown,
         Self::Bash,
+        Self::Zig,
     ];
 
     /// The language's tree-sitter grammar.
@@ -128,6 +131,7 @@ impl Language {
             Self::Kotlin => tree_sitter_kotlin_sg::LANGUAGE,
             Self::Markdown => tree_sitter_md::LANGUAGE,
             Self::Bash => tree_sitter_bash::LANGUAGE,
+            Self::Zig => tree_sitter_zig::LANGUAGE,
         }
         .into()
     }
@@ -202,6 +206,7 @@ mod tests {
         assert_eq!(of("install.bash"), Some(Language::Bash));
         assert_eq!(of("prompt.zsh"), Some(Language::Bash));
         assert_eq!(of("test/cli.bats"), Some(Language::Bash));
+        assert_eq!(of("src/main.zig"), Some(Language::Zig));
         for name in [
             "a.cc", "a.cpp", "a.cxx", "a.c++", "a.h", "a.hh", "a.hpp", "a.hxx", "a.h++", "a.inl",
             "a.ipp",
@@ -239,6 +244,7 @@ mod tests {
         assert_eq!(of("a.Bash"), Some(Language::Bash));
         assert_eq!(of("A.ZSH"), Some(Language::Bash));
         assert_eq!(of("a.BATS"), Some(Language::Bash));
+        assert_eq!(of("MAIN.ZIG"), Some(Language::Zig));
     }
 
     #[test]
@@ -299,6 +305,13 @@ mod tests {
             "a.shx",
             ".bashrc",
             ".zshrc",
+            "a.zi",
+            "a.zigx",
+            "a.zig.orig",
+            "a.zo",
+            "a.z",
+            // The Zig grammar parses declarations only, so a ZON manifest stays plain.
+            "build.zig.zon",
         ] {
             assert_eq!(of(name), None, "{name}");
         }
@@ -330,7 +343,7 @@ mod tests {
     }
 
     /// Each language's sample, and the kind of its tree's root.
-    const SAMPLES: [(Language, &str, &str); 19] = [
+    const SAMPLES: [(Language, &str, &str); 20] = [
         (Language::Rust, "fn a() -> u8 { 1 }\n", "source_file"),
         (Language::Go, "package a\nfunc b() {}\n", "source_file"),
         (Language::CSharp, "class A { void B() {} }\n", "compilation_unit"),
@@ -350,6 +363,7 @@ mod tests {
         (Language::Kotlin, "// c\nfun a(): Int = 1\n", "source_file"),
         (Language::Markdown, "# A\n\n- b\n\n```rust\nc\n```\n", "document"),
         (Language::Bash, "# c\nf() { echo \"$1\" | wc -l; }\n", "program"),
+        (Language::Zig, "// c\nfn a() u8 {\n    return 1;\n}\n", "source_file"),
     ];
 
     fn root_kind(language: Language, source: &str) -> (String, bool) {

@@ -41,6 +41,7 @@ pub(crate) const fn registry_name(language: Language) -> &'static str {
         Language::Kotlin => "kotlin",
         Language::Markdown => "markdown",
         Language::Bash => "bash",
+        Language::Zig => "zig",
     }
 }
 
@@ -474,7 +475,7 @@ mod tests {
         bytes
     }
 
-    const LANGUAGES: [Language; 19] = [
+    const LANGUAGES: [Language; 20] = [
         Language::Rust,
         Language::Go,
         Language::CSharp,
@@ -494,6 +495,7 @@ mod tests {
         Language::Kotlin,
         Language::Markdown,
         Language::Bash,
+        Language::Zig,
     ];
     /// Chunks that cut the Go and C# samples only before top-level lines: no shorter than
     /// their longest run of lines without one (34 in Go, 56 in C#), shorter than the sample.
@@ -503,6 +505,11 @@ mod tests {
     /// run is 28 lines. An HTML document is one element, and a JSON document one value,
     /// with no top-level line inside it, so each parses whole.
     const SHORT_SAMPLE_CHUNK: usize = 32;
+    // A sample's chunk sizes: whole alone, or also in chunks of `SAMPLE_CHUNK` or
+    // `SHORT_SAMPLE_CHUNK` lines.
+    const WHOLE: &[usize] = &[syntax::CHUNK_LINES];
+    const CHUNKED: &[usize] = &[syntax::CHUNK_LINES, SAMPLE_CHUNK];
+    const SHORT_CHUNKED: &[usize] = &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK];
 
     #[test]
     fn registry_names_are_gpui_components() {
@@ -525,6 +532,7 @@ mod tests {
         assert_eq!(registry_name(Language::Kotlin), "kotlin");
         assert_eq!(registry_name(Language::Markdown), "markdown");
         assert_eq!(registry_name(Language::Bash), "bash");
+        assert_eq!(registry_name(Language::Zig), "zig");
     }
 
     #[test]
@@ -573,106 +581,39 @@ mod tests {
     }
 
     /// Each language's sample and the chunk sizes it parses in.
-    fn samples() -> [(Language, &'static str, &'static [usize]); 19] {
+    fn samples() -> [(Language, &'static str, &'static [usize]); 20] {
         [
-            (
-                Language::Rust,
-                include_str!("../../../fixtures/demo/base.txt"),
-                &[syntax::CHUNK_LINES][..],
-            ),
-            (
-                Language::Go,
-                include_str!("../../../fixtures/syntax/sample.go"),
-                &[syntax::CHUNK_LINES, SAMPLE_CHUNK][..],
-            ),
-            (
-                Language::CSharp,
-                include_str!("../../../fixtures/syntax/sample.cs"),
-                &[syntax::CHUNK_LINES, SAMPLE_CHUNK][..],
-            ),
-            (
-                Language::Python,
-                include_str!("../../../fixtures/syntax/sample.py"),
-                &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
-            ),
-            (
-                Language::Swift,
-                include_str!("../../../fixtures/syntax/sample.swift"),
-                &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
-            ),
-            (
-                Language::Html,
-                include_str!("../../../fixtures/syntax/sample.html"),
-                &[syntax::CHUNK_LINES][..],
-            ),
+            (Language::Rust, include_str!("../../../fixtures/demo/base.txt"), WHOLE),
+            (Language::Go, include_str!("../../../fixtures/syntax/sample.go"), CHUNKED),
+            (Language::CSharp, include_str!("../../../fixtures/syntax/sample.cs"), CHUNKED),
+            (Language::Python, include_str!("../../../fixtures/syntax/sample.py"), SHORT_CHUNKED),
+            (Language::Swift, include_str!("../../../fixtures/syntax/sample.swift"), SHORT_CHUNKED),
+            (Language::Html, include_str!("../../../fixtures/syntax/sample.html"), WHOLE),
             (
                 Language::JavaScript,
                 include_str!("../../../fixtures/syntax/sample.js"),
-                &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
+                SHORT_CHUNKED,
             ),
             (
                 Language::TypeScript,
                 include_str!("../../../fixtures/syntax/sample.ts"),
-                &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
+                SHORT_CHUNKED,
             ),
-            (
-                Language::Tsx,
-                include_str!("../../../fixtures/syntax/sample.tsx"),
-                &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
-            ),
-            (
-                Language::Json,
-                include_str!("../../../fixtures/syntax/sample.json"),
-                &[syntax::CHUNK_LINES][..],
-            ),
-            (
-                Language::Yaml,
-                include_str!("../../../fixtures/syntax/sample.yaml"),
-                &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
-            ),
-            (
-                Language::Toml,
-                include_str!("../../../fixtures/syntax/sample.toml"),
-                &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
-            ),
-            (
-                Language::Css,
-                include_str!("../../../fixtures/syntax/sample.css"),
-                &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
-            ),
-            (
-                Language::C,
-                include_str!("../../../fixtures/syntax/sample.c"),
-                &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
-            ),
-            (
-                Language::Cpp,
-                include_str!("../../../fixtures/syntax/sample.cpp"),
-                &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
-            ),
-            (
-                Language::Java,
-                include_str!("../../../fixtures/syntax/sample.java"),
-                &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
-            ),
-            (
-                Language::Kotlin,
-                include_str!("../../../fixtures/syntax/sample.kt"),
-                &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
-            ),
+            (Language::Tsx, include_str!("../../../fixtures/syntax/sample.tsx"), SHORT_CHUNKED),
+            (Language::Json, include_str!("../../../fixtures/syntax/sample.json"), WHOLE),
+            (Language::Yaml, include_str!("../../../fixtures/syntax/sample.yaml"), SHORT_CHUNKED),
+            (Language::Toml, include_str!("../../../fixtures/syntax/sample.toml"), SHORT_CHUNKED),
+            (Language::Css, include_str!("../../../fixtures/syntax/sample.css"), SHORT_CHUNKED),
+            (Language::C, include_str!("../../../fixtures/syntax/sample.c"), SHORT_CHUNKED),
+            (Language::Cpp, include_str!("../../../fixtures/syntax/sample.cpp"), SHORT_CHUNKED),
+            (Language::Java, include_str!("../../../fixtures/syntax/sample.java"), SHORT_CHUNKED),
+            (Language::Kotlin, include_str!("../../../fixtures/syntax/sample.kt"), SHORT_CHUNKED),
             // The editors parse inline Markdown as one text from the first range with
             // markup to the last, so a block line between two takes inline colours from
             // text a chunk may not hold (`DESIGN.md` §F6.3). Whole, the spans match.
-            (
-                Language::Markdown,
-                include_str!("../../../fixtures/syntax/sample.md"),
-                &[syntax::CHUNK_LINES][..],
-            ),
-            (
-                Language::Bash,
-                include_str!("../../../fixtures/syntax/sample.sh"),
-                &[syntax::CHUNK_LINES, SHORT_SAMPLE_CHUNK][..],
-            ),
+            (Language::Markdown, include_str!("../../../fixtures/syntax/sample.md"), WHOLE),
+            (Language::Bash, include_str!("../../../fixtures/syntax/sample.sh"), SHORT_CHUNKED),
+            (Language::Zig, include_str!("../../../fixtures/syntax/sample.zig"), SHORT_CHUNKED),
         ]
     }
 
