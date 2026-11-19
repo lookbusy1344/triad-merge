@@ -1,4 +1,4 @@
-// Modified for Triad: exports `GutterMark`, the line labels, `EditObserver` and the char marks. See
+// Modified for Triad: exports `GutterMark`, the line labels, the line numbers, `EditObserver` and the char marks. See
 // PATCHES.md.
 //! Text input: the shared editing engine and the three states built on it.
 //!
@@ -95,7 +95,7 @@ pub use crate::number_input::{NumberInputEvent, NumberStep};
 pub use base::{InputBase, InputContextMenuCapabilities, InputStyles};
 pub use cursor::Selection;
 pub use decorations::{
-    GutterMark, LineLabel, LineLabelTooltip, LineLabels, RangeDecoration,
+    GutterMark, LineLabel, LineLabelTooltip, LineLabels, LineNumbers, RangeDecoration,
     RangeDecorationCollection, RangeDecorationStyle, SpacerNote, TextDecoration,
     TextDecorationCollection,
 };

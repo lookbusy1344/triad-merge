@@ -156,7 +156,7 @@ A plain-Rust view model with no GPUI. Every lookup is by index or offset, in O(l
 
 #### A6.1 Vendored editor
 
-`vendor/gpui-base` is gpui-base 0.8.1 with triad's patch, through `[patch.crates-io]`, with Apache-2.0 notices; `PATCHES.md` lists every change. The main ones: full-line fills and gutter marks, the edit observer (§F3), spacer rows and their click event, hidden lines (§A6.5), line labels (§C5.4), one-pass line layout, a resting caret, and tab stops. The vendored crate sits outside the workspace; `script/checks` runs its unit tests.
+`vendor/gpui-base` is gpui-base 0.8.1 with triad's patch, through `[patch.crates-io]`, with Apache-2.0 notices; `PATCHES.md` lists every change. The main ones: full-line fills and gutter marks, the edit observer (§F3), spacer rows and their click event, hidden lines (§A6.5), line labels (§C5.4), line numbers by a function, one-pass line layout, a resting caret, and tab stops. The vendored crate sits outside the workspace; `script/checks` runs its unit tests.
 
 Zed paints row highlights and diff hunk backgrounds as quads across the text area and hunk status as a gutter strip. triad does the same and adds a letter, since colour is never the only signal (spec §6.5).
 

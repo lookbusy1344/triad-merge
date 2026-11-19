@@ -2,7 +2,8 @@
 // spacer rows and their notes, line labels, tests of hidden lines, the spacer
 // click and the gutter mark click, tests of the editor's tab stops, and
 // characters drawn as badges and shades, and whitespace symbols drawn from the
-// text, with line endings, and the gutter's pointers. See PATCHES.md.
+// text, with line endings, the gutter's pointers and line numbers by a
+// function. See PATCHES.md.
 use crate::input::char_marks::{
     CARRIAGE_RETURN_SYMBOL, NO_NEWLINE_SYMBOL, SPACE_SYMBOL, TAB_SYMBOL,
 };
@@ -84,6 +85,25 @@ fn line_number_len(total_lines: usize) -> usize {
 
 fn displayed_line_number(number: usize) -> usize {
     number.min(MAX_DISPLAYED_LINE_NUMBER)
+}
+
+/// Triad: the width of the line numbers, in characters: `numbers`' own, else
+/// as many digits as the line count needs.
+fn line_number_width_chars(numbers: Option<&crate::input::LineNumbers>, total_lines: usize) -> usize {
+    numbers.map_or_else(|| line_number_len(total_lines), crate::input::LineNumbers::width)
+}
+
+/// Triad: the number drawn beside buffer line `buffer_line`: `numbers`' label,
+/// else its index from 1, right-aligned in `len` characters.
+fn line_number_text(
+    numbers: Option<&crate::input::LineNumbers>,
+    buffer_line: usize,
+    len: usize,
+) -> SharedString {
+    match numbers {
+        Some(numbers) => numbers.label(buffer_line),
+        None => format!("{:>len$}", displayed_line_number(buffer_line + 1)).into(),
+    }
 }
 
 /// The active line's background: the theme's colour, dimmed when disabled. Only the focused
@@ -1527,7 +1547,8 @@ impl<M: InputModeKind> TextElement<M> {
         let total_lines = text.lines_len();
         // Reserve three digits for small documents, then follow the actual
         // line count up to seven digits.
-        let line_number_len = line_number_len(total_lines);
+        let line_number_len =
+            line_number_width_chars(state.line_numbers.as_ref(), total_lines);
 
         let mut line_number_width = if state.mode.line_number() {
             let empty_line_number = window.text_system().shape_line(
@@ -3657,18 +3678,19 @@ impl<M: InputModeKind> Element for TextElement<M> {
                 .iter()
                 .zip(last_layout.visible_buffer_lines.iter())
             {
-                let line_no: SharedString = format!(
-                    "{:>width$}",
-                    displayed_line_number(buffer_line + 1),
-                    width = line_number_len
-                )
-                .into();
+                let line_no =
+                    line_number_text(state.line_numbers.as_ref(), buffer_line, line_number_len);
 
                 let runs = if current_row == Some(buffer_line) {
                     &current_line_runs
                 } else {
                     &other_line_runs
                 };
+                // Triad: a label from `LineNumbers` sets its own length.
+                let runs = [TextRun {
+                    len: line_no.len(),
+                    ..runs[0].clone()
+                }];
 
                 let mut sub_lines: SmallVec<[ShapedLine; 1]> = SmallVec::new();
                 sub_lines.push(
@@ -6469,6 +6491,46 @@ mod tests {
                 )],
             );
         });
+    }
+
+    // Triad: line numbers by a function.
+
+    fn old_new(width: usize) -> crate::input::LineNumbers {
+        crate::input::LineNumbers::new(width, move |line| {
+            format!("{:>width$}", format!("{line}|{}", line * 2)).into()
+        })
+    }
+
+    #[test]
+    fn line_numbers_by_a_function_replace_each_lines_index() {
+        let numbers = old_new(6);
+        assert_eq!(line_number_text(Some(&numbers), 7, 6), SharedString::from("  7|14"));
+        assert_eq!(line_number_text(None, 7, 4), SharedString::from("   8"));
+        assert_eq!(line_number_width_chars(Some(&numbers), 5), 6);
+        assert_eq!(line_number_width_chars(None, 5), MIN_LINE_NUMBER_DIGITS);
+        assert_eq!(line_number_width_chars(None, 12_345), 5);
+    }
+
+    #[gpui::test]
+    fn line_numbers_by_a_function_set_the_gutter_to_their_width(cx: &mut TestAppContext) {
+        let (editor, window) = line_decoration_editor(cx, "one\ntwo", false, false);
+        let mut cx = VisualTestContext::from_window(window.into(), cx);
+        let width = |cx: &mut VisualTestContext, numbers: Option<crate::input::LineNumbers>| {
+            cx.update(|window, cx| {
+                editor.update(cx, |state, cx| state.set_line_numbers(numbers, cx));
+                window.draw(cx).clear(cx);
+                editor.read(cx).last_layout.as_ref().unwrap().line_number_width
+            })
+        };
+        let default = width(&mut cx, None);
+        // Two lines take the minimum of three digits.
+        assert_eq!(width(&mut cx, Some(old_new(MIN_LINE_NUMBER_DIGITS))), default);
+        let wide = width(&mut cx, Some(old_new(2 * MIN_LINE_NUMBER_DIGITS)));
+        let wider = width(&mut cx, Some(old_new(3 * MIN_LINE_NUMBER_DIGITS)));
+        assert!(wide > default, "{wide:?} against {default:?}");
+        // A monospace column grows by the same amount for each three characters.
+        assert_eq!(wider - wide, wide - default);
+        assert_eq!(width(&mut cx, None), default);
     }
 
     // Triad: line labels.

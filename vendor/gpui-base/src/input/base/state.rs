@@ -1,5 +1,5 @@
 // Modified for Triad: adds the `gutter_marks` switch and the gutter mark click, spacer rows, the spacer click, hidden
-// lines, line labels, the char marker, the edit observer and a read of the whitespace setting, with a test that rounding does not stretch the
+// lines, line labels, line numbers by a function, the char marker, the edit observer and a read of the whitespace setting, with a test that rounding does not stretch the
 // scroll edge. See PATCHES.md.
 //! A text input field that allows the user to enter text.
 //!
@@ -462,6 +462,8 @@ pub struct InputBaseState<M: InputModeKind> {
     pub(super) gutter_marks: bool,
     /// Triad: the gutter's line label column, if shown.
     pub(super) line_labels: Option<crate::input::LineLabels>,
+    /// Triad: the line numbers' text, in place of each line's index from 1.
+    pub(super) line_numbers: Option<crate::input::LineNumbers>,
     /// Triad: notes on spacer rows, in line order.
     pub(super) spacer_notes: Vec<crate::input::SpacerNote>,
     /// Triad: the characters that draw as badges or shades.
@@ -988,6 +990,7 @@ impl<M: InputModeKind> InputBaseState<M> {
             soft_wrap: true,
             gutter_marks: false,
             line_labels: None,
+            line_numbers: None,
             spacer_notes: Vec::new(),
             char_marker: None,
             wrapping_indent: WrappingIndent::default(),
@@ -12934,6 +12937,19 @@ impl InputBaseState<crate::input::EditorMode> {
     /// Triad: the gutter's line labels, if shown.
     pub fn line_labels(&self) -> Option<&crate::input::LineLabels> {
         self.line_labels.as_ref()
+    }
+
+    /// Triad: number the lines with `numbers`, or with each line's index from 1
+    /// with `None`. Line numbers show only while `line_number` is on.
+    ///
+    /// See [`LineNumbers`](crate::input::LineNumbers).
+    pub fn set_line_numbers(
+        &mut self,
+        numbers: Option<crate::input::LineNumbers>,
+        cx: &mut Context<Self>,
+    ) {
+        self.line_numbers = numbers;
+        cx.notify();
     }
 
     /// Set enable/disable automatic closing brackets and quotes.

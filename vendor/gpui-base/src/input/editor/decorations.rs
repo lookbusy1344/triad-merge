@@ -1,6 +1,6 @@
 // Modified for Triad: adds `RangeDecorationStyle::FullLine`, gutter marks,
-// full-line borders with their widths, line labels, spacer notes and
-// clickable gutter marks.
+// full-line borders with their widths, line labels, spacer notes,
+// clickable gutter marks and line numbers by a function.
 // See PATCHES.md.
 use crate::input::EditorMode;
 use std::{collections::BTreeMap, fmt, ops::Range, rc::Rc};
@@ -202,6 +202,44 @@ impl fmt::Debug for LineLabel {
             .field("label", &self.label)
             .field("tooltip", &self.tooltip.is_some())
             .finish()
+    }
+}
+
+/// Triad: the text of each buffer line's number, in place of its index from 1,
+/// set with `EditorState::set_line_numbers`. `label` gives a buffer line's
+/// text, `width` ASCII characters, of which the column is as wide. The editor
+/// calls it only for the lines it draws.
+#[derive(Clone)]
+pub struct LineNumbers {
+    width: usize,
+    label: Rc<dyn Fn(usize) -> SharedString>,
+}
+
+impl LineNumbers {
+    /// Numbers `width` characters wide, each from `label`.
+    pub fn new(width: usize, label: impl Fn(usize) -> SharedString + 'static) -> Self {
+        Self {
+            width,
+            label: Rc::new(label),
+        }
+    }
+
+    /// The width of every number, in characters.
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    /// The number of buffer line `line`.
+    pub fn label(&self, line: usize) -> SharedString {
+        (self.label)(line)
+    }
+}
+
+impl fmt::Debug for LineNumbers {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LineNumbers")
+            .field("width", &self.width)
+            .finish_non_exhaustive()
     }
 }
 
