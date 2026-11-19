@@ -232,6 +232,8 @@ tool-whitespace = 空白の表示を切り替え
 
 pick-label = { $title }、領域 { $region }/{ $regions }
 pick-label-unresolved = { $title }、領域 { $region }/{ $regions }、未解決
+pick-label-inherited = { $title }、領域 { $region }/{ $regions }、未解決、継承
+inherited-pill = 継承
 line-pick-label = { $title }、{ $line } 行目
 badge-conflict = 競合 { $number }/{ $count }
 badge-sides = { $kept }/{ $sides } 側

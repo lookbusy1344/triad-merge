@@ -232,6 +232,30 @@ fn markers_with_one_side_edited_stay_a_conflict_with_the_edit() {
 }
 
 #[test]
+fn a_child_s_parent_conflicts_are_its_parents_conflicts_at_the_path() {
+    for (Stack { fixture, merge, child, .. }, store) in both_stores() {
+        let repo = open(&fixture);
+        let file =
+            |bytes: &[u8]| vcs::TermContent::File { bytes: bytes.to_vec(), executable: false };
+        let parents = repo.parent_conflicts_at(&id(&child), a_txt()).expect("the parents read");
+        let terms: Vec<(Vec<_>, Vec<_>)> = parents
+            .iter()
+            .map(|c| {
+                let contents = |terms: &[vcs::ConflictTerm]| {
+                    terms.iter().map(|t| t.content.clone()).collect::<Vec<_>>()
+                };
+                (contents(&c.sides), contents(&c.bases))
+            })
+            .collect();
+        assert_eq!(terms, [(vec![file(LEFT), file(RIGHT)], vec![file(BASE)])], "{store}");
+        // `merge`'s parents hold a.txt resolved, and no parent holds b.txt.
+        assert_eq!(repo.parent_conflicts_at(&id(&merge), a_txt()).expect("read"), [], "{store}");
+        let b_txt = Utf8Path::new("b.txt");
+        assert_eq!(repo.parent_conflicts_at(&id(&child), b_txt).expect("read"), [], "{store}");
+    }
+}
+
+#[test]
 fn a_path_resolved_beside_another_conflict_reports_resolved() {
     let fixture = Fixture::new();
     let base = fixture.commit_on(&[], "base", &[("a.txt", BASE), ("c.txt", BASE)]);

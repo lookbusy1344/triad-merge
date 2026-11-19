@@ -232,6 +232,8 @@ tool-whitespace = 显示或隐藏空白字符
 
 pick-label = { $title }，第 { $region }/{ $regions } 个区域
 pick-label-unresolved = { $title }，第 { $region }/{ $regions } 个区域，未解决
+pick-label-inherited = { $title }，第 { $region }/{ $regions } 个区域，未解决，继承
+inherited-pill = 继承
 line-pick-label = { $title }，第 { $line } 行
 badge-conflict = 冲突 { $number }/{ $count }
 badge-sides = { $kept }/{ $sides } 方

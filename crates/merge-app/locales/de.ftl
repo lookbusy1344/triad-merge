@@ -275,6 +275,8 @@ tool-whitespace = Leerraum zeigen oder ausblenden
 
 pick-label = { $title } in Bereich { $region } von { $regions }
 pick-label-unresolved = { $title } in Bereich { $region } von { $regions }, ungelöst
+pick-label-inherited = { $title } in Bereich { $region } von { $regions }, ungelöst, geerbt
+inherited-pill = geerbt
 line-pick-label = Zeile { $line } von { $title }
 badge-conflict = Konflikt { $number } von { $count }
 badge-sides = { $kept } von { $sides } Seiten

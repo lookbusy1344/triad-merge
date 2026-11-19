@@ -275,6 +275,8 @@ tool-whitespace = Witruimte tonen of verbergen
 
 pick-label = { $title } in gebied { $region } van { $regions }
 pick-label-unresolved = { $title } in gebied { $region } van { $regions }, onopgelost
+pick-label-inherited = { $title } in gebied { $region } van { $regions }, onopgelost, geërfd
+inherited-pill = geërfd
 line-pick-label = Regel { $line } van { $title }
 badge-conflict = Conflict { $number } van { $count }
 badge-sides = { $kept } van { $sides } kanten

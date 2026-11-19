@@ -189,6 +189,7 @@ fn colours(style: Style, tones: &Tones) -> (Hsla, Option<Hsla>) {
     match style {
         Style::Plain(tone) => (tones.mark(tone).opacity(SOFT_MARK), None),
         Style::Unresolved => (conflict, None),
+        Style::Inherited => (tones.mark(Tone::Inherited), None),
         Style::Resolved(tone) | Style::Duplicate(tone) => {
             (conflict, Some(tones.mark(tone).opacity(SOFT_MARK)))
         }
@@ -259,6 +260,7 @@ mod tests {
         let conflict = tones.mark(Tone::Conflict);
         assert_eq!(colours(Style::Plain(Tone::Left), &tones), (soft(Tone::Left), None));
         assert_eq!(colours(Style::Unresolved, &tones), (conflict, None));
+        assert_eq!(colours(Style::Inherited, &tones), (tones.mark(Tone::Inherited), None));
         assert_eq!(
             colours(Style::Resolved(Tone::Right), &tones),
             (conflict, Some(soft(Tone::Right)))

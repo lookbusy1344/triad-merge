@@ -287,6 +287,8 @@ tool-whitespace = Показати або сховати пробіли
 
 pick-label = { $title } в області { $region } з { $regions }
 pick-label-unresolved = { $title } в області { $region } з { $regions }, не розв’язано
+pick-label-inherited = { $title } в області { $region } з { $regions }, не розв’язано, успадковано
+inherited-pill = успадкований
 line-pick-label = Рядок { $line } у { $title }
 badge-conflict = Конфлікт { $number } з { $count }
 badge-sides = { $kept } з { $sides } сторін

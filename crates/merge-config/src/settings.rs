@@ -263,6 +263,8 @@ pub struct Colours {
     pub deleted: Themed<Colour>,
     /// The conflict badge once no conflict is left.
     pub resolved: Themed<Colour>,
+    /// A conflict the commit inherits unchanged from a parent: its marks and borders.
+    pub inherited: Themed<Colour>,
     pub band_opacity: Themed<f32>,
 }
 
@@ -285,6 +287,7 @@ pub const DEFAULT_COLOURS: Colours = Colours {
     current: themed_colour(0x6c_bd_0f, 0x92_e2_36),
     deleted: themed_colour(0xc3_22_22, 0xe4_67_67),
     resolved: themed_colour(0x22_c3_58, 0x67_e4_91),
+    inherited: themed_colour(0x73_73_73, 0xa6_a6_a6),
     band_opacity: Themed { light: 0.18, dark: 0.28 },
 };
 
@@ -1026,6 +1029,11 @@ const KEYS: &[Key] = &[
     ),
     colour_key!("color-deleted", deleted, "The colour of deletion notes and marks"),
     colour_key!("color-resolved", resolved, "The conflict badge's colour once no conflict is left"),
+    colour_key!(
+        "color-inherited",
+        inherited,
+        "The colour of conflicts a commit inherits unchanged from a parent"
+    ),
     key!(
         BAND_OPACITY_KEY,
         ["The opacity of the bands behind changed rows,", BAND_OPACITIES, ", or light:N,dark:N."],
@@ -1493,6 +1501,7 @@ mod tests {
             color-current-region = #161718
             color-deleted = #191a1b
             color-resolved = #1c1d1e
+            color-inherited = #1f2021
             band-opacity = 0.5
             conflict-style = merge
             output-line-ending = crlf
@@ -1550,6 +1559,7 @@ mod tests {
                     current: Themed::both(Colour::rgb(0x16_17_18)),
                     deleted: Themed::both(Colour::rgb(0x19_1a_1b)),
                     resolved: Themed::both(Colour::rgb(0x1c_1d_1e)),
+                    inherited: Themed::both(Colour::rgb(0x1f_20_21)),
                     band_opacity: Themed::both(0.5),
                 },
                 conflict_style: Some(ConflictStyle::Merge),
@@ -2255,7 +2265,7 @@ mod tests {
         let colours = settings(
             "color-right = #000001\ncolor-base = #000002\ncolor-result-edit = #000003\n\
              color-same-change = #000004\ncolor-word-merged = #000005\ncolor-current-region = #000006\n\
-             color-deleted = #000007",
+             color-deleted = #000007\ncolor-inherited = #000008",
         )
         .colours;
         let got = [
@@ -2266,8 +2276,9 @@ mod tests {
             colours.word_merged,
             colours.current,
             colours.deleted,
+            colours.inherited,
         ];
-        let want = (1..=7).map(|n| Themed::both(Colour::rgb(n)));
+        let want = (1..=8).map(|n| Themed::both(Colour::rgb(n)));
         assert!(got.into_iter().eq(want), "{got:?}");
         assert_eq!(colours.left, DEFAULT_COLOURS.left);
         assert_eq!(colours.conflict, DEFAULT_COLOURS.conflict);
@@ -2314,6 +2325,7 @@ mod tests {
                 current: pair(0x6c_bd_0f, 0x92_e2_36),
                 deleted: pair(0xc3_22_22, 0xe4_67_67),
                 resolved: pair(0x22_c3_58, 0x67_e4_91),
+                inherited: pair(0x73_73_73, 0xa6_a6_a6),
                 band_opacity: Themed { light: 0.18, dark: 0.28 },
             }
         );
@@ -2490,6 +2502,7 @@ color-word-merged = light:#22c322,dark:#67e467
 color-current-region = light:#6cbd0f,dark:#92e236
 color-deleted = light:#c32222,dark:#e46767
 color-resolved = light:#22c358,dark:#67e491
+color-inherited = light:#737373,dark:#a6a6a6
 band-opacity = light:0.18,dark:0.28
 conflict-style =
 output-line-ending = keep
@@ -2595,6 +2608,7 @@ diff-layout = side-by-side
                 current: Themed::both(Colour::rgb(0x00_00_06)),
                 deleted: Themed::both(Colour::rgb(0x00_00_07)),
                 resolved: Themed::both(Colour::rgb(0x00_00_08)),
+                inherited: Themed::both(Colour::rgb(0x00_00_09)),
                 band_opacity: Themed { light: 0.5, dark: 0.75 },
             },
             conflict_style: Some(ConflictStyle::Merge),
@@ -2664,6 +2678,7 @@ color-word-merged = #000005
 color-current-region = #000006
 color-deleted = #000007
 color-resolved = #000008
+color-inherited = #000009
 band-opacity = light:0.5,dark:0.75
 conflict-style = merge
 output-line-ending = base

@@ -287,6 +287,8 @@ tool-whitespace = Pokaż lub ukryj białe znaki
 
 pick-label = { $title } w obszarze { $region } z { $regions }
 pick-label-unresolved = { $title } w obszarze { $region } z { $regions }, nierozwiązany
+pick-label-inherited = { $title } w obszarze { $region } z { $regions }, nierozwiązany, odziedziczony
+inherited-pill = odziedziczony
 line-pick-label = Wiersz { $line } w { $title }
 badge-conflict = Konflikt { $number } z { $count }
 badge-sides = { $kept } z { $sides } stron

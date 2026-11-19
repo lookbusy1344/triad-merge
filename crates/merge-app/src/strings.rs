@@ -275,6 +275,11 @@ pub(crate) fn stack_path(path: &StackPath) -> Row {
     }
 }
 
+/// The pill over an inherited conflict in the result (spec §5).
+pub(crate) fn inherited_pill() -> SharedString {
+    t!("inherited-pill")
+}
+
 /// What the stack window says while the merge window is open on `path` in `change`, whose
 /// conflict arises in the listed commit `origin`.
 pub(crate) fn stack_inherited(path: &str, change: &str, origin: &str) -> String {
@@ -710,20 +715,35 @@ pub(crate) fn tool_name(tool: Tool) -> SharedString {
     }
 }
 
+/// Whether a pick target's region waits on the user.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Pending {
+    /// Resolved, or never a conflict.
+    No,
+    /// An unresolved conflict.
+    Unresolved,
+    /// An unresolved conflict a parent commit holds too (spec §7.5.1).
+    Inherited,
+}
+
 /// A pick target's accessible label: the pane's title, where its region sits, and whether
-/// the region is an unresolved conflict. The label carries that state because macOS reads a
-/// mixed toggle as on.
+/// the region is an unresolved conflict, and an inherited one. The label carries that state
+/// because macOS reads a mixed toggle as on.
 pub(crate) fn pick_label(
     title: &str,
     region: RegionIx,
     regions: usize,
-    unresolved: bool,
+    pending: Pending,
 ) -> String {
     let region = region.next().get();
-    if unresolved {
-        t!("pick-label-unresolved", title = title, region = region, regions = regions)
-    } else {
-        t!("pick-label", title = title, region = region, regions = regions)
+    match pending {
+        Pending::No => t!("pick-label", title = title, region = region, regions = regions),
+        Pending::Unresolved => {
+            t!("pick-label-unresolved", title = title, region = region, regions = regions)
+        }
+        Pending::Inherited => {
+            t!("pick-label-inherited", title = title, region = region, regions = regions)
+        }
     }
 }
 
@@ -1826,6 +1846,20 @@ mod tests {
         assert_eq!(stack_commit(&commit).label(), "qpvuntsm 1a2b3c4d (no description set)");
         assert_eq!(stack_commit(&commit).text, "(no description set)");
         assert!(stack_commit(&commit).placeholder);
+    }
+
+    #[test]
+    fn a_pick_target_says_whether_its_conflict_waits_and_is_inherited() {
+        let region = RegionIx::new(1);
+        assert_eq!(pick_label("Left", region, 3, Pending::No), "Left in region 2 of 3");
+        assert_eq!(
+            pick_label("Left", region, 3, Pending::Unresolved),
+            "Left in region 2 of 3, unresolved"
+        );
+        assert_eq!(
+            pick_label("Left", region, 3, Pending::Inherited),
+            "Left in region 2 of 3, unresolved, inherited"
+        );
     }
 
     #[test]

@@ -6,6 +6,7 @@ pub mod diff;
 pub mod fold;
 pub mod heights;
 pub mod highlight;
+pub mod inherited;
 pub mod line_pick;
 pub mod marks;
 pub mod merge_fold;

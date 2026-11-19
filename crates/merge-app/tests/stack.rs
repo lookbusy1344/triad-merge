@@ -9,13 +9,15 @@ mod jj {
     use crate::common::{act, bounds, is_selected, label, viewport_width};
     use gpui_kit::base::Root;
     use gpui_kit::test::TestWindowExt;
-    use gpui_kit::{AnyWindowHandle, App, Entity, TestAppContext, VisualTestContext};
+    use gpui_kit::{AnyWindowHandle, App, Entity, Role, TestAppContext, VisualTestContext};
     use merge_app::stack_window::{
         self, EMPTY_ID, PREVIEW_ID, Preview, REFRESH_ID, SUMMARY_ID, StackStart, StackWindow,
         commit_id, path_id,
     };
+    use merge_app::window::{inherited_pane_pill_id, inherited_pill_id};
     use merge_app::{ExitCode, MergeWindow, WindowSettings};
     use merge_core::document::MergeOptions;
+    use merge_core::index::RegionIx;
     use vcs_jj::config::ConfigEnv;
     use vcs_jj::testing::{Committed, Fixture, Held};
 
@@ -164,16 +166,84 @@ mod jj {
         cx.read(|cx| started.view.read(cx).note().map(str::to_owned))
     }
 
-    /// The banner of the one open merge window.
-    fn banner(cx: &mut TestAppContext) -> Option<String> {
+    /// What `read` gives of the one open merge window.
+    fn merging<T>(cx: &mut TestAppContext, read: impl FnOnce(&MergeWindow) -> T) -> T {
         let windows = merge_windows(cx);
         assert_eq!(windows.len(), 1, "one merge window");
         let root = windows.first().and_then(AnyWindowHandle::downcast::<Root>).expect("a root");
         cx.read(|cx| {
             let view = root.read(cx).expect("the root").view().clone();
             let view = view.downcast::<MergeWindow>().expect("a merge window");
-            view.read(cx).notice().map(ToString::to_string)
+            read(view.read(cx))
         })
+    }
+
+    /// The banner of the one open merge window.
+    fn banner(cx: &mut TestAppContext) -> Option<String> {
+        merging(cx, |window| window.notice().map(ToString::to_string))
+    }
+
+    /// The conflict regions the one open merge window draws as inherited.
+    fn inherited(cx: &mut TestAppContext) -> Vec<RegionIx> {
+        merging(cx, |window| {
+            let doc = window.document();
+            doc.region_ixs().filter(|&r| window.inherited().contains(r)).collect()
+        })
+    }
+
+    /// The inherited pill with id `id` in the one open merge window: its role and label.
+    fn pill(
+        cx: &mut TestAppContext,
+        id: &gpui_kit::ElementId,
+    ) -> Option<(Option<Role>, Option<String>)> {
+        let windows = merge_windows(cx);
+        assert_eq!(windows.len(), 1, "one merge window");
+        let mut found = None;
+        for window in windows {
+            act(cx, window, |window, cx| {
+                window.render_frame(cx);
+                found =
+                    window.try_find(id.clone()).map(|e| (e.role(), e.label().map(str::to_owned)));
+            });
+        }
+        found
+    }
+
+    #[gpui_kit::test]
+    fn an_inherited_path_draws_its_parent_s_conflict_as_inherited(cx: &mut TestAppContext) {
+        let (fixture, ..) = stacked();
+        let started = start(cx, &fixture);
+        click(cx, started.window, path_id(1, 0));
+        // a.txt holds one region: the conflict of left and right over a.
+        let conflict = RegionIx::new(0);
+        assert_eq!(inherited(cx), [conflict]);
+        let shown = Some((Some(Role::Label), Some("inherited".to_owned())));
+        assert_eq!(pill(cx, &inherited_pill_id(conflict)), shown);
+        // The left and right panes, 0 and 1 with the base pane hidden, carry it too.
+        assert_eq!(pill(cx, &inherited_pane_pill_id(0, conflict)), shown);
+        assert_eq!(pill(cx, &inherited_pane_pill_id(1, conflict)), shown);
+    }
+
+    #[gpui_kit::test]
+    fn a_picked_inherited_conflict_loses_its_pill(cx: &mut TestAppContext) {
+        let (fixture, ..) = stacked();
+        let started = start(cx, &fixture);
+        click(cx, started.window, path_id(1, 0));
+        let [merging] = merge_windows(cx)[..] else { panic!("one merge window") };
+        press(cx, merging, "secondary-alt-down");
+        press(cx, merging, "secondary-1");
+        assert_eq!(pill(cx, &inherited_pill_id(RegionIx::new(0))), None);
+        assert_eq!(pill(cx, &inherited_pane_pill_id(0, RegionIx::new(0))), None);
+    }
+
+    #[gpui_kit::test]
+    fn a_conflict_that_arises_in_its_commit_draws_as_its_own(cx: &mut TestAppContext) {
+        let (fixture, ..) = stacked();
+        let started = start(cx, &fixture);
+        click(cx, started.window, path_id(MERGE, 0));
+        assert_eq!(inherited(cx), []);
+        assert_eq!(pill(cx, &inherited_pill_id(RegionIx::new(0))), None);
+        assert_eq!(pill(cx, &inherited_pane_pill_id(0, RegionIx::new(0))), None);
     }
 
     #[gpui_kit::test]

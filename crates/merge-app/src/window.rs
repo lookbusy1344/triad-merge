@@ -57,6 +57,7 @@ use merge_view::chunks::Limits;
 use merge_view::diff::MOVE_TONE;
 use merge_view::heights::Heights;
 use merge_view::highlight::{CellSpans, Highlights};
+use merge_view::inherited::Inherited;
 use merge_view::line_pick::{self, LineTarget};
 use merge_view::marks::{self, Band, Tone};
 use merge_view::merge_fold::{self, MergeFold, MergeOpened};
@@ -85,7 +86,7 @@ use crate::input_select::{
     self, AUTOSCROLL_MAX_ROWS, AUTOSCROLL_TICK, CellHit, INPUT_PANES_CONTEXT, InputSelect,
 };
 use crate::measure::{self, Measure, Measurement, Mode, Report, Run};
-use crate::move_pill::{MOVE_PILL_INSET, move_pill};
+use crate::move_pill::{MOVE_PILL_INSET, label_pill, move_pill};
 use crate::origin_column::{
     Annotated, Described, HeadingText, ORIGIN_WIDTH, OriginCell, OriginColumn, Visibility,
 };
@@ -120,6 +121,9 @@ use merge_session::session::{CannotSave, PreviewJob, Refused, SaveJob, SaveTarge
 /// One row of the side panes at the default text size: an editor line, so the rows and the
 /// result stay level. [`Typography::line_height`] gives it for other sizes.
 pub const ROW_HEIGHT: Pixels = LINE_HEIGHT;
+/// The inherited pill's fill: the inherited colour at this opacity, under text in the
+/// window's background colour.
+const INHERITED_PILL_FILL: f32 = 0.85;
 /// The space between two pills on one row, as on a base row holding both sides' moves of one block.
 const MOVE_PILL_GAP: Pixels = px(4.);
 const LINE_NUMBER_WIDTH: Pixels = px(52.);
@@ -235,6 +239,18 @@ pub fn line_pick_id(pane: usize, row: RowIx) -> ElementId {
 #[must_use]
 pub fn cell_id(pane: usize, row: RowIx) -> ElementId {
     ElementId::Name(format!("cell-{pane}-{row}").into())
+}
+
+/// The pill in top pane `pane` over the first row of inherited conflict `region` (spec §5).
+#[must_use]
+pub fn inherited_pane_pill_id(pane: usize, region: RegionIx) -> ElementId {
+    ElementId::Name(format!("inherited-pill-{pane}-{}", region.get()).into())
+}
+
+/// The pill in the result over the first line of inherited conflict `region` (spec §5).
+#[must_use]
+pub fn inherited_pill_id(region: RegionIx) -> ElementId {
+    ElementId::Name(format!("inherited-pill-{}", region.get()).into())
 }
 
 /// The pill on `row` of `pane` over one end of a moved block, naming a line of `other`
@@ -397,6 +413,9 @@ pub struct WindowSettings {
     /// A warning the window shows above its panes while it is open, such as the stack
     /// window's word that a path's conflict arises in another commit.
     pub notice: Option<SharedString>,
+    /// The conflicts each parent commit holds at the merged path (spec §7.5.1): the window
+    /// draws the conflicts they share with the merge in the inherited tone.
+    pub parents: Vec<Inputs>,
 }
 
 /// Whether a merge window watches OUTPUT for changes another program makes (spec §6.3).
@@ -442,6 +461,7 @@ impl Default for WindowSettings {
             cwd: None,
             watch_output: Watching::Off,
             notice: None,
+            parents: Vec::new(),
         }
     }
 }
@@ -564,6 +584,8 @@ pub struct MergeWindow {
     settings_errors: Option<SharedString>,
     /// The opener's warning, which a banner shows while the window is open.
     notice: Option<SharedString>,
+    /// The conflicts a parent commit holds too, drawn in the inherited tone.
+    inherited: Inherited,
     /// What the last Save Copy As wrote, until the merge next changes.
     copy_note: Option<SharedString>,
     /// The latest copy being written. Each copy waits for the one before, and the window
@@ -755,7 +777,8 @@ impl MergeWindow {
         let wrap = input_wrap(&doc, settings.soft_wrap);
         let palette = Palette::new(&settings.colours);
         let tones = palette.tones(cx.theme().is_dark());
-        let bands = marks::bands(&doc);
+        let inherited = Inherited::find(&doc, &settings.parents);
+        let bands = marks::bands(&doc, &inherited);
         let decorations = region_decorations(&bands, tones);
         let colouring =
             Colouring::new(language(&doc, settings), settings.syntax, settings.syntax_max_lines);
@@ -782,12 +805,8 @@ impl MergeWindow {
         let origin_column =
             OriginColumn::new(sides, bases, settings.origin_column, settings.revision_id);
         let counts = status::status(&doc, settings.line_ending);
-        let ruler = merge_view::ruler::marks(&doc).collect();
-        let scrollbar_mode = scrollbars::mode(settings.scrollbars);
-        let ruler_feed = scrollbars::Feed::default();
-        result.update(cx, |state, _| {
-            scrollbars::install(state, scrollbar_mode, Some(ruler_feed.clone()));
-        });
+        let ruler = merge_view::ruler::marks(&doc, &inherited).collect();
+        let (scrollbar_mode, ruler_feed) = install_scrollbars(&result, settings.scrollbars, cx);
         let recovery = Self::journaling(&doc, settings, window, cx);
         let mut this = Self {
             // Before `doc` and `rows` move into the window.
@@ -833,6 +852,7 @@ impl MergeWindow {
             palette,
             settings_errors: None,
             notice: settings.notice.clone(),
+            inherited,
             copy_note: None,
             copying: None,
             save_task: None,
@@ -1677,7 +1697,7 @@ impl MergeWindow {
         let folds = self.collapse.folds(doc, &self.rows);
         let tones = *self.tones(cx);
         let (spacers, notes, placeholders) =
-            result_spacers(doc, &tones, &folds, cx.theme().muted_foreground);
+            result_spacers(doc, &self.inherited, &tones, &folds, cx.theme().muted_foreground);
         self.placeholders = placeholders;
         let hidden: Vec<_> = folds.iter().map(|fold| fold.result.clone()).collect();
         let changed = folds != self.collapse.folds;
@@ -2157,6 +2177,12 @@ impl MergeWindow {
         cx.notify();
     }
 
+    /// The conflicts a parent commit holds too.
+    #[must_use]
+    pub fn inherited(&self) -> &Inherited {
+        &self.inherited
+    }
+
     /// The opener's warning, which a banner shows while the window is open.
     #[must_use]
     pub fn notice(&self) -> Option<&SharedString> {
@@ -2205,7 +2231,7 @@ impl MergeWindow {
     fn refresh(&mut self, cx: &mut Context<Self>) {
         self.copy_note = None;
         let tones = *self.tones(cx);
-        let bands = marks::bands(self.session.document());
+        let bands = marks::bands(self.session.document(), &self.inherited);
         let (shown, shown_tones) = &self.shown_bands;
         let moved = tones == *shown_tones
             && marks::bands_unchanged(shown, &self.regions.get_ranges(cx), &bands);
@@ -2216,7 +2242,7 @@ impl MergeWindow {
         self.show_folds(cx);
         self.refresh_result_labels(Some(ORIGIN_DEBOUNCE), cx);
         self.counts = status::status(self.session.document(), self.session.line_ending());
-        self.ruler = merge_view::ruler::marks(self.session.document()).collect();
+        self.ruler = merge_view::ruler::marks(self.session.document(), &self.inherited).collect();
         self.follow_caret(cx);
         self.status = strings::status(self.repo, &self.counts).into();
         cx.notify();
@@ -3039,9 +3065,42 @@ impl MergeWindow {
                             .bordered(false)
                             .h(gpui_kit::relative(1.)),
                     )
+                    .children(self.render_inherited_pills(cx))
                     .children(go_to_line),
             )
             .child(self.render_ruler(cx))
+    }
+
+    /// A pill reading `inherited` at the right of the first line of each unresolved inherited
+    /// conflict the result shows (spec §5).
+    fn render_inherited_pills(&self, cx: &App) -> Vec<AnyElement> {
+        let state = self.result.read(cx);
+        let Some(line_height) = state.line_height() else {
+            return Vec::new();
+        };
+        let (bounds, scroll, map) =
+            (state.input_bounds(), state.scroll_offset().y, state.display_map());
+        let doc = self.session.document();
+        doc.region_ixs()
+            .filter(|&r| self.inherited.contains(r) && *doc.resolution(r) == Resolution::Unresolved)
+            .filter_map(|region| {
+                let lines = doc.region_lines(region);
+                (lines.start < lines.end).then_some((region, lines.start.get()))
+            })
+            .filter_map(|(region, line)| {
+                let top =
+                    bounds.top() + scroll + line_height * map.buffer_line_to_display_row(line);
+                (top >= bounds.top() && top + line_height <= bounds.bottom())
+                    .then_some((region, top))
+            })
+            .map(|(region, top)| {
+                gpui_kit::anchored()
+                    .anchor(gpui_kit::Anchor::TopRight)
+                    .position(point(bounds.right() - MOVE_PILL_INSET, top))
+                    .child(self.inherited_pill(inherited_pill_id(region), cx))
+                    .into_any_element()
+            })
+            .collect()
     }
 
     /// The overview ruler beside the result, with the result's vertical scrollbar thumb.
@@ -3438,7 +3497,9 @@ impl MergeWindow {
         let tones = self.palette.tones(theme.is_dark());
         let strip = tones.current();
         let kind = self.session.document().region(region).kind;
-        let input_mark = marks::input_mark(kind)
+        let inherited = self.inherited.contains(region);
+        let conflict_tone = if inherited { Tone::Inherited } else { Tone::Conflict };
+        let input_mark = marks::input_mark(kind, inherited)
             .filter(|_| head)
             .map(|mark| (mark.label, tones.mark(mark.tone)));
         let (filler, muted, border) = (theme.muted, theme.muted_foreground, theme.border);
@@ -3465,9 +3526,12 @@ impl MergeWindow {
                     .iter()
                     .any(|e| e.pane == pane && e.rows.contains(&index) && e.tinted());
                 let tone = marks::input_tone(kind, source);
-                let band = moved
-                    .then(|| tones.band(MOVE_TONE))
-                    .or_else(|| tone.map(|tone| tones.band(tone)));
+                let band =
+                    moved.then(|| tones.band(MOVE_TONE)).or_else(|| {
+                        tone.map(|tone| {
+                            if inherited { tones.inherited_band(tone) } else { tones.band(tone) }
+                        })
+                    });
                 let pill = pills.next().flatten();
                 let changed = changed_colour(tones, kind, source);
                 let syntax = line.map_or_else(Vec::new, |n| {
@@ -3475,10 +3539,10 @@ impl MergeWindow {
                 });
                 let title = &self.headings[pane].title;
                 let target = pickable.then(|| {
-                    let label = pick_label(self.session.document(), title, region);
+                    let label = pick_label(self.session.document(), &self.inherited, title, region);
                     let target = PickTarget {
                         state: PickState::of(self.session.document(), region, source),
-                        shown: tones.mark(Tone::Conflict),
+                        shown: tones.mark(conflict_tone),
                         pane,
                         row: index,
                         region,
@@ -3590,9 +3654,10 @@ impl MergeWindow {
 }
 
 impl MergeWindow {
-    /// Each of `panes` panes' move pills on `row`, when it is a display row's first: one for
-    /// each move end starting there, in [`moves::move_ends`]' order, in a run against the
-    /// pane's right edge.
+    /// Each of `panes` panes' pills on `row`, when it is a display row's first: one for each
+    /// move end starting there, in [`moves::move_ends`]' order, then in a side's pane the
+    /// inherited pill on the first row of an unresolved inherited conflict, in a run against
+    /// the pane's right edge.
     fn row_pills(
         &self,
         row: RowIx,
@@ -3600,15 +3665,28 @@ impl MergeWindow {
         panes: usize,
         cx: &mut Context<Self>,
     ) -> Vec<Option<AnyElement>> {
+        let doc = self.session.document();
+        let region = self.rows.row(doc, row).region;
+        let inherited = head
+            && self.rows.first_row(region) == row
+            && self.inherited.contains(region)
+            && *doc.resolution(region) == Resolution::Unresolved;
+        let sources = self.panes.sources();
         (0..panes)
             .map(|pane| {
-                let mut ends = self
+                let side = matches!(sources.get(pane), Some(Source::Side(_)));
+                let inherited_pill = (inherited && side)
+                    .then(|| self.inherited_pill(inherited_pane_pill_id(pane, region), cx));
+                let pills: Vec<AnyElement> = self
                     .move_ends
                     .iter()
                     .filter(|e| head && e.pane == pane && e.rows.start == row)
-                    .peekable();
-                ends.peek()?;
-                let pills: Vec<AnyElement> = ends.map(|end| self.move_pill(end, row, cx)).collect();
+                    .map(|end| self.move_pill(end, row, cx))
+                    .chain(inherited_pill)
+                    .collect();
+                if pills.is_empty() {
+                    return None;
+                }
                 Some(
                     div()
                         .absolute()
@@ -3621,6 +3699,21 @@ impl MergeWindow {
                 )
             })
             .collect()
+    }
+
+    /// The pill reading `inherited` over an inherited conflict, one line tall (spec §5).
+    fn inherited_pill(&self, id: ElementId, cx: &App) -> AnyElement {
+        let tones = self.tones(cx);
+        let colours =
+            [tones.mark(Tone::Inherited).opacity(INHERITED_PILL_FILL), cx.theme().background];
+        label_pill(
+            id,
+            strings::inherited_pill(),
+            self.typography.line_height(),
+            self.typography.size * CHIP_TEXT_SCALE,
+            colours,
+        )
+        .into_any_element()
     }
 
     /// The pill on `row`, the first of move end `end`: an arrow toward the other end and the
@@ -3849,10 +3942,26 @@ fn pick_slot(target: Option<impl IntoElement>, strip: Option<gpui_kit::Hsla>) ->
         .children(target)
 }
 
+/// Give the result editor the scrollbars `setting` asks for, fed by the ruler: their mode
+/// and the feed the ruler's marks go through.
+fn install_scrollbars(
+    result: &Entity<EditorState>,
+    setting: Scrollbars,
+    cx: &mut App,
+) -> (ScrollbarMode, scrollbars::Feed) {
+    let (mode, feed) = (scrollbars::mode(setting), scrollbars::Feed::default());
+    result.update(cx, |state, _| scrollbars::install(state, mode, Some(feed.clone())));
+    (mode, feed)
+}
+
 /// The accessible label of the pick target for `region` in the pane titled `title`.
-fn pick_label(doc: &MergeDocument, title: &str, region: RegionIx) -> String {
-    let unresolved = *doc.resolution(region) == Resolution::Unresolved;
-    strings::pick_label(title, region, doc.regions().len(), unresolved)
+fn pick_label(doc: &MergeDocument, inherited: &Inherited, title: &str, region: RegionIx) -> String {
+    let pending = match *doc.resolution(region) {
+        Resolution::Unresolved if inherited.contains(region) => strings::Pending::Inherited,
+        Resolution::Unresolved => strings::Pending::Unresolved,
+        _ => strings::Pending::No,
+    };
+    strings::pick_label(title, region, doc.regions().len(), pending)
 }
 
 /// The pick target on a region's first row: filled, and toggled on, when its source is in
@@ -4232,6 +4341,7 @@ fn choice_menu(menu: NativeMenu, items: &[MenuChoice]) -> NativeMenu {
 /// placeholder above hidden lines moves below them; on one line, rows go in region order.
 fn result_spacers(
     doc: &MergeDocument,
+    inherited: &Inherited,
     tones: &Tones,
     folds: &[MergeFold],
     muted: Hsla,
@@ -4255,7 +4365,7 @@ fn result_spacers(
                 .map(|&s| strings::role(status::Role::of(doc, s)))
                 .collect::<Vec<_>>();
             let label = strings::placeholder_label(p.lines, roles.iter().map(AsRef::as_ref));
-            let look = marks::placeholder_mark(doc, p.region, &p.sources);
+            let look = marks::placeholder_mark(doc, p.region, &p.sources, inherited);
             let line = shown(p.line.get());
             let note = SpacerNote::new(line, label, colour)
                 .with_fill(tones.band(look.tone))
@@ -4280,9 +4390,14 @@ fn region_decorations(bands: &[Band], tones: &Tones) -> Vec<RangeDecoration> {
         .map(|band| {
             let mark = GutterMark::new(band.mark.label, tones.mark(band.mark.tone));
             let mark = if band.mark.takes_press() { mark.clickable() } else { mark };
+            let fill = if band.inherited {
+                tones.inherited_band(band.tone)
+            } else {
+                tones.band(band.tone)
+            };
             let decoration = RangeDecoration::new(band.bytes.clone())
                 .with_style(RangeDecorationStyle::FullLine)
-                .with_color(tones.band(band.tone))
+                .with_color(fill)
                 .with_gutter_mark(mark);
             match band.border {
                 Some(tone) => decoration.with_border(tones.mark(tone)),
@@ -4456,7 +4571,10 @@ mod tests {
             merge_core::document::Labels::none(),
         )
         .expect("no labels");
-        let decorations = region_decorations(&marks::bands(&doc), Palette::default().tones(false));
+        let decorations = region_decorations(
+            &marks::bands(&doc, &Inherited::NONE),
+            Palette::default().tones(false),
+        );
         let marks: Vec<_> = decorations
             .iter()
             .filter_map(RangeDecoration::gutter_mark)
@@ -4464,6 +4582,24 @@ mod tests {
             .collect();
         // Spec §5, Gutters: a press on a block's `!` picks it; one on any other mark does nothing.
         assert_eq!(marks, [("L", false), ("R", false), ("=", false), ("!", true), ("!", true)]);
+        // An inherited conflict's blocks take the blended bands and the inherited marks.
+        let inherited = Inherited::find(&doc, &[doc.inputs().clone()]);
+        let palette = Palette::default();
+        let tones = palette.tones(false);
+        let decorations = region_decorations(&marks::bands(&doc, &inherited), tones);
+        let conflict: Vec<_> = decorations[3..]
+            .iter()
+            .map(|d| (d.color(), d.border(), d.gutter_mark().map(GutterMark::color)))
+            .collect();
+        let (grey, flag) = (Some(tones.mark(Tone::Inherited)), Some(tones.mark(Tone::Inherited)));
+        assert_eq!(
+            conflict,
+            [
+                (Some(tones.inherited_band(Tone::Left)), grey, flag),
+                (Some(tones.inherited_band(Tone::Right)), grey, flag),
+            ]
+        );
+        assert_ne!(tones.inherited_band(Tone::Left), tones.band(Tone::Left));
     }
 
     #[test]

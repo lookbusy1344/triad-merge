@@ -232,6 +232,8 @@ tool-whitespace = 공백 표시 또는 숨기기
 
 pick-label = { $title }, 영역 { $region }/{ $regions }
 pick-label-unresolved = { $title }, 영역 { $region }/{ $regions }, 해결되지 않음
+pick-label-inherited = { $title }, 영역 { $region }/{ $regions }, 해결되지 않음, 상속됨
+inherited-pill = 상속됨
 line-pick-label = { $title }, { $line }번째 줄
 badge-conflict = 충돌 { $number }/{ $count }
 badge-sides = { $kept }/{ $sides }개 쪽

@@ -458,7 +458,7 @@ fn bands_and_rebuild(
 ) -> (Vec<std::ops::Range<usize>>, Vec<std::ops::Range<usize>>) {
     cx.read(|cx| {
         let window = view.read(cx);
-        let rebuilt = merge_view::marks::bands(window.document())
+        let rebuilt = merge_view::marks::bands(window.document(), window.inherited())
             .into_iter()
             .map(|band| band.bytes)
             .collect();

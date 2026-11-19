@@ -275,6 +275,8 @@ tool-whitespace = Visa eller dölj blanktecken
 
 pick-label = { $title } i område { $region } av { $regions }
 pick-label-unresolved = { $title } i område { $region } av { $regions }, olöst
+pick-label-inherited = { $title } i område { $region } av { $regions }, olöst, ärvd
+inherited-pill = ärvd
 line-pick-label = Rad { $line } i { $title }
 badge-conflict = Konflikt { $number } av { $count }
 badge-sides = { $kept } av { $sides } sidor

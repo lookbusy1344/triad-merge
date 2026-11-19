@@ -302,6 +302,27 @@ impl JjRepository {
         self.conflict_in(&self.commit_by_id(id)?, path)
     }
 
+    /// The conflict each parent of the commit `id` holds at `path`, in parent order: none for
+    /// a parent where the path is resolved.
+    ///
+    /// # Errors
+    ///
+    /// As [`JjRepository::conflict_at`].
+    pub fn parent_conflicts_at(
+        &self,
+        id: &vcs::CommitId,
+        path: &Utf8Path,
+    ) -> Result<Vec<vcs::Conflict>, VcsError> {
+        let commit = self.commit_by_id(id)?;
+        let mut conflicts = Vec::with_capacity(commit.parent_ids().len());
+        for parent in commit.parent_ids() {
+            let parent =
+                self.repo.store().get_commit(parent).map_err(backend("reading a parent commit"))?;
+            conflicts.extend(self.conflict_in(&parent, path)?);
+        }
+        Ok(conflicts)
+    }
+
     /// Write `content` as `path` in the commit `id`'s change, as `jj resolve -r` does: markers
     /// at least `marker_length` long that jj parses back stay a conflict, of fewer sides when
     /// the content resolves some. The descendants rebase; a moved working copy is checked

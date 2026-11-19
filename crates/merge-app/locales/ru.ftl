@@ -287,6 +287,8 @@ tool-whitespace = Показать или скрыть пробелы
 
 pick-label = { $title } в области { $region } из { $regions }
 pick-label-unresolved = { $title } в области { $region } из { $regions }, не разрешено
+pick-label-inherited = { $title } в области { $region } из { $regions }, не разрешено, унаследовано
+inherited-pill = унаследован
 line-pick-label = Строка { $line } в { $title }
 badge-conflict = Конфликт { $number } из { $count }
 badge-sides = { $kept } из { $sides } сторон

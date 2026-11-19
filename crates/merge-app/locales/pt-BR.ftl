@@ -276,6 +276,8 @@ tool-whitespace = Mostrar ou ocultar espaços em branco
 
 pick-label = { $title } na região { $region } de { $regions }
 pick-label-unresolved = { $title } na região { $region } de { $regions }, não resolvido
+pick-label-inherited = { $title } na região { $region } de { $regions }, não resolvido, herdado
+inherited-pill = herdado
 line-pick-label = Linha { $line } de { $title }
 badge-conflict = Conflito { $number } de { $count }
 badge-sides = { $kept } de { $sides } lados

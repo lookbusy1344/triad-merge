@@ -280,6 +280,8 @@ tool-whitespace = Show or hide whitespace
 
 pick-label = { $title } in region { $region } of { $regions }
 pick-label-unresolved = { $title } in region { $region } of { $regions }, unresolved
+pick-label-inherited = { $title } in region { $region } of { $regions }, unresolved, inherited
+inherited-pill = inherited
 line-pick-label = Line { $line } of { $title }
 badge-conflict = Conflict { $number } of { $count }
 badge-sides = { $kept } of { $sides } sides
