@@ -1,4 +1,4 @@
-//! Colours for region tones (spec §5): left blue, right pink, base yellow, conflict orange,
+//! Colours for region tones (spec §5): left blue, right indigo, base yellow, conflict orange,
 //! edited purple, word-merged green, moved a faint teal by default. Bands are translucent so text and the active
 //! line show through.
 //!
@@ -142,8 +142,8 @@ mod tests {
     /// keep this gap before they round to `#rrggbb`, which moves each by up to
     /// [`HEX_HUE_ROUNDING`].
     const MIN_HUE_GAP: f32 = 30.;
-    /// Pink, per spec §5: between magenta and red.
-    const PINK: std::ops::RangeInclusive<f32> = 300.0..=345.0;
+    /// Indigo, per spec §5: between blue and violet.
+    const INDIGO: std::ops::RangeInclusive<f32> = 235.0..=260.0;
     /// Blue, per spec §5: between cyan and violet.
     const BLUE: std::ops::RangeInclusive<f32> = 190.0..=250.0;
     /// Red: within 10 degrees of 0.
@@ -183,7 +183,7 @@ mod tests {
             let tones = palette.tones(dark);
             for (tone, hue) in [
                 (Tone::Left, 210.),
-                (Tone::Right, 330.),
+                (Tone::Right, 245.),
                 (Tone::Base, 55.),
                 (Tone::Conflict, 25.),
                 (Tone::Edited, 275.),
@@ -308,13 +308,13 @@ mod tests {
     }
 
     #[test]
-    fn left_is_blue_and_right_is_pink_in_both_themes() {
+    fn left_is_blue_and_right_is_indigo_in_both_themes() {
         for dark in THEMES {
             let palette = Palette::default();
             let tones = palette.tones(dark);
             let (left, right) = (tones.mark(Tone::Left), tones.mark(Tone::Right));
             assert!(BLUE.contains(&hue_of(left)), "left {left:?} dark {dark}");
-            assert!(PINK.contains(&hue_of(right)), "right {right:?} dark {dark}");
+            assert!(INDIGO.contains(&hue_of(right)), "right {right:?} dark {dark}");
         }
     }
 

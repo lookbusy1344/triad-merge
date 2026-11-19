@@ -17,7 +17,7 @@ pub struct Pin {
     pub caret: usize,
 }
 
-/// The tone of `side`'s changed regions: left blue, right pink, as in the merge window.
+/// The tone of `side`'s changed regions: left blue, right indigo, as in the merge window.
 #[must_use]
 pub fn tone(side: Side) -> Tone {
     match side {

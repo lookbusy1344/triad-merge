@@ -276,7 +276,7 @@ const fn themed_colour(light: u32, dark: u32) -> Themed<Colour> {
 /// 0.4 (light), 0.75 and 0.55 (dark).
 pub const DEFAULT_COLOURS: Colours = Colours {
     left: themed_colour(0x22_73_c3, 0x67_a6_e4),
-    right: themed_colour(0xc3_22_73, 0xe4_67_a6),
+    right: themed_colour(0x30_22_c3, 0x72_67_e4),
     base: themed_colour(0xc3_b6_22, 0xe4_da_67),
     conflict: themed_colour(0xc3_65_22, 0xe4_9b_67),
     edited: themed_colour(0x80_22_c3, 0xb0_67_e4),
@@ -2305,7 +2305,7 @@ mod tests {
             DEFAULT_COLOURS,
             Colours {
                 left: pair(0x22_73_c3, 0x67_a6_e4),
-                right: pair(0xc3_22_73, 0xe4_67_a6),
+                right: pair(0x30_22_c3, 0x72_67_e4),
                 base: pair(0xc3_b6_22, 0xe4_da_67),
                 conflict: pair(0xc3_65_22, 0xe4_9b_67),
                 edited: pair(0x80_22_c3, 0xb0_67_e4),
@@ -2481,7 +2481,7 @@ theme = system
 ui-language = auto
 line-height = 1.5
 color-left = light:#2273c3,dark:#67a6e4
-color-right = light:#c32273,dark:#e467a6
+color-right = light:#3022c3,dark:#7267e4
 color-base = light:#c3b622,dark:#e4da67
 color-conflict = light:#c36522,dark:#e49b67
 color-result-edit = light:#8022c3,dark:#b067e4
