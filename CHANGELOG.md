@@ -14,7 +14,7 @@ What changed for users in each release, newest first. [docs/release.md](docs/rel
 - Visible whitespace in every pane, with a toolbar toggle; invisible characters drawn as code points and odd spaces shaded.
 - Text that is not UTF-8 read and saved as Windows-1252.
 - A reload from disk keeps the caret and the view on their lines; the merge window warns once when another program changes OUTPUT.
-- The windows in 14 languages: English, Spanish, simplified and traditional Chinese, Japanese, Korean, German, French, Brazilian Portuguese, Russian, Ukrainian, Polish, Dutch and Swedish.
+- The windows in 14 languages: English, Spanish, simplified and traditional Chinese, Japanese, Korean, German, French, Brazilian Portuguese, Ukrainian, Polish, Dutch, Swedish and Russian.
 - Syntax highlighting for JSON, YAML, TOML, CSS, C, C++, Java, Kotlin, Markdown, Bash and Zig; a script's language from its `#!` line.
 - A restyled look after Zed: the UI font, Zed's status bar, buttons, menus and surfaces, and on macOS the toolbar in the title bar. The toolbar shows picks and view toggles pressed and moves Base and Both into a More menu.
 - Faster on large files: conflicts refine in parallel, and the merge output and origin labels build off the UI thread.

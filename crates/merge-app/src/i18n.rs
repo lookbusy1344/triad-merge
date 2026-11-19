@@ -532,13 +532,11 @@ mod tests {
         assert_eq!(lines(Locale::En, 1), "1 line deleted");
         assert_eq!(lines(Locale::En, 2), "2 lines deleted");
         assert_eq!(lines(Locale::En, 0), "0 lines deleted");
-        // Russian has three forms: one (1, 21), few (2–4, 22) and many (5–20, 0).
-        assert_eq!(lines(Locale::Ru, 1), "Удалена 1 строка");
-        assert_eq!(lines(Locale::Ru, 21), "Удалена 21 строка");
-        assert_eq!(lines(Locale::Ru, 3), "Удалено 3 строки");
-        assert_eq!(lines(Locale::Ru, 22), "Удалено 22 строки");
-        assert_eq!(lines(Locale::Ru, 5), "Удалено 5 строк");
-        assert_eq!(lines(Locale::Ru, 11), "Удалено 11 строк");
+        // Ukrainian has three forms: one (1, 21), few (2–4, 22) and many (0, 5–20).
+        assert_eq!(lines(Locale::Uk, 1), "Видалено 1 рядок");
+        assert_eq!(lines(Locale::Uk, 21), "Видалено 21 рядок");
+        assert_eq!(lines(Locale::Uk, 22), "Видалено 22 рядки");
+        assert_eq!(lines(Locale::Uk, 11), "Видалено 11 рядків");
         // Japanese has one form for every count.
         assert_eq!(lines(Locale::Ja, 1), "1 行削除");
         assert_eq!(lines(Locale::Ja, 7), "7 行削除");
@@ -553,17 +551,19 @@ mod tests {
         assert_eq!(lines(Locale::Pl, 12), "Usunięto 12 wierszy");
         assert_eq!(lines(Locale::Pl, 21), "Usunięto 21 wierszy");
         assert_eq!(lines(Locale::Pl, 22), "Usunięto 22 wiersze");
-        // Ukrainian follows Russian: one (1, 21), few (2–4, 22), many (0, 5–20).
-        assert_eq!(lines(Locale::Uk, 1), "Видалено 1 рядок");
-        assert_eq!(lines(Locale::Uk, 21), "Видалено 21 рядок");
-        assert_eq!(lines(Locale::Uk, 22), "Видалено 22 рядки");
-        assert_eq!(lines(Locale::Uk, 11), "Видалено 11 рядків");
         // Korean has one form; Swedish two.
         assert_eq!(lines(Locale::Ko, 1), "1줄 삭제됨");
         assert_eq!(lines(Locale::Ko, 5), "5줄 삭제됨");
         assert_eq!(lines(Locale::Sv, 1), "1 rad borttagen");
         assert_eq!(lines(Locale::Sv, 0), "0 rader borttagna");
         assert_eq!(lines(Locale::ZhTw, 2), "已刪除 2 行");
+        // Russian has the same three forms as Ukrainian.
+        assert_eq!(lines(Locale::Ru, 1), "Удалена 1 строка");
+        assert_eq!(lines(Locale::Ru, 21), "Удалена 21 строка");
+        assert_eq!(lines(Locale::Ru, 3), "Удалено 3 строки");
+        assert_eq!(lines(Locale::Ru, 22), "Удалено 22 строки");
+        assert_eq!(lines(Locale::Ru, 5), "Удалено 5 строк");
+        assert_eq!(lines(Locale::Ru, 11), "Удалено 11 строк");
     }
 
     #[test]
