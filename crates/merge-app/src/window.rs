@@ -667,7 +667,6 @@ pub fn open(
     })?)
 }
 
-/// The language a merge's file names give.
 /// Where `settings` say Save & Exit writes, and how.
 fn save_target(settings: &WindowSettings) -> SaveTarget {
     SaveTarget {
@@ -678,12 +677,14 @@ fn save_target(settings: &WindowSettings) -> SaveTarget {
     }
 }
 
-fn language(settings: &WindowSettings) -> Option<Language> {
-    Language::of_run(
+/// The language of `doc`'s merge: the one its file names give, else its inputs' first lines.
+fn language(doc: &MergeDocument, settings: &WindowSettings) -> Option<Language> {
+    let names = Language::of_run(
         settings.file_names.paths(),
         settings.output.as_deref(),
         settings.title.as_deref(),
-    )
+    );
+    merge_session::language(names, doc.inputs())
 }
 
 /// The result editor on `doc`'s text, recording its edits in `recorded`, and whether it
@@ -750,7 +751,7 @@ impl MergeWindow {
         let bands = marks::bands(&doc);
         let decorations = region_decorations(&bands, tones);
         let colouring =
-            Colouring::new(language(settings), settings.syntax, settings.syntax_max_lines);
+            Colouring::new(language(&doc, settings), settings.syntax, settings.syntax_max_lines);
         let (result, result_highlighter) =
             result_editor(&doc, settings, wrap, colouring, &recorded, window, cx);
         // `show_folds` sets the spacers once the window stands.

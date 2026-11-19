@@ -5,12 +5,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use camino::{Utf8Path, Utf8PathBuf};
-use merge_core::boundaries::Boundaries;
 use merge_core::document::{LabelCountError, Labels, MergeDocument, MergeOptions, Output};
 use merge_core::markers::{self, MarkerError, Parsed};
 use merge_core::merge3::{Inputs, Semantics, ShapeError};
 use merge_core::text::{DecodeError, Text};
-use merge_syntax::boundaries::SyntaxBoundaries;
 use merge_syntax::language::Language;
 use vcs::{CommitId, ConflictTerm, EntryKind, RepoKind, Repository, TermContent, VcsError};
 use vcs_jj::config::ConfigEnv;
@@ -235,7 +233,8 @@ pub struct Opened {
 }
 
 impl Loaded {
-    /// Align the inputs with `options`, its markers at least as long as the VCS reads back.
+    /// Align the inputs with `options`, its markers at least as long as the VCS reads back,
+    /// in the language of the conflicted path, else of the inputs' first lines.
     ///
     /// # Errors
     ///
@@ -245,14 +244,9 @@ impl Loaded {
             marker_length: options.marker_length.max(self.marker_length.unwrap_or_default()),
             ..options
         };
-        let boundaries = Language::detect([self.path.as_std_path()]).map(SyntaxBoundaries::new);
+        let names = Language::detect([self.path.as_std_path()]);
         Ok(Opened {
-            doc: MergeDocument::new_bounded(
-                self.inputs,
-                options,
-                self.labels,
-                boundaries.as_ref().map(|b| b as &dyn Boundaries),
-            )?,
+            doc: crate::align(self.inputs, options, self.labels, names)?,
             path: self.path,
             file: self.file,
             repo: self.repo,
@@ -675,15 +669,33 @@ mod tests {
 
     /// A conflict whose sides share the `}` that closes a different block on each.
     fn shared_brace(path: &str) -> Loaded {
+        shared_brace_in(
+            path,
+            [
+                "fn f() {\n    a();\n}\n",
+                "fn f() {\n    if p {\n        b();\n    }\n    c();\n}\n",
+                "fn f() {\n    while q {\n        d();\n    }\n    e();\n}\n",
+            ],
+        )
+    }
+
+    /// The same conflict in a shell script, each input opening with `first`.
+    fn shared_brace_script(path: &str, first: &str) -> Loaded {
+        let [base, left, right] = [
+            "f() {\n    a\n}\n",
+            "f() {\n    p && {\n        b\n    }\n    c\n}\n",
+            "f() {\n    q || {\n        d\n    }\n    e\n}\n",
+        ]
+        .map(|body| format!("{first}{body}"));
+        shared_brace_in(path, [&base, &left, &right])
+    }
+
+    fn shared_brace_in(path: &str, [base, left, right]: [&str; 3]) -> Loaded {
         let text = |s: &str| Text::decode(s.as_bytes().to_vec()).expect("decodes");
         Loaded {
             path: Utf8PathBuf::from(path),
             file: Utf8PathBuf::from("/repo").join(path),
-            inputs: Inputs::three_way(
-                text("fn f() {\n    a();\n}\n"),
-                text("fn f() {\n    if p {\n        b();\n    }\n    c();\n}\n"),
-                text("fn f() {\n    while q {\n        d();\n    }\n    e();\n}\n"),
-            ),
+            inputs: Inputs::three_way(text(base), text(left), text(right)),
             labels: Labels::none(),
             repo: None,
             marker_length: None,
@@ -704,6 +716,30 @@ mod tests {
         assert_eq!(regions("src/f.rs"), 3);
         // No grammar: the `}` splits off between two conflicts.
         assert_eq!(regions("src/f.txt"), 5);
+    }
+
+    #[test]
+    fn without_a_language_in_the_path_the_inputs_shebang_gives_the_syntax_boundaries() {
+        let options = MergeOptions {
+            refine: merge_core::merge3::Refine::Deep,
+            syntax_boundaries: true,
+            ..MergeOptions::default()
+        };
+        let regions = |path, first| {
+            shared_brace_script(path, first)
+                .open(options.clone())
+                .expect("no labels")
+                .doc
+                .regions()
+                .len()
+        };
+        // Unchanged (the shebang and `f() {`), conflict, unchanged.
+        assert_eq!(regions("script/f", "#!/bin/sh\n"), 3);
+        assert_eq!(regions("script/f", "# f\n"), 5);
+        // `.txt` names no language, so the shebang still counts.
+        assert_eq!(regions("script/f.txt", "#!/bin/sh\n"), 3);
+        // The path's language wins: parsed as Rust the script has errors, so the `}` splits off.
+        assert_eq!(regions("script/f.rs", "#!/bin/sh\n"), 5);
     }
 
     #[test]

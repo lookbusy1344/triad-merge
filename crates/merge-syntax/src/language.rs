@@ -4,7 +4,8 @@
 //! git and jj hand a merge tool temporary inputs such as `BASE_1234.rs`, and jj's diff tool
 //! files in a temporary directory, so the caller lists every name it knows, best first: the
 //! inputs, then the output, then the `--title` path. The first name whose extension triad
-//! knows gives the language. None is plain text.
+//! knows gives the language. Without one, a script's `#!` line names it. None is plain
+//! text.
 
 use std::path::Path;
 
@@ -83,6 +84,29 @@ const EXTENSIONS: [(&str, Language); 44] = [
     ("zig", Language::Zig),
 ];
 
+/// The bytes that open a script's interpreter line.
+const SHEBANG: &str = "#!";
+/// The program that finds the interpreter on `PATH`: `#!/usr/bin/env bash`.
+const ENV: &str = "env";
+
+/// Each interpreter a script's first line can name, without its version, and its language.
+/// zsh, dash and ksh scripts parse as Bash, as `.zsh` files do.
+const INTERPRETERS: [(&str, Language); 8] = [
+    ("sh", Language::Bash),
+    ("bash", Language::Bash),
+    ("zsh", Language::Bash),
+    ("dash", Language::Bash),
+    ("ksh", Language::Bash),
+    ("python", Language::Python),
+    ("node", Language::JavaScript),
+    ("swift", Language::Swift),
+];
+
+/// The last component of a `/`-separated path.
+fn file_name(path: &str) -> &str {
+    path.rsplit_once('/').map_or(path, |(_, name)| name)
+}
+
 impl Language {
     /// Every language, in declaration order.
     pub const ALL: [Self; 20] = [
@@ -144,6 +168,27 @@ impl Language {
             .iter()
             .find(|(known, _)| known.eq_ignore_ascii_case(extension))
             .map(|&(_, language)| language)
+    }
+
+    /// The language a script's first line names: `#!`, then the interpreter's path, or
+    /// `env` and the interpreter, after `env`'s options and assignments. A version after
+    /// the interpreter's name counts for nothing: `python3.12` is `python`.
+    #[must_use]
+    pub fn of_shebang(text: &str) -> Option<Self> {
+        let line = text.lines().next()?.strip_prefix(SHEBANG)?;
+        let mut words = line.split_whitespace();
+        let mut program = file_name(words.next()?);
+        if program == ENV {
+            program = words.find(|word| !word.starts_with('-') && !word.contains('='))?;
+            program = file_name(program);
+        }
+        let name = program.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.');
+        INTERPRETERS.iter().find(|(known, _)| *known == name).map(|&(_, language)| language)
+    }
+
+    /// The language of the first of `texts` whose first line names one.
+    pub fn of_scripts<'a>(texts: impl IntoIterator<Item = &'a str>) -> Option<Self> {
+        texts.into_iter().find_map(Self::of_shebang)
     }
 
     /// The language of the first of `names` that has one.
@@ -340,6 +385,68 @@ mod tests {
         assert_eq!(run(&inputs, Some("o.rs"), Some("t.cs")), Some(Language::Rust));
         assert_eq!(run(&inputs, Some("out"), Some("t.cs")), Some(Language::CSharp));
         assert_eq!(run(&inputs, None, None), None);
+    }
+
+    #[test]
+    fn a_shebang_names_its_interpreters_language() {
+        for (line, language) in [
+            ("#!/bin/sh\n", Language::Bash),
+            ("#!/bin/bash\necho a\n", Language::Bash),
+            ("#!/usr/bin/zsh\n", Language::Bash),
+            ("#!/bin/dash\n", Language::Bash),
+            ("#!/bin/ksh\n", Language::Bash),
+            ("#! /bin/sh\n", Language::Bash),
+            ("#!/bin/sh -eu\n", Language::Bash),
+            ("#!/bin/sh\r\necho a\r\n", Language::Bash),
+            ("#!/bin/sh", Language::Bash),
+            ("#!/usr/bin/env bash\n", Language::Bash),
+            ("#!/usr/bin/env\tbash\n", Language::Bash),
+            ("#!/usr/bin/env -S bash -e\n", Language::Bash),
+            ("#!/usr/bin/env -i LANG=C sh\n", Language::Bash),
+            ("#!/usr/bin/python\n", Language::Python),
+            ("#!/usr/bin/env python3\n", Language::Python),
+            ("#!/usr/local/bin/python3.12 -u\n", Language::Python),
+            ("#!/usr/bin/env node\n", Language::JavaScript),
+            ("#!/usr/bin/swift\n", Language::Swift),
+        ] {
+            assert_eq!(Language::of_shebang(line), Some(language), "{line:?}");
+        }
+    }
+
+    #[test]
+    fn other_first_lines_name_no_language() {
+        for line in [
+            "",
+            "\n",
+            "#!",
+            "#!\n/bin/sh\n",
+            "#!/usr/bin/env\n",
+            "#!/usr/bin/env -S\n",
+            "#!/usr/bin/env LANG=C\n",
+            "# /bin/sh\n",
+            "#/bin/sh\n",
+            " #!/bin/sh\n",
+            "echo a\n#!/bin/sh\n",
+            "#!/usr/bin/perl\n",
+            "#!/usr/bin/fish\n",
+            "#!/usr/bin/env shellcheck\n",
+            "#!/bin/bashful\n",
+            "#!/usr/bin/python3x\n",
+            "#!/usr/bin/env 3\n",
+            "#!/bin/\n",
+            "#!/usr/bin/env sh.d\n",
+        ] {
+            assert_eq!(Language::of_shebang(line), None, "{line:?}");
+        }
+    }
+
+    #[test]
+    fn the_first_script_with_a_shebang_wins() {
+        let of = |texts: &[&str]| Language::of_scripts(texts.iter().copied());
+        assert_eq!(of(&["a\n", "#!/bin/sh\n", "#!/usr/bin/env python3\n"]), Some(Language::Bash));
+        assert_eq!(of(&["#!/usr/bin/perl\n", "#!/usr/bin/env node\n"]), Some(Language::JavaScript));
+        assert_eq!(of(&["a\n", "", "b\n"]), None);
+        assert_eq!(of(&[]), None);
     }
 
     /// Each language's sample, and the kind of its tree's root.

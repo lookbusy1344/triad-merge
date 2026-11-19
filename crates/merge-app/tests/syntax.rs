@@ -27,7 +27,13 @@ fn three_way(name: &str) -> FileNames {
 }
 
 fn result_language(cx: &mut TestAppContext, settings: &WindowSettings) -> String {
-    let (_, view, _) = open_with(cx, doc("a\n", "b\n", "a\n"), settings);
+    script_language(cx, settings, "")
+}
+
+/// The result's language when each input opens with `first`.
+fn script_language(cx: &mut TestAppContext, settings: &WindowSettings, first: &str) -> String {
+    let [base, left] = ["a\n", "b\n"].map(|line| format!("{first}{line}"));
+    let (_, view, _) = open_with(cx, doc(&base, &left, &base), settings);
     cx.read(|cx| view.read(cx).result_editor().read(cx).language_name().to_string())
 }
 
@@ -79,6 +85,23 @@ fn an_unknown_name_is_plain(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn without_a_named_language_the_inputs_shebang_gives_it(cx: &mut TestAppContext) {
+    let settings = WindowSettings {
+        file_names: three_way("BASE_1234"),
+        output: Some(PathBuf::from("script/build")),
+        ..WindowSettings::default()
+    };
+    assert_eq!(script_language(cx, &settings, "#!/usr/bin/env bash\n"), "bash");
+    assert_eq!(script_language(cx, &settings, "# build\n"), PLAIN);
+}
+
+#[gpui_kit::test]
+fn a_named_language_wins_over_the_inputs_shebang(cx: &mut TestAppContext) {
+    let settings = WindowSettings { file_names: three_way("a.py"), ..WindowSettings::default() };
+    assert_eq!(script_language(cx, &settings, "#!/bin/sh\n"), "python");
+}
+
+#[gpui_kit::test]
 fn without_syntax_the_result_is_plain(cx: &mut TestAppContext) {
     let settings = WindowSettings {
         file_names: three_way("a.rs"),
@@ -89,7 +112,15 @@ fn without_syntax_the_result_is_plain(cx: &mut TestAppContext) {
 }
 
 fn file(origin: Origin) -> DiffFile {
-    DiffFile { origin, text: Text::decode(b"x\n".to_vec()).expect("decodes"), read_only: false }
+    file_with(origin, "x\n")
+}
+
+fn file_with(origin: Origin, text: &str) -> DiffFile {
+    DiffFile {
+        origin,
+        text: Text::decode(text.as_bytes().to_vec()).expect("decodes"),
+        read_only: false,
+    }
 }
 
 fn pane_languages(
@@ -98,11 +129,19 @@ fn pane_languages(
     right: Origin,
     settings: &DiffSettings,
 ) -> [String; 2] {
+    diff_languages(cx, [file(left), file(right)], settings)
+}
+
+fn diff_languages(
+    cx: &mut TestAppContext,
+    [left, right]: [DiffFile; 2],
+    settings: &DiffSettings,
+) -> [String; 2] {
     let view = cx.update(|cx| {
         gpui_kit::init(cx);
         merge_app::init(cx);
-        let (_, view) = merge_app::diff_window::open(file(left), file(right), settings, cx)
-            .expect("window opens");
+        let (_, view) =
+            merge_app::diff_window::open(left, right, settings, cx).expect("window opens");
         view
     });
     cx.read(|cx| {
@@ -132,6 +171,24 @@ fn the_diff_title_names_the_language_last(cx: &mut TestAppContext) {
         &DiffSettings { title: Some("src/a.rs".to_owned()), ..DiffSettings::default() },
     );
     assert_eq!(languages, ["rust", "rust"]);
+}
+
+#[gpui_kit::test]
+fn without_a_named_language_the_diff_takes_a_sides_shebang(cx: &mut TestAppContext) {
+    let files = [
+        file_with(Origin::File(PathBuf::from("/tmp/left/build")), "echo a\n"),
+        file_with(Origin::File(PathBuf::from("/tmp/right/build")), "#!/bin/sh\necho b\n"),
+    ];
+    assert_eq!(diff_languages(cx, files, &DiffSettings::default()), ["bash", "bash"]);
+}
+
+#[gpui_kit::test]
+fn a_named_language_wins_over_a_diff_sides_shebang(cx: &mut TestAppContext) {
+    let files = [
+        file_with(Origin::File(PathBuf::from("a.py")), "#!/bin/sh\n"),
+        file_with(Origin::File(PathBuf::from("b.py")), "#!/bin/sh\n"),
+    ];
+    assert_eq!(diff_languages(cx, files, &DiffSettings::default()), ["python", "python"]);
 }
 
 #[gpui_kit::test]

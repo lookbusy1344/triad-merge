@@ -175,8 +175,33 @@ pub fn journal_dir() -> Option<PathBuf> {
     directories::ProjectDirs::from("", "", APPLICATION).map(|dirs| dirs.cache_dir().join("journal"))
 }
 
-/// Read and decode the inputs, and align them, with `language`'s syntax boundaries when the
-/// options turn them on (spec §4.3).
+/// A merge's language (spec §4.3): the one its names give, else the one the first line of
+/// a side, then of a base, names.
+#[must_use]
+pub fn language(names: Option<Language>, inputs: &Inputs) -> Option<Language> {
+    names.or_else(|| {
+        Language::of_scripts(inputs.sides().iter().chain(inputs.bases()).map(Text::content))
+    })
+}
+
+/// `inputs` aligned under `options`, with the syntax boundaries of the merge's [`language`].
+pub(crate) fn align(
+    inputs: Inputs,
+    options: MergeOptions,
+    labels: Labels,
+    names: Option<Language>,
+) -> Result<MergeDocument, LabelCountError> {
+    let boundaries = language(names, &inputs).map(SyntaxBoundaries::new);
+    MergeDocument::new_bounded(
+        inputs,
+        options,
+        labels,
+        boundaries.as_ref().map(|b| b as &dyn Boundaries),
+    )
+}
+
+/// Read and decode the inputs, and align them, with the syntax boundaries of the language
+/// the names give, else the inputs' first lines, when the options turn them on (spec §4.3).
 ///
 /// # Errors
 ///
@@ -185,18 +210,12 @@ pub fn load(
     files: &MergeFiles,
     options: MergeOptions,
     labels: Labels,
-    language: Option<Language>,
+    names: Option<Language>,
 ) -> Result<MergeDocument, SessionError> {
     let base = read_text(&files.base)?;
     let left = read_text(&files.left)?;
     let right = read_text(&files.right)?;
-    let boundaries = language.map(SyntaxBoundaries::new);
-    Ok(MergeDocument::new_bounded(
-        Inputs::three_way(base, left, right),
-        options,
-        labels,
-        boundaries.as_ref().map(|b| b as &dyn Boundaries),
-    )?)
+    Ok(align(Inputs::three_way(base, left, right), options, labels, names)?)
 }
 
 /// Why a save of a conflict the VCS holds failed (spec §6.2, §7.4).
@@ -347,6 +366,52 @@ pub fn read_text(path: &Path) -> Result<Text, SessionError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn text(s: &str) -> Text {
+        Text::decode(s.as_bytes().to_vec()).expect("decodes")
+    }
+
+    #[test]
+    fn the_names_language_wins_over_the_inputs_shebang() {
+        let inputs = Inputs::three_way(text("#!/bin/sh\n"), text("#!/bin/sh\n"), text("a\n"));
+        assert_eq!(language(Some(Language::Rust), &inputs), Some(Language::Rust));
+        assert_eq!(language(None, &inputs), Some(Language::Bash));
+    }
+
+    #[test]
+    fn the_sides_shebangs_count_before_the_bases() {
+        let python = "#!/usr/bin/env python3\n";
+        let inputs = Inputs::three_way(text("#!/bin/sh\n"), text("a\n"), text(python));
+        assert_eq!(language(None, &inputs), Some(Language::Python));
+        let inputs = Inputs::three_way(text("#!/bin/sh\n"), text("a\n"), text("b\n"));
+        assert_eq!(language(None, &inputs), Some(Language::Bash));
+        let inputs = Inputs::three_way(text("a\n"), text("b\n"), text(""));
+        assert_eq!(language(None, &inputs), None);
+    }
+
+    #[test]
+    fn a_load_without_a_named_language_bounds_the_merge_by_the_inputs_shebang() {
+        let dir = tempfile::tempdir().unwrap();
+        let write = |name: &str, body: &str| {
+            let path = dir.path().join(name);
+            std::fs::write(&path, format!("#!/bin/sh\nf() {{\n{body}}}\n")).unwrap();
+            path
+        };
+        let files = MergeFiles {
+            base: write("BASE", "    a\n"),
+            left: write("LEFT", "    p && {\n        b\n    }\n    c\n"),
+            right: write("RIGHT", "    q || {\n        d\n    }\n    e\n"),
+        };
+        let options = MergeOptions {
+            refine: merge_core::merge3::Refine::Deep,
+            syntax_boundaries: true,
+            ..MergeOptions::default()
+        };
+        let doc = load(&files, options, Labels::none(), None).unwrap();
+        // Unchanged, conflict, unchanged: the shared `}` stays inside the conflict. As plain
+        // text it splits off between two conflicts, in five regions.
+        assert_eq!(doc.regions().len(), 3);
+    }
 
     /// Lines of `é\n`, more than one rope chunk holds.
     const LINES: usize = 3000;

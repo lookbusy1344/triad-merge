@@ -617,11 +617,9 @@ impl DiffWindow {
         let palette = Palette::new(&settings.colours);
         let tones = *palette.tones(cx.theme().is_dark());
         let names = [left.origin.path(), right.origin.path()].into_iter().flatten();
-        let colouring = Colouring::new(
-            Language::of_run(names, None, settings.title.as_deref()),
-            settings.syntax,
-            settings.syntax_max_lines,
-        );
+        let language = Language::of_run(names, None, settings.title.as_deref())
+            .or_else(|| Language::of_scripts([left, right].map(|file| file.text.content())));
+        let colouring = Colouring::new(language, settings.syntax, settings.syntax_max_lines);
         // Sides that open past the limit never wrap, though edits may shorten them.
         let wrap =
             Wrap::new(settings.soft_wrap, [left, right].iter().map(|file| file.text.line_count()));
