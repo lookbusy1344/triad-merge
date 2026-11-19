@@ -85,12 +85,13 @@ test_stack() {
 $s3 $(commit stack-3) stack 3: change b5
   a.txt (inherited)
   b.txt
-$s2 $(commit stack-2) stack 2: change c2
+$s2 $(commit stack-2) stack 2: change c2 and a7
   a.txt (inherited)
 $s1 $(commit stack-1) stack 1: change a3
   a.txt" "$out"
 
-  # a.txt's regions: a1–a2 unchanged, the a3 conflict, a4–a8 unchanged. Pick left in region 1.
+  # stack-1's a.txt: a1–a2 unchanged, the a3 conflict, a4–a8 unchanged. Pick left in region 1.
+  # stack-2's own conflict at a7 stays in stack-2 and above.
   local pick="$work/pick-left.jsonl"
   echo '{"Toggle":{"region":1,"source":{"Side":0}}}' >"$pick"
   local before
@@ -98,22 +99,24 @@ $s1 $(commit stack-1) stack 1: change a3
   triad resolve a.txt -r stack-1 --headless --dry-run --commands "$pick"
   same "resolve -r --dry-run exit" 0 "$code"
   same "resolve -r --dry-run" "would resolve a.txt in $s1
-  $s2: a.txt -> none
-  $s3: a.txt, b.txt -> b.txt
-  $wc: a.txt, b.txt -> b.txt" "$out"
+  $s2: a.txt -> a.txt
+  $s3: a.txt, b.txt -> a.txt, b.txt
+  $wc: a.txt, b.txt -> a.txt, b.txt" "$out"
   same "conflicts in stack-1 after the dry run" "a.txt" "$(conflicts stack-1)"
 
   triad resolve a.txt -r stack-1 --headless --commands "$pick"
   same "resolve -r exit" 0 "$code"
   same "resolve -r" "resolved a.txt in $s1
-  $s2: a.txt -> none
-  $s3: a.txt, b.txt -> b.txt
-  $wc: a.txt, b.txt -> b.txt" "$out"
+  $s2: a.txt -> a.txt
+  $s3: a.txt, b.txt -> a.txt, b.txt
+  $wc: a.txt, b.txt -> a.txt, b.txt" "$out"
   same "stack-1 conflicts after the write" "" "$(conflicts stack-1)"
-  same "stack-2 conflicts after the write" "" "$(conflicts stack-2)"
-  same "stack-3 conflicts after the write" "b.txt" "$(conflicts stack-3)"
-  same "@ conflicts after the write" "b.txt" "$(conflicts @)"
-  same "stack-1's a.txt" "a1 a2 a3 left a4 a5 a6 a7 a8" "$(jjr file show -r stack-1 a.txt | paste -sd' ' -)"
+  same "stack-2 conflicts after the write" "a.txt" "$(conflicts stack-2)"
+  same "stack-3 conflicts after the write" "a.txt,b.txt" "$(conflicts stack-3)"
+  same "@ conflicts after the write" "a.txt,b.txt" "$(conflicts @)"
+  same "stack-1's a.txt" "a1 a2 a3 left a4 a5 a6 a7 left a8" "$(jjr file show -r stack-1 a.txt | paste -sd' ' -)"
+  # stack-2's a.txt now conflicts at a7 alone: a3 took stack-1's resolution.
+  same "stack-2's a3" "a3 left" "$(jjr file show -r stack-2 a.txt | sed -n 3p)"
   same "@'s change after the write" "$wc" "$(change @)"
   same "visible heads" 1 "$(jjr log --no-graph -r 'heads(all())' -T '"x\n"' | wc -l | tr -d ' ')"
   # Spec §7.5.1: a write into a commit is one operation, `resolve PATH in CHANGE in triad`.

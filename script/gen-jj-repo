@@ -105,8 +105,9 @@ expect_conflicts() {
 # jj's default layout: no layout flag.
 JJ_RANDOMNESS_SEED=0 jj --quiet git init "$dest"
 
-# Conflicts across a stack: stack-1 conflicts with left in a.txt; stack-2 inherits it;
-# stack-3 inherits it and adds its own conflict in b.txt; @ inherits both.
+# Conflicts across a stack: stack-1 conflicts with left in a.txt at a3; stack-2 inherits it
+# and adds its own conflict in the same file at a7; stack-3 inherits both and adds its own
+# conflict in b.txt; @ inherits all three.
 gen_stack() {
   seq_lines a 8 >"$dest/a.txt"
   seq_lines b 8 >"$dest/b.txt"
@@ -115,8 +116,9 @@ gen_stack() {
   jj_ bookmark create base -r @-
 
   set_line a.txt 3 "a3 left"
+  set_line a.txt 7 "a7 left"
   set_line b.txt 5 "b5 left"
-  jj_ commit -m "left: change a3 and b5"
+  jj_ commit -m "left: change a3, a7 and b5"
   jj_ bookmark create left -r @-
 
   jj_ new base
@@ -124,7 +126,8 @@ gen_stack() {
   jj_ commit -m "stack 1: change a3"
   jj_ bookmark create stack-1 -r @-
   set_line c.txt 2 "c2 stack"
-  jj_ commit -m "stack 2: change c2"
+  set_line a.txt 7 "a7 stack"
+  jj_ commit -m "stack 2: change c2 and a7"
   jj_ bookmark create stack-2 -r @-
   set_line b.txt 5 "b5 stack"
   jj_ commit -m "stack 3: change b5"

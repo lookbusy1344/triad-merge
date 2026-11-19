@@ -19,7 +19,7 @@ script/test-jj-repos                 # from the repo root, after cargo build --w
 
 | Scenario | What it holds | Try |
 |---|---|---|
-| `stack` | A stack of conflicted commits; later commits inherit the earlier conflict, and `stack-3` adds its own | `triad-merge stack`; `triad-merge resolve a.txt -r stack-1`, with `--headless --dry-run` to change nothing |
+| `stack` | A stack of conflicted commits; later commits inherit the earlier conflicts, `stack-2` adds its own beside the inherited one in the same file, and `stack-3` adds one in another file | `triad-merge stack`; `triad-merge resolve a.txt -r stack-1`, with `--headless --dry-run` to change nothing |
 | `sides` | A three-sided conflict in the working copy | `triad-merge resolve s.txt`: one pane per side; the badge shows `3 of 3 sides`, then `2 of 3 sides` |
 | `history` | `notes.txt` across nine operations, a deletion and a conflict among them | `triad-merge history notes.txt`; `triad-merge diff notes.txt --op OP` |
 | `absorb` | Working-copy fixes over commits A, B and C, on an immutable `base` | `triad-merge absorb`: hunks go to A or B, or stay: `base` wrote the lines, a new file, or it would conflict in A |
@@ -36,15 +36,15 @@ Bookmarks name every commit but `@`. In each repository, `jj log` shows the hist
 ```
 @        (no description)          a.txt, b.txt inherited
 ○  stack-3  change b5               a.txt inherited, b.txt its own
-○  stack-2  change c2               a.txt inherited
+○  stack-2  change c2 and a7        a.txt: a3 inherited, a7 its own
 ×  stack-1  change a3               a.txt
-○  left     change a3 and b5
+○  left     change a3, a7 and b5
 ○  base     a.txt, b.txt, c.txt
 ```
 
-`stack-1` to `stack-3` were written on `base` and rebased onto `left`, so `stack-1` conflicts with `left` at a3, and `stack-3` at b5. Try:
+`stack-1` to `stack-3` were written on `base` and rebased onto `left`, so `stack-1` conflicts with `left` at a3, `stack-2` at a7 in the same file, and `stack-3` at b5. Try:
 
-- `triad-merge stack`: the window lists the four commits, newest first as `jj log` shows them, with `(inherited)` on each path a parent holds conflicted too. Open `a.txt` under `stack-1`, pick left and use Preview Save: `stack-2` loses its conflict, `stack-3` and `@` keep only `b.txt`. Save & Exit asks first, since the save changes descendants.
+- `triad-merge stack`: the window lists the four commits, newest first as `jj log` shows them, with `(inherited)` on each path a parent holds conflicted too. Open `a.txt` under `stack-2`: the a3 conflict shows greyed with an `inherited` pill, the a7 conflict in the side colours. Open `a.txt` under `stack-1`, pick left and use Preview Save: `stack-2` keeps only its own a7 conflict in `a.txt`, and `stack-3` and `@` keep `a.txt` and `b.txt`. Save & Exit asks first, since the save changes descendants.
 - `triad-merge resolve a.txt -r stack-1`: the same from the command line.
 - `triad-merge resolve a.txt -r stack-1 --headless --dry-run`: changes nothing.
 - After each write, `jj log`, `jj op log` and `jj st`: jj reads what triad wrote without complaint, and `jj undo` reverts it.
