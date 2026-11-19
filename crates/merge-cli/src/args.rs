@@ -7,6 +7,7 @@ use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
 use clap::{ArgGroup, Parser, Subcommand};
 use merge_core::diff::DiffOptions;
 use merge_core::document::{Labels, MergeOptions};
+use merge_core::patch;
 use vcs::RepoKind;
 
 use merge_config::named::Named;
@@ -39,8 +40,15 @@ pub enum Batch {
     /// Print the merge's regions; no output file. `options` are the settings file's with the
     /// flags over them, as a merge's; the semantics come from `merge-semantics` when the run starts.
     Inspect { files: MergeFiles, options: MergeOptions, semantics: SemanticsFlags, json: bool },
-    /// Print the two-way regions; no window.
-    DiffInspect { left: PathBuf, right: PathBuf, diff: DiffOptions, json: bool },
+    /// Print the two-way regions, or with `unified` their unified diff at that context size;
+    /// no window.
+    DiffInspect {
+        left: PathBuf,
+        right: PathBuf,
+        diff: DiffOptions,
+        json: bool,
+        unified: Option<usize>,
+    },
     /// `diff --inspect [--rev REV]`: list the files that differ between `rev`, or the parent
     /// revision, and the working copy.
     ChangesInspect { rev: Option<String>, json: bool },
@@ -91,6 +99,8 @@ pub enum UsageError {
     ReadonlyWithoutTwoFiles,
     #[error("--inspect needs LEFT RIGHT")]
     InspectNative,
+    #[error("--unified needs diff --inspect LEFT RIGHT")]
+    UnifiedWithoutTwoFiles,
     #[error("--commands applies to one file: give resolve a PATH")]
     CommandsWithoutPath,
     #[error(
@@ -400,6 +410,20 @@ struct DiffCli {
     inspect: bool,
     #[arg(long, requires = "inspect")]
     json: bool,
+    /// Print a unified diff with N lines of context, 3 without N.
+    #[arg(
+        long,
+        value_name = "N",
+        num_args = 0..=1,
+        require_equals = true,
+        requires = "inspect",
+        conflicts_with = "json"
+    )]
+    #[expect(
+        clippy::option_option,
+        reason = "clap's form of a flag whose value is optional: absent, bare, or with N"
+    )]
+    unified: Option<Option<usize>>,
     #[command(flatten)]
     diff: DiffArgs,
     #[arg(long)]
@@ -559,7 +583,11 @@ impl DiffCli {
         let count = self.files.len();
         let mut files = self.files.into_iter();
         let paths = (files.next(), files.next(), files.next());
+        let unified = self.unified.map(|n| n.unwrap_or(patch::DEFAULT_CONTEXT));
         match (paths, self.rev, self.inspect) {
+            ((None, None, None), _, _) if unified.is_some() => {
+                Err(UsageError::UnifiedWithoutTwoFiles)
+            }
             ((None, None, None), _, _) if self.readonly_left || self.readonly_right => {
                 Err(UsageError::ReadonlyWithoutTwoFiles)
             }
@@ -590,6 +618,7 @@ impl DiffCli {
                     right,
                     diff: self.diff.over(&settings.two_way()),
                     json: self.json,
+                    unified,
                 })
             } else {
                 Invocation::Window(Window::Diff(Diff {
@@ -948,7 +977,53 @@ mod tests {
                 right: "r".into(),
                 diff: Settings::default().two_way(),
                 json: true,
+                unified: None,
             })
+        );
+    }
+
+    fn unified_of(args: &[&str]) -> Option<usize> {
+        match ok(args) {
+            Invocation::Batch(Batch::DiffInspect { unified, json: false, .. }) => unified,
+            other => panic!("{args:?}: {other:?}"),
+        }
+    }
+
+    /// git's default context is 3 lines (spec §6.1).
+    #[test]
+    fn unified_takes_an_optional_context_size_after_an_equals_sign() {
+        assert_eq!(unified_of(&["diff", "--inspect", "l", "r"]), None);
+        assert_eq!(unified_of(&["diff", "--inspect", "l", "r", "--unified"]), Some(3));
+        assert_eq!(unified_of(&["diff", "--inspect", "--unified", "l", "r"]), Some(3));
+        assert_eq!(unified_of(&["diff", "--inspect", "l", "r", "--unified=0"]), Some(0));
+        assert_eq!(unified_of(&["diff", "--inspect", "l", "r", "--unified=12"]), Some(12));
+        // Without `=`, a number is a file.
+        assert_eq!(
+            usage(&["diff", "--inspect", "l", "r", "--unified", "5"]),
+            UsageError::DiffFiles(3)
+        );
+        assert_eq!(
+            clap_kind(&["diff", "--inspect", "l", "r", "--unified=x"]),
+            ErrorKind::ValueValidation
+        );
+        assert_eq!(
+            clap_kind(&["diff", "--inspect", "l", "r", "--unified=-1"]),
+            ErrorKind::ValueValidation
+        );
+    }
+
+    #[test]
+    fn unified_needs_inspect_and_two_files_and_no_json() {
+        assert_eq!(clap_kind(&["diff", "l", "r", "--unified"]), ErrorKind::MissingRequiredArgument);
+        assert_eq!(
+            clap_kind(&["diff", "--inspect", "l", "r", "--unified", "--json"]),
+            ErrorKind::ArgumentConflict
+        );
+        assert_eq!(usage(&["diff", "--inspect", "--unified"]), UsageError::UnifiedWithoutTwoFiles);
+        assert_eq!(usage(&["diff", "--inspect", "l", "--unified"]), UsageError::InspectNative);
+        assert_eq!(
+            usage(&["diff", "--inspect", "l", "r", "--unified", "--rev", "x"]),
+            UsageError::RevWithTwoFiles
         );
     }
 

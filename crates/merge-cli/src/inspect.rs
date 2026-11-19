@@ -1,5 +1,5 @@
 //! `inspect` and `diff --inspect`: print regions as text or as the JSON of
-//! `docs/json-schema.md`.
+//! `docs/json-schema.md`, or a two-way diff as a unified patch.
 
 use std::ops::Range;
 use std::path::Path;
@@ -8,6 +8,7 @@ use merge_core::diff::DiffOptions;
 use merge_core::diff2::{self, Kind2};
 use merge_core::document::{Labels, MergeOptions, OutputEnding};
 use merge_core::merge3::{Kind, LEFT, RIGHT, word_merge};
+use merge_core::patch::{self, Scope, Titles};
 use merge_core::text::{Encoding, output_encoding};
 use serde::Serialize;
 
@@ -346,6 +347,26 @@ pub fn diff_inspect(
     Ok((text, code))
 }
 
+/// The unified diff of two files with `context` lines around each change, its headers the
+/// paths as given, and the exit code of [`diff_inspect`]. Equal files give no output.
+///
+/// # Errors
+///
+/// [`CliError`] when an input cannot be read or decoded.
+pub fn diff_unified(
+    left: &Path,
+    right: &Path,
+    diff: &DiffOptions,
+    context: usize,
+) -> Result<(String, ExitCode), CliError> {
+    let (left_text, right_text) = (read_text(left)?, read_text(right)?);
+    let found = diff2::regions(&left_text, &right_text, diff);
+    let titles = Titles { left: &left.to_string_lossy(), right: &right.to_string_lossy() };
+    let text = patch::unified(&left_text, &right_text, &found, context, Scope::File, titles);
+    let changes = found.iter().filter(|r| r.kind == Kind2::Changed).count();
+    Ok((text, exit_code(changes)))
+}
+
 const CONFLICT: &str = "conflict";
 
 fn merge_kind(kind: Kind) -> &'static str {
@@ -407,7 +428,7 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
 
-    use merge_core::diff::Whitespace;
+    use merge_core::diff::{BlankLineRule, Whitespace};
     use serde_json::{Value, json};
 
     use super::*;
@@ -731,6 +752,66 @@ mod tests {
                 ],
                 "moves": []
             })
+        );
+    }
+
+    #[test]
+    fn diff_unified_prints_a_patch_headed_by_the_paths() {
+        let files = two(b"a\nb\nc\n", b"a\nB\nc\n");
+        let (left, right) = (files.path("left"), files.path("right"));
+        let (out, code) = diff_unified(&left, &right, &DiffOptions::default(), 0).expect("ok");
+        assert_eq!(code, ExitCode::Conflicts);
+        assert_eq!(
+            out,
+            format!("--- {}\n+++ {}\n@@ -2 +2 @@ a\n-b\n+B\n", left.display(), right.display())
+        );
+    }
+
+    #[test]
+    fn diff_unified_of_equal_files_prints_nothing_and_exits_0() {
+        let files = two(b"a \nb\n", b"a\nb\n");
+        let (left, right) = (files.path("left"), files.path("right"));
+        let trailing = DiffOptions { whitespace: Whitespace::Trailing, ..DiffOptions::default() };
+        assert_eq!(
+            diff_unified(&left, &right, &trailing, 3).expect("ok"),
+            (String::new(), ExitCode::Resolved)
+        );
+        let (out, code) = diff_unified(&left, &right, &DiffOptions::default(), 3).expect("ok");
+        assert_eq!(code, ExitCode::Conflicts);
+        assert!(out.ends_with("@@ -1,2 +1,2 @@\n-a \n+a\n b\n"), "{out}");
+    }
+
+    #[test]
+    fn diff_unified_of_an_ignored_change_alone_prints_nothing_and_exits_0() {
+        let files = two(b"a\nb\n", b"a\n\nb\n");
+        let (left, right) = (files.path("left"), files.path("right"));
+        let blank = DiffOptions { blank_lines: BlankLineRule::Ignore, ..DiffOptions::default() };
+        assert_eq!(
+            diff_unified(&left, &right, &blank, 3).expect("ok"),
+            (String::new(), ExitCode::Resolved)
+        );
+    }
+
+    #[test]
+    fn diff_unified_writes_a_utf16_side_as_utf8() {
+        let files = two(&utf16le("x\n"), b"y\n");
+        let (left, right) = (files.path("left"), files.path("right"));
+        let (out, _) = diff_unified(&left, &right, &DiffOptions::default(), 3).expect("ok");
+        assert!(out.ends_with("@@ -1 +1 @@\n-x\n+y\n"), "{out}");
+    }
+
+    #[test]
+    fn diff_unified_reports_a_bad_input() {
+        let files = two(b"a\x00\n", b"a\n");
+        let error =
+            diff_unified(&files.path("left"), &files.path("right"), &DiffOptions::default(), 3)
+                .expect_err("binary");
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "{}: binary file: a NUL byte within the first 8000 bytes",
+                files.path("left").display()
+            )
         );
     }
 

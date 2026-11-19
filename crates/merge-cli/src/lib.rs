@@ -67,6 +67,8 @@ pub enum CliError {
     Save(#[from] SaveError),
     #[error("cannot find the working directory")]
     NoWorkingDirectory,
+    #[error("--unified needs two files, not two directories")]
+    UnifiedDirectories,
     /// The result is written, but the repository refused it.
     #[error("{path}: {source}")]
     Rewrite { path: camino::Utf8PathBuf, source: vcs::VcsError },
@@ -309,10 +311,14 @@ fn batch_form(
                 inspect::inspect(&files, options, chosen, settings.line_ending, json)?;
             Ok(report(stdout, &text, code))
         }
-        Batch::DiffInspect { left, right, diff, json } => {
-            let (text, code) = match dir_diff::pair(&left, &right)? {
-                Pair::Directories => inspect::dirs_inspect(&left, &right, json)?,
-                Pair::Files => inspect::diff_inspect(&left, &right, &diff, json)?,
+        Batch::DiffInspect { left, right, diff, json, unified } => {
+            let (text, code) = match (dir_diff::pair(&left, &right)?, unified) {
+                (Pair::Directories, None) => inspect::dirs_inspect(&left, &right, json)?,
+                (Pair::Directories, Some(_)) => return Err(CliError::UnifiedDirectories),
+                (Pair::Files, None) => inspect::diff_inspect(&left, &right, &diff, json)?,
+                (Pair::Files, Some(context)) => {
+                    inspect::diff_unified(&left, &right, &diff, context)?
+                }
             };
             Ok(report(stdout, &text, code))
         }

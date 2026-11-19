@@ -605,3 +605,53 @@ fn the_moved_demo_finds_what_its_readme_says() {
         ])
     );
 }
+
+#[test]
+fn diff_inspect_unified_prints_a_patch_and_follows_diff_exit_codes() {
+    let base = fixture("clean-merge", "base");
+    let left = fixture("clean-merge", "left");
+    let differ = triad(&[
+        "diff".as_ref(),
+        "--inspect".as_ref(),
+        "--unified=1".as_ref(),
+        base.as_os_str(),
+        left.as_os_str(),
+    ]);
+    assert_eq!(String::from_utf8_lossy(&differ.stderr), "");
+    assert_eq!(differ.status.code(), Some(1));
+    // `clean-merge`: base `a b c`, left `A b c`.
+    assert_eq!(
+        String::from_utf8_lossy(&differ.stdout),
+        format!("--- {}\n+++ {}\n@@ -1,2 +1,2 @@\n-a\n+A\n b\n", base.display(), left.display())
+    );
+    let same = triad(&[
+        "diff".as_ref(),
+        "--inspect".as_ref(),
+        "--unified".as_ref(),
+        base.as_os_str(),
+        base.as_os_str(),
+    ]);
+    assert_eq!((same.status.code(), same.stdout.len()), (Some(0), 0));
+}
+
+#[test]
+fn diff_inspect_unified_of_two_directories_exits_3() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let (left, right) = (root.path().join("l"), root.path().join("r"));
+    for dir in [&left, &right] {
+        std::fs::create_dir(dir).expect("dir");
+    }
+    let result = triad(&[
+        "diff".as_ref(),
+        "--inspect".as_ref(),
+        "--unified".as_ref(),
+        left.as_os_str(),
+        right.as_os_str(),
+    ]);
+    assert_eq!(result.status.code(), Some(ERROR_EXIT));
+    assert_eq!(
+        String::from_utf8_lossy(&result.stderr),
+        "triad-merge: --unified needs two files, not two directories\n"
+    );
+    assert_eq!(result.stdout.len(), 0);
+}
