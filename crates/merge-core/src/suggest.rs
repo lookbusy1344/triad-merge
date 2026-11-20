@@ -483,6 +483,27 @@ mod tests {
     }
 
     #[test]
+    fn a_longer_side_that_drops_a_base_line_suggests_no_union() {
+        // Left replaces `c` with `b d e`: longer than base and sorted, but without `c`. Right
+        // adds `d` after `c`. One conflict over `c`.
+        assert_eq!(suggested("a\nc\nz\n", "a\nb\nd\ne\nz\n", "a\nc\nd\nz\n"), [NONE, NONE, NONE]);
+    }
+
+    #[test]
+    fn a_side_that_adds_nothing_among_three_suggests_no_union() {
+        // Sides y, (nothing), x over two empty bases. Out of order, so a union would differ
+        // from every side; the middle side adds nothing, so none is offered.
+        let inputs = Inputs::new(
+            vec![text("a\ny\n"), text("a\n"), text("a\nx\n")],
+            vec![text("a\n"), text("a\n")],
+        )
+        .unwrap();
+        let regions = align(&inputs, &MergeOptions::default().alignment());
+        assert_eq!(regions[1].kind, Kind::Conflict);
+        assert_eq!(suggestions(&inputs, &regions, RegionIx::new(1)), NONE);
+    }
+
+    #[test]
     fn a_line_without_a_newline_suggests_no_union() {
         assert_eq!(suggested("a\n", "a\nc", "a\nb"), [NONE, vec![Suggestion::EverySide]]);
     }
