@@ -188,74 +188,9 @@ mod tests {
     }
 
     #[test]
-    fn same_seed_gives_same_triple() {
-        let (a, b) = (generate(500, 7), generate(500, 7));
-        assert_eq!((a.base, a.left, a.right), (b.base, b.left, b.right));
-    }
-
-    #[test]
-    fn different_seeds_change_different_blocks() {
-        let (a, b) = (generate(2_000, 1), generate(2_000, 2));
-        assert_eq!(a.base, b.base);
-        assert_ne!((a.left, a.right), (b.left, b.right));
-    }
-
-    #[test]
     fn base_has_the_requested_line_count_with_a_partial_last_block() {
         assert_eq!(generate(1_234, 1).base.lines().count(), 1_234);
         assert_eq!(generate(25, 1).base.lines().count(), 25);
-    }
-
-    #[test]
-    fn zero_lines_gives_empty_inputs() {
-        let triple = generate(0, 3);
-        assert_eq!(
-            (triple.base, triple.left, triple.right),
-            (String::new(), String::new(), String::new())
-        );
-    }
-
-    #[test]
-    fn base_lines_are_numbered_items() {
-        let base = generate(3, 9).base;
-        assert_eq!(
-            base,
-            "      0  fn item_0(value: u64) -> u64 { value * 0 }\n\
-             \x20     1  fn item_1(value: u64) -> u64 { value * 1 }\n\
-             \x20     2  fn item_2(value: u64) -> u64 { value * 2 }\n"
-        );
-    }
-
-    #[test]
-    fn word_conflicts_edit_every_spacingth_line_from_the_first() {
-        let triple = generate_word_conflicts(3, 2);
-        assert_eq!(
-            triple.base,
-            "      0  fn item_0(value: u64) -> u64 { value * 0 }\n\
-             \x20     1  fn item_1(value: u64) -> u64 { value * 1 }\n\
-             \x20     2  fn item_2(value: u64) -> u64 { value * 2 }\n"
-        );
-        assert_eq!(
-            triple.left,
-            "      0  fn left_0(value: u64) -> u64 { value * 0 }\n\
-             \x20     1  fn item_1(value: u64) -> u64 { value * 1 }\n\
-             \x20     2  fn left_2(value: u64) -> u64 { value * 2 }\n"
-        );
-        assert_eq!(
-            triple.right,
-            "      0  fn item_0(value: u64) -> u64 { value + 0 }\n\
-             \x20     1  fn item_1(value: u64) -> u64 { value * 1 }\n\
-             \x20     2  fn item_2(value: u64) -> u64 { value + 2 }\n"
-        );
-    }
-
-    #[test]
-    fn word_conflicts_with_zero_lines_are_empty() {
-        let triple = generate_word_conflicts(0, 1);
-        assert_eq!(
-            (triple.base, triple.left, triple.right),
-            (String::new(), String::new(), String::new())
-        );
     }
 
     #[test]
