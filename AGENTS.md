@@ -89,12 +89,15 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 - **Workspace lints in every crate.** Each `Cargo.toml` sets `[lints] workspace = true`; `script/check-workspace` enforces it.
 - **Clippy pedantic, zero warnings.** A lint is turned off for the workspace only in the root `Cargo.toml`, with a comment giving the reason. A local `#[expect(clippy::…)]` carries `reason = "…"`; prefer `expect` to `allow`.
 - **Tests first.** Write the tests, watch them fail, implement, then break the code to confirm the tests catch it.
+  - Assert what a caller observes: output bytes, errors, state after a command. Never internal fields, call order or the layout of a private type.
+  - A test of internal policy, such as the order chunks parse in, asserts the invariant a user sees: every requested chunk lands, and the chunk on screen lands first. Never the full sequence.
   - Expected values come from the spec, a hand calculation or the oracle corpora, never from the code's output.
   - Assert exact values and specific errors.
   - Cover boundaries, invalid input, error paths and state after a failure.
   - A bug fix starts with a test that reproduces it.
   - Mock only external boundaries. No sleeps, no unseeded randomness.
-  - Never delete a test or weaken an assertion to get a run passing.
+  - Every test guards behaviour someone relies on: the product's, or that of the scripts that gate commits and pushes. No tests of test helpers or fixtures, of documentation, or of code too simple to break, such as a getter, a constructor or a derive.
+  - Never delete a test or weaken an assertion to get a run passing. One exception: a refactor may delete or rewrite a test that pins internal structure, when tests at a stabler surface still cover the behaviour. The commit message names each deleted test and the tests that cover its behaviour.
 - **Typed errors.** A function that can fail returns `Result<T, E>`.
   - Each crate defines its error enums with `thiserror`. Use `anyhow` only where a dependency returns `anyhow::Error`, such as GPUI's `open_window`, and wrap it in a typed variant there.
   - Propagate with `?`. Add context with `map_err` or a `#[source]` field, and keep the cause.
