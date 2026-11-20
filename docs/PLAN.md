@@ -68,6 +68,7 @@ In order. Each is one or more commits.
 | Razor | A grammar that covers its code blocks | §F1 |
 | Unusual characters checked on screen with the platform shapers: badges and shades in the top panes and the editors, and no reordering around a masked bidirectional control | The owner at the machine | §A6.8 |
 | Lookalike letters, such as Cyrillic а for Latin a: a confusables table and a rule for text in other scripts | Owner's choice | §A6.8 |
+| Mutation testing beyond `merge-core`'s `markers`, `journal`, `jj`, `unusual`, `suggest`, `rename` and `patch`, where `cargo mutants` leaves only an equivalent mutant (`jj.rs`, `LineKeys::hash`): the rest of `merge-core`, then `merge-session`, `vcs-git` and `vcs-jj`. A full `merge-core` run takes 15 to 20 minutes at `-j 4` | — | `script/checks` |
 | Fuzzing | After release 1; `cargo-fuzz` needs nightly | spec §8.9 |
 | Screen-reader support: status announcements, conflict regions, scrolling the row table, the accessibility tree in headless tests, a keyboard and contrast audit | §J1 needs the owner at the machine | J |
 | gpui-kit 0.9: build, rebase the patch, measure | — | `docs/gpui-kit-issues.md` |

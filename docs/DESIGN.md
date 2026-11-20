@@ -115,7 +115,7 @@ libgit2's file-merge tests (`merge/files.c`, `merge/trees/whitespace.c`, `merge/
 
 #### A4.9 Properties
 
-Proptest suites for spec §8.2, with a fixed seed and checked-in regressions: alignment in `merge3`; output, two-way and edit sequences in `merge-core/tests/properties.rs`. Fuzzing waits for release 1 (spec §8.9): `cargo-fuzz` needs nightly.
+Proptest suites for spec §8.2, with a fixed seed and checked-in regressions: alignment in `merge3`; output, two-way and edit sequences in `merge-core/tests/properties.rs`. Most use files of up to 12 lines from a few line shapes, so lines repeat and diffs tie. One suite runs the output and marker properties on triples of up to 3,000 lines: a base of common shapes and two sides that each edit it in up to 60 places. Only an edit inserts the marker-like line and the 8 KB line, so one input can hold them while the others do not. Fuzzing waits for release 1 (spec §8.9): `cargo-fuzz` needs nightly.
 
 #### A4.10 Headless CLI
 

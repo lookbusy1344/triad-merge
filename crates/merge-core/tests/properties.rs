@@ -22,6 +22,17 @@ use proptest::test_runner::{Config, RngSeed};
 const PROPTEST_SEED: u64 = 0x8_2000;
 const PROPTEST_CASES: u32 = 512;
 const EDIT_CASES: u32 = 256;
+const LARGE_CASES: u32 = 24;
+/// Base lines in a large triple.
+const MAX_LARGE_LINES: usize = 3000;
+/// Edits each side makes to a large base.
+const MAX_LARGE_EDITS: usize = 60;
+/// Common lines an edit inserts for each rare one.
+const RARE_WEIGHT_COMMON: u32 = 40;
+/// Lines one edit inserts or deletes.
+const MAX_EDIT_LINES: usize = 8;
+/// Bytes in the long line shape, past any short-line assumption in word refinement.
+const LONG_LINE: usize = 8192;
 const MAX_OPS: usize = 24;
 /// Sides in the many-sided marker property: jj's snapshot layout.
 const MANY_SIDES: usize = 3;
@@ -64,6 +75,48 @@ fn marked_file_strategy() -> impl Strategy<Value = String> {
         prop::sample::select(vec!["", "a", "======="]),
     )
         .prop_map(|(lines, last)| lines.concat() + last)
+}
+
+/// Line shapes of a large base: few enough to repeat often, with a blank line and a CRLF line.
+fn common_line() -> impl Strategy<Value = String> {
+    prop::sample::select(vec!["a\n", "b\n", "c\n", "}\n", "\n", "a\r\n", "fn f() {\n"])
+        .prop_map(str::to_owned)
+}
+
+/// Line shapes only an edit inserts, so one input can hold them and the others not: a
+/// marker-like line and one very long line.
+fn rare_line() -> impl Strategy<Value = String> {
+    prop::sample::select(vec!["=======\n".to_owned(), format!("{}\n", "w ".repeat(LONG_LINE / 2))])
+}
+
+/// One edit of a large base: at a fraction of its length, delete some lines, then insert some.
+fn large_edit() -> impl Strategy<Value = (usize, usize, Vec<String>)> {
+    let inserted = prop_oneof![RARE_WEIGHT_COMMON => common_line(), 1 => rare_line()];
+    (any::<usize>(), 0..MAX_EDIT_LINES, prop::collection::vec(inserted, 0..MAX_EDIT_LINES))
+}
+
+/// `base` with `edits` applied in turn, each at a position taken modulo the current length.
+fn edited(base: &[String], edits: &[(usize, usize, Vec<String>)]) -> String {
+    let mut lines = base.to_vec();
+    for (at, deleted, inserted) in edits {
+        let start = at % (lines.len() + 1);
+        let end = (start + deleted).min(lines.len());
+        lines.splice(start..end, inserted.iter().cloned());
+    }
+    lines.concat()
+}
+
+/// A large base and two sides that each edit it in a few dozen places, so most of the file
+/// stays shared and the conflicts sit among long unchanged runs.
+fn large_triple() -> impl Strategy<Value = (String, String, String)> {
+    (
+        prop::collection::vec(common_line(), 0..MAX_LARGE_LINES),
+        prop::collection::vec(large_edit(), 0..MAX_LARGE_EDITS),
+        prop::collection::vec(large_edit(), 0..MAX_LARGE_EDITS),
+    )
+        .prop_map(|(base, left, right)| {
+            (base.concat(), edited(&base, &left), edited(&base, &right))
+        })
 }
 
 fn semantics() -> impl Strategy<Value = Semantics> {
@@ -459,5 +512,39 @@ proptest! {
             (doc.output(), doc.regions().to_vec(), doc.resolutions().to_vec()),
             start
         );
+    }
+}
+
+proptest! {
+    #![proptest_config(config(LARGE_CASES))]
+
+    /// The small-input properties on files of thousands of lines with a long line among them.
+    #[test]
+    fn large_merges_pick_each_input_and_read_back_their_markers(
+        (base, left, right) in large_triple(), refine in refines(), semantics in semantics(),
+    ) {
+        // Labels outside jj's defaults, which read back empty.
+        let options = MergeOptions { semantics, refine, ..MergeOptions::default() };
+        let doc = MergeDocument::new(
+            three(&base, &left, &right),
+            options,
+            Labels::three_way("ours", "anc", "theirs"),
+        )
+        .expect("three labels fit");
+        markers_read_back(&doc)?;
+        for (source, expected) in [
+            (Source::Side(LEFT), &left),
+            (Source::Side(RIGHT), &right),
+            (Source::Base(0), &base),
+        ] {
+            let mut picked = doc.clone();
+            for region in 0..picked.regions().len() {
+                picked.apply(Command::Pick { region: RegionIx::new(region), sources: vec![source] }).expect("pick");
+            }
+            prop_assert_eq!(&picked.output(), &Output::Resolved(expected.clone()), "{:?}", source);
+        }
+        let only = |l: &str, r: &str| document(&base, l, r, refine, semantics).output();
+        prop_assert_eq!(only(&base, &right), Output::Resolved(right.clone()));
+        prop_assert_eq!(only(&left, &base), Output::Resolved(left.clone()));
     }
 }
