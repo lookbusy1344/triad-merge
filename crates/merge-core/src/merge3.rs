@@ -1916,6 +1916,74 @@ mod tests {
         assert_eq!(align(&inputs, &deep(Semantics::Git)), regions);
     }
 
+    #[test]
+    fn deep_refinement_splits_where_the_side_that_keeps_the_neighbours_puts_the_block() {
+        // One side replaces p and q around m, so m may go at any base position from 0 to 2.
+        // The other inserts m between its unchanged p and q, so only base position 1 fits.
+        let (replaced, inserted) = ("x\nm\ny\n", "p\nm\nq\n");
+        for (left, right) in [(replaced, inserted), (inserted, replaced)] {
+            assert_eq!(
+                align(&three("p\nq\n", left, right), &deep(Semantics::Git)),
+                [
+                    r3(Kind::Conflict, 0..1, 0..1, 0..1),
+                    r3(Kind::AllSame, 1..1, 1..2, 1..2),
+                    r3(Kind::Conflict, 1..2, 2..3, 2..3),
+                ],
+                "left {left:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn deep_refinement_leaves_a_block_the_sides_keep_from_different_base_lines_whole() {
+        // Each side keeps one of base's two m lines and replaces the other. No one base
+        // position fits m on both sides.
+        for (left, right, edge) in [
+            // Left's m is base line 1, right's base line 0. Base position 2 fits the cuts after
+            // m on both sides, not the cuts before it.
+            ("p\nm\n", "m\nq\n", "before"),
+            // Left's m is base line 0, right's base line 1. Base position 0 fits the cuts
+            // before m on both sides, not the cuts after it.
+            ("m\np\n", "q\nm\n", "after"),
+        ] {
+            assert_eq!(
+                align(&three("m\nm\n", left, right), &deep(Semantics::Git)),
+                [r3(Kind::Conflict, 0..2, 0..2, 0..2)],
+                "{edge}"
+            );
+        }
+    }
+
+    #[test]
+    fn deep_refinement_places_a_block_that_fills_a_hunk_where_the_other_side_puts_it() {
+        // Left replaces base's m with p. p starts and ends left's hunk, so either cut may take
+        // base position 0 or 1. Right keeps m and puts p after or before it.
+        for (right, expected) in [
+            (
+                "m\np\nm\n",
+                [
+                    r3(Kind::Conflict, 0..1, 0..0, 0..1),
+                    r3(Kind::AllSame, 1..1, 0..1, 1..2),
+                    r3(Kind::Conflict, 1..1, 1..1, 2..3),
+                ],
+            ),
+            (
+                "q\np\nm\n",
+                [
+                    r3(Kind::Conflict, 0..0, 0..0, 0..1),
+                    r3(Kind::AllSame, 0..0, 0..1, 1..2),
+                    r3(Kind::Conflict, 0..1, 1..1, 2..3),
+                ],
+            ),
+        ] {
+            assert_eq!(
+                align(&three("m\n", "p\n", right), &deep(Semantics::Git)),
+                expected,
+                "{right:?}"
+            );
+        }
+    }
+
     fn hunk(before: Range<usize>, after: Range<usize>) -> Hunk {
         Hunk { before, after }
     }
