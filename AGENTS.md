@@ -1,8 +1,8 @@
 # triad — agent notes
 
-triad is a three-way merge and two-way diff tool. The binary is `triad-merge`. `docs/SPEC.md` sets the behaviour. `docs/PLAN.md` holds the status, the next steps and the open work. `docs/DESIGN.md` holds the design of what is built: reasons, decisions and current measurements. Cite both by part and section: `DESIGN.md` §B5.8 is part B, section 5.8.
+triad is a three-way merge and two-way diff tool. The binary is `triad-merge`. `docs/SPEC.md` sets the behaviour. `docs/PLAN.md` holds the status, the next steps and the open work. `docs/DESIGN.md` holds the design of what is built: reasons, decisions and current measurements. Cite both by part and section: `DESIGN.md` §B5.8 is part B, section 5.8. `docs/ARCHITECTURE.md` describes each crate, its main types and how a run moves through them.
 
-When a task finishes, update `PLAN.md` §1–§3 in the same change. §1 states where the project stands, never a log of changes: jj holds the history. When a change alters a design, a decision or a measured figure, update `DESIGN.md` in the same change: replace what it says, never append a dated entry. When a change finds the spec wrong or incomplete, update `docs/SPEC.md` in the same change. When a change adds or alters a command, update `docs/USER-GUIDE.md`, which shows users each command, jj first, in the same change.
+When a task finishes, update `PLAN.md` §1–§3 in the same change. §1 states where the project stands, never a log of changes: jj holds the history. When a change alters a design, a decision or a measured figure, update `DESIGN.md` in the same change: replace what it says, never append a dated entry. When a change finds the spec wrong or incomplete, update `docs/SPEC.md` in the same change. When a change adds or alters a command, update `docs/USER-GUIDE.md`, which shows users each command, jj first, in the same change. When a change adds a crate, a module with a role of its own, or moves a job between crates, update `docs/ARCHITECTURE.md` in the same change.
 
 Docs describe the current design in the present tense. No before-and-after stories; a measurement is a present fact.
 

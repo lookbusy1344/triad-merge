@@ -177,6 +177,7 @@ The GPUI shell, `merge-app`, holds 15,000 lines of product code; `merge-core` ho
 | [`docs/SPEC.md`](docs/SPEC.md) | Behaviour |
 | [`docs/PLAN.md`](docs/PLAN.md) | Status, next steps and open work |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | Design: reasons, decisions, measurements |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | The crates, their main types, and how a run moves through them |
 | [`AGENTS.md`](AGENTS.md) | Rules for changes, the commit gate and commands |
 | [`docs/STYLE.md`](docs/STYLE.md) | UI style |
 | [`docs/json-schema.md`](docs/json-schema.md) | JSON output and merge commands |
