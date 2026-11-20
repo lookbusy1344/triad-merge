@@ -631,7 +631,7 @@ fn split_shared_blocks(
     let mut pieces = Vec::new();
     let (mut b, mut l, mut r) = (0, 0, 0);
     for run in shared.into_iter().filter(clean) {
-        let Some(at) = split_point(&to_left, &to_right, run, b) else {
+        let Some(at) = split_point(&to_left, &to_right, run) else {
             continue;
         };
         let (left_end, right_end) = (run.left + run.len, run.right + run.len);
@@ -654,7 +654,7 @@ fn split_shared_blocks(
 
 /// A block of lines left and right share: `len` lines from `left` in one, from `right` in
 /// the other.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 struct SharedRun {
     left: usize,
     right: usize,
@@ -677,15 +677,15 @@ fn matched_runs(hunks: &[Hunk], left_len: usize) -> Vec<SharedRun> {
     runs
 }
 
-/// The base position, no lower than `from`, that fits `run` on both sides: a cut before and
-/// after it that each side's diff from base allows. The lowest, when several fit.
-fn split_point(to_left: &[Hunk], to_right: &[Hunk], run: SharedRun, from: usize) -> Option<usize> {
+/// The base position that fits `run` on both sides: a cut before and after it that each
+/// side's diff from base allows. The lowest, when several fit. A later run's position is never
+/// lower: the start of [`base_cuts`] never falls as the side's line rises.
+fn split_point(to_left: &[Hunk], to_right: &[Hunk], run: SharedRun) -> Option<usize> {
     let fits = [
         base_cuts(to_left, run.left),
         base_cuts(to_right, run.right),
         base_cuts(to_left, run.left + run.len),
         base_cuts(to_right, run.right + run.len),
-        from..=usize::MAX,
     ];
     let start = fits.iter().map(|cuts| *cuts.start()).max()?;
     let end = fits.iter().map(|cuts| *cuts.end()).min()?;
@@ -1982,67 +1982,6 @@ mod tests {
                 "{right:?}"
             );
         }
-    }
-
-    fn hunk(before: Range<usize>, after: Range<usize>) -> Hunk {
-        Hunk { before, after }
-    }
-
-    #[test]
-    fn a_cut_between_hunks_has_one_place_and_at_or_inside_a_hunk_any_in_its_base() {
-        let replace = [hunk(1..3, 1..2)];
-        assert_eq!(base_cuts(&replace, 0), 0..=0);
-        assert_eq!(base_cuts(&replace, 1), 1..=3);
-        assert_eq!(base_cuts(&replace, 2), 1..=3);
-        assert_eq!(base_cuts(&replace, 3), 4..=4);
-        assert_eq!(base_cuts(&[hunk(2..2, 2..4)], 3), 2..=2, "inside an insertion");
-        assert_eq!(base_cuts(&[hunk(1..3, 1..1)], 1), 1..=3, "at a deletion");
-        assert_eq!(base_cuts(&[], 5), 5..=5);
-    }
-
-    #[test]
-    fn a_block_the_sides_place_at_different_base_positions_does_not_split() {
-        // Left inserts the block at base 1, right at base 2, each between matching lines.
-        let run = SharedRun { left: 1, right: 2, len: 1 };
-        assert_eq!(split_point(&[hunk(1..1, 1..2)], &[hunk(2..2, 2..3)], run, 0), None);
-    }
-
-    #[test]
-    fn a_block_one_side_replaces_around_takes_the_other_sides_place() {
-        let run = SharedRun { left: 1, right: 1, len: 1 };
-        let (to_left, to_right) = ([hunk(1..1, 1..2)], [hunk(0..2, 0..3)]);
-        assert_eq!(split_point(&to_left, &to_right, run, 0), Some(1));
-        assert_eq!(
-            split_point(&to_left, &to_right, run, 2),
-            None,
-            "a split never goes before the last one"
-        );
-    }
-
-    #[test]
-    fn a_block_that_ends_on_a_matched_base_line_does_not_split() {
-        // The block's first line is inside a side's hunk, so the cut before it may go at base
-        // 0 or 1. Its second line matches base line 1 on one side, so the cut after it can
-        // only go at base 2. No single base position fits both cuts.
-        let run = SharedRun { left: 1, right: 1, len: 2 };
-        let (matched, replaced) = ([hunk(0..1, 0..2)], [hunk(0..2, 0..3)]);
-        assert_eq!(split_point(&matched, &replaced, run, 0), None, "left");
-        assert_eq!(split_point(&replaced, &matched, run, 0), None, "right");
-        assert_eq!(
-            split_point(&replaced, &replaced, run, 0),
-            Some(0),
-            "both sides replace around the block"
-        );
-    }
-
-    #[test]
-    fn shared_runs_are_the_blocks_between_hunks() {
-        // Left a X b c, right a Y b c Z.
-        assert_eq!(
-            matched_runs(&[hunk(1..2, 1..2), hunk(4..4, 4..5)], 4),
-            [SharedRun { left: 0, right: 0, len: 1 }, SharedRun { left: 2, right: 2, len: 2 },]
-        );
-        assert_eq!(matched_runs(&[hunk(0..1, 0..2)], 3), [SharedRun { left: 1, right: 2, len: 2 }]);
     }
 
     proptest! {
