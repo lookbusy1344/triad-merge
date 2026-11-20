@@ -420,7 +420,7 @@ mod tests {
     fn a_text_is_saved_chunk_by_chunk_after_its_byte_order_mark() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("out.txt");
-        save_text(&path, Encoding::Utf16Le, std::iter::repeat_n("é\n", LINES)).unwrap();
+        save_text(&path, Encoding::Utf16LeBom, std::iter::repeat_n("é\n", LINES)).unwrap();
         // `é\n` is E9 00 0A 00 in UTF-16LE.
         let expected = [&[0xFF, 0xFE][..], &[0xE9, 0x00, 0x0A, 0x00].repeat(LINES)].concat();
         assert_eq!(std::fs::read(&path).unwrap(), expected);

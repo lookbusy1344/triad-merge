@@ -895,7 +895,9 @@ pub(crate) fn encoding(encoding: Encoding) -> SharedString {
         Encoding::Utf8 => "UTF-8".into(),
         Encoding::Utf8Bom => t!("encoding-utf8-bom"),
         Encoding::Utf16Le => "UTF-16 LE".into(),
+        Encoding::Utf16LeBom => t!("encoding-utf16le-bom"),
         Encoding::Utf16Be => "UTF-16 BE".into(),
+        Encoding::Utf16BeBom => t!("encoding-utf16be-bom"),
         Encoding::Windows1252 => "Windows-1252".into(),
     }
 }

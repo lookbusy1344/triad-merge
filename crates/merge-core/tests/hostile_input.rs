@@ -131,11 +131,25 @@ proptest! {
 
     #[test]
     fn utf16_of_any_text_decodes_to_it(content in ".*", little in any::<bool>()) {
-        let encoding = if little { Encoding::Utf16Le } else { Encoding::Utf16Be };
+        let encoding = if little { Encoding::Utf16LeBom } else { Encoding::Utf16BeBom };
         let bytes = encoding.encode(&content).expect("UTF-16 holds any text").into_owned();
         let text = Text::decode(bytes).expect("encoded text decodes");
         prop_assert_eq!(text.content(), content.as_str());
         prop_assert_eq!(text.encoding(), encoding);
+    }
+
+    #[test]
+    fn utf16_without_a_bom_of_text_with_a_line_feed_decodes_to_it(
+        content in "[^\0\u{A00}\u{FEFF}]*\n[^\0\u{A00}\u{FEFF}]*",
+        little in any::<bool>(),
+    ) {
+        let encoding = if little { Encoding::Utf16Le } else { Encoding::Utf16Be };
+        let bytes = encoding.encode(&content).expect("UTF-16 holds any text").into_owned();
+        let text = Text::decode(bytes.clone()).expect("encoded text decodes");
+        prop_assert_eq!(text.content(), content.as_str());
+        prop_assert_eq!(text.encoding(), encoding);
+        let encoded = text.bytes();
+        prop_assert_eq!(encoded.as_ref(), bytes.as_slice());
     }
 
     #[test]

@@ -18,7 +18,7 @@ Every object carries `"schema": 1`. A change that removes or renames a field, or
 
 `"diff-dirs"` and `"diff-changes"` carry `schema` and `command` alone of these; their section lists their fields.
 
-Encodings: `"utf-8"`, `"utf-8-bom"`, `"utf-16le"`, `"utf-16be"`, `"windows-1252"`. The UTF-16 encodings always have a byte order mark; Windows-1252 never has one.
+Encodings: `"utf-8"`, `"utf-8-bom"`, `"utf-16le"`, `"utf-16le-bom"`, `"utf-16be"`, `"utf-16be-bom"`, `"windows-1252"`. A `-bom` name has a byte order mark; the others have none.
 
 Warning codes:
 

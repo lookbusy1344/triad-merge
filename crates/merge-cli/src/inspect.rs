@@ -386,7 +386,9 @@ fn encoding_name(encoding: Encoding) -> &'static str {
         Encoding::Utf8 => "utf-8",
         Encoding::Utf8Bom => "utf-8-bom",
         Encoding::Utf16Le => "utf-16le",
+        Encoding::Utf16LeBom => "utf-16le-bom",
         Encoding::Utf16Be => "utf-16be",
+        Encoding::Utf16BeBom => "utf-16be-bom",
         Encoding::Windows1252 => "windows-1252",
     }
 }
@@ -692,7 +694,7 @@ mod tests {
         let value = json_of(&out);
         assert_eq!(
             value["encodings"],
-            json!({ "base": "utf-8", "left": "utf-16le", "right": "utf-8-bom" })
+            json!({ "base": "utf-8", "left": "utf-16le-bom", "right": "utf-8-bom" })
         );
         assert_eq!(value["output_encoding"], json!("utf-8"));
         assert_eq!(value["warnings"], json!(["encoding-mismatch"]));
@@ -705,11 +707,26 @@ mod tests {
     }
 
     #[test]
+    fn utf16_without_a_bom_is_named_apart_from_utf16_with_one() {
+        let le: Vec<u8> = "a\n".encode_utf16().flat_map(u16::to_le_bytes).collect();
+        let be: Vec<u8> = "a\n".encode_utf16().flat_map(u16::to_be_bytes).collect();
+        let files = three(&le, &be, &utf16le("a\n"));
+        let (out, _) =
+            inspect(&files.merge(), MergeOptions::default(), GIT, KEEP, true).expect("ok");
+        let value = json_of(&out);
+        assert_eq!(
+            value["encodings"],
+            json!({ "base": "utf-16le", "left": "utf-16be", "right": "utf-16le-bom" })
+        );
+        assert_eq!(value["output_encoding"], json!("utf-16le"));
+    }
+
+    #[test]
     fn an_empty_base_takes_lefts_output_encoding() {
         let files = three(b"", &utf16le("x\n"), b"x\n");
         let (out, _) =
             inspect(&files.merge(), MergeOptions::default(), GIT, KEEP, true).expect("ok");
-        assert_eq!(json_of(&out)["output_encoding"], json!("utf-16le"));
+        assert_eq!(json_of(&out)["output_encoding"], json!("utf-16le-bom"));
     }
 
     #[test]
@@ -891,7 +908,7 @@ mod tests {
                 .expect("ok");
         assert_eq!(code, ExitCode::Resolved);
         let value = json_of(&out);
-        assert_eq!(value["encodings"], json!({ "left": "utf-8", "right": "utf-16le" }));
+        assert_eq!(value["encodings"], json!({ "left": "utf-8", "right": "utf-16le-bom" }));
         assert_eq!(value["warnings"], json!(["encoding-mismatch"]));
     }
 

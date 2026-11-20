@@ -81,7 +81,7 @@ Line origins (⌘I) show the commit, author and jj change that wrote each line, 
 
 ### Text encodings
 
-A UTF-8, UTF-16 LE or UTF-16 BE BOM sets a file's encoding. Without one, valid UTF-8 is UTF-8 and anything else is Windows-1252, which maps every byte to a character and back, so Latin-1 files merge to the bytes git and jj give. A file in another legacy encoding, such as Shift-JIS, shows garbled, and its bytes come back unchanged where no one edits them. A save refuses a character the file's encoding cannot hold, such as `ł` in a Windows-1252 file, names it and its line, and writes nothing. A file with a NUL byte in its first 8000 bytes is binary and does not open.
+UTF-8 and UTF-16, LE or BE, read with or without a BOM, and a save keeps the file's BOM or its lack of one. A BOM sets the encoding. Without one, a file with NUL bytes in its first 8000 bytes is UTF-16 when it has a line feed there and no NUL character; the byte order with more line feeds wins. UTF-16 without a BOM and with no line feed in its first 8000 bytes does not open, and CJK UTF-16 without a BOM or a line break there shows garbled. Otherwise valid UTF-8 is UTF-8 and anything else is Windows-1252, which maps every byte to a character and back, so Latin-1 files merge to the bytes git and jj give. A file in another legacy encoding, such as Shift-JIS, shows garbled, and its bytes come back unchanged where no one edits them. A save refuses a character the file's encoding cannot hold, such as `ł` in a Windows-1252 file, names it and its line, and writes nothing. Any other file with a NUL byte in its first 8000 bytes is binary and does not open.
 
 ### Unusual characters
 

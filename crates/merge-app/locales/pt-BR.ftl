@@ -343,6 +343,8 @@ mode-jj = mesclagem jj
 mode-git-word = mesclagem git por palavra
 mode-jj-word = mesclagem jj por palavra
 encoding-utf8-bom = UTF-8 com BOM
+encoding-utf16le-bom = UTF-16 LE com BOM
+encoding-utf16be-bom = UTF-16 BE com BOM
 inputs-differ = { $encoding } (as entradas diferem)
 word-merged =
     { $count ->

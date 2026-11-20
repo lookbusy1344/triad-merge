@@ -545,7 +545,7 @@ mod tests {
             with(b"", &utf16le("a\n"), &utf16le("a\n"), MergeOptions::default(), Labels::none());
         assert_eq!(
             (status(&empty_base).encoding, status(&empty_base).encoding_mismatch),
-            (Encoding::Utf16Le, true)
+            (Encoding::Utf16LeBom, true)
         );
         let same = three("a\n", "a\n", "a\n");
         assert!(!status(&same).encoding_mismatch);

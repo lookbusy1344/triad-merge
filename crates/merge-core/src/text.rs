@@ -4,6 +4,7 @@
 //! as in git `merge-file` and the result editor.
 
 use std::borrow::Cow;
+use std::cmp::Ordering;
 use std::iter;
 use std::ops::Range;
 use std::sync::Arc;
@@ -14,7 +15,9 @@ pub enum Encoding {
     Utf8,
     Utf8Bom,
     Utf16Le,
+    Utf16LeBom,
     Utf16Be,
+    Utf16BeBom,
     /// The fallback for text that is not UTF-8 and has no byte order mark: one byte per
     /// character, each of the 256 bytes mapping to one character and back (spec §4.1).
     Windows1252,
@@ -37,19 +40,22 @@ impl Encoding {
             Encoding::Utf8 => "UTF-8",
             Encoding::Utf8Bom => "UTF-8 with BOM",
             Encoding::Utf16Le => "UTF-16 LE",
+            Encoding::Utf16LeBom => "UTF-16 LE with BOM",
             Encoding::Utf16Be => "UTF-16 BE",
+            Encoding::Utf16BeBom => "UTF-16 BE with BOM",
             Encoding::Windows1252 => "Windows-1252",
         }
     }
 
-    /// The byte order mark a file in this encoding starts with; empty for plain UTF-8.
+    /// The byte order mark a file in this encoding starts with; empty for an encoding
+    /// without one.
     #[must_use]
     pub fn bom(self) -> &'static [u8] {
         match self {
-            Encoding::Utf8 | Encoding::Windows1252 => &[],
+            Encoding::Utf8 | Encoding::Utf16Le | Encoding::Utf16Be | Encoding::Windows1252 => &[],
             Encoding::Utf8Bom => &UTF8_BOM,
-            Encoding::Utf16Le => &UTF16LE_BOM,
-            Encoding::Utf16Be => &UTF16BE_BOM,
+            Encoding::Utf16LeBom => &UTF16LE_BOM,
+            Encoding::Utf16BeBom => &UTF16BE_BOM,
         }
     }
 
@@ -63,10 +69,10 @@ impl Encoding {
     pub fn encode_chunk(self, text: &str) -> Result<Cow<'_, [u8]>, EncodeError> {
         Ok(match self {
             Encoding::Utf8 | Encoding::Utf8Bom => Cow::Borrowed(text.as_bytes()),
-            Encoding::Utf16Le => {
+            Encoding::Utf16Le | Encoding::Utf16LeBom => {
                 text.encode_utf16().flat_map(u16::to_le_bytes).collect::<Vec<u8>>().into()
             }
-            Encoding::Utf16Be => {
+            Encoding::Utf16Be | Encoding::Utf16BeBom => {
                 text.encode_utf16().flat_map(u16::to_be_bytes).collect::<Vec<u8>>().into()
             }
             Encoding::Windows1252 => text
@@ -213,9 +219,9 @@ struct Shared {
 }
 
 impl Text {
-    /// Decode a file's bytes: byte order mark first, then the binary check, then UTF-8, then
-    /// Windows-1252, which takes any bytes. UTF-8 decodes in place, in the buffer read from
-    /// the file.
+    /// Decode a file's bytes: byte order mark first, then UTF-16 without one or the binary
+    /// check, then UTF-8, then Windows-1252, which takes any bytes. UTF-8 decodes in place, in
+    /// the buffer read from the file.
     ///
     /// # Errors
     ///
@@ -227,11 +233,13 @@ impl Text {
             bytes.drain(..UTF8_BOM.len());
             (Encoding::Utf8Bom, decode_utf8(bytes, UTF8_BOM.len())?)
         } else if let Some(rest) = bytes.strip_prefix(&UTF16LE_BOM) {
-            (Encoding::Utf16Le, decode_utf16(rest, u16::from_le_bytes)?)
+            (Encoding::Utf16LeBom, decode_utf16(rest, u16::from_le_bytes, UTF16_BOM_LEN)?)
         } else if let Some(rest) = bytes.strip_prefix(&UTF16BE_BOM) {
-            (Encoding::Utf16Be, decode_utf16(rest, u16::from_be_bytes)?)
-        } else if bytes.iter().take(BINARY_SNIFF_BYTES).any(|&byte| byte == 0) {
-            return Err(DecodeError::Binary);
+            (Encoding::Utf16BeBom, decode_utf16(rest, u16::from_be_bytes, UTF16_BOM_LEN)?)
+        } else if has_nul(&bytes) {
+            let order = utf16_order(&bytes).ok_or(DecodeError::Binary)?;
+            let content = decode_utf16(&bytes, order.unit(), 0).map_err(|_| DecodeError::Binary)?;
+            (order.encoding(), content)
         } else {
             match String::from_utf8(bytes) {
                 Ok(content) => (Encoding::Utf8, content),
@@ -251,11 +259,14 @@ impl Text {
         if let Some(rest) = bytes.strip_prefix(&UTF8_BOM) {
             check_utf8(rest, UTF8_BOM.len()).map(|()| Encoding::Utf8Bom)
         } else if let Some(rest) = bytes.strip_prefix(&UTF16LE_BOM) {
-            check_utf16(rest, u16::from_le_bytes).map(|()| Encoding::Utf16Le)
+            check_utf16(rest, u16::from_le_bytes, UTF16_BOM_LEN).map(|()| Encoding::Utf16LeBom)
         } else if let Some(rest) = bytes.strip_prefix(&UTF16BE_BOM) {
-            check_utf16(rest, u16::from_be_bytes).map(|()| Encoding::Utf16Be)
-        } else if bytes.iter().take(BINARY_SNIFF_BYTES).any(|&byte| byte == 0) {
-            Err(DecodeError::Binary)
+            check_utf16(rest, u16::from_be_bytes, UTF16_BOM_LEN).map(|()| Encoding::Utf16BeBom)
+        } else if has_nul(bytes) {
+            let order = utf16_order(bytes).ok_or(DecodeError::Binary)?;
+            check_utf16(bytes, order.unit(), 0)
+                .map(|()| order.encoding())
+                .map_err(|_| DecodeError::Binary)
         } else if std::str::from_utf8(bytes).is_ok() {
             Ok(Encoding::Utf8)
         } else {
@@ -409,8 +420,60 @@ fn decode_windows_1252(bytes: &[u8]) -> String {
     bytes.iter().copied().map(windows_1252_char).collect()
 }
 
-/// `bytes` follow a two-byte byte order mark.
-fn decode_utf16(bytes: &[u8], unit: fn([u8; 2]) -> u16) -> Result<String, DecodeError> {
+/// git's binary test: a NUL byte within the first [`BINARY_SNIFF_BYTES`].
+fn has_nul(bytes: &[u8]) -> bool {
+    bytes.iter().take(BINARY_SNIFF_BYTES).any(|&byte| byte == 0)
+}
+
+/// The byte order of UTF-16 without a byte order mark.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Utf16Order {
+    Le,
+    Be,
+}
+
+impl Utf16Order {
+    fn unit(self) -> fn([u8; 2]) -> u16 {
+        match self {
+            Utf16Order::Le => u16::from_le_bytes,
+            Utf16Order::Be => u16::from_be_bytes,
+        }
+    }
+
+    fn encoding(self) -> Encoding {
+        match self {
+            Utf16Order::Le => Encoding::Utf16Le,
+            Utf16Order::Be => Encoding::Utf16Be,
+        }
+    }
+}
+
+const UTF16LE_LINE_FEED: [u8; 2] = [b'\n', 0];
+const UTF16BE_LINE_FEED: [u8; 2] = [0, b'\n'];
+const UTF16_NUL: [u8; 2] = [0, 0];
+
+/// The byte order `bytes` read in as UTF-16 without a byte order mark, judged on the units in
+/// the first [`BINARY_SNIFF_BYTES`] (spec §4.1): the order with more line feed units, when no
+/// unit is U+0000. `None` on a tie, no line feed included.
+fn utf16_order(bytes: &[u8]) -> Option<Utf16Order> {
+    let (units, _) = bytes[..bytes.len().min(BINARY_SNIFF_BYTES)].as_chunks::<UTF16_UNIT_BYTES>();
+    if units.contains(&UTF16_NUL) {
+        return None;
+    }
+    let count = |line_feed: [u8; 2]| units.iter().filter(|&&unit| unit == line_feed).count();
+    match count(UTF16LE_LINE_FEED).cmp(&count(UTF16BE_LINE_FEED)) {
+        Ordering::Greater => Some(Utf16Order::Le),
+        Ordering::Less => Some(Utf16Order::Be),
+        Ordering::Equal => None,
+    }
+}
+
+/// `bytes` start `offset` bytes into the file, after any byte order mark.
+fn decode_utf16(
+    bytes: &[u8],
+    unit: fn([u8; 2]) -> u16,
+    offset: usize,
+) -> Result<String, DecodeError> {
     let (pairs, []) = bytes.as_chunks::<UTF16_UNIT_BYTES>() else {
         return Err(DecodeError::OddUtf16Length);
     };
@@ -422,7 +485,7 @@ fn decode_utf16(bytes: &[u8], unit: fn([u8; 2]) -> u16) -> Result<String, Decode
                     Ok((text, units_read + c.len_utf16()))
                 }
                 Err(_) => Err(DecodeError::InvalidUtf16 {
-                    offset: UTF16_BOM_LEN + units_read * UTF16_UNIT_BYTES,
+                    offset: offset + units_read * UTF16_UNIT_BYTES,
                 }),
             }
         })
@@ -435,17 +498,17 @@ fn check_utf8(bytes: &[u8], offset: usize) -> Result<(), DecodeError> {
         .map_err(|error| DecodeError::InvalidUtf8 { offset: offset + error.valid_up_to() })
 }
 
-/// `bytes` follow a two-byte byte order mark.
-fn check_utf16(bytes: &[u8], unit: fn([u8; 2]) -> u16) -> Result<(), DecodeError> {
+/// `bytes` start `offset` bytes into the file, after any byte order mark.
+fn check_utf16(bytes: &[u8], unit: fn([u8; 2]) -> u16, offset: usize) -> Result<(), DecodeError> {
     let (pairs, []) = bytes.as_chunks::<UTF16_UNIT_BYTES>() else {
         return Err(DecodeError::OddUtf16Length);
     };
     char::decode_utf16(pairs.iter().copied().map(unit))
         .try_fold(0, |units_read, decoded| match decoded {
             Ok(c) => Ok(units_read + c.len_utf16()),
-            Err(_) => Err(DecodeError::InvalidUtf16 {
-                offset: UTF16_BOM_LEN + units_read * UTF16_UNIT_BYTES,
-            }),
+            Err(_) => {
+                Err(DecodeError::InvalidUtf16 { offset: offset + units_read * UTF16_UNIT_BYTES })
+            }
         })
         .map(drop)
 }
@@ -579,8 +642,10 @@ mod tests {
     fn each_encoding_names_its_byte_order_mark() {
         assert_eq!(Encoding::Utf8.bom(), b"");
         assert_eq!(Encoding::Utf8Bom.bom(), [0xEF, 0xBB, 0xBF]);
-        assert_eq!(Encoding::Utf16Le.bom(), [0xFF, 0xFE]);
-        assert_eq!(Encoding::Utf16Be.bom(), [0xFE, 0xFF]);
+        assert_eq!(Encoding::Utf16LeBom.bom(), [0xFF, 0xFE]);
+        assert_eq!(Encoding::Utf16BeBom.bom(), [0xFE, 0xFF]);
+        assert_eq!(Encoding::Utf16Le.bom(), b"");
+        assert_eq!(Encoding::Utf16Be.bom(), b"");
     }
 
     #[test]
@@ -588,16 +653,23 @@ mod tests {
         // `é` is U+00E9: C3 A9 in UTF-8, E9 00 in UTF-16LE.
         assert_eq!(&*Encoding::Utf8.encode_chunk("é\n").unwrap(), [0xC3, 0xA9, 0x0A]);
         assert_eq!(&*Encoding::Utf8Bom.encode_chunk("é\n").unwrap(), [0xC3, 0xA9, 0x0A]);
-        assert_eq!(&*Encoding::Utf16Le.encode_chunk("é\n").unwrap(), [0xE9, 0x00, 0x0A, 0x00]);
-        assert_eq!(&*Encoding::Utf16Be.encode_chunk("é\n").unwrap(), [0x00, 0xE9, 0x00, 0x0A]);
+        assert_eq!(&*Encoding::Utf16LeBom.encode_chunk("é\n").unwrap(), [0xE9, 0x00, 0x0A, 0x00]);
+        assert_eq!(&*Encoding::Utf16BeBom.encode_chunk("é\n").unwrap(), [0x00, 0xE9, 0x00, 0x0A]);
         // U+1F600 is the surrogate pair D83D DE00.
-        assert_eq!(&*Encoding::Utf16Le.encode_chunk("😀").unwrap(), [0x3D, 0xD8, 0x00, 0xDE]);
+        assert_eq!(&*Encoding::Utf16LeBom.encode_chunk("😀").unwrap(), [0x3D, 0xD8, 0x00, 0xDE]);
         assert!(matches!(Encoding::Utf8Bom.encode_chunk("a").unwrap(), Cow::Borrowed(_)));
     }
 
     #[test]
     fn a_text_encodes_as_its_mark_then_its_chunks() {
-        for encoding in [Encoding::Utf8, Encoding::Utf8Bom, Encoding::Utf16Le, Encoding::Utf16Be] {
+        for encoding in [
+            Encoding::Utf8,
+            Encoding::Utf8Bom,
+            Encoding::Utf16Le,
+            Encoding::Utf16LeBom,
+            Encoding::Utf16Be,
+            Encoding::Utf16BeBom,
+        ] {
             let pieces = [
                 encoding.bom(),
                 &encoding.encode_chunk("ab").unwrap(),
@@ -711,13 +783,13 @@ mod tests {
     #[test]
     fn utf16le_with_its_nul_bytes_is_text() {
         let text = decoded(with_prefix(&UTF16LE_BOM, &[b'a', 0, b'\n', 0]));
-        assert_eq!((text.encoding(), text.content()), (Encoding::Utf16Le, "a\n"));
+        assert_eq!((text.encoding(), text.content()), (Encoding::Utf16LeBom, "a\n"));
     }
 
     #[test]
     fn utf16be_is_detected() {
         let text = decoded(with_prefix(&UTF16BE_BOM, &[0, b'a', 0, 0xE9]));
-        assert_eq!((text.encoding(), text.content()), (Encoding::Utf16Be, "aé"));
+        assert_eq!((text.encoding(), text.content()), (Encoding::Utf16BeBom, "aé"));
     }
 
     #[test]
@@ -732,8 +804,85 @@ mod tests {
         let text = decoded(UTF16BE_BOM);
         assert_eq!(
             (text.encoding(), text.content(), text.line_count()),
-            (Encoding::Utf16Be, "", 0)
+            (Encoding::Utf16BeBom, "", 0)
         );
+    }
+
+    // UTF-16 without a byte order mark (spec §4.1)
+
+    #[test]
+    fn utf16le_without_a_bom_is_detected_and_saves_without_one() {
+        let bytes = [b'a', 0, b'\n', 0, b'b', 0, b'\n', 0];
+        let text = decoded(bytes);
+        assert_eq!((text.encoding(), text.content()), (Encoding::Utf16Le, "a\nb\n"));
+        assert_eq!(&*text.bytes(), bytes);
+    }
+
+    #[test]
+    fn utf16be_without_a_bom_is_detected() {
+        // `é` is U+00E9.
+        let text = decoded([0, b'a', 0, 0xE9, 0, b'\n']);
+        assert_eq!((text.encoding(), text.content()), (Encoding::Utf16Be, "aé\n"));
+    }
+
+    #[test]
+    fn utf16_without_a_bom_needs_no_ascii_letter() {
+        // `中文` is U+4E2D U+6587: only the line feed holds a NUL byte.
+        let text = decoded([0x2D, 0x4E, 0x87, 0x65, b'\n', 0]);
+        assert_eq!((text.encoding(), text.content()), (Encoding::Utf16Le, "中文\n"));
+        let text = decoded([0x4E, 0x2D, 0x65, 0x87, 0, b'\n']);
+        assert_eq!((text.encoding(), text.content()), (Encoding::Utf16Be, "中文\n"));
+    }
+
+    #[test]
+    fn utf16_without_a_bom_needs_a_line_feed() {
+        assert_eq!(Text::decode([b'a', 0, b'b', 0]).unwrap_err(), DecodeError::Binary);
+        // A line feed byte that is no unit: 0A at an odd offset.
+        assert_eq!(Text::decode([b'a', b'\n', 0, b'b']).unwrap_err(), DecodeError::Binary);
+    }
+
+    #[test]
+    fn utf16_without_a_bom_needs_its_line_feed_in_the_sniffed_bytes() {
+        let units_before = |count: usize| {
+            [b'a', 0].repeat(count).into_iter().chain([b'\n', 0]).collect::<Vec<u8>>()
+        };
+        let last_unit = units_before(BINARY_SNIFF_BYTES / UTF16_UNIT_BYTES - 1);
+        assert_eq!(decoded(last_unit).encoding(), Encoding::Utf16Le);
+        let past = units_before(BINARY_SNIFF_BYTES / UTF16_UNIT_BYTES);
+        assert_eq!(Text::decode(past).unwrap_err(), DecodeError::Binary);
+    }
+
+    #[test]
+    fn utf16_without_a_bom_takes_nul_bytes_at_either_offset() {
+        // `一` is U+4E00, 00 4E in UTF-16 LE: a NUL byte at an even offset.
+        let text = decoded([0x00, 0x4E, b'\n', 0]);
+        assert_eq!((text.encoding(), text.content()), (Encoding::Utf16Le, "一\n"));
+    }
+
+    #[test]
+    fn a_nul_character_is_binary() {
+        // U+0000 is the unit 00 00.
+        assert_eq!(Text::decode([b'a', 0, 0, 0, b'\n', 0]).unwrap_err(), DecodeError::Binary);
+    }
+
+    #[test]
+    fn as_many_line_feeds_in_either_byte_order_is_binary() {
+        // 0A 00 is a line feed in UTF-16 LE, 00 0A one in UTF-16 BE.
+        assert_eq!(Text::decode([b'\n', 0, 0, b'\n']).unwrap_err(), DecodeError::Binary);
+    }
+
+    #[test]
+    fn the_byte_order_with_more_line_feeds_wins() {
+        // LE: `\n`, `\n`, U+0A00. BE: U+0A00, U+0A00, `\n`.
+        let text = decoded([b'\n', 0, b'\n', 0, 0, b'\n']);
+        assert_eq!((text.encoding(), text.content()), (Encoding::Utf16Le, "\n\n\u{A00}"));
+    }
+
+    #[test]
+    fn utf16_without_a_bom_that_does_not_decode_is_binary() {
+        assert_eq!(Text::decode([b'a', 0, b'\n', 0, b'b']).unwrap_err(), DecodeError::Binary);
+        // D800 is a high surrogate, followed by a line feed instead of a low one.
+        assert_eq!(Text::decode([0x00, 0xD8, b'\n', 0]).unwrap_err(), DecodeError::Binary);
     }
 
     #[test]
@@ -744,7 +893,7 @@ mod tests {
 
     #[test]
     fn check_agrees_with_decode() {
-        let cases: [&[u8]; 12] = [
+        let cases: [&[u8]; 16] = [
             b"",
             b"plain\n",
             b"\xEF\xBB\xBFbom\n",
@@ -757,6 +906,10 @@ mod tests {
             b"\xFF\xFEa\0\x00\xD8b\0",
             b"\xFE\xFF\0a\xDC\x00",
             b"a\0b",
+            b"a\0\n\0",
+            b"\0a\0\n",
+            b"a\0b\0",
+            b"a\0\n\0b",
         ];
         for bytes in cases {
             let decoded = Text::decode(bytes).map(|text| text.encoding());
@@ -769,7 +922,11 @@ mod tests {
             Err(DecodeError::InvalidUtf16 { offset: 4 })
         );
         assert_eq!(Text::check(b"\xFF\xFEa\0b"), Err(DecodeError::OddUtf16Length));
-        assert_eq!(Text::check(b"\xFE\xFF\0a\0b"), Ok(Encoding::Utf16Be));
+        assert_eq!(Text::check(b"\xFE\xFF\0a\0b"), Ok(Encoding::Utf16BeBom));
+        assert_eq!(Text::check(b"a\0\n\0"), Ok(Encoding::Utf16Le));
+        assert_eq!(Text::check(b"\0a\0\n"), Ok(Encoding::Utf16Be));
+        assert_eq!(Text::check(b"a\0b\0"), Err(DecodeError::Binary));
+        assert_eq!(Text::check(b"a\0\n\0b"), Err(DecodeError::Binary));
     }
 
     // Binary detection
@@ -888,15 +1045,22 @@ mod tests {
             encoding.holds(["a\nb", "c\n", "d\nł"]),
             Err(EncodeError { encoding, character: 'ł', line: 4 })
         );
-        assert_eq!(Encoding::Utf16Le.holds(["ł"]), Ok(()));
+        assert_eq!(Encoding::Utf16LeBom.holds(["ł"]), Ok(()));
     }
 
     #[test]
     fn utf_encodings_hold_every_character() {
-        for encoding in [Encoding::Utf8, Encoding::Utf8Bom, Encoding::Utf16Le, Encoding::Utf16Be] {
-            let bytes = encoding.encode("ł😀\u{80}").unwrap().into_owned();
+        for encoding in [
+            Encoding::Utf8,
+            Encoding::Utf8Bom,
+            Encoding::Utf16Le,
+            Encoding::Utf16LeBom,
+            Encoding::Utf16Be,
+            Encoding::Utf16BeBom,
+        ] {
+            let bytes = encoding.encode("ł😀\u{80}\n").unwrap().into_owned();
             let text = decoded(bytes);
-            assert_eq!((text.encoding(), text.content()), (encoding, "ł😀\u{80}"));
+            assert_eq!((text.encoding(), text.content()), (encoding, "ł😀\u{80}\n"));
         }
     }
 
@@ -1042,7 +1206,7 @@ mod tests {
     #[test]
     fn output_uses_base_encoding() {
         let base = decoded(with_prefix(&UTF16LE_BOM, &[b'a', 0]));
-        assert_eq!(output_encoding(&base, &decoded(b"a")), Encoding::Utf16Le);
+        assert_eq!(output_encoding(&base, &decoded(b"a")), Encoding::Utf16LeBom);
     }
 
     #[test]
@@ -1076,8 +1240,8 @@ mod tests {
             "UTF-8 output borrows the text"
         );
         assert_eq!(*Encoding::Utf8Bom.encode("").unwrap(), UTF8_BOM);
-        assert_eq!(*Encoding::Utf16Le.encode("a").unwrap(), [0xFF, 0xFE, b'a', 0]);
-        assert_eq!(*Encoding::Utf16Be.encode("a").unwrap(), [0xFE, 0xFF, 0, b'a']);
+        assert_eq!(*Encoding::Utf16LeBom.encode("a").unwrap(), [0xFF, 0xFE, b'a', 0]);
+        assert_eq!(*Encoding::Utf16BeBom.encode("a").unwrap(), [0xFE, 0xFF, 0, b'a']);
     }
 
     #[test]

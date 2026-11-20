@@ -152,12 +152,12 @@ A Cargo workspace. Each crate depends only on the crates above it in this list.
 
 Each input is checked in this order:
 
-1. BOM: a UTF-8, UTF-16 LE or UTF-16 BE BOM sets the encoding.
-2. Binary: with no BOM, the file is binary if its first 8000 bytes contain a NUL byte, which is git's rule. Binary input is an error (exit code 3). The BOM check runs first because UTF-16 text contains NUL bytes.
+1. BOM: a UTF-8, UTF-16 LE or UTF-16 BE BOM sets the encoding, and the output keeps the BOM.
+2. UTF-16 without a BOM, or binary: with no BOM, a file whose first 8000 bytes contain a NUL byte is UTF-16 when those bytes read as UTF-16 units hold no U+0000 and hold more line feeds in one byte order than in the other: `0A 00` is a line feed in UTF-16 LE, `00 0A` in UTF-16 BE. The order with more line feeds wins, and the whole file must decode in it. Otherwise the file is binary, which is git's rule. Binary input is an error (exit code 3). The rule reads text with any characters, CJK included, when a line feed falls in the first 8000 bytes. UTF-16 with no NUL byte in its first 8000 bytes, such as CJK text without line breaks, reads as Windows-1252 (step 4). The output keeps the missing BOM.
 3. UTF-8: with no BOM, a file of valid UTF-8 is UTF-8.
 4. Windows-1252: with no BOM, a file that is not valid UTF-8 is Windows-1252, a superset of Latin-1's printable characters. Each byte is one character, by WHATWG's index; the five bytes the code page leaves unassigned, 0x81, 0x8D, 0x8F, 0x90 and 0x9D, are the C1 controls of the same value. Every byte decodes and encodes back to itself, so the step never fails, and a line-level merge gives the bytes git and jj give. A file in another legacy encoding, such as Windows-1251 or Shift-JIS, decodes too and shows garbled; its bytes still come back unchanged where no one edits them.
 
-After a BOM, text that does not decode in the BOM's encoding is an error (exit code 3): invalid UTF-8, an unpaired UTF-16 surrogate or an odd UTF-16 length.
+With no BOM, UTF-8 and UTF-16 each read with or without one. After a BOM, text that does not decode in the BOM's encoding is an error (exit code 3): invalid UTF-8, an unpaired UTF-16 surrogate or an odd UTF-16 length.
 
 All inputs are decoded to Rust strings before diffing.
 
@@ -173,7 +173,7 @@ All inputs are decoded to Rust strings before diffing.
 
 - Lines are interned to integer tokens. The merge diffs base→left and base→right as git `merge-file` 2.54 does, so conflicts form where git's do: git's histogram algorithm, written in `merge-core`; slider compaction without the indent heuristic; and a Myers re-diff of each change group that compaction moved. `imara-diff`'s histogram strips the common prefix and suffix first and anchors elsewhere on repetitive input. Myers and Myers-minimal use `imara-diff`. The two-way diff (§4.6) uses `imara-diff` with the indent heuristic, as git `diff` does.
 - Algorithms: Histogram (default), Myers, Myers-minimal. The user picks in settings; the CLI takes `--diff-algorithm`.
-- jj semantics (§4.3) use jj's line diff instead, from `jj-core`: one diff of base 0 against every other input. It anchors on base's rarest lines that occur as often in the other input, matched by their longest common subsequence, and trims the common prefix and suffix only where no anchor exists. It gives up anchoring where every line of base occurs more than 100 times. When any input is empty, the whole file is one hunk. The algorithm setting does not apply. jj compares stored bytes; triad compares decoded text, so for UTF-16 inputs, and for inputs that disagree about a byte order mark, triad's regions are those of the decoded text and may differ from jj's.
+- jj semantics (§4.3) use jj's line diff instead, from `jj-core`: one diff of base 0 against every other input. It anchors on base's rarest lines that occur as often in the other input, matched by their longest common subsequence, and trims the common prefix and suffix only where no anchor exists. It gives up anchoring where every line of base occurs more than 100 times. When any input is empty, the whole file is one hunk. The algorithm setting does not apply. jj compares stored bytes; triad compares decoded text, so for UTF-16 inputs, with or without a byte order mark, and for inputs that disagree about a byte order mark, triad's regions are those of the decoded text and may differ from jj's.
 - Whitespace modes, applied when interning lines for comparison only:
   - `none` (default)
   - `trailing`: ignore trailing whitespace and line-ending differences
@@ -368,7 +368,7 @@ Two directories (`triad-merge diff LEFT_DIR RIGHT_DIR`):
 
 - `diff` takes two files or two directories. One of each exits with 3 and names both.
 - The files that differ are listed by path, component by component, so `a/c` comes before `a-b`. A file only in the right directory is added, one only in the left deleted, and one in both with other bytes modified. Files with the same bytes are left out. A file renamed or moved is listed once, at its new path, as renamed from its old one. An added file that resembles a modified file is listed as copied from it. Directories only hold files: an empty one lists nothing, and a file on one side with a directory of the same name on the other is a delete and an add. An entry named `.git` or `.jj`, at any depth, is left out with all it holds.
-- Each listed file holds text, when every side present decodes (§4.1); binary, when a side holds a NUL byte in its first 8000 bytes; undecodable, when a side starts with a BOM and does not decode in its encoding; or special, when a side is no regular file. Only text opens in the diff window.
+- Each listed file holds text, when every side present decodes (§4.1); binary, when a side holds a NUL byte in its first 8000 bytes and is not UTF-16 without a BOM; undecodable, when a side starts with a BOM and does not decode in its encoding; or special, when a side is no regular file. Only text opens in the diff window.
 - A symlink at `PATH` to the regular file at `TREE/PATH`, where `TREE` is an absolute path holding `.git`, counts as that file: git's dir diff links each working-tree file into the right directory so. Any other symlink is special, compares by its target, and is not followed or written through; a link to a directory is never walked.
 - Renames and copies follow jj's, which jj's git backend finds through gix, so the listing names the renames and copies `jj diff --summary` names. A rename pairs a regular file in the left directory alone with one in the right alone. A copy pairs a regular file in the right directory alone, which no rename took, with a modified path whose right side is a regular file.
   - Candidates go in order of git's blob ID for their bytes, then of their path: first the added files, each paired with a deleted file of the same bytes, then the rest by similarity.
@@ -793,6 +793,7 @@ Development is test-first throughout. Expected values come from hand calculation
 - Resolution: every `Pick` order, toggling, empty list, edit then pick then undo.
 - Edits: inside a region, across one boundary, across several, deleting a whole region, typing into an unresolved region.
 - Decoding errors: binary, invalid UTF-8 after a UTF-8 BOM, a UTF-16 BOM with an odd byte length.
+- UTF-16 without a BOM: both byte orders, CJK text whose only NUL bytes are its line feeds, a line feed at the last unit of the first 8000 bytes and just past it, a U+0000 unit, as many line feeds in each order, an odd length and an unpaired surrogate; each decodes or is binary as §4.1 says, and a decoded file saves without a BOM.
 - Windows-1252: every byte but NUL decodes as WHATWG's index gives it and encodes back to itself, the five unassigned bytes included; Latin-1 and Windows-1252 inputs merge to the bytes `git merge-file` writes; a character Windows-1252 cannot hold refuses a save, writes nothing and names its line; a label it cannot hold leaves its marker bare.
 
 Two-way diff:
@@ -927,5 +928,5 @@ Version 1.0 needs M4 and M4b: macOS, Linux x64, and Windows x64 and ARM64, with 
 
 1. Base pane: hidden by default; ⌘B shows it.
 2. Line endings: regions keep their source bytes; typed newlines take base's dominant ending (§4.1).
-3. Text that is not UTF-8 and has no BOM: decoded as Windows-1252, which round-trips every byte (§4.1). No detection by guessing: a wrong guess would save in the wrong encoding.
+3. Text with no BOM: UTF-16 when its NUL bytes and line feeds say so, UTF-8 when it is valid UTF-8, else Windows-1252, which round-trips every byte (§4.1). The UTF-16 rule matches VS Code and JetBrains editors. It needs a line feed unit in one byte order and no U+0000, so binary data, which holds NUL units or decodes with unpaired surrogates, stays binary. No other guessing: a wrong guess would save in the wrong encoding.
 4. Unresolved conflicts: the result pane shows each side as a coloured block, left then right; the saved file gets diff3 markers (§4.4, §4.5).

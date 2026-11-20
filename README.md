@@ -62,7 +62,7 @@ The diff window below shows a block moved between the files, with a pill at each
 
 **14 languages.** English, Spanish, simplified Chinese, traditional Chinese, Japanese, Korean, German, French, Brazilian Portuguese, Ukrainian, Polish, Dutch, Swedish and Russian. The windows follow the system's language, or `ui-language` in the config file. The command line stays in English.
 
-**Text.** UTF-8, and UTF-16 with a BOM; any other text reads as Windows-1252 and saves back byte for byte. Invisible and bidirectional characters show as code-point badges, so a Trojan Source trick reads in its true order.
+**Text.** UTF-8 and UTF-16, each with or without a BOM; any other text reads as Windows-1252 and saves back byte for byte. Invisible and bidirectional characters show as code-point badges, so a Trojan Source trick reads in its true order.
 
 ## Jujutsu-enabled features
 
