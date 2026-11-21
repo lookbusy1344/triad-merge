@@ -90,6 +90,9 @@ pub struct WindowForm {
     /// The run's repository, open when a step before the window read it. The window's line
     /// origins take it, so a run opens it once.
     pub repo: RunRepository,
+    /// The listing a jj-native form made before its window opened, which the window shows
+    /// first; none for the other forms.
+    pub listing: Option<jj_native::Listing>,
 }
 
 /// Why a session step failed.
@@ -145,6 +148,30 @@ pub fn choose_semantics(
     };
     tracing::debug!(?caller, ?mode, "chose the merge semantics");
     Ok(mode)
+}
+
+/// [`choose_semantics`] and [`choose_marker_style`], set in `options`: the one step that
+/// settles a merge's semantics before its window opens or its headless run starts.
+///
+/// # Errors
+///
+/// As [`choose_semantics`].
+pub fn apply_semantics(
+    options: &mut MergeOptions,
+    flags: SemanticsFlags,
+    settings: &Settings,
+    repo: &mut RunRepository,
+    output: Option<&Path>,
+    cwd: Option<&Path>,
+    env: &Env,
+) -> Result<(), SessionError> {
+    let Mode { semantics, same_change, hunk_level } =
+        choose_semantics(flags, settings, repo, output, cwd, env)?;
+    options.semantics = semantics;
+    options.same_change = same_change;
+    options.hunk_level = hunk_level;
+    options.marker_style = choose_marker_style(semantics, settings, repo);
+    Ok(())
 }
 
 /// The markers of a merge under `semantics` ([`semantics::marker_style`]), with git's

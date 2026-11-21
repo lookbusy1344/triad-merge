@@ -16,13 +16,12 @@ use merge_config::settings::{self, Settings};
 use merge_core::document::{MergeDocument, OutputEnding};
 use merge_session::dir_diff::{self, Pair};
 use merge_session::env::Env;
-use merge_session::invocation::{
-    Absorb, Diff, History, Merge, Resolve, SemanticsFlags, Stack, Window,
-};
+use merge_session::invocation::{Absorb, Diff, Merge, Resolve, SemanticsFlags, Window};
+use merge_session::jj_native::{Absorbed, Listing, file_history, stacked};
 use merge_session::repository::{Discovery, RunRepository};
 use merge_session::resolve::Destination;
 use merge_session::{
-    EncodedOutput, SaveError, SessionError, choose_marker_style, choose_semantics, load, replay,
+    EncodedOutput, SaveError, SessionError, apply_semantics, choose_semantics, load, replay,
     resolve,
 };
 
@@ -75,8 +74,7 @@ pub enum CliError {
     Rewrite { path: camino::Utf8PathBuf, source: vcs::VcsError },
 }
 
-/// [`choose_semantics`] and [`choose_marker_style`] for `merge`, set in its options, reading
-/// the run's repository `repo`.
+/// [`apply_semantics`] for `merge`, reading the run's repository `repo`.
 fn choose_for(
     merge: &mut Merge,
     settings: &Settings,
@@ -84,13 +82,23 @@ fn choose_for(
     repo: &mut RunRepository,
     run: Run<'_>,
 ) -> Result<(), CliError> {
-    let mode =
-        choose_semantics(merge.semantics, settings, repo, Some(&merge.output), cwd, run.env)?;
-    merge.options.semantics = mode.semantics;
-    merge.options.same_change = mode.same_change;
-    merge.options.hunk_level = mode.hunk_level;
-    merge.options.marker_style = choose_marker_style(mode.semantics, settings, repo);
+    let output = Some(merge.output.as_path());
+    apply_semantics(&mut merge.options, merge.semantics, settings, repo, output, cwd, run.env)?;
     Ok(())
+}
+
+/// A window form settled before its window opens: the run's repository, and what a
+/// jj-native form listed.
+struct Prepared {
+    window: Window,
+    repo: RunRepository,
+    listing: Option<Listing>,
+}
+
+impl Prepared {
+    fn new(window: Window, repo: RunRepository) -> Self {
+        Self { window, repo, listing: None }
+    }
 }
 
 /// Prefix of every error line on stderr.
@@ -175,9 +183,14 @@ fn window_form(
     stderr: &mut impl Write,
 ) -> Outcome {
     match prepare_window(window, &settings, cwd.as_deref(), run, stdout) {
-        Ok(Some((window, repo))) => {
-            Outcome::Window(Box::new(WindowForm { window, settings, settings_errors, cwd, repo }))
-        }
+        Ok(Some(Prepared { window, repo, listing })) => Outcome::Window(Box::new(WindowForm {
+            window,
+            settings,
+            settings_errors,
+            cwd,
+            repo,
+            listing,
+        })),
         Ok(None) => Outcome::Exit(ExitCode::Resolved),
         Err(error) => {
             Outcome::Exit(report(stderr, &format!("{PROGRAM}: {error}\n"), ExitCode::Error))
@@ -185,7 +198,7 @@ fn window_form(
     }
 }
 
-/// The window `window` opens and its run's repository; none when there is nothing to open.
+/// The window `window` opens, settled; none when there is nothing to open.
 ///
 /// # Errors
 ///
@@ -196,13 +209,13 @@ fn prepare_window(
     cwd: Option<&Path>,
     run: Run<'_>,
     stdout: &mut impl Write,
-) -> Result<Option<(Window, RunRepository)>, CliError> {
+) -> Result<Option<Prepared>, CliError> {
     let need_cwd = || cwd.ok_or(CliError::NoWorkingDirectory);
     Ok(Some(match window {
         Window::Merge(mut merge) => {
             let mut repo = run.discovery.of_merge(cwd, Some(&merge.output));
             choose_for(&mut merge, settings, cwd, &mut repo, run)?;
-            (Window::Merge(merge), repo)
+            Prepared::new(Window::Merge(merge), repo)
         }
         Window::Resolve(mut resolve) => {
             let (targets, repo) =
@@ -211,33 +224,52 @@ fn prepare_window(
                 return Ok(None);
             };
             resolve.target = Some(first);
-            (Window::Resolve(resolve), repo)
+            Prepared::new(Window::Resolve(resolve), repo)
         }
-        Window::Diff(diff) | Window::DiffDirs(diff) => diff_form(diff, cwd, run.discovery)?,
+        Window::Diff(diff) | Window::DiffDirs(diff) => {
+            let (window, repo) = diff_form(diff, cwd, run.discovery)?;
+            Prepared::new(window, repo)
+        }
         Window::DiffChanges { rev, diff, title } => {
             let repo = changes_repository(need_cwd()?, run.discovery)?;
-            (Window::DiffChanges { rev, diff, title }, repo)
+            Prepared::new(Window::DiffChanges { rev, diff, title }, repo)
         }
         Window::DiffNative { path, rev, op, diff, title } => {
             let repo = run.discovery.of_file(&path);
-            (Window::DiffNative { path, rev, op, diff, title }, repo)
+            Prepared::new(Window::DiffNative { path, rev, op, diff, title }, repo)
         }
-        Window::OpenDialog => (Window::OpenDialog, run.discovery.find([])),
+        Window::OpenDialog => Prepared::new(Window::OpenDialog, run.discovery.find([])),
         Window::History(history) => {
-            let repo = history_prepare(&history, need_cwd()?, run.discovery)?;
-            (Window::History(history), repo)
+            let cwd = need_cwd()?;
+            let listed = file_history(cwd, &history.path, history.limit, run.discovery)?;
+            Prepared {
+                window: Window::History(history),
+                repo: run.discovery.of_resolve(cwd, None),
+                listing: Some(Listing::History(listed)),
+            }
         }
         Window::Absorb(absorb) => {
-            let Some(repo) = absorb_prepare(&absorb, need_cwd()?, run.discovery)? else {
+            let cwd = need_cwd()?;
+            let listed = absorb_list(&absorb, cwd, run.discovery)?;
+            if listed.hunks.is_empty() {
                 return Ok(None);
-            };
-            (Window::Absorb(absorb), repo)
+            }
+            Prepared {
+                window: Window::Absorb(absorb),
+                repo: run.discovery.of_resolve(cwd, None),
+                listing: Some(Listing::Absorb(listed)),
+            }
         }
         Window::Stack(mut stack) => {
-            let Some(repo) = stack_prepare(&mut stack, settings, need_cwd()?, run)? else {
+            let cwd = need_cwd()?;
+            let listed = stacked(cwd, stack.revset.as_deref(), run.discovery)?;
+            if listed.commits.is_empty() {
                 return Ok(None);
-            };
-            (Window::Stack(stack), repo)
+            }
+            let mut repo = run.discovery.of_resolve(cwd, None);
+            let (flags, cwd) = (SemanticsFlags::default(), Some(cwd));
+            apply_semantics(&mut stack.options, flags, settings, &mut repo, None, cwd, run.env)?;
+            Prepared { window: Window::Stack(stack), repo, listing: Some(Listing::Stack(listed)) }
         }
     }))
 }
@@ -412,84 +444,30 @@ fn resolve_prepare(
     let mut repo = run.discovery.of_resolve(cwd, resolve.path.as_deref());
     let targets = resolve_targets(&mut repo, cwd, resolve.path.as_deref(), stdout)?;
     if let Some(first) = targets.first() {
-        let mode =
-            choose_semantics(resolve.semantics, settings, &repo, Some(first), Some(cwd), run.env)?;
-        resolve.options.semantics = mode.semantics;
-        resolve.options.same_change = mode.same_change;
-        resolve.options.hunk_level = mode.hunk_level;
-        resolve.options.marker_style = choose_marker_style(mode.semantics, settings, &mut repo);
+        let (flags, output) = (resolve.semantics, Some(first.as_path()));
+        apply_semantics(
+            &mut resolve.options,
+            flags,
+            settings,
+            &mut repo,
+            output,
+            Some(cwd),
+            run.env,
+        )?;
     }
     Ok((targets, repo))
 }
 
-/// Settle `stack`'s merge options before its window opens, in the jj repository holding
-/// `cwd`, and give that repository. None when `stack`'s revset names no conflicted commit:
-/// no window opens, and the run exits with 0, as `stack --list` does.
-///
-/// # Errors
-///
-/// [`CliError`] outside a jj repository, when the revset does not resolve, or when the
-/// semantics settings are invalid.
-fn stack_prepare(
-    stack: &mut Stack,
-    settings: &Settings,
-    cwd: &Path,
-    run: Run<'_>,
-) -> Result<Option<RunRepository>, CliError> {
-    let listed = merge_session::jj_native::stack(cwd, stack.revset.as_deref(), run.discovery)?;
-    if listed.is_empty() {
-        return Ok(None);
-    }
-    let mut repo = run.discovery.of_resolve(cwd, None);
-    let mode =
-        choose_semantics(SemanticsFlags::default(), settings, &repo, None, Some(cwd), run.env)?;
-    stack.options.semantics = mode.semantics;
-    stack.options.same_change = mode.same_change;
-    stack.options.hunk_level = mode.hunk_level;
-    stack.options.marker_style = choose_marker_style(mode.semantics, settings, &mut repo);
-    Ok(Some(repo))
-}
-
-/// List `absorb`'s hunks once before its window opens. None when there is no hunk, so no
-/// window opens; else the run's repository, with the user's jj config.
+/// `absorb`'s hunks, listed once before its window opens, which shows them first.
 ///
 /// # Errors
 ///
 /// [`CliError`] outside a jj repository, for a path outside it, or when `--into` does not
 /// resolve.
-fn absorb_prepare(
-    absorb: &Absorb,
-    cwd: &Path,
-    discovery: &Discovery,
-) -> Result<Option<RunRepository>, CliError> {
+fn absorb_list(absorb: &Absorb, cwd: &Path, discovery: &Discovery) -> Result<Absorbed, CliError> {
     const LIST_ONLY: bool = false;
-    let listed = merge_session::jj_native::absorb(
-        cwd,
-        &absorb.paths,
-        absorb.into.as_deref(),
-        &[],
-        LIST_ONLY,
-        None,
-        discovery,
-    )?;
-    Ok((!listed.hunks.is_empty()).then(|| discovery.of_resolve(cwd, None)))
-}
-
-/// Check that `history PATH` can list before its window opens: a jj repository holding
-/// `cwd`, and the path inside it. Gives the run's repository, with the user's jj config.
-///
-/// # Errors
-///
-/// [`CliError`] outside a jj repository, for a path outside it, or when the operation log
-/// cannot be read.
-fn history_prepare(
-    history: &History,
-    cwd: &Path,
-    discovery: &Discovery,
-) -> Result<RunRepository, CliError> {
-    const ONE: Option<usize> = Some(1);
-    merge_session::jj_native::file_history(cwd, &history.path, ONE, discovery)?;
-    Ok(discovery.of_resolve(cwd, None))
+    let into = absorb.into.as_deref();
+    Ok(merge_session::jj_native::absorb(cwd, &absorb.paths, into, &[], LIST_ONLY, None, discovery)?)
 }
 
 /// `resolve -r REV PATH --headless`: the automatic merge of the conflict in `rev`'s commit,
@@ -777,12 +755,13 @@ mod tests {
         let Outcome::Window(form) = outcome else {
             panic!("an open dialog, got {outcome:?}");
         };
-        let WindowForm { window, settings, settings_errors, cwd, repo } = *form;
+        let WindowForm { window, settings, settings_errors, cwd, repo, listing } = *form;
         assert_eq!(window, Window::OpenDialog);
         assert_eq!(settings, Settings::default());
         assert_eq!(settings_errors, Vec::<String>::new());
         assert_eq!(cwd, std::env::current_dir().ok());
         assert_eq!(repo.found(), RunRepository::none().found());
+        assert!(listing.is_none(), "the open dialog lists nothing");
     }
 
     #[test]

@@ -61,6 +61,8 @@ pub struct StackStart {
     pub cwd: PathBuf,
     pub revset: Option<String>,
     pub options: MergeOptions,
+    /// The commits listed before the window opened, shown first; none to list them.
+    pub listed: Option<Stacked>,
     pub settings: WindowSettings,
     pub discovery: Discovery,
 }
@@ -158,7 +160,10 @@ pub fn start(
         // The finishing merge window is still borrowed; close it once that ends.
         cx.defer(move |cx| ignore_closed_view(view.update(cx, |this, cx| this.merged(code, cx))));
     }));
-    view.update(cx, StackWindow::refresh);
+    view.update(cx, |this, cx| match this.start.listed.take() {
+        Some(listed) => this.listed(Ok(listed), cx),
+        None => this.refresh(cx),
+    });
     Ok((window, view))
 }
 

@@ -12,6 +12,7 @@ use merge_core::document::{MergeDocument, MergeOptions};
 use merge_core::text::Text;
 use merge_session::WindowForm;
 use merge_session::invocation::{Absorb, History, Resolve, Stack, Window};
+use merge_session::jj_native::Listing;
 use merge_session::repository::{Handoff, RunRepository};
 use merge_session::resolve::Snapshot;
 use merge_session::semantics::Caller;
@@ -40,7 +41,8 @@ const WATCH_FILES: bool = true;
 #[must_use]
 pub fn run(form: WindowForm) -> ExitCode {
     let started = Instant::now();
-    let WindowForm { window, settings: mut stored, settings_errors: errors, cwd, repo } = form;
+    let WindowForm { window, settings: mut stored, settings_errors: errors, cwd, repo, listing } =
+        form;
     let system = sys_locale::get_locale();
     crate::set_language(stored.ui_language, system.as_deref());
     let bindings = std::mem::take(&mut stored.key_bindings);
@@ -130,9 +132,11 @@ pub fn run(form: WindowForm) -> ExitCode {
             let window = NativeDiff { path, rev, op, diff, title };
             run_native_diff(window, repo, base, errors, bindings)
         }
-        Window::History(history) => run_history(history, &repo, base, bindings),
-        Window::Stack(stack) => run_stack(stack, &repo, base, bindings),
-        Window::Absorb(absorb) => run_absorb(absorb, &repo, working_dir(dir), base, bindings),
+        Window::History(history) => run_history(history, listing, &repo, base, bindings),
+        Window::Stack(stack) => run_stack(stack, listing, &repo, base, bindings),
+        Window::Absorb(absorb) => {
+            run_absorb(absorb, listing, &repo, working_dir(dir), base, bindings)
+        }
     }
 }
 
@@ -144,9 +148,11 @@ fn launch_dirs(start: DirStart, bindings: KeyBindings) -> ExitCode {
     })
 }
 
-/// The history window on `history`'s file, whose diff windows watch their files.
+/// The history window on `history`'s file, whose diff windows watch their files, showing
+/// `listing` first when it is the history's.
 fn run_history(
     history: History,
+    listing: Option<Listing>,
     repo: &RunRepository,
     base: WindowSettings,
     bindings: KeyBindings,
@@ -155,6 +161,7 @@ fn run_history(
         cwd: working_dir(base.cwd.as_deref()),
         path: history.path,
         limit: history.limit,
+        listed: listing.and_then(Listing::history),
         discovery: repo.discovery().clone(),
         settings: base,
         watch: WATCH_FILES,
@@ -166,9 +173,11 @@ fn run_history(
 }
 
 /// The absorb window on `absorb`'s paths and `--into`, from the working directory `cwd`,
-/// whose hunks' lines take `settings`' font and colours.
+/// whose hunks' lines take `settings`' font and colours, showing `listing` first when it is
+/// the hunks'.
 fn run_absorb(
     absorb: Absorb,
+    listing: Option<Listing>,
     repo: &RunRepository,
     cwd: PathBuf,
     settings: WindowSettings,
@@ -178,6 +187,7 @@ fn run_absorb(
         cwd,
         paths: absorb.paths,
         into: absorb.into,
+        listed: listing.and_then(Listing::absorb),
         settings,
         discovery: repo.discovery().clone(),
     };
@@ -187,9 +197,11 @@ fn run_absorb(
     })
 }
 
-/// The stack window on `stack`'s revset, whose merge windows read with the run's jj config.
+/// The stack window on `stack`'s revset, whose merge windows read with the run's jj config,
+/// showing `listing` first when it is the commits'.
 fn run_stack(
     stack: Stack,
+    listing: Option<Listing>,
     repo: &RunRepository,
     base: WindowSettings,
     bindings: KeyBindings,
@@ -198,6 +210,7 @@ fn run_stack(
         cwd: working_dir(base.cwd.as_deref()),
         revset: stack.revset,
         options: stack.options,
+        listed: listing.and_then(Listing::stack),
         discovery: repo.discovery().clone(),
         settings: base,
     };

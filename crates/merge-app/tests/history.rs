@@ -53,6 +53,7 @@ mod jj {
             cwd: fixture.root().as_std_path().to_owned(),
             path: "a.txt".into(),
             limit,
+            listed: None,
             settings: WindowSettings::default(),
             discovery: merge_session::repository::Discovery::new(ConfigEnv::default()),
             watch: false,
@@ -116,6 +117,44 @@ mod jj {
 
     fn note(cx: &mut TestAppContext, view: &Entity<HistoryWindow>) -> Option<String> {
         cx.read(|cx| view.read(cx).note().map(str::to_owned))
+    }
+
+    #[gpui_kit::test]
+    fn a_listing_made_before_the_window_opens_shows_at_once_and_is_not_made_again(
+        cx: &mut TestAppContext,
+    ) {
+        const NEWEST: Option<usize> = Some(1);
+        let (fixture, _) = edited();
+        let discovery = merge_session::repository::Discovery::new(ConfigEnv::default());
+        let root = fixture.root().as_std_path();
+        // A tighter limit than the window's own, so a second listing would show.
+        let listed = merge_session::jj_native::file_history(
+            root,
+            std::path::Path::new("a.txt"),
+            NEWEST,
+            &discovery,
+        )
+        .expect("the newest version lists");
+        assert_eq!(listed.versions.len(), 1, "the newest version alone");
+        let start = HistoryStart {
+            cwd: root.to_owned(),
+            path: "a.txt".into(),
+            limit: None,
+            listed: Some(listed.clone()),
+            settings: WindowSettings::default(),
+            discovery,
+            watch: false,
+        };
+        let (_, view) = cx.update(|cx| {
+            gpui_kit::init(cx);
+            merge_app::init(cx);
+            history_window::start(start, |_, _: &mut App| {}, cx).expect("the window opens")
+        });
+        let shown =
+            |cx: &mut TestAppContext| view.read_with(cx, |view, _| view.versions().to_vec());
+        assert_eq!(shown(cx), listed.versions, "shown before any job runs");
+        cx.run_until_parked();
+        assert_eq!(shown(cx), listed.versions, "not listed again");
     }
 
     #[gpui_kit::test]

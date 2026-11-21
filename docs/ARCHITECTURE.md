@@ -215,7 +215,7 @@ The layer under both front ends. It owns everything a merge does outside the eng
 
 ### 8.2 Choosing how to merge
 
-`semantics::choose` picks `Semantics::Git` or `Semantics::Jj`. A repository with `.jj` merges with jj's semantics, and a git merge there is an error (`DESIGN.md` §B3). `jj_config` maps jj's `merge.same-change` and `merge.hunk-level` onto the engine's options. `choose_marker_style` reads the repository's conflict style. `language` names the grammar for syntax boundaries.
+`semantics::choose` picks `Semantics::Git` or `Semantics::Jj`. A repository with `.jj` merges with jj's semantics, and a git merge there is an error (`DESIGN.md` §B3). `jj_config` maps jj's `merge.same-change` and `merge.hunk-level` onto the engine's options. `choose_marker_style` reads the repository's conflict style. `apply_semantics` runs both and sets the result in a form's `MergeOptions`, the one step each front-end form takes. `language` names the grammar for syntax boundaries.
 
 ### 8.3 Loading
 

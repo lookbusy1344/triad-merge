@@ -15,6 +15,44 @@ pub use vcs_jj::{
 use crate::repository::Discovery;
 use crate::resolve::ResolveError;
 
+/// What a jj-native form listed before its window opened: the window shows it first and lists
+/// again only on a refresh.
+#[derive(Debug, Clone)]
+pub enum Listing {
+    Stack(Stacked),
+    Absorb(Absorbed),
+    History(FileHistory),
+}
+
+impl Listing {
+    /// The stack window's listing; none for another form's.
+    #[must_use]
+    pub fn stack(self) -> Option<Stacked> {
+        match self {
+            Self::Stack(listed) => Some(listed),
+            Self::Absorb(_) | Self::History(_) => None,
+        }
+    }
+
+    /// The absorb window's listing; none for another form's.
+    #[must_use]
+    pub fn absorb(self) -> Option<Absorbed> {
+        match self {
+            Self::Absorb(listed) => Some(listed),
+            Self::Stack(_) | Self::History(_) => None,
+        }
+    }
+
+    /// The history window's listing; none for another form's.
+    #[must_use]
+    pub fn history(self) -> Option<FileHistory> {
+        match self {
+            Self::History(listed) => Some(listed),
+            Self::Stack(_) | Self::Absorb(_) => None,
+        }
+    }
+}
+
 /// The jj repository holding `cwd`, reading the user's jj config as `discovery` says.
 /// `command` names the command in the refusal outside jj.
 ///

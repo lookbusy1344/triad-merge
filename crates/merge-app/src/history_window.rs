@@ -52,6 +52,8 @@ pub struct HistoryStart {
     pub cwd: PathBuf,
     pub path: PathBuf,
     pub limit: Option<usize>,
+    /// The versions listed before the window opened, shown first; none to list them.
+    pub listed: Option<FileHistory>,
     pub settings: WindowSettings,
     pub discovery: Discovery,
     /// The diff windows watch their files on disk; tests turn it off.
@@ -141,7 +143,10 @@ pub fn start(
         // The finishing diff window is still borrowed; close it once that ends.
         cx.defer(move |cx| ignore_closed_view(view.update(cx, HistoryWindow::compared)));
     }));
-    view.update(cx, HistoryWindow::refresh);
+    view.update(cx, |this, cx| match this.start.listed.take() {
+        Some(listed) => this.listed(Ok(listed), cx),
+        None => this.refresh(cx),
+    });
     Ok((window, view))
 }
 

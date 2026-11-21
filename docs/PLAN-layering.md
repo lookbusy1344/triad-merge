@@ -20,11 +20,9 @@ The pure crates hold up: `merge-core`, `merge-syntax` and `merge-view` have no G
 
 `repository::Discovery` holds the jj config of a run, built once from its `Env`. Every repository a front end opens comes from its constructors (`find`, `of_merge`, `of_diff_tool`, `of_file`, `of_resolve`), and the jj-native calls and `resolve::load_at_commit` take it. The front ends hold no `ConfigEnv`. A test reads a revset alias from the `Env`'s `JJ_CONFIG` through each constructor and through a repository found from the run's discovery.
 
-## K4 One step applies the chosen semantics
+## K4 One step applies the chosen semantics — done
 
-The CLI copies `Mode` and the marker style into `MergeOptions` in three places, and the stack, absorb and history forms load the jj repository twice before the window opens; absorb computes every hunk only to see whether there is one. `merge-session` gives one call that applies a mode to options, and the jj-native preparations open the repository once and hand it on.
-
-Test: each form's options after preparation, against the settings and the repository's config; the existing CLI tests cover the outcomes.
+`merge_session::apply_semantics` chooses the semantics and markers and sets them in a form's `MergeOptions`; `merge`, `resolve` and `stack` take it. The stack, absorb and history forms list once before the window opens and hand the listing on in `WindowForm::listing` (`jj_native::Listing`); the window shows it first and lists again only on a refresh. A test per window opens it on a narrower listing than its own and finds that listing shown at once and kept.
 
 ## K5 Spec rules leave the GUI
 

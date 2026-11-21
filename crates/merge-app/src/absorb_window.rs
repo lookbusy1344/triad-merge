@@ -62,6 +62,9 @@ const WINDOW_HEIGHT: Pixels = px(600.);
 /// The commits' column, beside the hunks.
 const COMMITS_WIDTH: Pixels = px(300.);
 
+/// A listing handed to the window is a listing, not an apply.
+const LISTED: bool = false;
+
 /// How the run ends: the process exits, or a test records the code.
 type ExitFn = dyn Fn(ExitCode, &mut App);
 
@@ -71,6 +74,8 @@ pub struct AbsorbStart {
     pub cwd: PathBuf,
     pub paths: Vec<PathBuf>,
     pub into: Option<String>,
+    /// The hunks listed before the window opened, shown first; none to list them.
+    pub listed: Option<Absorbed>,
     pub settings: WindowSettings,
     pub discovery: Discovery,
 }
@@ -150,7 +155,10 @@ pub fn start(
         });
         view
     })?;
-    view.update(cx, AbsorbWindow::refresh);
+    view.update(cx, |this, cx| match this.start.listed.take() {
+        Some(listed) => this.ran(Ok(listed), LISTED, cx),
+        None => this.refresh(cx),
+    });
     Ok((window, view))
 }
 
