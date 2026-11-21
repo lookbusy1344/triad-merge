@@ -386,7 +386,7 @@ Each crate depends only on crates in earlier layers:
 
 **One repository rule.** `native::nearest_repo` finds the nearest `.jj` directory or `.git` entry, jj on a tie, for the semantics and for discovery, which opens only that backend at that root. A `.git` git cannot open is `NotARepository`, never a climb to an outer repository (spec §6.1).
 
-**One repository per run.** `merge_session::repository::RunRepository` holds the directories a run's repository may lie in, in order, and opens the first on first use; every step takes it: semantics, marker style, `resolve`, origins and saves. `find` opens a git candidate as it finds it and passes over one git cannot open, so kind, root and origins come from one repository. A `Handoff` found again keeps the run's jj config.
+**One repository per run.** `merge_session::repository::RunRepository` holds the directories a run's repository may lie in, in order, and opens the first on first use; every step takes it: semantics, marker style, `resolve`, origins and saves. `find` opens a git candidate as it finds it and passes over one git cannot open, so kind, root and origins come from one repository. A `Handoff` found again keeps the run's jj config. The jj config comes from one `Discovery` per run, built from the run's `Env`; the front ends never name jj's `ConfigEnv`.
 
 **One save.** `EncodedOutput::new(document, ending)` encodes; `write(path)` writes (`io::WriteError`); `save(path, record, run)` writes, then records the save in the run's repository (`SaveError::Encode` and `SaveError::Write` wrote nothing; `SaveError::Record` wrote the file and keeps the `VcsError`). The merge window builds, encodes and saves on a background thread, from a `PendingOutput`.
 

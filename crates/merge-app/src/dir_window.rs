@@ -18,9 +18,8 @@ use gpui_kit::{
 use merge_core::diff::DiffOptions;
 use merge_core::text::Text;
 use merge_session::dir_diff::{self, Change, ChangedFile};
-use merge_session::jj_config::ConfigEnv;
 use merge_session::native::{self, Against, Listing};
-use merge_session::repository::{Handoff, RunRepository};
+use merge_session::repository::{Discovery, Handoff};
 
 use crate::diff_window::{self, DiffFile, DiffLookup, DiffSettings};
 use crate::pick_list::{self, Activate, SelectNext, SelectPrevious, State};
@@ -54,14 +53,16 @@ pub enum Source {
     /// `diff LEFT_DIR RIGHT_DIR`: two directories, and whether each side is read-only.
     Dirs { left: PathBuf, right: PathBuf, readonly: [bool; 2] },
     /// `diff [--rev REV]`: the working copy's changes against `rev`, or its parent revision,
-    /// in the repository holding the working directory. jj's snapshots read `jj_config`.
-    Changes { rev: Option<String>, jj_config: Option<ConfigEnv> },
+    /// in the repository holding the working directory.
+    Changes { rev: Option<String> },
 }
 
 /// What the directory window opens with: what it lists, and what its diff windows take.
 pub struct DirStart {
     pub cwd: PathBuf,
     pub source: Source,
+    /// How the listing and each diff window find their repository.
+    pub discovery: Discovery,
     /// The window's title; a generic one without it.
     pub title: Option<String>,
     /// The comparison options each diff window takes.
@@ -162,13 +163,13 @@ enum ListJob {
 type Listed = Result<(Vec<ChangedFile>, Option<Against>), String>;
 
 /// List `source`'s files from the working directory `cwd`.
-fn list(source: &Source, cwd: &Path) -> Listed {
+fn list(source: &Source, cwd: &Path, discovery: &Discovery) -> Listed {
     match source {
         Source::Dirs { left, right, .. } => {
             dir_diff::changed_files(left, right).map(|files| (files, None)).map_err(to_string)
         }
-        Source::Changes { rev, jj_config } => {
-            let mut repo = changes_repository(cwd, jj_config.as_ref());
+        Source::Changes { rev } => {
+            let mut repo = discovery.find([cwd]);
             let Listing { against, files } =
                 native::changed_files(&mut repo, rev.as_deref()).map_err(to_string)?;
             Ok((files, Some(against)))
@@ -180,25 +181,16 @@ fn to_string(error: impl std::error::Error + 'static) -> String {
     crate::error_text::describe(&error)
 }
 
-/// The repository holding `dir`, whose jj snapshots read `jj_config`.
-fn changes_repository(dir: &Path, jj_config: Option<&ConfigEnv>) -> RunRepository {
-    let repo = RunRepository::find([dir]);
-    match jj_config {
-        Some(config) => repo.with_jj_config(config.clone()),
-        None => repo,
-    }
-}
-
 /// The diff window's sides for `file` of a [`Source::Changes`] listing: the file at the
 /// listing's revision on the left, read-only, and the working-copy file on the right. A file
 /// deleted on disk opens an empty, read-only right side.
 fn load_changed(
     file: &ChangedFile,
     against: &Against,
-    jj_config: Option<&ConfigEnv>,
+    discovery: &Discovery,
 ) -> Result<ToolDiff, String> {
     let shown = file.display_path();
-    let mut repo = changes_repository(&against.root, jj_config);
+    let mut repo = discovery.find([against.root.as_path()]);
     let from = match &file.change {
         Change::Renamed { from } | Change::Copied { from } => from,
         Change::Added | Change::Deleted | Change::Modified => &file.path,
@@ -228,6 +220,7 @@ fn load_file(
     [left, right]: [PathBuf; 2],
     readonly: [bool; 2],
     cwd: PathBuf,
+    discovery: &Discovery,
 ) -> Result<ToolDiff, String> {
     let shown = file.display_path();
     let absent = || Some(strings::no_file(&shown));
@@ -238,7 +231,7 @@ fn load_file(
         Change::Renamed { from } | Change::Copied { from } => ([None, None], from),
     };
     let paths = [left.join(from), right.join(&file.path)];
-    let repo = RunRepository::of_diff_tool(Some(&cwd), &paths[1]);
+    let repo = discovery.of_diff_tool(Some(&cwd), &paths[1]);
     let pair = ToolPair { paths, absent, readonly, title: Some(shown) };
     crate::run::tool_diff(pair, repo, cwd).map_err(|error| crate::error_text::describe(&error))
 }
@@ -269,7 +262,8 @@ impl DirWindow {
         }
         self.listing = ListJob::Running;
         let (source, cwd) = (self.source_owned(), self.start.cwd.clone());
-        let listed = cx.background_spawn(async move { list(&source, &cwd) });
+        let discovery = self.start.discovery.clone();
+        let listed = cx.background_spawn(async move { list(&source, &cwd, &discovery) });
         cx.spawn(async move |this, cx| {
             let listed = listed.await;
             ignore_closed_view(this.update(cx, |this, cx| this.arrived_list(listed, cx)));
@@ -284,9 +278,7 @@ impl DirWindow {
             Source::Dirs { left, right, readonly } => {
                 Source::Dirs { left: left.clone(), right: right.clone(), readonly: *readonly }
             }
-            Source::Changes { rev, jj_config } => {
-                Source::Changes { rev: rev.clone(), jj_config: jj_config.clone() }
-            }
+            Source::Changes { rev } => Source::Changes { rev: rev.clone() },
         }
     }
 
@@ -332,15 +324,16 @@ impl DirWindow {
         if self.loading {
             return;
         }
+        let discovery = self.start.discovery.clone();
         let loaded = match (self.source_owned(), self.against.clone()) {
             (Source::Dirs { left, right, readonly }, _) => {
                 let cwd = self.start.cwd.clone();
-                cx.background_spawn(async move { load_file(&listed, [left, right], readonly, cwd) })
+                cx.background_spawn(async move {
+                    load_file(&listed, [left, right], readonly, cwd, &discovery)
+                })
             }
-            (Source::Changes { jj_config, .. }, Some(against)) => {
-                cx.background_spawn(
-                    async move { load_changed(&listed, &against, jj_config.as_ref()) },
-                )
+            (Source::Changes { .. }, Some(against)) => {
+                cx.background_spawn(async move { load_changed(&listed, &against, &discovery) })
             }
             (Source::Changes { .. }, None) => return,
         };

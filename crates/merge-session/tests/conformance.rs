@@ -6,7 +6,7 @@
 
 use camino::{Utf8Path, Utf8PathBuf};
 use merge_session::native;
-use merge_session::repository::RunRepository;
+use merge_session::repository::{Discovery, RunRepository};
 use vcs::testing::Entry;
 use vcs::{Annotation, CommitId, RepoKind, Repository, RevSpec, TermContent, Timestamp, VcsError};
 use vcs_jj::config::ConfigEnv;
@@ -202,7 +202,7 @@ impl Fixture {
 
     /// The repository as `resolve` opens it to write, with jj's default config.
     fn open_run(&self) -> RunRepository {
-        RunRepository::find([self.root().as_std_path()]).with_jj_config(ConfigEnv::default())
+        Discovery::new(ConfigEnv::default()).find([self.root().as_std_path()])
     }
 }
 

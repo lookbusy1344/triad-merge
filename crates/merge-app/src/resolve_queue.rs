@@ -10,8 +10,7 @@ use std::rc::Rc;
 
 use gpui_kit::{AnyWindowHandle, App, AppContext as _};
 use merge_core::document::{MergeDocument, MergeOptions};
-use merge_session::jj_config::ConfigEnv;
-use merge_session::repository::{Handoff, RunRepository};
+use merge_session::repository::{Discovery, Handoff, RunRepository};
 use merge_session::resolve::Snapshot;
 use merge_session::resolve::{Destination, Opened};
 
@@ -44,28 +43,22 @@ pub enum QueueError {
 }
 
 impl Queue {
-    /// A queue of the conflicted files of the repository at `cwd`, opened with `options` and
-    /// `settings`, ending with `exit`.
+    /// A queue of the conflicted files of the repository at `cwd`, found through
+    /// `discovery`, opened with `options` and `settings`, ending with `exit`.
     pub fn new(
         cwd: PathBuf,
+        discovery: Discovery,
         options: MergeOptions,
         settings: WindowSettings,
         exit: impl Fn(ExitCode, &mut App) + 'static,
     ) -> Self {
         Self {
-            finder: Finder { cwd, options, jj_config: None, opened: Vec::new() },
+            finder: Finder { cwd, discovery, options, opened: Vec::new() },
             settings,
             exit: Rc::new(exit),
             unresolved: false,
             window: None,
         }
-    }
-
-    /// The queue, with `config` as the user's jj config for jj's snapshots.
-    #[must_use]
-    pub fn with_jj_config(mut self, config: ConfigEnv) -> Self {
-        self.finder.jj_config = Some(config);
-        self
     }
 
     /// The code the run ends with after its last save.
@@ -78,9 +71,8 @@ impl Queue {
 #[derive(Clone)]
 struct Finder {
     cwd: PathBuf,
+    discovery: Discovery,
     options: MergeOptions,
-    /// The user's jj config for jj's snapshots; the process's without one.
-    jj_config: Option<ConfigEnv>,
     /// The working-tree files opened or refused so far.
     opened: Vec<PathBuf>,
 }
@@ -101,13 +93,9 @@ struct Found {
 }
 
 impl Finder {
-    /// The repository holding the run's working directory, with its jj config.
+    /// The repository holding the run's working directory.
     fn repository(&self) -> RunRepository {
-        let repo = RunRepository::find([self.cwd.as_path()]);
-        match &self.jj_config {
-            Some(config) => repo.with_jj_config(config.clone()),
-            None => repo,
-        }
+        self.discovery.find([self.cwd.as_path()])
     }
 
     /// The next conflicted file not yet opened, in path order, listed in `repo`.
@@ -278,6 +266,7 @@ mod tests {
         let (slot, record) = (Rc::clone(&this), Rc::clone(&exits));
         let queue = Rc::new(RefCell::new(Queue::new(
             PathBuf::new(),
+            Discovery::default(),
             MergeOptions::default(),
             WindowSettings::default(),
             move |code, _: &mut App| {

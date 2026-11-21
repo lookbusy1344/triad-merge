@@ -11,10 +11,9 @@ use merge_core::merge3::{Inputs, Semantics, ShapeError};
 use merge_core::text::{DecodeError, Text};
 use merge_syntax::language::Language;
 use vcs::{CommitId, ConflictTerm, EntryKind, RepoKind, Repository, TermContent, VcsError};
-use vcs_jj::config::ConfigEnv;
 use vcs_jj::{JjRepository, Rewrite};
 
-use crate::repository::RunRepository;
+use crate::repository::{Discovery, RunRepository};
 use crate::{ExitCode, SaveError};
 
 /// A conflict, loaded as a merge's inputs.
@@ -102,7 +101,7 @@ pub struct Record {
     root: Utf8PathBuf,
     /// The conflicted path, relative to the root.
     path: Utf8PathBuf,
-    jj_config: Option<ConfigEnv>,
+    discovery: Discovery,
 }
 
 /// A jj commit's conflict that `resolve -r` opened: each save writes the result into the
@@ -113,7 +112,7 @@ pub struct InCommit {
     root: Utf8PathBuf,
     /// The conflicted path, relative to the root.
     path: Utf8PathBuf,
-    jj_config: Option<ConfigEnv>,
+    discovery: Discovery,
     /// The commit the conflict was read from: saved markers parse against its terms.
     id: CommitId,
     /// What the change must hold at the path for a save to go in: `id` before any save,
@@ -160,11 +159,7 @@ impl Record {
         let Some(resolved) = resolved_by(code) else {
             return Ok(());
         };
-        let run = RunRepository::find([self.root.as_std_path()]);
-        let mut run = match &self.jj_config {
-            Some(config) => run.with_jj_config(config.clone()),
-            None => run,
-        };
+        let mut run = self.discovery.find([self.root.as_std_path()]);
         self.record(run.require_mut()?, resolved)
     }
 
@@ -213,8 +208,7 @@ impl InCommit {
     /// [`VcsError`] when the repository refuses the write
     /// ([`JjRepository::write_conflict_since`]).
     pub fn write(&self, content: &[u8], dry_run: bool) -> Result<Rewrite, VcsError> {
-        let config = self.jj_config.clone().unwrap_or_else(ConfigEnv::from_process);
-        let mut repo = JjRepository::discover(&self.root)?.with_config(config);
+        let mut repo = JjRepository::discover(&self.root)?.with_config(self.discovery.jj_config());
         // A poisoned lock still holds a whole commit ID: the lock guards one assignment.
         let mut held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
         let rewrite = repo.write_conflict_since(
@@ -391,7 +385,7 @@ pub fn load(
     snapshot: Snapshot,
 ) -> Result<Loaded, ResolveError> {
     let file = absolute(&cwd.join(path))?;
-    let jj_config = run.jj_config().cloned();
+    let discovery = run.discovery().clone();
     let Some(repo) = run.open_mut()? else {
         let cwd = absolute(cwd)?;
         let shown = file.strip_prefix(&cwd).map_or_else(|_| file.clone(), Utf8Path::to_owned);
@@ -409,7 +403,7 @@ pub fn load(
         return from_markers(relative, file, Some(repo.kind()));
     };
     let recorded = repo.recorded(&relative)?;
-    let record = Some(Record { root: repo.root().to_owned(), path: relative.clone(), jj_config });
+    let record = Some(Record { root: repo.root().to_owned(), path: relative.clone(), discovery });
     if conflict.sides.iter().all(|side| side.content == TermContent::Absent) {
         return Err(ResolveError::DeletedEverywhere(relative));
     }
@@ -462,9 +456,9 @@ pub fn load_at_commit(
     cwd: &Path,
     rev: &str,
     path: &Path,
-    jj_config: Option<ConfigEnv>,
+    discovery: &Discovery,
 ) -> Result<Loaded, ResolveError> {
-    let mut repo = crate::jj_native::open(cwd, jj_config.clone(), "resolve -r")?;
+    let mut repo = crate::jj_native::open(cwd, discovery, "resolve -r")?;
     let root = repo.root().to_owned();
     let file = absolute(&cwd.join(path))?;
     let relative =
@@ -496,7 +490,7 @@ pub fn load_at_commit(
     let commit = InCommit {
         root,
         path: relative.clone(),
-        jj_config,
+        discovery: discovery.clone(),
         held: Arc::new(Mutex::new(id.clone())),
         id,
         marker_length,

@@ -14,6 +14,7 @@ use gpui_kit::test::TestWindowExt;
 use gpui_kit::{AnyWindowHandle, App, Entity, TestAppContext};
 use merge_app::{ExitCode, MergeWindow, WindowSettings};
 use merge_core::document::MergeOptions;
+use merge_session::repository::Discovery;
 use vcs::testing::Entry;
 use vcs_jj::config::ConfigEnv;
 use vcs_jj::testing::{Held, Op};
@@ -77,11 +78,11 @@ fn start_unparked(cx: &mut TestAppContext, root: &Path) -> Rc<RefCell<Vec<ExitCo
         merge_app::resolve_queue::start(
             merge_app::resolve_queue::Queue::new(
                 root,
+                Discovery::new(ConfigEnv::default()),
                 MergeOptions::default(),
                 WindowSettings::default(),
                 move |code, _: &mut App| record.borrow_mut().push(code),
-            )
-            .with_jj_config(ConfigEnv::default()),
+            ),
             cx,
         );
     });

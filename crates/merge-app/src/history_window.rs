@@ -14,8 +14,8 @@ use gpui_kit::{
     InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render, ScrollHandle,
     Styled as _, Window, WindowBounds, WindowOptions, px,
 };
-use merge_session::jj_config::ConfigEnv;
 use merge_session::jj_native::{FileHistory, FileVersion};
+use merge_session::repository::Discovery;
 use merge_session::repository::{Handoff, RunRepository};
 use merge_session::resolve::ResolveError;
 use vcs::RepoKind;
@@ -53,7 +53,7 @@ pub struct HistoryStart {
     pub path: PathBuf,
     pub limit: Option<usize>,
     pub settings: WindowSettings,
-    pub jj_config: Option<ConfigEnv>,
+    pub discovery: Discovery,
     /// The diff windows watch their files on disk; tests turn it off.
     pub watch: bool,
 }
@@ -170,10 +170,10 @@ impl HistoryWindow {
             return;
         }
         self.listing = true;
-        let HistoryStart { cwd, path, limit, jj_config, .. } = &self.start;
-        let (cwd, path, limit, config) = (cwd.clone(), path.clone(), *limit, jj_config.clone());
+        let HistoryStart { cwd, path, limit, discovery, .. } = &self.start;
+        let (cwd, path, limit, discovery) = (cwd.clone(), path.clone(), *limit, discovery.clone());
         let listed = cx.background_spawn(async move {
-            merge_session::jj_native::file_history(&cwd, &path, limit, config)
+            merge_session::jj_native::file_history(&cwd, &path, limit, &discovery)
         });
         cx.spawn(async move |this, cx| {
             let listed = listed.await;
@@ -219,14 +219,10 @@ impl HistoryWindow {
             return;
         }
         self.loading = true;
-        let (op, config) = (listed.operation.clone(), self.start.jj_config.clone());
+        let (op, discovery) = (listed.operation.clone(), self.start.discovery.clone());
         let dir = self.start.cwd.clone();
         let loaded = cx.background_spawn(async move {
-            let repo = RunRepository::find([dir.as_path()]);
-            let mut repo = match config {
-                Some(config) => repo.with_jj_config(config),
-                None => repo,
-            };
+            let mut repo = discovery.find([dir.as_path()]);
             let (native, commit) = merge_session::native::load_at_operation(&mut repo, &file, &op)
                 .map_err(|e| crate::error_text::describe(&e))?;
             let (left, right) =

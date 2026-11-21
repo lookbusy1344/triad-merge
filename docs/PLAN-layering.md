@@ -16,11 +16,9 @@ The pure crates hold up: `merge-core`, `merge-syntax` and `merge-view` have no G
 
 `merge-app::run::exit` calls `std::process::exit` inside the GPUI loop, and on macOS the platform's own quit, `terminate:`, exits the process the same way, so no destructor runs at the end of a run. A commit's conflict therefore holds no file: `Destination::file` is none for it, and `Destination::name`, the conflicted path, gives the merge window its result heading and language. The journal and jj's line origins take the conflicted file under the root (`InCommit::worktree_file`).
 
-## K3 The run's repository comes from the environment
+## K3 The run's repository comes from the environment — done
 
-`RunRepository` carries jj's `ConfigEnv`, and every front-end entry point adds it by hand (`with_jj_config(jj_config::snapshot_config(env))`, seven sites in `merge-cli`, one in `merge-app::resolve_queue`). The session layer builds a run's repository from `Env`; `ConfigEnv` leaves the front ends' code.
-
-Test: a run built from an `Env` whose jj config names a user snapshots with that user, through each constructor the front ends call.
+`repository::Discovery` holds the jj config of a run, built once from its `Env`. Every repository a front end opens comes from its constructors (`find`, `of_merge`, `of_diff_tool`, `of_file`, `of_resolve`), and the jj-native calls and `resolve::load_at_commit` take it. The front ends hold no `ConfigEnv`. A test reads a revset alias from the `Env`'s `JJ_CONFIG` through each constructor and through a repository found from the run's discovery.
 
 ## K4 One step applies the chosen semantics
 

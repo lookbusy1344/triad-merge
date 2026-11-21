@@ -265,8 +265,13 @@ fn open_dialog(cx: &mut TestAppContext) -> AnyWindowHandle {
     let (window, _) = cx.update(|cx| {
         gpui_kit::init(cx);
         merge_app::init(cx);
-        merge_app::open_dialog::open(WindowSettings::default(), false, cx)
-            .expect("the dialog opens")
+        merge_app::open_dialog::open(
+            WindowSettings::default(),
+            merge_session::repository::Discovery::default(),
+            false,
+            cx,
+        )
+        .expect("the dialog opens")
     });
     act(cx, window, TestWindowExt::render_frame);
     window

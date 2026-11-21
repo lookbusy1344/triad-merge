@@ -56,7 +56,7 @@ mod jj {
             paths: Vec::new(),
             into: None,
             settings,
-            jj_config: Some(ConfigEnv::default()),
+            discovery: merge_session::repository::Discovery::new(ConfigEnv::default()),
         };
         let (window, view) = cx.update(|cx| {
             gpui_kit::init(cx);

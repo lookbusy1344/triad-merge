@@ -10,8 +10,68 @@ use camino::Utf8PathBuf;
 use vcs::{RepoKind, Repository, VcsError};
 use vcs_jj::config::ConfigEnv;
 
+use crate::env::Env;
 use crate::native::{self, Repo};
-use crate::resolve;
+use crate::{jj_config, resolve};
+
+/// How a run finds and opens repositories: the user's jj config that jj's snapshots, writes
+/// and revsets read. A front end builds it once from the run's [`Env`] and finds every
+/// repository of the run through it.
+#[derive(Clone, Default)]
+pub struct Discovery {
+    /// Shared by every copy; the process's config, read when used, when unset.
+    jj_config: Option<Arc<ConfigEnv>>,
+}
+
+impl Discovery {
+    /// The discovery of a run in `env`: jj's config from `env`'s directories and
+    /// `JJ_CONFIG` ([`jj_config::snapshot_config`]).
+    #[must_use]
+    pub fn from_env(env: &Env) -> Self {
+        Self::new(jj_config::snapshot_config(env))
+    }
+
+    /// A discovery whose jj snapshots read `config`.
+    #[must_use]
+    pub fn new(config: ConfigEnv) -> Self {
+        Self { jj_config: Some(Arc::new(config)) }
+    }
+
+    /// The config jj reads in this run.
+    pub(crate) fn jj_config(&self) -> ConfigEnv {
+        self.jj_config.as_deref().map_or_else(ConfigEnv::from_process, ConfigEnv::clone)
+    }
+
+    /// As [`RunRepository::find`], reading this run's jj config.
+    #[must_use]
+    pub fn find<'a>(&self, dirs: impl IntoIterator<Item = &'a Path>) -> RunRepository {
+        RunRepository { discovery: self.clone(), ..RunRepository::find(dirs) }
+    }
+
+    /// As [`RunRepository::of_merge`], reading this run's jj config.
+    #[must_use]
+    pub fn of_merge(&self, cwd: Option<&Path>, output: Option<&Path>) -> RunRepository {
+        RunRepository { discovery: self.clone(), ..RunRepository::of_merge(cwd, output) }
+    }
+
+    /// As [`RunRepository::of_diff_tool`], reading this run's jj config.
+    #[must_use]
+    pub fn of_diff_tool(&self, cwd: Option<&Path>, right: &Path) -> RunRepository {
+        RunRepository { discovery: self.clone(), ..RunRepository::of_diff_tool(cwd, right) }
+    }
+
+    /// As [`RunRepository::of_file`], reading this run's jj config.
+    #[must_use]
+    pub fn of_file(&self, path: &Path) -> RunRepository {
+        RunRepository { discovery: self.clone(), ..RunRepository::of_file(path) }
+    }
+
+    /// As [`RunRepository::of_resolve`], reading this run's jj config.
+    #[must_use]
+    pub fn of_resolve(&self, cwd: &Path, path: Option<&Path>) -> RunRepository {
+        RunRepository { discovery: self.clone(), ..RunRepository::of_resolve(cwd, path) }
+    }
+}
 
 /// A run's repository: the one holding the first of the run's directories that lies in one
 /// its backend can open.
@@ -29,8 +89,8 @@ pub struct RunRepository {
     dirs: Vec<PathBuf>,
     found: Option<Repo>,
     open: Option<Box<dyn Repository>>,
-    /// Where the user's jj config lives, for jj's snapshots; the process's when unset.
-    jj_config: Option<ConfigEnv>,
+    /// The jj config its snapshots read.
+    discovery: Discovery,
 }
 
 /// A jj repository's working copy, which a save in a diff window snapshots (spec §6.1): its
@@ -38,7 +98,7 @@ pub struct RunRepository {
 #[derive(Debug, Clone)]
 pub struct WorkingCopy {
     root: PathBuf,
-    jj_config: Option<ConfigEnv>,
+    discovery: Discovery,
 }
 
 impl WorkingCopy {
@@ -50,12 +110,7 @@ impl WorkingCopy {
     /// [`VcsError`] when the repository cannot be opened, or jj refuses the snapshot, as for
     /// a stale working copy.
     pub fn snapshot(&self) -> Result<(), VcsError> {
-        let run = RunRepository::find([self.root.as_path()]);
-        let mut run = match &self.jj_config {
-            Some(config) => run.with_jj_config(config.clone()),
-            None => run,
-        };
-        run.require_mut()?.snapshot()
+        self.discovery.find([self.root.as_path()]).require_mut()?.snapshot()
     }
 }
 
@@ -74,7 +129,7 @@ impl RunRepository {
             .filter_map(|dir| native::find_from(dir))
             .find(|repo| match repo.kind {
                 RepoKind::Jj => true,
-                RepoKind::Git => match native::open(repo, None) {
+                RepoKind::Git => match native::open(repo, &Discovery::default()) {
                     Ok(repo) => {
                         open = Some(repo);
                         true
@@ -87,19 +142,14 @@ impl RunRepository {
                     }
                 },
             });
-        Self { dirs, found, open, jj_config: None }
+        Self { dirs, found, open, discovery: Discovery::default() }
     }
 
-    /// The run's repository, its jj snapshots reading the user's jj config from `config`.
+    /// How the run finds its repositories: the next window of the run finds its own
+    /// through it.
     #[must_use]
-    pub fn with_jj_config(self, config: ConfigEnv) -> Self {
-        Self { jj_config: Some(config), ..self }
-    }
-
-    /// Where the run's jj snapshots read the user's jj config; the process's when `None`.
-    #[must_use]
-    pub fn jj_config(&self) -> Option<&ConfigEnv> {
-        self.jj_config.as_ref()
+    pub fn discovery(&self) -> &Discovery {
+        &self.discovery
     }
 
     /// The repository of a run in `cwd` writing `output`: the working directory's, else the
@@ -151,7 +201,7 @@ impl RunRepository {
     #[must_use]
     pub fn working_copy(&self) -> Option<WorkingCopy> {
         let repo = self.found.as_ref().filter(|repo| repo.kind == RepoKind::Jj)?;
-        Some(WorkingCopy { root: repo.root.clone(), jj_config: self.jj_config.clone() })
+        Some(WorkingCopy { root: repo.root.clone(), discovery: self.discovery.clone() })
     }
 
     /// The kind of the repository found, without opening it.
@@ -169,7 +219,7 @@ impl RunRepository {
         if self.open.is_none()
             && let Some(repo) = &self.found
         {
-            self.open = Some(native::open(repo, self.jj_config.as_ref())?);
+            self.open = Some(native::open(repo, &self.discovery)?);
         }
         Ok(self.open.as_deref())
     }
@@ -235,19 +285,24 @@ pub(crate) fn output_dir(cwd: Option<&Path>, output: Option<&Path>) -> Option<Pa
     })
 }
 
+/// The config holds the process's `JJ_*` variables; a log shows only whether it is set.
+impl fmt::Debug for Discovery {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Discovery").field("jj_config", &self.jj_config.is_some()).finish()
+    }
+}
+
 impl fmt::Debug for RunRepository {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RunRepository")
             .field("dirs", &self.dirs)
             .field("found", &self.found)
             .field("open", &self.open.is_some())
-            .field("jj_config", &self.jj_config.is_some())
+            .field("discovery", &self.discovery)
             .finish()
     }
 }
 
-/// Two runs share a repository when they probed the same directories and found the same
-/// repository, open or not.
 /// A run's repository on its way from the command line to the window that reads line origins
 /// from it, across threads. Its clones share one slot: the first take gets the repository the
 /// command line found, open or not; a take after that finds it again from the same
@@ -255,8 +310,8 @@ impl fmt::Debug for RunRepository {
 #[derive(Clone)]
 pub struct Handoff {
     dirs: Arc<[PathBuf]>,
-    /// The run's jj config, which a repository found again reads as the run's did.
-    jj_config: Option<Arc<ConfigEnv>>,
+    /// The run's discovery, which a repository found again reads as the run's did.
+    discovery: Discovery,
     slot: Arc<Mutex<Option<RunRepository>>>,
 }
 
@@ -266,7 +321,7 @@ impl Handoff {
     pub fn new(repo: RunRepository) -> Self {
         Self {
             dirs: Arc::from(repo.dirs.as_slice()),
-            jj_config: repo.jj_config.clone().map(Arc::new),
+            discovery: repo.discovery.clone(),
             slot: Arc::new(Mutex::new(Some(repo))),
         }
     }
@@ -278,13 +333,7 @@ impl Handoff {
         // A panic while the lock was held could only interrupt an `Option` move, which
         // leaves the slot whole.
         let taken = self.slot.lock().unwrap_or_else(PoisonError::into_inner).take();
-        taken.unwrap_or_else(|| {
-            let again = RunRepository::find(self.dirs.iter().map(PathBuf::as_path));
-            match &self.jj_config {
-                Some(config) => again.with_jj_config(ConfigEnv::clone(config)),
-                None => again,
-            }
-        })
+        taken.unwrap_or_else(|| self.discovery.find(self.dirs.iter().map(PathBuf::as_path)))
     }
 
     /// The jj working copy of the run's repository, as [`RunRepository::working_copy`]
@@ -312,7 +361,7 @@ impl fmt::Debug for Handoff {
         let slot = self.slot.lock().unwrap_or_else(PoisonError::into_inner);
         f.debug_struct("Handoff")
             .field("dirs", &self.dirs)
-            .field("jj_config", &self.jj_config.is_some())
+            .field("discovery", &self.discovery)
             .field("slot", &*slot)
             .finish()
     }
@@ -428,9 +477,9 @@ mod tests {
         let jj = vcs_jj::testing::Fixture::new();
         let config =
             ConfigEnv { hostname: Some("handoff-host".to_owned()), ..ConfigEnv::default() };
-        let run = RunRepository::find([jj.root().as_std_path()]).with_jj_config(config);
+        let run = Discovery::new(config).find([jj.root().as_std_path()]);
         let handoff = Handoff::new(run);
-        let host = |run: &RunRepository| run.jj_config().and_then(|c| c.hostname.clone());
+        let host = |run: &RunRepository| run.discovery().jj_config().hostname;
         assert_eq!(host(&handoff.take()).as_deref(), Some("handoff-host"), "the run itself");
         assert_eq!(host(&handoff.take()).as_deref(), Some("handoff-host"), "found again");
     }

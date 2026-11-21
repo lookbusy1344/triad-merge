@@ -16,8 +16,8 @@ use gpui_kit::{
     ScrollHandle, SharedString, Styled as _, WeakEntity, Window, WindowBounds, WindowOptions, px,
 };
 use merge_core::document::MergeOptions;
-use merge_session::jj_config::ConfigEnv;
 use merge_session::jj_native::{Origin, Rewrite, StackCommit, Stacked};
+use merge_session::repository::Discovery;
 use merge_session::repository::RunRepository;
 use merge_session::resolve::{Opened, ResolveError};
 use vcs::IdKind;
@@ -62,7 +62,7 @@ pub struct StackStart {
     pub revset: Option<String>,
     pub options: MergeOptions,
     pub settings: WindowSettings,
-    pub jj_config: Option<ConfigEnv>,
+    pub discovery: Discovery,
 }
 
 /// The merge window open on one of the list's paths.
@@ -196,10 +196,10 @@ impl StackWindow {
             return;
         }
         self.listing = true;
-        let (cwd, revset, config) =
-            (self.start.cwd.clone(), self.start.revset.clone(), self.start.jj_config.clone());
+        let (cwd, revset, discovery) =
+            (self.start.cwd.clone(), self.start.revset.clone(), self.start.discovery.clone());
         let listed = cx.background_spawn(async move {
-            merge_session::jj_native::stacked(&cwd, revset.as_deref(), config)
+            merge_session::jj_native::stacked(&cwd, revset.as_deref(), &discovery)
         });
         cx.spawn(async move |this, cx| {
             let listed = listed.await;
@@ -253,18 +253,14 @@ impl StackWindow {
         let change = listed.change.id(IdKind::Change).to_owned();
         let path = conflict.path.to_string();
         let notice = self.inherited_notice(&conflict.origin, &path, &change);
-        let (options, config) = (self.start.options.clone(), self.start.jj_config.clone());
+        let (options, discovery) = (self.start.options.clone(), self.start.discovery.clone());
         let load_path = PathBuf::from(&path);
         let loaded = cx.background_spawn(async move {
             let loaded =
-                merge_session::resolve::load_at_commit(&root, &rev, &load_path, config.clone())
+                merge_session::resolve::load_at_commit(&root, &rev, &load_path, &discovery)
                     .map_err(|e| crate::error_text::describe(&e))?;
             let opened = loaded.open(options).map_err(|e| crate::error_text::describe(&e))?;
-            let repo = RunRepository::find([root.as_path()]);
-            let repo = match config {
-                Some(config) => repo.with_jj_config(config),
-                None => repo,
-            };
+            let repo = discovery.find([root.as_path()]);
             Ok::<_, String>((opened, repo, root))
         });
         cx.spawn(async move |this, cx| {

@@ -41,7 +41,7 @@ mod jj {
             fixture.root().as_std_path(),
             &commit.commit,
             Path::new("a.txt"),
-            Some(ConfigEnv::default()),
+            &merge_session::repository::Discovery::new(ConfigEnv::default()),
         )
         .expect("it loads")
         .open(MergeOptions::default())
@@ -68,7 +68,7 @@ mod jj {
             root,
             &commit.commit,
             Path::new("a.txt"),
-            Some(ConfigEnv::default()),
+            &merge_session::repository::Discovery::new(ConfigEnv::default()),
         )
         .expect("it loads")
         .open(MergeOptions::default())

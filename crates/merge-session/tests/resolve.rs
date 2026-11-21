@@ -6,7 +6,7 @@ use std::path::Path;
 use camino::{Utf8Path, Utf8PathBuf};
 use merge_core::document::Labels;
 use merge_core::text::DecodeError;
-use merge_session::repository::RunRepository;
+use merge_session::repository::{Discovery, RunRepository};
 use merge_session::resolve::{self, Conflicted, Destination, Loaded, ResolveError, Snapshot};
 use merge_session::{EncodedOutput, ExitCode};
 use vcs::testing::Entry;
@@ -64,13 +64,13 @@ const BOTH_CHANGED: [Option<&[u8]>; 3] = [Some(BASE), Some(LEFT), Some(RIGHT)];
 /// [`resolve::load`] in the repository a `resolve` in `cwd` on `path` finds, with jj's
 /// default config for its snapshots.
 fn load(cwd: &Path, path: &Path) -> Result<Loaded, ResolveError> {
-    let mut run = RunRepository::of_resolve(cwd, Some(path)).with_jj_config(ConfigEnv::default());
+    let mut run = Discovery::new(ConfigEnv::default()).of_resolve(cwd, Some(path));
     resolve::load(&mut run, cwd, path, Snapshot::Take)
 }
 
 /// [`resolve::conflicted`] in the repository holding `cwd`, with jj's default config.
 fn conflicted(cwd: &Path) -> Result<Conflicted, ResolveError> {
-    resolve::conflicted(&mut RunRepository::find([cwd]).with_jj_config(ConfigEnv::default()))
+    resolve::conflicted(&mut Discovery::new(ConfigEnv::default()).find([cwd]))
 }
 
 #[test]
@@ -804,7 +804,7 @@ mod jj {
 
     /// The run's repository at `fixture`'s root, with jj's default config.
     fn run_at(fixture: &vcs_jj::testing::Fixture) -> RunRepository {
-        RunRepository::find([fixture.root().as_std_path()]).with_jj_config(ConfigEnv::default())
+        Discovery::new(ConfigEnv::default()).find([fixture.root().as_std_path()])
     }
 
     #[test]
@@ -1050,7 +1050,7 @@ mod jj {
             fixture.root().as_std_path(),
             rev,
             Path::new("a.txt"),
-            Some(ConfigEnv::default()),
+            &Discovery::new(ConfigEnv::default()),
         )
         .expect("it loads")
     }
@@ -1081,7 +1081,7 @@ mod jj {
             fixture.root().as_std_path(),
             "the_merge()",
             Path::new("a.txt"),
-            Some(ConfigEnv { environment, ..ConfigEnv::default() }),
+            &Discovery::new(ConfigEnv { environment, ..ConfigEnv::default() }),
         )
         .expect("the alias names the merge");
         assert_eq!(texts(&loaded), (vec!["left\n", "right\n"], vec!["a\n"]));

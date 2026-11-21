@@ -15,7 +15,7 @@ use std::path::Path;
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use merge_session::ExitCode;
 use merge_session::jj_config::ConfigEnv;
-use merge_session::repository::RunRepository;
+use merge_session::repository::{Discovery, RunRepository};
 use merge_session::resolve::{self, Record};
 use vcs::testing::Entry;
 
@@ -42,7 +42,7 @@ fn borrowed(files: &[(String, Vec<u8>)]) -> Vec<(&str, &[u8])> {
 
 /// The run's repository at `root`, as `resolve` on `a.txt` opens it, with jj's defaults.
 fn run(root: &Path) -> RunRepository {
-    RunRepository::of_resolve(root, Some(Path::new(CONFLICT))).with_jj_config(ConfigEnv::default())
+    Discovery::new(ConfigEnv::default()).of_resolve(root, Some(Path::new(CONFLICT)))
 }
 
 fn load(root: &Path) -> resolve::Loaded {
@@ -96,7 +96,7 @@ fn jj(c: &mut Criterion) {
         });
         group.bench_with_input(BenchmarkId::new("list", files), &files, |b, _| {
             b.iter(|| {
-                let mut run = RunRepository::find([root]).with_jj_config(ConfigEnv::default());
+                let mut run = Discovery::new(ConfigEnv::default()).find([root]);
                 black_box(resolve::conflicted(&mut run).expect("listed"))
             });
         });

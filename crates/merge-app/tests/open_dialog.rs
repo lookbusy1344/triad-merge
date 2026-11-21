@@ -32,8 +32,13 @@ fn opened(cx: &mut TestAppContext) -> (AnyWindowHandle, Entity<OpenDialog>) {
     let opened = cx.update(|cx| {
         gpui_kit::init(cx);
         merge_app::init(cx);
-        merge_app::open_dialog::open(WindowSettings::default(), NO_WATCH, cx)
-            .expect("the dialog opens")
+        merge_app::open_dialog::open(
+            WindowSettings::default(),
+            merge_session::repository::Discovery::default(),
+            NO_WATCH,
+            cx,
+        )
+        .expect("the dialog opens")
     });
     act(cx, opened.0, TestWindowExt::render_frame);
     opened
@@ -316,7 +321,13 @@ fn the_dialog_aligns_with_the_settings_options(cx: &mut TestAppContext) {
     let (window, _) = cx.update(|cx| {
         gpui_kit::init(cx);
         merge_app::init(cx);
-        merge_app::open_dialog::open(settings, NO_WATCH, cx).expect("the dialog opens")
+        merge_app::open_dialog::open(
+            settings,
+            merge_session::repository::Discovery::default(),
+            NO_WATCH,
+            cx,
+        )
+        .expect("the dialog opens")
     });
     act(cx, window, TestWindowExt::render_frame);
     fill_all(cx, window, dir.path());
@@ -490,7 +501,13 @@ fn the_output_names_the_language_the_merge_keeps_syntax_boundaries_in(cx: &mut T
     let (window, _) = cx.update(|cx| {
         gpui_kit::init(cx);
         merge_app::init(cx);
-        merge_app::open_dialog::open(settings, NO_WATCH, cx).expect("the dialog opens")
+        merge_app::open_dialog::open(
+            settings,
+            merge_session::repository::Discovery::default(),
+            NO_WATCH,
+            cx,
+        )
+        .expect("the dialog opens")
     });
     act(cx, window, TestWindowExt::render_frame);
     for (slot, name) in [

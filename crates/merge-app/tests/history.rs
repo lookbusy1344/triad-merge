@@ -54,7 +54,7 @@ mod jj {
             path: "a.txt".into(),
             limit,
             settings: WindowSettings::default(),
-            jj_config: Some(ConfigEnv::default()),
+            discovery: merge_session::repository::Discovery::new(ConfigEnv::default()),
             watch: false,
         };
         let (window, view) = cx.update(|cx| {

@@ -79,9 +79,9 @@ pub fn run(form: WindowForm) -> ExitCode {
             launch_merge(doc, settings, errors, bindings)
         }
         Window::Resolve(resolve) => run_resolve(resolve, repo, base, errors, bindings),
-        Window::OpenDialog => {
-            launch(bindings, move |cx| open_dialog::open(base, WATCH_FILES, cx).map(drop))
-        }
+        Window::OpenDialog => launch(bindings, move |cx| {
+            open_dialog::open(base, repo.discovery().clone(), WATCH_FILES, cx).map(drop)
+        }),
         Window::Diff(diff) => {
             let pair = ToolPair {
                 paths: [diff.left, diff.right],
@@ -106,6 +106,7 @@ pub fn run(form: WindowForm) -> ExitCode {
             let start = DirStart {
                 cwd: working_dir(dir),
                 source,
+                discovery: repo.discovery().clone(),
                 title: diff.title,
                 diff: diff.diff,
                 settings: base,
@@ -114,10 +115,10 @@ pub fn run(form: WindowForm) -> ExitCode {
             launch_dirs(start, bindings)
         }
         Window::DiffChanges { rev, diff, title } => {
-            let source = Source::Changes { rev, jj_config: repo.jj_config().cloned() };
             let start = DirStart {
                 cwd: working_dir(dir),
-                source,
+                source: Source::Changes { rev },
+                discovery: repo.discovery().clone(),
                 title,
                 diff,
                 settings: base,
@@ -154,7 +155,7 @@ fn run_history(
         cwd: working_dir(base.cwd.as_deref()),
         path: history.path,
         limit: history.limit,
-        jj_config: repo.jj_config().cloned(),
+        discovery: repo.discovery().clone(),
         settings: base,
         watch: WATCH_FILES,
     };
@@ -178,7 +179,7 @@ fn run_absorb(
         paths: absorb.paths,
         into: absorb.into,
         settings,
-        jj_config: repo.jj_config().cloned(),
+        discovery: repo.discovery().clone(),
     };
     launch(bindings, move |cx| {
         absorb_window::start(start, |code, _| exit(code), cx).map(drop)?;
@@ -197,7 +198,7 @@ fn run_stack(
         cwd: working_dir(base.cwd.as_deref()),
         revset: stack.revset,
         options: stack.options,
-        jj_config: repo.jj_config().cloned(),
+        discovery: repo.discovery().clone(),
         settings: base,
     };
     launch(bindings, move |cx| {
@@ -359,20 +360,15 @@ fn run_resolve(
     };
     let cwd = working_dir(base.cwd.as_deref());
     if resolve.path.is_none() {
-        let queue = Queue::new(cwd, resolve.options, base, |code, _| exit(code));
-        let queue = match repo.jj_config() {
-            Some(config) => queue.with_jj_config(config.clone()),
-            None => queue,
-        };
+        let discovery = repo.discovery().clone();
+        let queue = Queue::new(cwd, discovery, resolve.options, base, |code, _| exit(code));
         return launch(bindings, move |cx| {
             resolve_queue::start(queue, cx);
             Ok(())
         });
     }
     let loaded = match resolve.in_commit() {
-        Some(rev) => {
-            merge_session::resolve::load_at_commit(&cwd, rev, &target, repo.jj_config().cloned())
-        }
+        Some(rev) => merge_session::resolve::load_at_commit(&cwd, rev, &target, repo.discovery()),
         None => merge_session::resolve::load(&mut repo, &cwd, &target, Snapshot::Take),
     };
     let opened = match loaded

@@ -6,17 +6,17 @@ use std::path::Path;
 use camino::{Utf8Path, Utf8PathBuf};
 use vcs::{RepoKind, Repository as _, VcsError};
 use vcs_jj::JjRepository;
-use vcs_jj::config::ConfigEnv;
 /// The reports the front ends show.
 pub use vcs_jj::{
     AbsorbHunk, Absorbed, CommitEffect, Destination, FileVersion, Goes, HunkChoice, JjError,
     Origin, Rewrite, SHORT_OPERATION, StackCommit, StackPath, Stay, VersionState,
 };
 
+use crate::repository::Discovery;
 use crate::resolve::ResolveError;
 
-/// The jj repository holding `cwd`, with the user's jj config from `jj_config`, else the
-/// process's. `command` names the command in the refusal outside jj.
+/// The jj repository holding `cwd`, reading the user's jj config as `discovery` says.
+/// `command` names the command in the refusal outside jj.
 ///
 /// # Errors
 ///
@@ -24,7 +24,7 @@ use crate::resolve::ResolveError;
 /// repository or when jj-lib cannot load it.
 pub fn open(
     cwd: &Path,
-    jj_config: Option<ConfigEnv>,
+    discovery: &Discovery,
     command: &'static str,
 ) -> Result<JjRepository, ResolveError> {
     let found = crate::native::find_from(cwd).ok_or_else(|| {
@@ -34,8 +34,7 @@ pub fn open(
         return Err(ResolveError::NeedsJj(command));
     }
     let root = Utf8PathBuf::from_path_buf(found.root).map_err(VcsError::NotUtf8)?;
-    let config = jj_config.unwrap_or_else(ConfigEnv::from_process);
-    Ok(JjRepository::discover(&root)?.with_config(config))
+    Ok(JjRepository::discover(&root)?.with_config(discovery.jj_config()))
 }
 
 /// The conflicted commits `revset` names in the jj repository holding `cwd`, children first
@@ -47,9 +46,9 @@ pub fn open(
 pub fn stack(
     cwd: &Path,
     revset: Option<&str>,
-    jj_config: Option<ConfigEnv>,
+    discovery: &Discovery,
 ) -> Result<Vec<StackCommit>, ResolveError> {
-    Ok(stacked(cwd, revset, jj_config)?.commits)
+    Ok(stacked(cwd, revset, discovery)?.commits)
 }
 
 /// [`stack`]'s commits, and the root of the repository their paths are relative to.
@@ -67,9 +66,9 @@ pub struct Stacked {
 pub fn stacked(
     cwd: &Path,
     revset: Option<&str>,
-    jj_config: Option<ConfigEnv>,
+    discovery: &Discovery,
 ) -> Result<Stacked, ResolveError> {
-    let mut repo = open(cwd, jj_config, "stack")?;
+    let mut repo = open(cwd, discovery, "stack")?;
     let commits = repo.stack(revset)?;
     Ok(Stacked { root: repo.root().to_owned(), commits })
 }
@@ -86,9 +85,9 @@ pub fn history(
     cwd: &Path,
     path: &Path,
     limit: Option<usize>,
-    jj_config: Option<ConfigEnv>,
+    discovery: &Discovery,
 ) -> Result<(Utf8PathBuf, Vec<FileVersion>), ResolveError> {
-    let FileHistory { path, versions, .. } = file_history(cwd, path, limit, jj_config)?;
+    let FileHistory { path, versions, .. } = file_history(cwd, path, limit, discovery)?;
     Ok((path, versions))
 }
 
@@ -109,9 +108,9 @@ pub fn file_history(
     cwd: &Path,
     path: &Path,
     limit: Option<usize>,
-    jj_config: Option<ConfigEnv>,
+    discovery: &Discovery,
 ) -> Result<FileHistory, ResolveError> {
-    let mut repo = open(cwd, jj_config, "history")?;
+    let mut repo = open(cwd, discovery, "history")?;
     let file = crate::resolve::absolute(&cwd.join(path))?;
     let relative = file
         .strip_prefix(repo.root())
@@ -136,9 +135,9 @@ pub fn absorb(
     choices: &[HunkChoice],
     apply: bool,
     listed_at: Option<&str>,
-    jj_config: Option<ConfigEnv>,
+    discovery: &Discovery,
 ) -> Result<Absorbed, ResolveError> {
-    let mut repo = open(cwd, jj_config, "absorb")?;
+    let mut repo = open(cwd, discovery, "absorb")?;
     let relative = paths
         .iter()
         .map(|path| {

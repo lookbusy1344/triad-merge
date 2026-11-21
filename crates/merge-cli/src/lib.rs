@@ -19,11 +19,11 @@ use merge_session::env::Env;
 use merge_session::invocation::{
     Absorb, Diff, History, Merge, Resolve, SemanticsFlags, Stack, Window,
 };
-use merge_session::repository::RunRepository;
+use merge_session::repository::{Discovery, RunRepository};
 use merge_session::resolve::Destination;
 use merge_session::{
-    EncodedOutput, SaveError, SessionError, choose_marker_style, choose_semantics, jj_config, load,
-    replay, resolve,
+    EncodedOutput, SaveError, SessionError, choose_marker_style, choose_semantics, load, replay,
+    resolve,
 };
 
 pub use merge_session::{ExitCode, WindowForm};
@@ -82,9 +82,10 @@ fn choose_for(
     settings: &Settings,
     cwd: Option<&Path>,
     repo: &mut RunRepository,
-    env: &Env,
+    run: Run<'_>,
 ) -> Result<(), CliError> {
-    let mode = choose_semantics(merge.semantics, settings, repo, Some(&merge.output), cwd, env)?;
+    let mode =
+        choose_semantics(merge.semantics, settings, repo, Some(&merge.output), cwd, run.env)?;
     merge.options.semantics = mode.semantics;
     merge.options.same_change = mode.same_change;
     merge.options.hunk_level = mode.hunk_level;
@@ -131,6 +132,7 @@ where
             .ok()
     };
     let env = Env::from_process();
+    let discovery = Discovery::from_env(&env);
     match invocation {
         Invocation::ShowConfig { defaults, docs } => {
             let shown = if defaults { &Settings::default() } else { &settings };
@@ -139,10 +141,12 @@ where
             Outcome::Exit(report(stdout, &settings::render(shown, docs), code))
         }
         Invocation::Window(window) => {
-            window_form(window, settings, settings_errors, cwd(), &env, stdout, stderr)
+            let run = Run { env: &env, discovery: &discovery };
+            window_form(window, settings, settings_errors, cwd(), run, stdout, stderr)
         }
         Invocation::Batch(batch) => {
-            let result = batch_form(batch, &settings, cwd().as_deref(), &env, stdout, stderr);
+            let run = Run { env: &env, discovery: &discovery };
+            let result = batch_form(batch, &settings, cwd().as_deref(), run, stdout, stderr);
             Outcome::Exit(
                 result.unwrap_or_else(|e| {
                     report(stderr, &format!("{PROGRAM}: {e}\n"), ExitCode::Error)
@@ -152,6 +156,13 @@ where
     }
 }
 
+/// The process environment a run reads, and how it finds its repositories.
+#[derive(Clone, Copy)]
+struct Run<'a> {
+    env: &'a Env,
+    discovery: &'a Discovery,
+}
+
 /// Settle a window form's repository, and for a merge its semantics, before the window
 /// opens. `resolve` first finds its target, and exits when there is none.
 fn window_form(
@@ -159,11 +170,11 @@ fn window_form(
     settings: Settings,
     settings_errors: Vec<String>,
     cwd: Option<PathBuf>,
-    env: &Env,
+    run: Run<'_>,
     stdout: &mut impl Write,
     stderr: &mut impl Write,
 ) -> Outcome {
-    match prepare_window(window, &settings, cwd.as_deref(), env, stdout) {
+    match prepare_window(window, &settings, cwd.as_deref(), run, stdout) {
         Ok(Some((window, repo))) => {
             Outcome::Window(Box::new(WindowForm { window, settings, settings_errors, cwd, repo }))
         }
@@ -183,47 +194,47 @@ fn prepare_window(
     window: Window,
     settings: &Settings,
     cwd: Option<&Path>,
-    env: &Env,
+    run: Run<'_>,
     stdout: &mut impl Write,
 ) -> Result<Option<(Window, RunRepository)>, CliError> {
     let need_cwd = || cwd.ok_or(CliError::NoWorkingDirectory);
     Ok(Some(match window {
         Window::Merge(mut merge) => {
-            let mut repo = RunRepository::of_merge(cwd, Some(&merge.output));
-            choose_for(&mut merge, settings, cwd, &mut repo, env)?;
+            let mut repo = run.discovery.of_merge(cwd, Some(&merge.output));
+            choose_for(&mut merge, settings, cwd, &mut repo, run)?;
             (Window::Merge(merge), repo)
         }
         Window::Resolve(mut resolve) => {
             let (targets, repo) =
-                resolve_prepare(&mut resolve, settings, need_cwd()?, env, stdout)?;
+                resolve_prepare(&mut resolve, settings, need_cwd()?, run, stdout)?;
             let Some(first) = targets.first().cloned() else {
                 return Ok(None);
             };
             resolve.target = Some(first);
             (Window::Resolve(resolve), repo)
         }
-        Window::Diff(diff) | Window::DiffDirs(diff) => diff_form(diff, cwd)?,
+        Window::Diff(diff) | Window::DiffDirs(diff) => diff_form(diff, cwd, run.discovery)?,
         Window::DiffChanges { rev, diff, title } => {
-            let repo = changes_repository(need_cwd()?, env)?;
+            let repo = changes_repository(need_cwd()?, run.discovery)?;
             (Window::DiffChanges { rev, diff, title }, repo)
         }
         Window::DiffNative { path, rev, op, diff, title } => {
-            let repo = RunRepository::of_file(&path);
+            let repo = run.discovery.of_file(&path);
             (Window::DiffNative { path, rev, op, diff, title }, repo)
         }
-        Window::OpenDialog => (Window::OpenDialog, RunRepository::none()),
+        Window::OpenDialog => (Window::OpenDialog, run.discovery.find([])),
         Window::History(history) => {
-            let repo = history_prepare(&history, need_cwd()?, env)?;
+            let repo = history_prepare(&history, need_cwd()?, run.discovery)?;
             (Window::History(history), repo)
         }
         Window::Absorb(absorb) => {
-            let Some(repo) = absorb_prepare(&absorb, need_cwd()?, env)? else {
+            let Some(repo) = absorb_prepare(&absorb, need_cwd()?, run.discovery)? else {
                 return Ok(None);
             };
             (Window::Absorb(absorb), repo)
         }
         Window::Stack(mut stack) => {
-            let Some(repo) = stack_prepare(&mut stack, settings, need_cwd()?, env)? else {
+            let Some(repo) = stack_prepare(&mut stack, settings, need_cwd()?, run)? else {
                 return Ok(None);
             };
             (Window::Stack(stack), repo)
@@ -238,13 +249,17 @@ fn prepare_window(
 /// # Errors
 ///
 /// [`CliError::DirDiff`] when one side is a directory and the other is not.
-fn diff_form(diff: Diff, cwd: Option<&Path>) -> Result<(Window, RunRepository), CliError> {
+fn diff_form(
+    diff: Diff,
+    cwd: Option<&Path>,
+    discovery: &Discovery,
+) -> Result<(Window, RunRepository), CliError> {
     Ok(match dir_diff::pair(&diff.left, &diff.right)? {
         Pair::Files => {
-            let repo = RunRepository::of_diff_tool(cwd, &diff.right);
+            let repo = discovery.of_diff_tool(cwd, &diff.right);
             (Window::Diff(diff), repo)
         }
-        Pair::Directories => (Window::DiffDirs(diff), RunRepository::none()),
+        Pair::Directories => (Window::DiffDirs(diff), discovery.find([])),
     })
 }
 
@@ -255,8 +270,8 @@ fn diff_form(diff: Diff, cwd: Option<&Path>) -> Result<(Window, RunRepository), 
 /// # Errors
 ///
 /// [`CliError::Native`] when no repository holds `cwd` or it cannot be opened.
-fn changes_repository(cwd: &Path, env: &Env) -> Result<RunRepository, CliError> {
-    let mut repo = RunRepository::find([cwd]).with_jj_config(jj_config::snapshot_config(env));
+fn changes_repository(cwd: &Path, discovery: &Discovery) -> Result<RunRepository, CliError> {
+    let mut repo = discovery.find([cwd]);
     repo.require().map_err(merge_session::native::NativeError::from)?;
     Ok(repo)
 }
@@ -270,19 +285,19 @@ fn batch_form(
     batch: Batch,
     settings: &Settings,
     cwd: Option<&Path>,
-    env: &Env,
+    run: Run<'_>,
     stdout: &mut impl Write,
     stderr: &mut impl Write,
 ) -> Result<ExitCode, CliError> {
     match batch {
         Batch::Headless { mut merge, commands } => {
-            let mut repo = RunRepository::of_merge(cwd, Some(&merge.output));
-            choose_for(&mut merge, settings, cwd, &mut repo, env)?;
+            let mut repo = run.discovery.of_merge(cwd, Some(&merge.output));
+            choose_for(&mut merge, settings, cwd, &mut repo, run)?;
             headless(&merge, commands.as_deref(), settings.line_ending)
         }
         Batch::Resolve(mut resolve) => {
             let cwd = cwd.ok_or(CliError::NoWorkingDirectory)?;
-            let (targets, mut repo) = resolve_prepare(&mut resolve, settings, cwd, env, stdout)?;
+            let (targets, mut repo) = resolve_prepare(&mut resolve, settings, cwd, run, stdout)?;
             if targets.is_empty() {
                 return Ok(ExitCode::Resolved);
             }
@@ -293,7 +308,7 @@ fn batch_form(
                     path,
                     settings.line_ending,
                     cwd,
-                    env,
+                    run.discovery,
                     stdout,
                 );
             }
@@ -303,10 +318,10 @@ fn batch_form(
             let chosen = choose_semantics(
                 semantics,
                 settings,
-                &RunRepository::of_merge(cwd, None),
+                &run.discovery.of_merge(cwd, None),
                 None,
                 cwd,
-                env,
+                run.env,
             )?;
             let (text, code) =
                 inspect::inspect(&files, options, chosen, settings.line_ending, json)?;
@@ -325,7 +340,7 @@ fn batch_form(
         }
         Batch::ChangesInspect { rev, json } => {
             let cwd = cwd.ok_or(CliError::NoWorkingDirectory)?;
-            let mut repo = changes_repository(cwd, env)?;
+            let mut repo = changes_repository(cwd, run.discovery)?;
             let listing = merge_session::native::changed_files(&mut repo, rev.as_deref())?;
             let (text, code) = inspect::files_report("diff-changes", &listing.files, json)?;
             Ok(report(stdout, &text, code))
@@ -336,7 +351,7 @@ fn batch_form(
         }
         Batch::Jj(jj) => {
             let cwd = cwd.ok_or(CliError::NoWorkingDirectory)?;
-            jj_native_batch(jj, cwd, env, stdout)
+            jj_native_batch(jj, cwd, run.discovery, stdout)
         }
     }
 }
@@ -349,19 +364,17 @@ fn batch_form(
 fn jj_native_batch(
     batch: JjBatch,
     cwd: &Path,
-    env: &Env,
+    discovery: &Discovery,
     stdout: &mut impl Write,
 ) -> Result<ExitCode, CliError> {
-    let jj_config = || Some(jj_config::snapshot_config(env));
     match batch {
         JjBatch::Stack { revset, json } => {
-            let commits = merge_session::jj_native::stack(cwd, revset.as_deref(), jj_config())?;
+            let commits = merge_session::jj_native::stack(cwd, revset.as_deref(), discovery)?;
             let (text, code) = jj_native::stack_report(&commits, json)?;
             Ok(report(stdout, &text, code))
         }
         JjBatch::History { path, limit, json } => {
-            let (path, versions) =
-                merge_session::jj_native::history(cwd, &path, limit, jj_config())?;
+            let (path, versions) = merge_session::jj_native::history(cwd, &path, limit, discovery)?;
             let text = jj_native::history_report(&path, &versions, json)?;
             Ok(report(stdout, &text, ExitCode::Resolved))
         }
@@ -373,7 +386,7 @@ fn jj_native_batch(
                 &choices,
                 apply,
                 listed_at.as_deref(),
-                jj_config(),
+                discovery,
             )?;
             let text = jj_native::absorb_report(&absorbed, apply, json)?;
             Ok(report(stdout, &text, ExitCode::Resolved))
@@ -393,15 +406,14 @@ fn resolve_prepare(
     resolve: &mut Resolve,
     settings: &Settings,
     cwd: &Path,
-    env: &Env,
+    run: Run<'_>,
     stdout: &mut impl Write,
 ) -> Result<(Vec<PathBuf>, RunRepository), CliError> {
-    let mut repo = RunRepository::of_resolve(cwd, resolve.path.as_deref())
-        .with_jj_config(jj_config::snapshot_config(env));
+    let mut repo = run.discovery.of_resolve(cwd, resolve.path.as_deref());
     let targets = resolve_targets(&mut repo, cwd, resolve.path.as_deref(), stdout)?;
     if let Some(first) = targets.first() {
         let mode =
-            choose_semantics(resolve.semantics, settings, &repo, Some(first), Some(cwd), env)?;
+            choose_semantics(resolve.semantics, settings, &repo, Some(first), Some(cwd), run.env)?;
         resolve.options.semantics = mode.semantics;
         resolve.options.same_change = mode.same_change;
         resolve.options.hunk_level = mode.hunk_level;
@@ -422,16 +434,15 @@ fn stack_prepare(
     stack: &mut Stack,
     settings: &Settings,
     cwd: &Path,
-    env: &Env,
+    run: Run<'_>,
 ) -> Result<Option<RunRepository>, CliError> {
-    let config = jj_config::snapshot_config(env);
-    let listed =
-        merge_session::jj_native::stack(cwd, stack.revset.as_deref(), Some(config.clone()))?;
+    let listed = merge_session::jj_native::stack(cwd, stack.revset.as_deref(), run.discovery)?;
     if listed.is_empty() {
         return Ok(None);
     }
-    let mut repo = RunRepository::of_resolve(cwd, None).with_jj_config(config);
-    let mode = choose_semantics(SemanticsFlags::default(), settings, &repo, None, Some(cwd), env)?;
+    let mut repo = run.discovery.of_resolve(cwd, None);
+    let mode =
+        choose_semantics(SemanticsFlags::default(), settings, &repo, None, Some(cwd), run.env)?;
     stack.options.semantics = mode.semantics;
     stack.options.same_change = mode.same_change;
     stack.options.hunk_level = mode.hunk_level;
@@ -449,10 +460,9 @@ fn stack_prepare(
 fn absorb_prepare(
     absorb: &Absorb,
     cwd: &Path,
-    env: &Env,
+    discovery: &Discovery,
 ) -> Result<Option<RunRepository>, CliError> {
     const LIST_ONLY: bool = false;
-    let config = jj_config::snapshot_config(env);
     let listed = merge_session::jj_native::absorb(
         cwd,
         &absorb.paths,
@@ -460,10 +470,9 @@ fn absorb_prepare(
         &[],
         LIST_ONLY,
         None,
-        Some(config.clone()),
+        discovery,
     )?;
-    Ok((!listed.hunks.is_empty())
-        .then(|| RunRepository::of_resolve(cwd, None).with_jj_config(config)))
+    Ok((!listed.hunks.is_empty()).then(|| discovery.of_resolve(cwd, None)))
 }
 
 /// Check that `history PATH` can list before its window opens: a jj repository holding
@@ -473,11 +482,14 @@ fn absorb_prepare(
 ///
 /// [`CliError`] outside a jj repository, for a path outside it, or when the operation log
 /// cannot be read.
-fn history_prepare(history: &History, cwd: &Path, env: &Env) -> Result<RunRepository, CliError> {
+fn history_prepare(
+    history: &History,
+    cwd: &Path,
+    discovery: &Discovery,
+) -> Result<RunRepository, CliError> {
     const ONE: Option<usize> = Some(1);
-    let config = jj_config::snapshot_config(env);
-    merge_session::jj_native::file_history(cwd, &history.path, ONE, Some(config.clone()))?;
-    Ok(RunRepository::of_resolve(cwd, None).with_jj_config(config))
+    merge_session::jj_native::file_history(cwd, &history.path, ONE, discovery)?;
+    Ok(discovery.of_resolve(cwd, None))
 }
 
 /// `resolve -r REV PATH --headless`: the automatic merge of the conflict in `rev`'s commit,
@@ -494,10 +506,10 @@ fn resolve_in_commit(
     path: &Path,
     ending: OutputEnding,
     cwd: &Path,
-    env: &Env,
+    discovery: &Discovery,
     stdout: &mut impl Write,
 ) -> Result<ExitCode, CliError> {
-    let loaded = resolve::load_at_commit(cwd, rev, path, Some(jj_config::snapshot_config(env)))?;
+    let loaded = resolve::load_at_commit(cwd, rev, path, discovery)?;
     let mut opened = loaded.open(resolve.options.clone()).map_err(SessionError::from)?;
     if let Some(commands) = &resolve.commands {
         replay::apply_file(&mut opened.doc, commands)?;
@@ -669,8 +681,9 @@ mod tests {
             panic!("a headless resolve, got {invocation:?}");
         };
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        let result =
-            batch_form(batch, &Settings::default(), None, &Env::default(), &mut out, &mut err);
+        let (env, discovery) = (Env::default(), Discovery::default());
+        let run = Run { env: &env, discovery: &discovery };
+        let result = batch_form(batch, &Settings::default(), None, run, &mut out, &mut err);
         assert!(matches!(result, Err(CliError::NoWorkingDirectory)), "{result:?}");
         assert_eq!((out, err), (Vec::new(), Vec::new()), "the caller reports the error");
 
@@ -680,8 +693,7 @@ mod tests {
         };
         let (mut out, mut err) = (Vec::new(), Vec::new());
         let settings = Settings::default();
-        let outcome =
-            window_form(window, settings, Vec::new(), None, &Env::default(), &mut out, &mut err);
+        let outcome = window_form(window, settings, Vec::new(), None, run, &mut out, &mut err);
         assert_eq!(outcome.exit_code(), Some(ExitCode::Error));
         assert_eq!(out, b"");
         assert_eq!(
