@@ -36,11 +36,9 @@ The front ends take the jj-native report types from `merge_session::jj_native` o
 
 Each job's methods live in a child module of `window`: `output`, `origins`, `inputs`, `measuring`, `scrolling`, `journal`, `save` and `search`. `window.rs` keeps the type, its construction and its rendering, 3 300 lines. The state stays on `MergeWindow`, where the render reads it; a job whose state no other job reads can move it into a struct of its own when it next changes. No behaviour changes; the existing GUI tests cover it.
 
-## K8 Highlight queries in `merge-syntax`
+## K8 Highlight queries in `merge-syntax` — done
 
-`merge-app::syntax::register_queries` chooses the C#, Swift, Kotlin, C++ and TSX highlight queries, and the top panes' highlighting reads its queries from gpui-component's registry. The table of queries moves to `merge-syntax`; the app registers that table with the editors' registry.
-
-Test: each language's grammar from `merge-syntax` compiles its query and colours its sample in `fixtures/syntax`.
+`Language::highlight_query` gives the C#, Swift, Kotlin and C++ queries; `merge-app` registers them with the editors' registry and drops its five grammar dependencies. TSX's query comes from the registry's TypeScript entry, so it stays with the registration in `merge-app`. Tests compile each query against its grammar, find each sample's opening comment coloured as a comment, and find C's lines in the C++ query.
 
 ## K9 Small edges
 

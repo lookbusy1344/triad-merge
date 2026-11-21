@@ -93,7 +93,7 @@ Facts about GPUI and the editor that are easy to trip over. Each was checked aga
 
 ## The C# and Swift grammars have no highlight query; TSX and C++ have part of one
 
-gpui-component 0.8.1 registers `csharp` with `tree_sitter_c_sharp::LANGUAGE` and empty highlight, injection and locals queries (`src/highlighter/languages.rs`). Every C# editor parses its text and colours nothing. `tree-sitter-c-sharp` 0.23.5 ships `HIGHLIGHTS_QUERY` (MIT). triad registers `csharp` again with that query at start-up (`merge-app` `syntax::register_queries`). `swift` is the same: empty queries in gpui-component, `HIGHLIGHTS_QUERY` (MIT) in `tree-sitter-swift` 0.7.4, registered again at start-up.
+gpui-component 0.8.1 registers `csharp` with `tree_sitter_c_sharp::LANGUAGE` and empty highlight, injection and locals queries (`src/highlighter/languages.rs`). Every C# editor parses its text and colours nothing. `tree-sitter-c-sharp` 0.23.5 ships `HIGHLIGHTS_QUERY` (MIT). triad registers `csharp` again with that query at start-up (`merge_syntax::language::Language::highlight_query`, registered by `merge-app` `syntax::register_queries`). `swift` is the same: empty queries in gpui-component, `HIGHLIGHTS_QUERY` (MIT) in `tree-sitter-swift` 0.7.4, registered again at start-up.
 
 `tsx` comes with `tree_sitter_typescript::HIGHLIGHTS_QUERY` alone: the 35 lines that `tree-sitter-typescript` layers over JavaScript's query. Comments, strings and most keywords colour nothing. triad registers `tsx` again at start-up with the highlights and injections gpui-component gives `typescript`.
 
@@ -135,4 +135,4 @@ GPUI's `FallbackPromptRenderer` cuts off a detail wider than its card, draws a w
 
 ## The Kotlin highlight query does not compile
 
-`gpui-component`'s `src/highlighter/languages/kotlin/highlights.scm` names `interpolation_identifier_start` and other nodes that `tree-sitter-kotlin-sg` 0.4.0, the grammar it links, does not have. The query fails to compile, and Kotlin text shows plain. triad registers Kotlin again with `tree_sitter_kotlin_sg::HIGHLIGHTS_QUERY` (`merge_app::syntax::register_queries`).
+`gpui-component`'s `src/highlighter/languages/kotlin/highlights.scm` names `interpolation_identifier_start` and other nodes that `tree-sitter-kotlin-sg` 0.4.0, the grammar it links, does not have. The query fails to compile, and Kotlin text shows plain. triad registers Kotlin again with `tree_sitter_kotlin_sg::HIGHLIGHTS_QUERY` (`Language::highlight_query`, registered by `merge_app::syntax::register_queries`).
