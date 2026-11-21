@@ -167,7 +167,7 @@ Languages and their tree-sitter grammars, for two consumers: syntax colours in t
 
 ## 6. `merge-config`
 
-The config file and what it holds: its format, the settings, the key bindings, and the names of their values. It reads files but writes none except the template, opens no repository and parses no command line. `script/check-workspace` holds it to `merge-core` and `vcs`.
+The config file and what it holds: its format, the settings, the key bindings, and the names of their values. It reads files but writes none except the template, opens no repository and parses no command line. `script/check-workspace` holds it to `merge-core`.
 
 - **`config`** parses the format (`DESIGN.md` §E3.1–3.2): `key = value` lines, `#` comments, and `config-file` includes read in place. It returns `Parsed`: the `Entry`s in order and the `ConfigError`s. It does not know the keys. File access goes through a `Files` trait (`Disk` in the product), so tests run on in-memory files.
 - **`settings`** knows the keys. `Settings` is one struct of every setting: merge options, diff options, colours (`Themed<Colour>` per light and dark), fonts, wrap, layout, scrollbars, the revision ID kind, the UI language, window size and the key bindings. `load(path) -> Loaded` reads a file into `Settings` plus a list of `SettingsError`s; a bad line is reported and skipped, never fatal, and `merge-app` shows the list in its settings banner. `render` prints the settings back in the file's form for `--show-config`; `template` writes a commented default file for Settings….

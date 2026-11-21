@@ -381,7 +381,7 @@ Each crate depends only on crates in earlier layers:
 
 - `merge-core` does no file I/O and knows no VCS.
 - `merge-syntax` holds languages, grammars, highlight spans and syntax boundaries; tree-sitter stops there.
-- `merge-config` holds the config file's format, settings, key bindings and the names of their values (`named::Named`, over strum derives). It reaches no repository; `script/check-workspace` holds it to `merge-core` and `vcs`.
+- `merge-config` holds the config file's format, settings, key bindings and the names of their values (`named::Named`, over strum derives). It reaches no repository; `script/check-workspace` holds it to `merge-core`. `merge_session::origin::id_kind` turns its `RevisionId` into `vcs::IdKind`.
 - `merge-session` is the one crate that picks a backend: semantics, discovery, `resolve`, origins, loading, saving, recovery, exit codes and `WindowForm`. The front ends take the jj-native report types from `merge_session::jj_native`; `script/check-workspace` holds `vcs-jj` and `vcs-git` to their dev-dependencies.
 - `merge-cli` parses arguments and runs batch forms (`Invocation` is `Window`, `Batch` or `ShowConfig`); `merge-app` is the GPUI shell and matches no headless form.
 

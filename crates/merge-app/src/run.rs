@@ -469,7 +469,7 @@ fn window_settings(stored: &Stored) -> WindowSettings {
         scrollbars: stored.scrollbars,
         base_pane: stored.base_pane,
         origin_column: stored.origin_column.into(),
-        revision_id: stored.revision_id.into(),
+        revision_id: merge_session::origin::id_kind(stored.revision_id),
         diff_options: stored.two_way(),
         options: MergeOptions {
             diff: stored.diff.clone(),

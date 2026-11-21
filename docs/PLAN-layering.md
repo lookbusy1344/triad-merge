@@ -2,7 +2,7 @@
 
 Inputs: [SPEC.md](SPEC.md), [PLAN.md](PLAN.md), [DESIGN.md](DESIGN.md), [ARCHITECTURE.md](ARCHITECTURE.md). Rules for changes: `AGENTS.md`.
 
-This file is part K of the plan, kept apart while the work is open. Cite it by part and section: §K3 is section 3 here. [PLAN.md](PLAN.md) §1–§3 carry its status. Each section is one commit, in order, and follows the ground rules of §A1.
+This file is part K of the plan. Every section is done. Cite it by part and section: §K3 is section 3 here. [PLAN.md](PLAN.md) §1–§3 carry its status. Each section is one commit, in order, and follows the ground rules of §A1.
 
 ## K0 Goal
 
@@ -40,6 +40,6 @@ Each job's methods live in a child module of `window`: `output`, `origins`, `inp
 
 `Language::highlight_query` gives the C#, Swift, Kotlin and C++ queries; `merge-app` registers them with the editors' registry and drops its five grammar dependencies. TSX's query comes from the registry's TypeScript entry, so it stays with the registration in `merge-app`. Tests compile each query against its grammar, find each sample's opening comment coloured as a comment, and find C's lines in the C++ query.
 
-## K9 Small edges
+## K9 Small edges — done
 
-`merge-config` depends on `vcs` only for `IdKind`; the setting converts at the session layer instead. A stale doc comment in `merge-session::repository` names an equality `RunRepository` does not have.
+`merge-config` depends on `merge-core` alone: `merge_session::origin::id_kind` converts its `RevisionId` into `vcs::IdKind`, and `script/check-workspace` holds it there. The doc comment that named an equality `RunRepository` lacks went with §K3.
