@@ -341,10 +341,6 @@ impl Namer {
                 self.about_with("err-in", path.as_str(), source)
             }
             ResolveError::NeedsJj(command) => self.needs_jj(command),
-            ResolveError::Temporary(source) => {
-                let detail = self.name(source);
-                self.say("err-temporary", &[("detail", Arg::Text(&detail))])
-            }
         }
     }
 

@@ -52,7 +52,7 @@ pub fn open_saving(
     output: &std::path::Path,
 ) -> (AnyWindowHandle, Entity<MergeWindow>, Finished) {
     let settings = WindowSettings {
-        destination: Some(merge_session::resolve::Destination::file(output.to_owned())),
+        destination: Some(merge_session::resolve::Destination::file_at(output.to_owned())),
         ..WindowSettings::default()
     };
     open_with(cx, doc, &settings)

@@ -401,7 +401,6 @@ err-kind-directory = 디렉터리
 err-deleted-everywhere = { $path }은(는) 모든 쪽에서 삭제되었습니다. 병합할 것이 없습니다
 err-resolved-in-tree = { $path }의 작업 트리에 충돌 표시가 남아 있지 않아 해결된 것으로 보입니다. 해결됨으로 표시하거나, 표시를 되돌려 다시 병합하세요
 err-tree-not-text = { $path }: 작업 트리의 파일이 텍스트가 아니므로({ $detail }) 저장하면 덮어쓸 편집이 들어 있을 수 있습니다. 충돌 표시가 있는 텍스트로 되돌리거나 직접 해결하세요
-err-temporary = 결과용 임시 파일을 만들 수 없습니다: { $detail }
 err-not-a-directory = { $path }은(는) 디렉터리가 아닙니다
 err-mixed = diff는 파일 두 개 또는 디렉터리 두 개를 받습니다: { $dir }은(는) 디렉터리이고 { $other }은(는) 아닙니다
 err-git-in-jj = { $path }은(는) jj 저장소이며, triad는 여기서 jj 방식으로만 병합합니다. `jj resolve`로 해결하세요

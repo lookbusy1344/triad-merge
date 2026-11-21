@@ -473,7 +473,6 @@ err-kind-directory = katalog
 err-deleted-everywhere = { $path } jest usunięty po każdej stronie; nie ma czego scalać
 err-resolved-in-tree = { $path } nie ma już znaczników konfliktu w drzewie roboczym, więc wygląda na rozwiązany; oznacz go jako rozwiązany albo przywróć znaczniki, aby scalić go ponownie
 err-tree-not-text = { $path }: plik w drzewie roboczym nie jest tekstem ({ $detail }), więc może zawierać zmiany, które zapis by nadpisał; przywróć tekst ze znacznikami konfliktu albo rozwiąż go ręcznie
-err-temporary = nie można utworzyć pliku tymczasowego na wynik: { $detail }
 err-not-a-directory = { $path } nie jest katalogiem
 err-mixed = diff przyjmuje dwa pliki albo dwa katalogi: { $dir } jest katalogiem, { $other } nie
 err-git-in-jj = { $path } to repozytorium jj, w którym triad scala wyłącznie według semantyki jj; rozwiąż przez `jj resolve`

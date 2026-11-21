@@ -86,7 +86,10 @@ fn a_git_conflict_loads_its_stages_titled_by_the_stopped_merge() {
     );
     assert_eq!(loaded.repo, Some(RepoKind::Git));
     assert_eq!(loaded.path, Utf8PathBuf::from("a.txt"));
-    assert_eq!(loaded.destination.path(), canonical(fixture.root()).join("a.txt").as_std_path());
+    assert_eq!(
+        loaded.destination.file(),
+        Some(canonical(fixture.root()).join("a.txt").as_std_path())
+    );
 }
 
 #[test]
@@ -113,8 +116,8 @@ fn a_path_resolves_against_the_working_directory() {
     let loaded = load(src.as_std_path(), Path::new("b.txt")).expect("the conflict loads");
     assert_eq!(loaded.path, Utf8PathBuf::from("src/b.txt"));
     assert_eq!(
-        loaded.destination.path(),
-        canonical(fixture.root()).join("src/b.txt").as_std_path()
+        loaded.destination.file(),
+        Some(canonical(fixture.root()).join("src/b.txt").as_std_path())
     );
     assert_eq!(texts(&loaded), (vec!["left\n", "right\n"], vec!["a\n"]));
 }
@@ -163,8 +166,8 @@ fn a_clean_file_with_markers_opens_from_them() {
     assert_eq!(loaded.repo, Some(RepoKind::Git));
     assert_eq!(loaded.path, Utf8PathBuf::from("src/m.txt"));
     assert_eq!(
-        loaded.destination.path(),
-        canonical(fixture.root()).join("src/m.txt").as_std_path()
+        loaded.destination.file(),
+        Some(canonical(fixture.root()).join("src/m.txt").as_std_path())
     );
 }
 
@@ -177,7 +180,7 @@ fn outside_a_repository_a_file_with_markers_opens_from_them() {
     assert_eq!(loaded.repo, None);
     assert_eq!(loaded.path, Utf8PathBuf::from("m.txt"));
     let dir = Utf8Path::from_path(dir.path()).expect("UTF-8");
-    assert_eq!(loaded.destination.path(), canonical(dir).join("m.txt").as_std_path());
+    assert_eq!(loaded.destination.file(), Some(canonical(dir).join("m.txt").as_std_path()));
 }
 
 /// git's two-way markers for `a.txt`'s conflict: they hold no base.
@@ -200,7 +203,10 @@ fn from_outside_any_repository_a_path_into_one_loads_from_it() {
     assert_eq!(texts(&loaded), (vec!["left\n", "right\n"], vec!["a\n"]));
     assert_eq!(loaded.repo, Some(RepoKind::Git));
     assert_eq!(loaded.path, Utf8PathBuf::from("a.txt"));
-    assert_eq!(loaded.destination.path(), canonical(fixture.root()).join("a.txt").as_std_path());
+    assert_eq!(
+        loaded.destination.file(),
+        Some(canonical(fixture.root()).join("a.txt").as_std_path())
+    );
 }
 
 #[test]
@@ -386,7 +392,10 @@ fn a_git_file_edited_beside_its_markers_opens_from_them() {
     assert_eq!(loaded.labels, labels(&["ours", "theirs"], &[""]));
     assert_eq!(loaded.repo, Some(RepoKind::Git));
     assert_eq!(loaded.path, Utf8PathBuf::from("a.txt"));
-    assert_eq!(loaded.destination.path(), canonical(fixture.root()).join("a.txt").as_std_path());
+    assert_eq!(
+        loaded.destination.file(),
+        Some(canonical(fixture.root()).join("a.txt").as_std_path())
+    );
     assert_eq!(loaded.marker_length, None);
 }
 
@@ -637,7 +646,7 @@ fn a_resolved_save_writes_the_file_then_stages_it() {
         .save(&opened.destination, None)
         .expect("the save is written and recorded");
     assert_eq!(code, ExitCode::Resolved);
-    assert_eq!(std::fs::read(opened.destination.path()).expect("written"), LEFT);
+    assert_eq!(std::fs::read(opened.destination.file().expect("a file")).expect("written"), LEFT);
     assert_eq!(git_stages(&fixture, "a.txt"), [Stage::Unconflicted]);
 }
 
@@ -665,7 +674,7 @@ fn a_save_the_index_refuses_is_written_and_says_it_is_not_recorded() {
             .to_string()
             .starts_with("a.txt is written, but the repository did not record the save: ")
     );
-    assert_eq!(std::fs::read(opened.destination.path()).expect("written"), LEFT);
+    assert_eq!(std::fs::read(opened.destination.file().expect("a file")).expect("written"), LEFT);
     assert_eq!(git_stages(&fixture, "a.txt"), [Stage::Base, Stage::Ours, Stage::Theirs]);
     // Once the lock goes, recording again stages the file written before.
     std::fs::remove_file(fixture.root().join(".git/index.lock")).expect("the lock is removed");
@@ -738,7 +747,7 @@ fn a_save_through_the_runs_repository_stages_it_there_and_refuses_another() {
         matches!(&error, SaveError::Record { path, code: ExitCode::Resolved, source: VcsError::OutsideRepository(_) } if path == "a.txt"),
         "{error:?}"
     );
-    assert_eq!(std::fs::read(opened.destination.path()).expect("written"), LEFT);
+    assert_eq!(std::fs::read(opened.destination.file().expect("a file")).expect("written"), LEFT);
     assert_eq!(git_stages(&fixture, "a.txt"), [Stage::Base, Stage::Ours, Stage::Theirs]);
     let mut run = RunRepository::find([fixture.root().as_std_path()]);
     let code = encoded.save(&opened.destination, Some(&mut run)).expect("written and recorded");
@@ -1205,8 +1214,7 @@ mod jj {
             fixture.held_in(&fixture.latest(&merge), "a.txt"),
             vcs_jj::testing::Held::File(LEFT.to_vec())
         );
-        let path = opened.destination.path();
-        assert!(!path.exists(), "{} is written", path.display());
+        assert_eq!(opened.destination.file(), None);
     }
 
     #[test]

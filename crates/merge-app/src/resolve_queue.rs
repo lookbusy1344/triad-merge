@@ -13,7 +13,7 @@ use merge_core::document::{MergeDocument, MergeOptions};
 use merge_session::jj_config::ConfigEnv;
 use merge_session::repository::{Handoff, RunRepository};
 use merge_session::resolve::Snapshot;
-use merge_session::resolve::{InCommit, Opened};
+use merge_session::resolve::{Destination, Opened};
 
 use crate::window::{OpenError, OriginLookup, WindowSettings};
 use crate::{ExitCode, Finish};
@@ -163,18 +163,20 @@ pub fn start(queue: Queue, cx: &mut App) {
 }
 
 /// The window of `opened`, run from `cwd`: titled by its path, saving to its working-tree
-/// file, or for a conflict in a jj commit to a temporary file journalled under the path's
+/// file, or for a conflict in a jj commit into the commit, journalled under the path's
 /// name, and with its terms' origins, read from `repo`. The terms follow the commits a merge
 /// the VCS stopped on names (spec §7.3), so the merge's lookup finds them.
+#[must_use]
 pub fn window_settings(
     opened: Opened,
     cwd: &Path,
     repo: RunRepository,
     base: WindowSettings,
 ) -> (MergeDocument, WindowSettings) {
-    let journal_name =
-        opened.destination.in_commit().map(InCommit::journal_name).or(base.journal_name);
-    let file = opened.destination.path().to_path_buf();
+    let (file, journal_name) = match &opened.destination {
+        Destination::File { path, .. } => (path.clone(), base.journal_name),
+        Destination::Commit(commit) => (commit.worktree_file(), Some(commit.worktree_file())),
+    };
     let title = opened.path.into_string();
     let settings = WindowSettings {
         repo: opened.repo,

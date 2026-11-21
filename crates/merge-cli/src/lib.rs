@@ -546,7 +546,7 @@ fn resolve_headless(
         if let Some(path) = &resolve.commands {
             replay::apply_file(&mut opened.doc, path)?;
         }
-        let written = encoded(&opened.doc, ending, opened.destination.path())?
+        let written = encoded(&opened.doc, ending, opened.destination.name())?
             .save(&opened.destination, Some(repo))?;
         Ok(if written == ExitCode::Resolved { code } else { written })
     })

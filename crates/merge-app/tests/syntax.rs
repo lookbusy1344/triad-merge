@@ -56,7 +56,7 @@ fn the_result_takes_the_inputs_language(cx: &mut TestAppContext) {
 fn the_output_names_the_language_when_the_inputs_do_not(cx: &mut TestAppContext) {
     let settings = WindowSettings {
         file_names: three_way("BASE_1234"),
-        destination: Some(merge_session::resolve::Destination::file(PathBuf::from("src/a.go"))),
+        destination: Some(merge_session::resolve::Destination::file_at(PathBuf::from("src/a.go"))),
         title: Some("src/a.cs".to_owned()),
         ..WindowSettings::default()
     };
@@ -67,7 +67,7 @@ fn the_output_names_the_language_when_the_inputs_do_not(cx: &mut TestAppContext)
 fn the_title_names_the_language_last(cx: &mut TestAppContext) {
     let settings = WindowSettings {
         file_names: three_way("BASE_1234"),
-        destination: Some(merge_session::resolve::Destination::file(PathBuf::from("out"))),
+        destination: Some(merge_session::resolve::Destination::file_at(PathBuf::from("out"))),
         title: Some("src/Program.cs".to_owned()),
         ..WindowSettings::default()
     };
@@ -78,7 +78,7 @@ fn the_title_names_the_language_last(cx: &mut TestAppContext) {
 fn an_unknown_name_is_plain(cx: &mut TestAppContext) {
     let settings = WindowSettings {
         file_names: three_way("a.txt"),
-        destination: Some(merge_session::resolve::Destination::file(PathBuf::from("a.txt"))),
+        destination: Some(merge_session::resolve::Destination::file_at(PathBuf::from("a.txt"))),
         ..WindowSettings::default()
     };
     assert_eq!(result_language(cx, &settings), PLAIN);
@@ -88,7 +88,9 @@ fn an_unknown_name_is_plain(cx: &mut TestAppContext) {
 fn without_a_named_language_the_inputs_shebang_gives_it(cx: &mut TestAppContext) {
     let settings = WindowSettings {
         file_names: three_way("BASE_1234"),
-        destination: Some(merge_session::resolve::Destination::file(PathBuf::from("script/build"))),
+        destination: Some(merge_session::resolve::Destination::file_at(PathBuf::from(
+            "script/build",
+        ))),
         ..WindowSettings::default()
     };
     assert_eq!(script_language(cx, &settings, "#!/usr/bin/env bash\n"), "bash");

@@ -51,7 +51,7 @@ fn measured(cx: &mut TestAppContext, mode: Mode, journal: bool) -> Opened {
     let dir = tempfile::tempdir().expect("temporary directory");
     let output = dir.path().join("out.txt");
     let settings = WindowSettings {
-        destination: Some(merge_session::resolve::Destination::file(output.clone())),
+        destination: Some(merge_session::resolve::Destination::file_at(output.clone())),
         journal_dir: journal.then(|| dir.path().join("journal")),
         measure: Some(Measure { mode, frames: FRAMES, started: Instant::now() }),
         ..WindowSettings::default()
@@ -136,7 +136,7 @@ fn pick_toggles_left_and_right_in_turn(cx: &mut TestAppContext) {
 fn open_finishes_after_the_frame_after_the_first(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().expect("temporary directory");
     let settings = WindowSettings {
-        destination: Some(merge_session::resolve::Destination::file(dir.path().join("out.txt"))),
+        destination: Some(merge_session::resolve::Destination::file_at(dir.path().join("out.txt"))),
         measure: Some(Measure::new(Mode::Open, Instant::now())),
         ..WindowSettings::default()
     };
@@ -178,7 +178,7 @@ fn measured_syntax(cx: &mut TestAppContext, name: &str) -> Opened {
     let output = dir.path().join(name);
     let named = std::path::Path::new(name);
     let settings = WindowSettings {
-        destination: Some(merge_session::resolve::Destination::file(output.clone())),
+        destination: Some(merge_session::resolve::Destination::file_at(output.clone())),
         file_names: FileNames::three_way(named, named, named),
         measure: Some(Measure::new(Mode::Syntax, Instant::now())),
         ..WindowSettings::default()

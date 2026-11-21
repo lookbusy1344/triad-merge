@@ -426,11 +426,16 @@ pub enum Watching {
 }
 
 impl WindowSettings {
-    /// The file Save & Exit writes; for a jj commit's conflict, the temporary file the
-    /// window names.
+    /// The file Save & Exit writes; none for a jj commit's conflict.
     #[must_use]
     pub fn output(&self) -> Option<&Path> {
-        self.destination.as_ref().map(Destination::path)
+        self.destination.as_ref().and_then(Destination::file)
+    }
+
+    /// The path that names the result: the output, or a jj commit's conflicted path.
+    #[must_use]
+    pub fn result_name(&self) -> Option<&Path> {
+        self.destination.as_ref().map(Destination::name)
     }
 }
 
@@ -712,8 +717,11 @@ fn save_target(settings: &WindowSettings) -> SaveTarget {
 
 /// The language of `doc`'s merge: the one its file names give, else its inputs' first lines.
 fn language(doc: &MergeDocument, settings: &WindowSettings) -> Option<Language> {
-    let names =
-        Language::of_run(settings.file_names.paths(), settings.output(), settings.title.as_deref());
+    let names = Language::of_run(
+        settings.file_names.paths(),
+        settings.result_name(),
+        settings.title.as_deref(),
+    );
     merge_session::language(names, doc.inputs())
 }
 
@@ -828,7 +836,7 @@ impl MergeWindow {
             result_highlighter,
             parsing: colouring.language().is_some(),
             headings: headings(&doc, panes, &settings.file_names),
-            result_heading: status::result_heading(settings.output(), strings::role).into(),
+            result_heading: status::result_heading(settings.result_name(), strings::role).into(),
             file_names: settings.file_names.clone(),
             journal: JournalTasks::default(),
             session: Session::new(doc, save_target(settings), recovery),

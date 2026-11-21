@@ -50,7 +50,7 @@ impl Session {
 
     fn settings(&self) -> WindowSettings {
         WindowSettings {
-            destination: Some(merge_session::resolve::Destination::file(self.output())),
+            destination: Some(merge_session::resolve::Destination::file_at(self.output())),
             journal_dir: Some(self.dir.path().join("journal")),
             ..WindowSettings::default()
         }
@@ -181,7 +181,7 @@ fn ending_before_the_inputs_are_hashed_still_keeps_the_latest_journal(cx: &mut T
     let session = Session::new();
     let output = session.dir.path().join("no-such-dir").join("out");
     let settings = WindowSettings {
-        destination: Some(merge_session::resolve::Destination::file(output.clone())),
+        destination: Some(merge_session::resolve::Destination::file_at(output.clone())),
         ..session.settings()
     };
     let (window, view, _) = open_with(cx, conflict(MergeOptions::default()), &settings);
@@ -338,7 +338,7 @@ fn a_write_failure_keeps_the_latest_journal(cx: &mut TestAppContext) {
     let session = Session::new();
     let output = session.dir.path().join("no-such-dir").join("out");
     let settings = WindowSettings {
-        destination: Some(merge_session::resolve::Destination::file(output.clone())),
+        destination: Some(merge_session::resolve::Destination::file_at(output.clone())),
         ..session.settings()
     };
     let (window, view, finished) = open_with(cx, conflict(MergeOptions::default()), &settings);
@@ -437,7 +437,7 @@ fn another_output_has_its_own_journal(cx: &mut TestAppContext) {
     wait(cx, JOURNAL_DEBOUNCE);
     let other = session.dir.path().join("other-out");
     let settings = WindowSettings {
-        destination: Some(merge_session::resolve::Destination::file(other.clone())),
+        destination: Some(merge_session::resolve::Destination::file_at(other.clone())),
         ..session.settings()
     };
     let _ = open_with(cx, conflict(MergeOptions::default()), &settings);
@@ -523,7 +523,7 @@ fn opening_a_window_deletes_journals_past_their_age(cx: &mut TestAppContext) {
 fn a_journal_name_survives_a_new_temporary_output(cx: &mut TestAppContext) {
     let session = Session::new();
     let named = |temp: &str| WindowSettings {
-        destination: Some(merge_session::resolve::Destination::file(
+        destination: Some(merge_session::resolve::Destination::file_at(
             session.dir.path().join(temp).join("output"),
         )),
         journal_name: Some(PathBuf::from("/repo/a.txt")),

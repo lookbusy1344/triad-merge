@@ -52,16 +52,26 @@ pub enum Destination {
 impl Destination {
     /// The file at `path`, its saves recorded nowhere.
     #[must_use]
-    pub fn file(path: impl Into<PathBuf>) -> Self {
+    pub fn file_at(path: impl Into<PathBuf>) -> Self {
         Self::File { path: path.into(), record: None }
     }
 
-    /// The file a save writes; for a commit, the temporary file the merge window names.
+    /// The file a save writes; none for a commit.
     #[must_use]
-    pub fn path(&self) -> &Path {
+    pub fn file(&self) -> Option<&Path> {
+        match self {
+            Self::File { path, .. } => Some(path),
+            Self::Commit(_) => None,
+        }
+    }
+
+    /// The path that names the result: the file, or the conflicted path in the commit,
+    /// relative to the repository root.
+    #[must_use]
+    pub fn name(&self) -> &Path {
         match self {
             Self::File { path, .. } => path,
-            Self::Commit(commit) => commit.file.as_std_path(),
+            Self::Commit(commit) => commit.path.as_std_path(),
         }
     }
 
@@ -112,10 +122,6 @@ pub struct InCommit {
     held: Arc<Mutex<CommitId>>,
     /// The shortest markers jj parses back as this conflict.
     marker_length: usize,
-    /// The temporary file the merge window names as its output; nothing writes it.
-    file: Utf8PathBuf,
-    /// The directory holding `file`, removed when the last copy of the record goes.
-    _dir: Arc<tempfile::TempDir>,
 }
 
 impl Record {
@@ -186,10 +192,10 @@ impl Record {
 }
 
 impl InCommit {
-    /// The path that names this merge's recovery journal from one run to the next: the
-    /// conflicted file under the root. The result's temporary file is new each run.
+    /// The conflicted file under the root, which names the merge's recovery journal from
+    /// one run to the next.
     #[must_use]
-    pub fn journal_name(&self) -> PathBuf {
+    pub fn worktree_file(&self) -> PathBuf {
         self.root.join(&self.path).into_std_path_buf()
     }
 
@@ -312,8 +318,6 @@ pub enum ResolveError {
     /// A jj-native command run outside a jj repository (spec §1.2).
     #[error("{0} needs a jj repository")]
     NeedsJj(&'static str),
-    #[error("cannot make a temporary file for the result: {0}")]
-    Temporary(std::io::Error),
 }
 
 impl ResolveError {
@@ -447,15 +451,13 @@ pub fn load(
 /// The conflict at `path`, relative to `cwd`, in the one commit `rev` names in the jj
 /// repository holding `cwd`, without checking it out (`resolve -r`, spec §7.5.1). The
 /// working copy is snapshotted first, and `rev` takes the user's revset aliases
-/// ([`JjRepository::single_commit`]). The result saves to a temporary file; each save writes
-/// it back into the commit.
+/// ([`JjRepository::single_commit`]). Each save writes the result into the commit.
 ///
 /// # Errors
 ///
 /// [`ResolveError::NeedsJj`] outside a jj repository; [`ResolveError::Vcs`] when `rev` names
 /// no commit or several, or the conflict cannot be read; [`ResolveError::NotConflicted`] when
-/// the path is resolved there; the term errors of [`load`]; and [`ResolveError::Temporary`]
-/// when the temporary file cannot be made.
+/// the path is resolved there; and the term errors of [`load`].
 pub fn load_at_commit(
     cwd: &Path,
     rev: &str,
@@ -491,12 +493,6 @@ pub fn load_at_commit(
             }
         })
         .collect();
-    let dir = tempfile::Builder::new()
-        .prefix("triad-resolve-")
-        .tempdir()
-        .map_err(ResolveError::Temporary)?;
-    let name = relative.file_name().unwrap_or(relative.as_str());
-    let temporary = Utf8PathBuf::from_path_buf(dir.path().join(name)).map_err(VcsError::NotUtf8)?;
     let commit = InCommit {
         root,
         path: relative.clone(),
@@ -504,8 +500,6 @@ pub fn load_at_commit(
         held: Arc::new(Mutex::new(id.clone())),
         id,
         marker_length,
-        file: temporary,
-        _dir: Arc::new(dir),
     };
     Ok(Loaded {
         path: relative,

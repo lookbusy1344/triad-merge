@@ -401,7 +401,6 @@ err-kind-directory = ディレクトリ
 err-deleted-everywhere = { $path } はすべての側で削除されています。マージするものはありません
 err-resolved-in-tree = { $path } の作業ツリーには競合マーカーが残っていないため、解決済みに見えます。解決済みにするか、マーカーを戻してマージし直してください
 err-tree-not-text = { $path }: 作業ツリーのファイルがテキストではない ({ $detail }) ため、保存で上書きされる編集が含まれている可能性があります。競合マーカー付きのテキストに戻すか、手で解決してください
-err-temporary = 結果の一時ファイルを作成できません: { $detail }
 err-not-a-directory = { $path } はディレクトリではありません
 err-mixed = diff には 2 つのファイルか 2 つのディレクトリを渡します: { $dir } はディレクトリで、{ $other } は違います
 err-git-in-jj = { $path } は jj リポジトリで、triad は jj の方式でのみマージします。`jj resolve` で解決してください

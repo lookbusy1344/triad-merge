@@ -156,7 +156,7 @@ impl Load {
                         .map_err(|e| crate::error_text::describe(&e))?;
                 let settings = WindowSettings {
                     repo: run::repo_kind(settings.cwd.as_deref(), &output),
-                    destination: Some(merge_session::resolve::Destination::file(output)),
+                    destination: Some(merge_session::resolve::Destination::file_at(output)),
                     file_names: FileNames::three_way(&files.base, &files.left, &files.right),
                     ..settings
                 };

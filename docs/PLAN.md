@@ -23,7 +23,7 @@ As of 2026-11-21.
 | Languages | Done: the windows and their error details in English, Spanish, simplified and traditional Chinese, Japanese, Korean, German, French, Brazilian Portuguese, Ukrainian, Polish, Dutch, Swedish and Russian, from Fluent catalogues, set by `ui-language` or the system; gpui-component's own text, such as Replace and a field's right-click menu, from triad's catalogues; on macOS the system's own controls follow the system's language | §E3.6 |
 | Look after Zed | Done: chrome in the UI font, the Zed status bar, raised surfaces (Go to Line as Zed's card, the menus, the prompt), a 1 px current-region frame, a softer ruler, one style for errors and warnings, and on macOS the toolbar in the title bar | `docs/STYLE.md` |
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
-| Layering: the session layer under both front ends, whole | §K1 done; §K2–§K9 open | K |
+| Layering: the session layer under both front ends, whole | §K1–§K2 done; §K3–§K9 open | K |
 | jj-native features | Done: conflicts across a stack (`stack`, `resolve -r`), operation-log history (`history`, `diff --op`) and absorb by hunk (`absorb`); the stack window, with a preview of a save's effect on the descendants, a confirmation before a save changes them, a banner in the merge window naming the listed commit an inherited conflict arises in, untouched inherited paths muted, and inherited conflict regions in the merge window grey (`color-inherited`); the history window; the absorb window, by hunk; these windows and the directory window share one frame after Zed's panels (`docs/STYLE.md`): a header with a count and the buttons, status icons with tooltips that name each state and file-name-first paths, keys for the lists, and Escape and Cancel to close; the conflict badge names the sides a conflict keeps; absorb, `resolve -r` and the default revset aliases checked against jj's CLI (§I5); `stack`, `resolve -r`, `history`, `absorb` and a three-sided save checked through the built binary in scenario repositories (`script/test-jj-repos`) | I |
 
 The conformance suite runs on git, jj and internal jj repositories, and six of its checks on jj's experimental simple store (§A7.1). Every spec §9 target is met (§A6.7). Toolchain: stable Rust 1.100, with `rust-version` 1.100. Dependencies: jj-lib and jj-core 0.47.1 on gix 0.90; gpui-kit 0.8.1 with the vendored `gpui-base` patch; gpui-kit 0.9 is not adopted (`docs/gpui-kit-issues.md`).
@@ -36,7 +36,7 @@ Build profiles (root `Cargo.toml`): `release` aborts on panic and strips symbols
 
 In order. Each is one or more commits.
 
-1. **Layering** (part K): §K2–§K9, one commit each, in order.
+1. **Layering** (part K): §K3–§K9, one commit each, in order.
 2. **Close M3.** Skipped for now by the owner. The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
 3. **Screen-reader support** (part J). Skipped for now by the owner: live status, conflict regions, scrolling the row table, in the order of §J7.
 4. **Review and diff features** (part G): §G7 and §G12–§G14.

@@ -12,11 +12,9 @@ The pure crates hold up: `merge-core`, `merge-syntax` and `merge-view` have no G
 
 `resolve::Destination` names where a result goes: a file and its record, or a jj commit's conflict. A save into a commit hands the encoded bytes to `InCommit::write`; nothing writes a file. A refusal is `SaveError::Commit`, a failed write.
 
-## K2 No temporary file for a commit's conflict
+## K2 No temporary file for a commit's conflict — done
 
-`merge-app::run::exit` calls `std::process::exit` inside the GPUI loop, so no destructor runs; on macOS the platform's own quit, `terminate:`, exits the process the same way. `resolve::load_at_commit` still makes a `triad-resolve-*` directory for the path the merge window names as its output, and the exit leaves it in the system's temporary directory. Since K1 nothing writes it.
-
-Fix: a commit's conflict has no file. The merge window takes its title, language and journal name from the conflicted path, and watches no output. Test: a load at a commit creates no directory, and the window on it saves into the commit.
+`merge-app::run::exit` calls `std::process::exit` inside the GPUI loop, and on macOS the platform's own quit, `terminate:`, exits the process the same way, so no destructor runs at the end of a run. A commit's conflict therefore holds no file: `Destination::file` is none for it, and `Destination::name`, the conflicted path, gives the merge window its result heading and language. The journal and jj's line origins take the conflicted file under the root (`InCommit::worktree_file`).
 
 ## K3 The run's repository comes from the environment
 

@@ -197,11 +197,11 @@ impl Session {
         &self.doc
     }
 
-    /// The file a save writes; for a jj commit's conflict, the temporary file the window
-    /// names.
+    /// The file a save writes; none for a jj commit's conflict or a merge that saves only
+    /// copies.
     #[must_use]
     pub fn output(&self) -> Option<&Path> {
-        self.target.destination.as_ref().map(Destination::path)
+        self.target.destination.as_ref().and_then(Destination::file)
     }
 
     #[must_use]
@@ -514,7 +514,8 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut session = journalled(dir.path());
         // The output cannot be written, so a journal on disk was written before it.
-        session.target.destination = Some(Destination::file(dir.path().join("none").join("out")));
+        session.target.destination =
+            Some(Destination::file_at(dir.path().join("none").join("out")));
         session.apply(pick_left()).expect("applies");
         let path = session.recovery().and_then(Recovery::path).expect("named").to_owned();
         let job = session.start_save(After::Exit).expect("starts");
@@ -543,7 +544,8 @@ mod tests {
     fn a_failed_save_unlocks_the_session_and_journals_on_from_its_write() {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut session = journalled(dir.path());
-        session.target.destination = Some(Destination::file(dir.path().join("none").join("out")));
+        session.target.destination =
+            Some(Destination::file_at(dir.path().join("none").join("out")));
         session.apply(pick_left()).expect("applies");
         let saved = session.start_save(After::Exit).expect("starts").run();
         let next = session.saved(saved);
@@ -590,7 +592,8 @@ mod tests {
     fn a_restore_while_a_save_runs_is_refused_and_changes_nothing() {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut session = journalled(dir.path());
-        session.target.destination = Some(Destination::file(dir.path().join("none").join("out")));
+        session.target.destination =
+            Some(Destination::file_at(dir.path().join("none").join("out")));
         session.apply(Command::Clear { region: CONFLICT_REGION }).expect("applies");
         let job = session.start_save(After::Exit).expect("starts");
         let (doc, journal) = picked_journal();
@@ -684,7 +687,8 @@ mod tests {
         let mut session = journalled(dir.path());
         let saved = session.start_save(After::Stay).expect("starts").run();
         assert_eq!(session.saved(saved), Next::Saved(ExitCode::Conflicts));
-        session.target.destination = Some(Destination::file(dir.path().join("none").join("out")));
+        session.target.destination =
+            Some(Destination::file_at(dir.path().join("none").join("out")));
         session.apply(pick_left()).expect("applies");
         let saved = session.start_save(After::Stay).expect("starts").run();
         assert!(matches!(session.saved(saved), Next::Failed { after: After::Stay, .. }));

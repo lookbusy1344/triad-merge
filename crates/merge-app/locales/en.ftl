@@ -465,7 +465,6 @@ err-kind-directory = directory
 err-deleted-everywhere = { $path } is deleted on every side; nothing to merge
 err-resolved-in-tree = { $path } has no conflict markers left in the working tree, so it looks resolved; mark it resolved, or put its markers back to merge it again
 err-tree-not-text = { $path }: the working-tree file is not text ({ $detail }), so it may hold edits a save would overwrite; put text with its conflict markers back, or resolve it by hand
-err-temporary = cannot make a temporary file for the result: { $detail }
 err-not-a-directory = { $path } is not a directory
 err-mixed = diff takes two files or two directories: { $dir } is a directory, { $other } is not
 err-git-in-jj = { $path } is a jj repository, where triad merges with jj's semantics only; resolve with `jj resolve`
