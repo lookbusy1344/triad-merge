@@ -1,0 +1,55 @@
+# triad — layering plan
+
+Inputs: [SPEC.md](SPEC.md), [PLAN.md](PLAN.md), [DESIGN.md](DESIGN.md), [ARCHITECTURE.md](ARCHITECTURE.md). Rules for changes: `AGENTS.md`.
+
+This file is part K of the plan, kept apart while the work is open. Cite it by part and section: §K3 is section 3 here. [PLAN.md](PLAN.md) §1–§3 carry its status. Each section is one commit, in order, and follows the ground rules of §A1.
+
+## K0 Goal
+
+The pure crates hold up: `merge-core`, `merge-syntax` and `merge-view` have no GPUI, no file system, no process and no environment; the dependency graph has no cycle; the front ends reach repositories only through `RunRepository` and `dyn vcs::Repository`. The leaks are above them. `merge-session` is not yet the whole layer under the front ends, so the CLI and the GUI each assemble runs, and the GUI holds spec rules and one defect. This part closes those leaks.
+
+## K1 The GUI exits through its destructors
+
+`merge-app::run::exit` calls `std::process::exit` inside the GPUI loop, so no destructor runs. `resolve::load_at_commit` holds the result's `triad-resolve-*` temporary directory in `InCommit`; every GUI `resolve -r` and stack-window merge leaves that directory and the merged text in the system's temporary directory.
+
+Fix: a finished window quits the app with its code; `launch` returns the code once the loop ends, and the binary returns it from `main`. Test: a merge session in a commit removes its temporary directory when dropped, and the app's finish path drops what it holds before the process ends.
+
+## K2 A save into a commit takes the bytes
+
+`resolve_in_commit` writes the merge to the temporary file, and `InCommit::rewrite` reads it back. `InCommit::write` takes bytes already. `rewrite` takes the encoded bytes; the temporary file stays only as the GUI's save target where a save needs a path.
+
+Test: a headless `resolve -r` writes into the commit what the merge encodes, with the temporary file removed before the rewrite.
+
+## K3 The run's repository comes from the environment
+
+`RunRepository` carries jj's `ConfigEnv`, and every front-end entry point adds it by hand (`with_jj_config(jj_config::snapshot_config(env))`, seven sites in `merge-cli`, one in `merge-app::resolve_queue`). The session layer builds a run's repository from `Env`; `ConfigEnv` leaves the front ends' code.
+
+Test: a run built from an `Env` whose jj config names a user snapshots with that user, through each constructor the front ends call.
+
+## K4 One step applies the chosen semantics
+
+The CLI copies `Mode` and the marker style into `MergeOptions` in three places, and the stack, absorb and history forms load the jj repository twice before the window opens; absorb computes every hunk only to see whether there is one. `merge-session` gives one call that applies a mode to options, and the jj-native preparations open the repository once and hand it on.
+
+Test: each form's options after preparation, against the settings and the repository's config; the existing CLI tests cover the outcomes.
+
+## K5 Spec rules leave the GUI
+
+`merge-app::run::tool_diff` and `jj_working_copy` hold spec §7.1's rule for `jj diff --tool`: the right side opens the working-copy file and the left turns read-only. The diff window writes its sides and snapshots jj itself. Both move to `merge-session`, beside the merge window's save, and gain headless tests.
+
+## K6 One jj facade
+
+`merge_session::jj_native` re-exports `vcs_jj`'s report types, yet `merge-cli` imports them from `vcs-jj` too. The front ends take them from `merge-session` only; `vcs-jj` leaves `merge-cli`'s normal dependencies.
+
+## K7 MergeWindow in parts
+
+`window.rs` is 4 700 lines: journaling, line origins, output watching, scroll sync, the save flow, input selection and the measurement harness in one type. Each job moves to its own module with the state it owns. No behaviour changes; the existing GUI tests cover it.
+
+## K8 Highlight queries in `merge-syntax`
+
+`merge-app::syntax::register_queries` chooses the C#, Swift, Kotlin, C++ and TSX highlight queries, and the top panes' highlighting reads its queries from gpui-component's registry. The table of queries moves to `merge-syntax`; the app registers that table with the editors' registry.
+
+Test: each language's grammar from `merge-syntax` compiles its query and colours its sample in `fixtures/syntax`.
+
+## K9 Small edges
+
+`merge-config` depends on `vcs` only for `IdKind`; the setting converts at the session layer instead. A stale doc comment in `merge-session::repository` names an equality `RunRepository` does not have.
