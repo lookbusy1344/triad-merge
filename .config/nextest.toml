@@ -20,7 +20,7 @@ threads-required = "num-test-threads"
 [profile.quick]
 default-filter = """
 not (
-    test(/^conformance::(jj_colocated|jj_internal)::/)
+    test(/^conformance::(jj_colocated|jj_internal|jj_simple)::/)
     | package(vcs-jj)
     | test(/^native::jj::/)
     | (package(merge-session) & test(/^(origin|resolve|discovery|diff_tool)::jj::/))

@@ -123,6 +123,7 @@ fn the_default_fixture_takes_jj_s_default_store() {
     let expected = match DEFAULT_STORE {
         Store::Colocated => (true, false),
         Store::Internal => (false, true),
+        Store::Simple => (false, false),
     };
     let fixture = Fixture::new();
     assert_eq!(fixture.store(), DEFAULT_STORE);

@@ -833,7 +833,7 @@ Benchmarks (`criterion`) on generated 10k-, 100k- and 1M-line inputs, with a fix
 
 ### 8.8 VCS backend tests
 
-The backend tests create real repositories in temporary directories. They write them through gix and jj-lib only, never through the CLIs. One conformance suite, written against the `vcs` trait, runs on git, jj and internal jj repos:
+The backend tests create real repositories in temporary directories. They write them through gix and jj-lib only, never through the CLIs. One conformance suite, written against the `vcs` trait, runs on git, jj and internal jj repos. Six of its checks also run on jj's experimental simple store, which holds no git: discovery, the parent's `Term`, annotation, reading a conflict, a resolved save and the changed paths. The suite checks:
 
 - find conflicted files
 - read a conflict and compare it with the expected base/left/right

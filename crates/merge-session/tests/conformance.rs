@@ -1,6 +1,6 @@
 //! The VCS conformance suite (spec §8.8, DESIGN.md §A7.1): one set of checks, written against the
 //! `vcs` trait, run on git, colocated jj and internal jj repositories found through
-//! `native::discover`.
+//! `native::discover`. A subset runs on jj's experimental simple store, which has no git.
 
 #![expect(clippy::panic, reason = "test helpers outside `#[test]` panic on a failed check")]
 
@@ -1013,3 +1013,18 @@ suite! {
     jj_colocated => super::Fixture::Jj(Box::new(vcs_jj::testing::Fixture::colocated())),
     jj_internal => super::Fixture::Jj(Box::new(vcs_jj::testing::Fixture::internal())),
 }
+
+// jj's simple store is experimental and outside the layouts triad supports (spec §8.8): a few
+// checks confirm that discovery, reading, annotation, conflicts and saves reach it.
+conformance!(
+    jj_simple,
+    super::Fixture::Jj(Box::new(vcs_jj::testing::Fixture::simple())),
+    [
+        discovery_climbs_from_a_subdirectory,
+        the_parent_holds_the_last_commit_and_is_titled_by_the_vcs,
+        each_line_names_the_last_commit_that_changed_it,
+        a_conflict_reads_its_base_and_both_sides,
+        a_resolved_save_clears_its_conflict_and_leaves_the_others,
+        the_changed_paths_are_the_files_the_working_copy_changed,
+    ]
+);

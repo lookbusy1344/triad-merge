@@ -105,13 +105,15 @@ pub struct Op {
     pub is_snapshot: bool,
 }
 
-/// How the fixture's git store sits.
+/// Where the fixture keeps its commits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Store {
-    /// Inside `.jj/repo/store/git`; git sees nothing.
+    /// A git store inside `.jj/repo/store/git`; git sees nothing.
     Internal,
-    /// A `.git` beside `.jj`, sharing the working copy.
+    /// A git store in a `.git` beside `.jj`, sharing the working copy.
     Colocated,
+    /// jj's own experimental store, with no git at all, as `jj debug init-simple` makes.
+    Simple,
 }
 
 /// The store `jj git init` makes without flags, from jj's `git.colocate` setting. `Fixture::new`
@@ -167,7 +169,14 @@ impl Fixture {
         Self::in_temp_dir(Store::Internal)
     }
 
-    /// How this workspace's git store sits.
+    /// A workspace on jj's own experimental store, which has no git, as `jj debug init-simple`
+    /// makes.
+    #[must_use]
+    pub fn simple() -> Self {
+        Self::in_temp_dir(Store::Simple)
+    }
+
+    /// Where this workspace keeps its commits.
     #[must_use]
     pub fn store(&self) -> Store {
         self.store
@@ -188,6 +197,9 @@ impl Fixture {
             Store::Colocated => {
                 Workspace::init_colocated_git(&settings, dir.path(), WorkspaceName::DEFAULT, hash)
                     .block_on()
+            }
+            Store::Simple => {
+                Workspace::init_simple(&settings, dir.path(), WorkspaceName::DEFAULT).block_on()
             }
         }
         .expect("jj init");
