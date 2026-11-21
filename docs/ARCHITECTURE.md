@@ -213,6 +213,8 @@ The layer under both front ends. It owns everything a merge does outside the eng
 
 `repository::RunRepository` is the one repository of a run. It holds the directories the repository may lie in, in order, and opens the first match on first use; semantics, marker style, `resolve`, origins and saves all read the same open repository. `native::nearest_repo` finds the nearest `.jj` directory or `.git` entry, jj on a tie; a `.git` git cannot open is `NotARepository`, never a climb to an outer repository. A `Handoff` carries the repository to a second window, such as from the stack window to a merge window. `repository::Discovery` is how a run finds its repositories: a front end builds it once from the run's `Env` (`Discovery::from_env`), and every repository of the run, the windows' later ones included, comes from its constructors, so jj's snapshots, writes and revsets read the user's jj config. `RunRepository::discovery` hands it to the next window.
 
+`diff_tool` holds the two-way diff's file rules: `read_pair` reads the sides of `diff LEFT RIGHT` and opens the working-copy file for jj's right-side copy (spec §7.1); `save` writes a diff window's sides and snapshots the jj working copy.
+
 ### 8.2 Choosing how to merge
 
 `semantics::choose` picks `Semantics::Git` or `Semantics::Jj`. A repository with `.jj` merges with jj's semantics, and a git merge there is an error (`DESIGN.md` §B3). `jj_config` maps jj's `merge.same-change` and `merge.hunk-level` onto the engine's options. `choose_marker_style` reads the repository's conflict style. `apply_semantics` runs both and sets the result in a form's `MergeOptions`, the one step each front-end form takes. `language` names the grammar for syntax boundaries.

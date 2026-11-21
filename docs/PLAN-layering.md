@@ -24,9 +24,9 @@ The pure crates hold up: `merge-core`, `merge-syntax` and `merge-view` have no G
 
 `merge_session::apply_semantics` chooses the semantics and markers and sets them in a form's `MergeOptions`; `merge`, `resolve` and `stack` take it. The stack, absorb and history forms list once before the window opens and hand the listing on in `WindowForm::listing` (`jj_native::Listing`); the window shows it first and lists again only on a refresh. A test per window opens it on a narrower listing than its own and finds that listing shown at once and kept.
 
-## K5 Spec rules leave the GUI
+## K5 Spec rules leave the GUI — done
 
-`merge-app::run::tool_diff` and `jj_working_copy` hold spec §7.1's rule for `jj diff --tool`: the right side opens the working-copy file and the left turns read-only. The diff window writes its sides and snapshots jj itself. Both move to `merge-session`, beside the merge window's save, and gain headless tests.
+`merge_session::diff_tool::read_pair` holds spec §7.1's rule for `jj diff --tool`: the right side opens the working-copy file and the left turns read-only. `diff_tool::save` writes a diff window's sides and snapshots jj's working copy when a write succeeded. The GUI maps the sides onto panes and takes the save's results. Headless tests cover both rules, an absent side, an unreadable side and a failed write.
 
 ## K6 One jj facade
 

@@ -23,10 +23,11 @@ use merge_session::repository::{Discovery, Handoff};
 
 use crate::diff_window::{self, DiffFile, DiffLookup, DiffSettings};
 use crate::pick_list::{self, Activate, SelectNext, SelectPrevious, State};
-use crate::run::{ToolDiff, ToolPair};
+use crate::run::ToolDiff;
 use crate::tool_window::{self, Note};
 use crate::window::WindowSettings;
 use crate::{ExitCode, Finish, ignore_closed_view, strings};
+use merge_session::diff_tool::ToolPair;
 
 /// The element ids tests look up.
 pub const REFRESH_ID: &str = "dirs-refresh";
@@ -232,8 +233,9 @@ fn load_file(
     };
     let paths = [left.join(from), right.join(&file.path)];
     let repo = discovery.of_diff_tool(Some(&cwd), &paths[1]);
-    let pair = ToolPair { paths, absent, readonly, title: Some(shown) };
-    crate::run::tool_diff(pair, repo, cwd).map_err(|error| crate::error_text::describe(&error))
+    let pair = ToolPair { paths, absent, readonly };
+    crate::run::tool_diff(pair, Some(shown), repo, cwd)
+        .map_err(|error| crate::error_text::describe(&error))
 }
 
 impl DirWindow {
