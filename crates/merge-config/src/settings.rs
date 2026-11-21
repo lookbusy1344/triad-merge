@@ -12,7 +12,7 @@ use serde::Deserialize;
 use strum::{EnumMessage, IntoStaticStr, VariantArray};
 
 use crate::named::Named;
-use merge_core::diff::{self, BlankLineRule, CaseRule, DiffOptions, LineEndingRule};
+use merge_core::diff::{self, BlankLineRule, CaseRule, DiffOptions, LineEndingRule, Similarity};
 use merge_core::document::{MarkerStyle, OutputEnding};
 use merge_core::merge3::{HunkLevel, Refine, SameChange};
 use merge_core::pattern::{PatternError, Patterns};
@@ -80,6 +80,10 @@ const DIFF_IGNORE_LINE_ENDINGS_KEY: &str = "diff-ignore-line-endings";
 const DIFF_IGNORE_BLANK_LINES_KEY: &str = "diff-ignore-blank-lines";
 const IGNORE_CASE_KEY: &str = "ignore-case";
 const IGNORE_PATTERN_KEY: &str = "ignore-pattern";
+const INTRALINE_SIMILARITY_KEY: &str = "intraline-similarity";
+/// Intra-line similarity floors: 0 marks every changed line pair, 1 only pairs that differ
+/// in whitespace alone.
+pub const INTRALINE_SIMILARITIES: RangeInclusive<f32> = 0.0..=1.0;
 /// An editor's whole syntax tree costs about 90 bytes per byte of text
 /// (`docs/DESIGN.md` §F6.3): some 60 MB for 20 000 lines of Rust. A longer file parses a
 /// chunk at a time (§4.1).
@@ -914,6 +918,18 @@ const KEYS: &[Key] = &[
         get: |s| s.diff.patterns.sources().collect::<Vec<_>>().join(&VALUE_SEPARATOR.to_string()),
     },
     key!(
+        INTRALINE_SIMILARITY_KEY,
+        [
+            "The least share of a changed line pair's characters, whitespace left out, \
+             that must match for the pair to show intra-line highlights,",
+            INTRALINE_SIMILARITIES,
+            "."
+        ],
+        diff.intraline = Settings::default().diff.intraline,
+        intraline_similarity,
+        |s| s.diff.intraline.ratio().to_string()
+    ),
+    key!(
         "refine-conflicts",
         "How far conflicts are refined: false, true (lines every side shares \
          split off at a conflict's ends) or deep (inside it too).",
@@ -1296,6 +1312,12 @@ fn number_in(key: &'static str, value: &str, range: &RangeInclusive<f32>) -> Res
     })
 }
 
+fn intraline_similarity(value: &str) -> Result<Similarity, Problem> {
+    let ratio = number_in(INTRALINE_SIMILARITY_KEY, value, &INTRALINE_SIMILARITIES)?;
+    #[expect(clippy::expect_used, reason = "invariant: number_in keeps the ratio in 0–1")]
+    Ok(Similarity::from_ratio(ratio).expect("a ratio in 0–1"))
+}
+
 /// `#rrggbb`, hex digits in either case.
 fn colour(value: &str) -> Option<Colour> {
     let digits = value.strip_prefix(COLOUR_PREFIX)?;
@@ -1430,6 +1452,7 @@ mod tests {
                     case: CaseRule::Compare,
                     patterns: Patterns::empty(),
                     blank_lines: BlankLineRule::Compare,
+                    intraline: diff::Similarity::DEFAULT,
                 },
                 diff_line_endings: LineEndingRule::Ignore,
                 diff_blank_lines: BlankLineRule::Compare,
@@ -1476,6 +1499,7 @@ mod tests {
             diff-ignore-blank-lines = true
             ignore-case = true
             ignore-pattern = \\d+
+            intraline-similarity = 0.25
             refine-conflicts = false
             syntax-boundaries = true
             tab-width = 8
@@ -1529,6 +1553,7 @@ mod tests {
                     case: CaseRule::Ignore,
                     patterns: Patterns::new([r"\d+"]).expect("valid"),
                     blank_lines: BlankLineRule::Compare,
+                    intraline: diff::Similarity::from_ratio(0.25).expect("in range"),
                 },
                 diff_line_endings: LineEndingRule::Compare,
                 diff_blank_lines: BlankLineRule::Ignore,
@@ -1938,6 +1963,7 @@ mod tests {
                 case: CaseRule::Ignore,
                 patterns: Patterns::new(["x"]).expect("valid"),
                 blank_lines: BlankLineRule::Ignore,
+                intraline: diff::Similarity::DEFAULT,
             }
         );
         assert_eq!(file.diff.blank_lines, BlankLineRule::Compare, "merges compare blank lines");
@@ -2285,6 +2311,27 @@ mod tests {
     }
 
     #[test]
+    fn intraline_similarity_reads_from_0_to_1_for_merges_and_the_diff_window() {
+        let floor = |text: &str| settings(text).diff.intraline;
+        assert_eq!(floor("intraline-similarity = 0"), diff::Similarity::NONE);
+        assert_eq!(floor("intraline-similarity = 1").ratio(), 1.);
+        assert_eq!(floor("intraline-similarity = 0.3").ratio(), 0.3);
+        assert_eq!(settings("intraline-similarity = 0.3").two_way().intraline.ratio(), 0.3);
+        for value in ["-0.1", "1.1", "nan"] {
+            let text = format!("intraline-similarity = {value}");
+            assert_eq!(
+                read(&text).errors[0].to_string(),
+                format!("{MAIN}:1: intraline-similarity {value} is outside 0–1")
+            );
+            assert_eq!(read(&text).settings.diff.intraline, diff::Similarity::DEFAULT);
+        }
+        assert_eq!(
+            problem("intraline-similarity = half"),
+            (1, invalid("intraline-similarity", "half", "a number"))
+        );
+    }
+
+    #[test]
     fn band_opacity_reads_from_0_to_1_alone_or_as_a_pair() {
         assert_eq!(settings("band-opacity = 0").colours.band_opacity, Themed::both(0.));
         assert_eq!(settings("band-opacity = 1").colours.band_opacity, Themed::both(1.));
@@ -2476,6 +2523,7 @@ diff-ignore-line-endings = true
 diff-ignore-blank-lines = false
 ignore-case = false
 ignore-pattern =
+intraline-similarity = 0.5
 refine-conflicts = true
 syntax-boundaries = false
 tab-width = 4
@@ -2577,6 +2625,7 @@ diff-layout = side-by-side
                 case: CaseRule::Ignore,
                 patterns: Patterns::new(["//.*", " +$"]).expect("valid"),
                 blank_lines: BlankLineRule::Compare,
+                intraline: diff::Similarity::from_ratio(0.25).expect("in range"),
             },
             diff_line_endings: LineEndingRule::Compare,
             diff_blank_lines: BlankLineRule::Ignore,
@@ -2651,6 +2700,7 @@ diff-ignore-blank-lines = true
 ignore-case = true
 ignore-pattern = //.*
 ignore-pattern = \" +$\"
+intraline-similarity = 0.25
 refine-conflicts = deep
 syntax-boundaries = true
 tab-width = 2

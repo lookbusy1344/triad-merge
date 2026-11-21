@@ -85,6 +85,62 @@ pub struct DiffOptions {
     /// Read by the two-way diff only; journals written before the field compared blank lines.
     #[serde(default)]
     pub blank_lines: BlankLineRule,
+    /// The floor of the intra-line highlights (spec §5); it changes no comparison.
+    #[serde(default)]
+    pub intraline: Similarity,
+}
+
+/// The least share of a changed line pair's characters the character diff must keep for
+/// the pair to take intra-line marks (spec §5): kept characters other than whitespace,
+/// over those of the longer line. Held in thousandths, so options stay `Eq`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Similarity(u16);
+
+impl Similarity {
+    /// Thousandths in a whole.
+    const SCALE: u16 = 1000;
+    /// Every pair takes marks.
+    pub const NONE: Self = Self(0);
+    /// Half the longer line's characters.
+    pub const DEFAULT: Self = Self(Self::SCALE / 2);
+
+    /// The floor of `ratio`, from 0 to 1, rounded to thousandths; `None` outside that range.
+    #[must_use]
+    pub fn from_ratio(ratio: f32) -> Option<Self> {
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "the ratio lies in 0..=1, so its thousandths fit u16"
+        )]
+        (0.0..=1.0).contains(&ratio).then(|| Self((ratio * f32::from(Self::SCALE)).round() as u16))
+    }
+
+    #[must_use]
+    pub fn ratio(self) -> f32 {
+        f32::from(self.0) / f32::from(Self::SCALE)
+    }
+
+    /// Whether `kept` characters of `longer` reach the floor.
+    fn reached(self, kept: usize, longer: usize) -> bool {
+        kept * usize::from(Self::SCALE) >= usize::from(self.0) * longer
+    }
+}
+
+impl Default for Similarity {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
+/// The intra-line marks of a changed line pair (spec §5).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Intraline {
+    /// The characters that differ; none when the lines are equal.
+    Hunks(Vec<Hunk>),
+    /// A line over [`MAX_INTRALINE_DIFF_CHARS`] characters: marked whole.
+    TooLong,
+    /// The lines share less than the floor: neither takes marks.
+    Unlike,
 }
 
 impl DiffOptions {
@@ -235,6 +291,22 @@ pub fn diff_chars(before: &str, after: &str) -> Vec<Hunk> {
 pub fn intraline_hunks(before: &str, after: &str) -> Option<Vec<Hunk>> {
     let within = |line: &str| line.chars().count() <= MAX_INTRALINE_DIFF_CHARS;
     (within(before) && within(after)).then(|| diff_chars(before, after))
+}
+
+/// The intra-line marks of the changed line pair `before` and `after` under `floor`.
+#[must_use]
+pub fn intraline(before: &str, after: &str, floor: Similarity) -> Intraline {
+    let Some(hunks) = intraline_hunks(before, after) else {
+        return Intraline::TooLong;
+    };
+    let solid = |text: &str| text.chars().filter(|&c| !is_blank(c)).count();
+    let (total, after_total) = (solid(before), solid(after));
+    let dropped: usize = hunks.iter().map(|h| solid(&before[h.before.clone()])).sum();
+    if floor.reached(total - dropped, total.max(after_total)) {
+        Intraline::Hunks(hunks)
+    } else {
+        Intraline::Unlike
+    }
 }
 
 /// The key a line compares under by `mode`.
@@ -850,6 +922,81 @@ mod tests {
         // 10 000 two-byte characters: 20 000 bytes but within the limit.
         let wide = "é".repeat(MAX_INTRALINE_DIFF_CHARS);
         assert_eq!(intraline_hunks(&wide, &wide), Some(vec![]));
+    }
+
+    const HALF: Similarity = Similarity::DEFAULT;
+
+    #[test]
+    fn a_pair_at_the_floor_is_marked() {
+        // "ab" stays: 2 of 4 characters.
+        assert_eq!(intraline("abcd", "abxy", HALF), Intraline::Hunks(vec![hunk(2..4, 2..4)]));
+    }
+
+    #[test]
+    fn a_pair_below_the_floor_is_unlike() {
+        // "a" stays: 1 of 4.
+        assert_eq!(intraline("abcd", "axyz", HALF), Intraline::Unlike);
+    }
+
+    #[test]
+    fn the_longer_line_sets_the_share() {
+        // "ab" stays: 2 of 4, then 2 of 5, from either side.
+        assert_eq!(intraline("ab", "abcd", HALF), Intraline::Hunks(vec![hunk(2..2, 2..4)]));
+        assert_eq!(intraline("ab", "abcde", HALF), Intraline::Unlike);
+        assert_eq!(intraline("abcde", "ab", HALF), Intraline::Unlike);
+    }
+
+    #[test]
+    fn whitespace_counts_neither_kept_nor_in_the_length() {
+        // Six spaces stay, but no other character does: 0 of 2.
+        assert_eq!(intraline("a      b", "x      y", HALF), Intraline::Unlike);
+        // Indentation changes alone: 2 of 2.
+        assert_eq!(intraline("\tab", "  ab", HALF), Intraline::Hunks(vec![hunk(0..1, 0..2)]));
+    }
+
+    #[test]
+    fn lines_of_whitespace_alone_are_marked() {
+        assert_eq!(intraline("  ", "\t", HALF), Intraline::Hunks(vec![hunk(0..2, 0..1)]));
+    }
+
+    #[test]
+    fn floor_zero_marks_every_pair() {
+        assert_eq!(
+            intraline("ab", "xy", Similarity::NONE),
+            Intraline::Hunks(vec![hunk(0..2, 0..2)])
+        );
+    }
+
+    #[test]
+    fn floor_one_marks_only_pairs_that_differ_in_whitespace() {
+        let all = Similarity::from_ratio(1.0).unwrap();
+        assert_eq!(intraline("abcd", "abcx", all), Intraline::Unlike);
+        assert_eq!(intraline("a b", "a\tb", all), Intraline::Hunks(vec![hunk(1..2, 1..2)]));
+    }
+
+    #[test]
+    fn a_line_over_the_limit_is_too_long_whatever_the_floor() {
+        let long = "a".repeat(MAX_INTRALINE_DIFF_CHARS + 1);
+        assert_eq!(intraline(&long, "b", HALF), Intraline::TooLong);
+        assert_eq!(intraline("b", &long, Similarity::NONE), Intraline::TooLong);
+    }
+
+    #[test]
+    fn similarity_takes_ratios_from_0_to_1() {
+        assert_eq!(Similarity::from_ratio(0.0), Some(Similarity::NONE));
+        assert_eq!(Similarity::from_ratio(0.5), Some(Similarity::DEFAULT));
+        assert_eq!(Similarity::from_ratio(0.25).map(Similarity::ratio), Some(0.25));
+        assert_eq!(Similarity::from_ratio(1.0).map(Similarity::ratio), Some(1.0));
+        assert_eq!(Similarity::from_ratio(-0.01), None);
+        assert_eq!(Similarity::from_ratio(1.01), None);
+        assert_eq!(Similarity::from_ratio(f32::NAN), None);
+    }
+
+    #[test]
+    fn options_from_a_journal_without_the_floor_take_the_default() {
+        let options: DiffOptions =
+            serde_json::from_str(r#"{"algorithm":"Histogram","whitespace":"None"}"#).unwrap();
+        assert_eq!(options.intraline, Similarity::DEFAULT);
     }
 
     // Properties. Small alphabets make lines repeat, which is where diffs go wrong.

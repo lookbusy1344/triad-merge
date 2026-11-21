@@ -615,6 +615,7 @@ mod tests {
                 case: CaseRule::Ignore,
                 patterns: Patterns::new(["x"]).expect("valid"),
                 blank_lines: BlankLineRule::Compare,
+                intraline: merge_core::diff::Similarity::from_ratio(0.25).expect("in range"),
             },
             diff_line_endings: LineEndingRule::Compare,
             diff_blank_lines: BlankLineRule::Ignore,
@@ -690,6 +691,7 @@ mod tests {
                 case: CaseRule::Ignore,
                 patterns: Patterns::new(["x"]).expect("valid"),
                 blank_lines: BlankLineRule::Ignore,
+                intraline: merge_core::diff::Similarity::from_ratio(0.25).expect("in range"),
             }
         );
         assert_eq!(settings.options.refine, Refine::Off);

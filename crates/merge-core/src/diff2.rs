@@ -7,7 +7,9 @@ use std::ops::Range;
 /// return. Front ends name it here, so the core alone picks the rope crate.
 pub use ropey::{Rope, RopeSlice};
 
-use crate::diff::{BlankLineRule, DiffOptions, Hunk, diff_lines, intraline_hunks, is_blank_line};
+use crate::diff::{
+    BlankLineRule, DiffOptions, Hunk, Intraline, Similarity, diff_lines, intraline, is_blank_line,
+};
 pub use crate::edit::{BatchError, EditBatch, TextPatch};
 use crate::edit::{apply, caret_after, inverse, prepare};
 use crate::index::RegionIx;
@@ -91,11 +93,17 @@ impl Marks {
 /// The [`Marks`] of `regions`. In each changed region the lines outside `moves`' ends pair in
 /// order, the n-th left line with the n-th right line. A pair marks the characters that
 /// differ, terminators left out; a line over [`MAX_INTRALINE_DIFF_CHARS`] characters is
-/// marked whole. A line without a partner gets no marks.
+/// marked whole. A line without a partner, and a pair under `floor`, get no marks.
 ///
 /// [`MAX_INTRALINE_DIFF_CHARS`]: crate::diff::MAX_INTRALINE_DIFF_CHARS
 #[must_use]
-pub fn marks(left: &Text, right: &Text, regions: &[Region2], moves: &[Move]) -> Marks {
+pub fn marks(
+    left: &Text,
+    right: &Text,
+    regions: &[Region2],
+    moves: &[Move],
+    floor: Similarity,
+) -> Marks {
     let ends = |end: fn(&Move) -> (RegionIx, Range<usize>)| {
         let mut ends: Vec<_> = moves.iter().map(end).collect();
         ends.sort_by_key(|(region, lines)| (*region, lines.start));
@@ -113,7 +121,7 @@ pub fn marks(left: &Text, right: &Text, regions: &[Region2], moves: &[Move]) -> 
         let pairs =
             kept(region.left.clone(), &left_out).zip(kept(region.right.clone(), &right_out));
         for (l, r) in pairs {
-            mark_pair(&Pair::of(left, l), &Pair::of(right, r), &mut marks);
+            mark_pair(&Pair::of(left, l), &Pair::of(right, r), floor, &mut marks);
         }
     }
     marks
@@ -152,12 +160,17 @@ impl<'t> Pair<'t> {
     }
 }
 
-fn mark_pair(left: &Pair<'_>, right: &Pair<'_>, marks: &mut Marks) {
+fn mark_pair(left: &Pair<'_>, right: &Pair<'_>, floor: Similarity, marks: &mut Marks) {
     if left.content == right.content {
         return;
     }
-    let whole = || Hunk { before: 0..left.content.len(), after: 0..right.content.len() };
-    let hunks = intraline_hunks(left.content, right.content).unwrap_or_else(|| vec![whole()]);
+    let hunks = match intraline(left.content, right.content, floor) {
+        Intraline::Hunks(hunks) => hunks,
+        Intraline::TooLong => {
+            vec![Hunk { before: 0..left.content.len(), after: 0..right.content.len() }]
+        }
+        Intraline::Unlike => return,
+    };
     for Hunk { before, after } in hunks {
         if !before.is_empty() {
             marks.left.push(left.shifted(before));
@@ -324,6 +337,7 @@ pub struct Marking {
     right: Rope,
     regions: Vec<Region2>,
     moves: Vec<Move>,
+    floor: Similarity,
 }
 
 impl Marking {
@@ -332,7 +346,7 @@ impl Marking {
     pub fn run(self) -> (u64, Marks) {
         let text = |rope: Rope| Text::new(Encoding::Utf8, rope.to_string());
         let (left, right) = (text(self.left), text(self.right));
-        (self.version, marks(&left, &right, &self.regions, &self.moves))
+        (self.version, marks(&left, &right, &self.regions, &self.moves, self.floor))
     }
 }
 
@@ -372,7 +386,7 @@ impl Recompute {
         let (left, right) = (text(self.left), text(self.right));
         let regions = regions(&left, &right, &self.options);
         let moves = moves(&left, &right, &regions, &self.options);
-        let marks = marks(&left, &right, &regions, &moves);
+        let marks = marks(&left, &right, &regions, &moves, self.options.intraline);
         (Diffed { version: self.version, regions, moves, marks }, also([&left, &right]))
     }
 }
@@ -434,6 +448,7 @@ impl DiffDocument {
             right: self.right.text.clone(),
             regions: self.regions.clone(),
             moves: self.moves.clone(),
+            floor: self.options.intraline,
         })
     }
 
@@ -1109,7 +1124,7 @@ mod tests {
         let (left, right) = (text(left), text(right));
         let opts = DiffOptions::default();
         let found = regions(&left, &right, &opts);
-        marks(&left, &right, &found, &moves(&left, &right, &found, &opts))
+        marks(&left, &right, &found, &moves(&left, &right, &found, &opts), opts.intraline)
     }
 
     fn marked(left: &[Range<usize>], right: &[Range<usize>]) -> Marks {
@@ -1146,6 +1161,29 @@ mod tests {
     }
 
     #[test]
+    fn a_pair_below_the_similarity_floor_gets_no_marks() {
+        // "a" stays of "abcd": 1 of 4, under the default half.
+        assert_eq!(marks_of("abcd\n", "axyz\n"), Marks::default());
+    }
+
+    #[test]
+    fn pairs_after_an_unlike_pair_still_take_marks() {
+        // "abcd\n" is 5 bytes and "foo ba" 6, so the changed letter sits at byte 11.
+        assert_eq!(marks_of("abcd\nfoo bar\n", "axyz\nfoo baz\n"), marked(&[11..12], &[11..12]));
+    }
+
+    #[test]
+    fn the_options_floor_reaches_the_document_marks() {
+        let options = DiffOptions { intraline: Similarity::NONE, ..DiffOptions::default() };
+        let mut d = DiffDocument::new(&text("abcd\n"), &text("axyz\n"), options);
+        let (_, marks) = d.marking().expect("regions are current").run();
+        assert_eq!(marks, marked(&[1..4], &[1..4]));
+        d.edit(Side::Left, insert(0, "q")).expect("edits");
+        // "qabcd" against "axyz": only "a" stays, still marked under no floor.
+        assert_eq!(d.recompute().run().marks, marked(&[0..1, 2..5], &[1..4]));
+    }
+
+    #[test]
     fn pure_insertions_and_deletions_get_no_marks() {
         assert_eq!(marks_of("a\n", "a\nb\n"), Marks::default());
         assert_eq!(marks_of("a\nb\n", "b\n"), Marks::default());
@@ -1169,7 +1207,7 @@ mod tests {
         let opts = DiffOptions { blank_lines: BlankLineRule::Ignore, ..DiffOptions::default() };
         let found = regions(&left, &right, &opts);
         assert_eq!(found, [same(0..1, 0..1), ignored(1..2, 1..2)]);
-        assert_eq!(marks(&left, &right, &found, &[]), Marks::default());
+        assert_eq!(marks(&left, &right, &found, &[], Similarity::NONE), Marks::default());
     }
 
     #[test]
@@ -1235,11 +1273,12 @@ mod tests {
         assert!(d.install_marks(version, marks));
         assert_eq!(d.marks(), &marked(&[4..5], &[4..5]));
         assert_eq!(d.marks().side(Side::Left), [4..5]);
-        d.edit(Side::Left, insert(0, "zz")).expect("edits");
+        d.edit(Side::Left, insert(0, "z")).expect("edits");
         assert_eq!(d.marks(), &marked(&[4..5], &[4..5]), "marks wait for the recompute");
         let diffed = d.recompute().run();
-        assert_eq!(diffed.marks, marked(&[0..2, 6..7], &[4..5]));
+        // "za" against "a": 1 of 2 stays, at the default floor.
+        assert_eq!(diffed.marks, marked(&[0..1, 5..6], &[4..5]));
         assert!(d.install(diffed));
-        assert_eq!(d.marks().side(Side::Left), [0..2, 6..7]);
+        assert_eq!(d.marks().side(Side::Left), [0..1, 5..6]);
     }
 }

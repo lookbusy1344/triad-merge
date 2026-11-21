@@ -3,13 +3,14 @@
 //!
 //! In a changed region the n-th line of each side pairs with the n-th line of the reference
 //! base. A side's cell marks the characters that differ from base; the base cell marks the
-//! union of its differences from every side. Spans depend only on the inputs and the regions,
+//! union of its differences from every side. A side that shares less with base than the
+//! options' similarity floor marks neither cell. Spans depend only on the inputs and the regions,
 //! so edits that keep the regions keep the cache, and a merge or split of regions clears it.
 
 use std::collections::HashMap;
 use std::ops::Range;
 
-use merge_core::diff::{Hunk, intraline_hunks};
+use merge_core::diff::{Hunk, Intraline, intraline};
 use merge_core::document::{Applied, MergeDocument};
 use merge_core::index::RegionIx;
 use merge_core::merge3::{Kind, Region, Source};
@@ -98,20 +99,25 @@ fn spans(doc: &MergeDocument, region: &Region, sources: &[Source], offset: usize
         let lines = range(region, source);
         (offset < lines.len()).then(|| inputs.text(source).line(lines.start + offset))
     };
-    // Each side's character diff from base; `None` inside when a line is too long.
+    let floor = doc.options().diff.intraline;
+    // Each like side's character diff from base; `None` inside when a line is too long. A
+    // side under the floor takes no part.
     let diffs: Vec<(usize, Option<Vec<Hunk>>)> =
         match (region.kind, line(Source::Base(REFERENCE_BASE))) {
             (Kind::Unchanged, _) | (_, None) => Vec::new(),
             (_, Some(base)) => (0..region.sides.len())
                 .filter_map(|i| {
-                    line(Source::Side(i)).map(|side| {
-                        let hunks = if side == base {
-                            Some(Vec::new())
-                        } else {
-                            intraline_hunks(base, side)
-                        };
-                        (i, hunks)
-                    })
+                    let side = line(Source::Side(i))?;
+                    let hunks = if side == base {
+                        Some(Vec::new())
+                    } else {
+                        match intraline(base, side, floor) {
+                            Intraline::Hunks(hunks) => Some(hunks),
+                            Intraline::TooLong => None,
+                            Intraline::Unlike => return None,
+                        }
+                    };
+                    Some((i, hunks))
                 })
                 .collect(),
         };
@@ -172,6 +178,7 @@ mod tests {
     use merge_core::document::{Command, EditBatch, MergeOptions, TextPatch};
 
     use super::*;
+    use merge_core::diff::{DiffOptions, Similarity};
 
     const LRU_LINES: usize = 600;
 
@@ -188,6 +195,23 @@ mod tests {
     fn a_replaced_word_is_marked_in_the_side_and_in_base() {
         let d = doc("let x = 1;\n", "let y = 1;\n", "let x = 1;\n");
         assert_eq!(row(&d, PaneSet::LeftBaseRight, 0), [at(&[4..5]), at(&[4..5]), CellSpans::None]);
+    }
+
+    #[test]
+    fn a_side_unlike_base_marks_neither_itself_nor_base() {
+        // Left keeps "a" of "abcd", 1 of 4, under the default half; right keeps 3 of 4.
+        let d = doc("abcd\n", "axyz\n", "abce\n");
+        assert_eq!(row(&d, PaneSet::LeftBaseRight, 0), [CellSpans::None, at(&[3..4]), at(&[3..4])]);
+    }
+
+    #[test]
+    fn the_merge_options_floor_sets_which_pairs_take_marks() {
+        let options = MergeOptions {
+            diff: DiffOptions { intraline: Similarity::NONE, ..DiffOptions::default() },
+            ..MergeOptions::default()
+        };
+        let d = doc_with("abcd\n", "axyz\n", "abce\n", options);
+        assert_eq!(row(&d, PaneSet::LeftBaseRight, 0), [at(&[1..4]), at(&[1..4]), at(&[3..4])]);
     }
 
     #[test]
