@@ -32,9 +32,9 @@ The pure crates hold up: `merge-core`, `merge-syntax` and `merge-view` have no G
 
 The front ends take the jj-native report types from `merge_session::jj_native` only. `vcs-jj` and `vcs-git` are dev-dependencies of `merge-cli` and `merge-app`, for fixtures; `script/check-workspace` fails on a normal dependency.
 
-## K7 MergeWindow in parts
+## K7 MergeWindow in parts — done
 
-`window.rs` is 4 700 lines: journaling, line origins, output watching, scroll sync, the save flow, input selection and the measurement harness in one type. Each job moves to its own module with the state it owns. No behaviour changes; the existing GUI tests cover it.
+Each job's methods live in a child module of `window`: `output`, `origins`, `inputs`, `measuring`, `scrolling`, `journal`, `save` and `search`. `window.rs` keeps the type, its construction and its rendering, 3 300 lines. The state stays on `MergeWindow`, where the render reads it; a job whose state no other job reads can move it into a struct of its own when it next changes. No behaviour changes; the existing GUI tests cover it.
 
 ## K8 Highlight queries in `merge-syntax`
 

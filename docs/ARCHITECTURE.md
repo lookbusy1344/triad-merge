@@ -272,7 +272,7 @@ The GPUI shell: windows, panes, editors, toolbar, menus and keys. It draws what 
 
 ### 10.2 The merge window
 
-`window::MergeWindow` (`DESIGN.md` §A6.2) holds the `Session`, the `RowMap`, the result editor (`Entity<EditorState>`), region bands, highlights, syntax state, scroll, status counts, ruler marks and the journal tasks. Its loop:
+`window::MergeWindow` (`DESIGN.md` §A6.2) keeps each job's methods in a child module of `window`: `output` (watching OUTPUT), `origins` (line origins), `inputs` (input selection), `measuring` (the measurement harness), `scrolling` (scroll sync, wrapping, folds), `journal` (the recovery journal), `save` (the save flow) and `search` (find). `window.rs` holds the type, its construction and its rendering. It holds the `Session`, the `RowMap`, the result editor (`Entity<EditorState>`), region bands, highlights, syntax state, scroll, status counts, ruler marks and the journal tasks. Its loop:
 
 1. The user types in the result editor. The editor applies the edit at once.
 2. `recorder` turns the editor's report into an `EditBatch`; `editor_sync` sends it as `Command::Edit` through the session to `MergeDocument::apply`.
