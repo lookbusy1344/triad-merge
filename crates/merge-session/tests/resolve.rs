@@ -6,8 +6,8 @@ use std::path::Path;
 use camino::{Utf8Path, Utf8PathBuf};
 use merge_core::document::Labels;
 use merge_core::text::DecodeError;
-use merge_session::repository::RunRepository;
-use merge_session::resolve::{self, Conflicted, Loaded, ResolveError, Snapshot};
+use merge_session::repository::{Discovery, RunRepository};
+use merge_session::resolve::{self, Conflicted, Destination, Loaded, ResolveError, Snapshot};
 use merge_session::{EncodedOutput, ExitCode};
 use vcs::testing::Entry;
 use vcs::{EntryKind, RepoKind, VcsError};
@@ -64,13 +64,13 @@ const BOTH_CHANGED: [Option<&[u8]>; 3] = [Some(BASE), Some(LEFT), Some(RIGHT)];
 /// [`resolve::load`] in the repository a `resolve` in `cwd` on `path` finds, with jj's
 /// default config for its snapshots.
 fn load(cwd: &Path, path: &Path) -> Result<Loaded, ResolveError> {
-    let mut run = RunRepository::of_resolve(cwd, Some(path)).with_jj_config(ConfigEnv::default());
+    let mut run = Discovery::new(ConfigEnv::default()).of_resolve(cwd, Some(path));
     resolve::load(&mut run, cwd, path, Snapshot::Take)
 }
 
 /// [`resolve::conflicted`] in the repository holding `cwd`, with jj's default config.
 fn conflicted(cwd: &Path) -> Result<Conflicted, ResolveError> {
-    resolve::conflicted(&mut RunRepository::find([cwd]).with_jj_config(ConfigEnv::default()))
+    resolve::conflicted(&mut Discovery::new(ConfigEnv::default()).find([cwd]))
 }
 
 #[test]
@@ -86,7 +86,10 @@ fn a_git_conflict_loads_its_stages_titled_by_the_stopped_merge() {
     );
     assert_eq!(loaded.repo, Some(RepoKind::Git));
     assert_eq!(loaded.path, Utf8PathBuf::from("a.txt"));
-    assert_eq!(loaded.file, canonical(fixture.root()).join("a.txt"));
+    assert_eq!(
+        loaded.destination.file(),
+        Some(canonical(fixture.root()).join("a.txt").as_std_path())
+    );
 }
 
 #[test]
@@ -112,7 +115,10 @@ fn a_path_resolves_against_the_working_directory() {
     std::fs::create_dir_all(&src).expect("the directory is made");
     let loaded = load(src.as_std_path(), Path::new("b.txt")).expect("the conflict loads");
     assert_eq!(loaded.path, Utf8PathBuf::from("src/b.txt"));
-    assert_eq!(loaded.file, canonical(fixture.root()).join("src/b.txt"));
+    assert_eq!(
+        loaded.destination.file(),
+        Some(canonical(fixture.root()).join("src/b.txt").as_std_path())
+    );
     assert_eq!(texts(&loaded), (vec!["left\n", "right\n"], vec!["a\n"]));
 }
 
@@ -159,7 +165,10 @@ fn a_clean_file_with_markers_opens_from_them() {
     assert_eq!(loaded.labels, labels(&["ours", "theirs"], &["anc"]));
     assert_eq!(loaded.repo, Some(RepoKind::Git));
     assert_eq!(loaded.path, Utf8PathBuf::from("src/m.txt"));
-    assert_eq!(loaded.file, canonical(fixture.root()).join("src/m.txt"));
+    assert_eq!(
+        loaded.destination.file(),
+        Some(canonical(fixture.root()).join("src/m.txt").as_std_path())
+    );
 }
 
 #[test]
@@ -171,7 +180,7 @@ fn outside_a_repository_a_file_with_markers_opens_from_them() {
     assert_eq!(loaded.repo, None);
     assert_eq!(loaded.path, Utf8PathBuf::from("m.txt"));
     let dir = Utf8Path::from_path(dir.path()).expect("UTF-8");
-    assert_eq!(loaded.file, canonical(dir).join("m.txt"));
+    assert_eq!(loaded.destination.file(), Some(canonical(dir).join("m.txt").as_std_path()));
 }
 
 /// git's two-way markers for `a.txt`'s conflict: they hold no base.
@@ -194,7 +203,10 @@ fn from_outside_any_repository_a_path_into_one_loads_from_it() {
     assert_eq!(texts(&loaded), (vec!["left\n", "right\n"], vec!["a\n"]));
     assert_eq!(loaded.repo, Some(RepoKind::Git));
     assert_eq!(loaded.path, Utf8PathBuf::from("a.txt"));
-    assert_eq!(loaded.file, canonical(fixture.root()).join("a.txt"));
+    assert_eq!(
+        loaded.destination.file(),
+        Some(canonical(fixture.root()).join("a.txt").as_std_path())
+    );
 }
 
 #[test]
@@ -380,7 +392,10 @@ fn a_git_file_edited_beside_its_markers_opens_from_them() {
     assert_eq!(loaded.labels, labels(&["ours", "theirs"], &[""]));
     assert_eq!(loaded.repo, Some(RepoKind::Git));
     assert_eq!(loaded.path, Utf8PathBuf::from("a.txt"));
-    assert_eq!(loaded.file, canonical(fixture.root()).join("a.txt"));
+    assert_eq!(
+        loaded.destination.file(),
+        Some(canonical(fixture.root()).join("a.txt").as_std_path())
+    );
     assert_eq!(loaded.marker_length, None);
 }
 
@@ -580,7 +595,7 @@ fn a_resolved_git_save_is_staged_as_git_add_stages_it() {
     use gix::index::entry::Stage;
     let (fixture, _) = git_stopped(&[], &[("a.txt", files(BOTH_CHANGED))]);
     let loaded = load(fixture.root().as_std_path(), Path::new("a.txt")).expect("it loads");
-    let record = loaded.record.expect("git holds the conflict");
+    let record = loaded.destination.record().cloned().expect("git holds the conflict");
     fixture.write("a.txt", b"merged\n");
     record.saved(ExitCode::Resolved).expect("the save is recorded");
     assert_eq!(git_stages(&fixture, "a.txt"), [Stage::Unconflicted]);
@@ -595,7 +610,7 @@ fn a_git_save_with_markers_or_without_a_write_leaves_the_stages() {
     use gix::index::entry::Stage;
     let (fixture, _) = git_stopped(&[], &[("a.txt", files(BOTH_CHANGED))]);
     let loaded = load(fixture.root().as_std_path(), Path::new("a.txt")).expect("it loads");
-    let record = loaded.record.expect("git holds the conflict");
+    let record = loaded.destination.record().cloned().expect("git holds the conflict");
     fixture.write("a.txt", GIT_MARKERS);
     for code in [ExitCode::Conflicts, ExitCode::Cancelled, ExitCode::Error] {
         record.saved(code).expect("nothing to record");
@@ -628,10 +643,10 @@ fn a_resolved_save_writes_the_file_then_stages_it() {
     let opened = resolved_to_left(&fixture);
     let code = EncodedOutput::new(&opened.doc, OutputEnding::Keep)
         .unwrap()
-        .save(opened.file.as_std_path(), opened.record.as_ref(), None)
+        .save(&opened.destination, None)
         .expect("the save is written and recorded");
     assert_eq!(code, ExitCode::Resolved);
-    assert_eq!(std::fs::read(&opened.file).expect("written"), LEFT);
+    assert_eq!(std::fs::read(opened.destination.file().expect("a file")).expect("written"), LEFT);
     assert_eq!(git_stages(&fixture, "a.txt"), [Stage::Unconflicted]);
 }
 
@@ -646,7 +661,7 @@ fn a_save_the_index_refuses_is_written_and_says_it_is_not_recorded() {
     fixture.write(".git/index.lock", b"");
     let error = EncodedOutput::new(&opened.doc, OutputEnding::Keep)
         .unwrap()
-        .save(opened.file.as_std_path(), opened.record.as_ref(), None)
+        .save(&opened.destination, None)
         .expect_err("the index is locked");
     match &error {
         SaveError::Record { path, code: ExitCode::Resolved, source: VcsError::Backend { .. } } => {
@@ -659,11 +674,16 @@ fn a_save_the_index_refuses_is_written_and_says_it_is_not_recorded() {
             .to_string()
             .starts_with("a.txt is written, but the repository did not record the save: ")
     );
-    assert_eq!(std::fs::read(&opened.file).expect("written"), LEFT);
+    assert_eq!(std::fs::read(opened.destination.file().expect("a file")).expect("written"), LEFT);
     assert_eq!(git_stages(&fixture, "a.txt"), [Stage::Base, Stage::Ours, Stage::Theirs]);
     // Once the lock goes, recording again stages the file written before.
     std::fs::remove_file(fixture.root().join(".git/index.lock")).expect("the lock is removed");
-    let code = opened.record.expect("git holds the conflict").resave(ExitCode::Resolved);
+    let code = opened
+        .destination
+        .record()
+        .cloned()
+        .expect("git holds the conflict")
+        .resave(ExitCode::Resolved);
     assert_eq!(code.expect("recorded"), ExitCode::Resolved);
     assert_eq!(git_stages(&fixture, "a.txt"), [Stage::Unconflicted]);
 }
@@ -678,7 +698,13 @@ fn a_save_that_cannot_be_written_records_nothing() {
     let output = fixture.root().join("missing").join("a.txt");
     let error = EncodedOutput::new(&opened.doc, OutputEnding::Keep)
         .unwrap()
-        .save(output.as_std_path(), opened.record.as_ref(), None)
+        .save(
+            &Destination::File {
+                path: output.clone().into_std_path_buf(),
+                record: opened.destination.record().cloned(),
+            },
+            None,
+        )
         .expect_err("the directory is missing");
     assert!(
         matches!(&error, SaveError::Write(write) if write.path == output.as_std_path()),
@@ -692,7 +718,7 @@ fn a_save_recorded_in_another_repository_is_refused_before_any_write() {
     use gix::index::entry::Stage;
     let (fixture, _) = git_stopped(&[], &[("a.txt", files(BOTH_CHANGED))]);
     let loaded = load(fixture.root().as_std_path(), Path::new("a.txt")).expect("it loads");
-    let record = loaded.record.expect("git holds the conflict");
+    let record = loaded.destination.record().cloned().expect("git holds the conflict");
     fixture.write("a.txt", b"merged\n");
     let (other, _) = git_stopped(&[], &[("a.txt", files(BOTH_CHANGED))]);
     let mut run = RunRepository::find([other.root().as_std_path()]);
@@ -715,18 +741,16 @@ fn a_save_through_the_runs_repository_stages_it_there_and_refuses_another() {
     let (other, _) = git_stopped(&[], &[("a.txt", files(BOTH_CHANGED))]);
     let mut elsewhere = RunRepository::find([other.root().as_std_path()]);
     let error = encoded
-        .save(opened.file.as_std_path(), opened.record.as_ref(), Some(&mut elsewhere))
+        .save(&opened.destination, Some(&mut elsewhere))
         .expect_err("the run holds another repository");
     assert!(
         matches!(&error, SaveError::Record { path, code: ExitCode::Resolved, source: VcsError::OutsideRepository(_) } if path == "a.txt"),
         "{error:?}"
     );
-    assert_eq!(std::fs::read(&opened.file).expect("written"), LEFT);
+    assert_eq!(std::fs::read(opened.destination.file().expect("a file")).expect("written"), LEFT);
     assert_eq!(git_stages(&fixture, "a.txt"), [Stage::Base, Stage::Ours, Stage::Theirs]);
     let mut run = RunRepository::find([fixture.root().as_std_path()]);
-    let code = encoded
-        .save(opened.file.as_std_path(), opened.record.as_ref(), Some(&mut run))
-        .expect("written and recorded");
+    let code = encoded.save(&opened.destination, Some(&mut run)).expect("written and recorded");
     assert_eq!(code, ExitCode::Resolved);
     assert_eq!(git_stages(&fixture, "a.txt"), [Stage::Unconflicted]);
     assert_eq!(git_stages(&other, "a.txt"), [Stage::Base, Stage::Ours, Stage::Theirs]);
@@ -738,7 +762,7 @@ fn a_file_opened_from_its_markers_alone_has_no_record() {
     fixture.write("clean.txt", b"<<<<<<< l\nleft\n=======\nright\n>>>>>>> r\n");
     let loaded =
         load(fixture.root().as_std_path(), Path::new("clean.txt")).expect("the markers load");
-    assert!(loaded.record.is_none(), "{:?}", loaded.record);
+    assert!(loaded.destination.record().is_none(), "{:?}", loaded.destination);
 }
 
 mod jj {
@@ -758,7 +782,7 @@ mod jj {
         assert_eq!(ops[0], Op { description: SNAPSHOT.to_owned(), is_snapshot: true });
         assert_eq!(fixture.held_at(0, "b.txt"), Held::File(b"new\n".to_vec()));
         fixture.write("a.txt", b"merged\n");
-        let record = loaded.record.expect("jj holds the conflict");
+        let record = loaded.destination.record().cloned().expect("jj holds the conflict");
         record.saved(ExitCode::Resolved).expect("the save is recorded");
         let ops = fixture.operations();
         assert_eq!(ops.len(), before + 2);
@@ -780,7 +804,7 @@ mod jj {
 
     /// The run's repository at `fixture`'s root, with jj's default config.
     fn run_at(fixture: &vcs_jj::testing::Fixture) -> RunRepository {
-        RunRepository::find([fixture.root().as_std_path()]).with_jj_config(ConfigEnv::default())
+        Discovery::new(ConfigEnv::default()).find([fixture.root().as_std_path()])
     }
 
     #[test]
@@ -811,7 +835,7 @@ mod jj {
         let loaded =
             resolve::load(&mut run, root, Path::new("a.txt"), Snapshot::Taken).expect("it loads");
         fixture.write("a.txt", b"merged\n");
-        let record = loaded.record.expect("jj holds the conflict");
+        let record = loaded.destination.record().cloned().expect("jj holds the conflict");
         record.saved_in(&mut run, ExitCode::Resolved).expect("the save is recorded");
         assert_eq!(
             fixture.operations()[0],
@@ -828,7 +852,7 @@ mod jj {
         let loaded = load(fixture.root().as_std_path(), Path::new("a.txt")).expect("it loads");
         let before = fixture.operations();
         fixture.write("a.txt", b"merged\n");
-        let record = loaded.record.expect("jj holds the conflict");
+        let record = loaded.destination.record().cloned().expect("jj holds the conflict");
         record.saved(ExitCode::Cancelled).expect("nothing to record");
         assert_eq!(fixture.operations(), before);
     }
@@ -1026,7 +1050,7 @@ mod jj {
             fixture.root().as_std_path(),
             rev,
             Path::new("a.txt"),
-            Some(ConfigEnv::default()),
+            &Discovery::new(ConfigEnv::default()),
         )
         .expect("it loads")
     }
@@ -1057,7 +1081,7 @@ mod jj {
             fixture.root().as_std_path(),
             "the_merge()",
             Path::new("a.txt"),
-            Some(ConfigEnv { environment, ..ConfigEnv::default() }),
+            &Discovery::new(ConfigEnv { environment, ..ConfigEnv::default() }),
         )
         .expect("the alias names the merge");
         assert_eq!(texts(&loaded), (vec!["left\n", "right\n"], vec!["a\n"]));
@@ -1076,16 +1100,20 @@ mod jj {
         assert_eq!(ops[0], Op { description: SNAPSHOT.to_owned(), is_snapshot: true });
     }
 
-    fn commit(record: &resolve::Record) -> &resolve::InCommit {
-        record.in_commit().expect("a commit's conflict")
+    fn commit(destination: &Destination) -> resolve::InCommit {
+        destination.in_commit().cloned().expect("a commit's conflict")
     }
+
+    /// Previews and saves write nothing else.
+    const DRY_RUN: bool = true;
+    const WRITE: bool = false;
 
     #[test]
     fn a_preview_reports_a_resolution_and_writes_nothing() {
         let (fixture, merge) = stacked();
-        let record = at_commit(&fixture, &merge.commit).record.expect("a commit's record");
+        let commit = commit(&at_commit(&fixture, &merge.commit).destination);
         let operations = fixture.operation_count();
-        let rewrite = commit(&record).preview(RIGHT).expect("previewed");
+        let rewrite = commit.write(RIGHT, DRY_RUN).expect("previewed");
         assert!(rewrite.resolved);
         assert!(!rewrite.written);
         // The child and the working copy on it inherit the conflict, and lose it with it.
@@ -1094,29 +1122,29 @@ mod jj {
         assert_eq!(fixture.operation_count(), operations);
     }
 
-    /// The automatic merge of `a.txt` in `merge`, with its markers, and the record that
-    /// writes it there.
+    /// The automatic merge of `a.txt` in `merge`, with its markers, and the commit that
+    /// takes it.
     fn markers_in(
         fixture: &vcs_jj::testing::Fixture,
         merge: &vcs_jj::testing::Committed,
-    ) -> (Vec<u8>, resolve::Record) {
+    ) -> (Vec<u8>, resolve::InCommit) {
         let opened = at_commit(fixture, &merge.commit)
             .open(merge_core::document::MergeOptions::default())
             .expect("labels fit");
         let markers = EncodedOutput::new(&opened.doc, merge_core::document::OutputEnding::Keep)
             .expect("UTF-8 holds every character");
         assert_eq!(markers.code(), ExitCode::Conflicts);
-        (markers.bytes().to_vec(), opened.record.expect("a commit's record"))
+        (markers.bytes().to_vec(), commit(&opened.destination))
     }
 
     #[test]
     fn a_preview_of_changed_markers_keeps_the_descendants_conflicted() {
         let (fixture, merge) = stacked();
-        let (markers, record) = markers_in(&fixture, &merge);
+        let (markers, commit) = markers_in(&fixture, &merge);
         let text = String::from_utf8(markers).expect("UTF-8");
         let edited = text.replacen("\nleft\n", "\nleft edited\n", 1);
         assert_ne!(edited, text, "the left side is in the markers");
-        let rewrite = commit(&record).preview(edited.as_bytes()).expect("previewed");
+        let rewrite = commit.write(edited.as_bytes(), DRY_RUN).expect("previewed");
         assert!(!rewrite.resolved);
         assert_eq!(
             effects(&rewrite),
@@ -1127,8 +1155,8 @@ mod jj {
     #[test]
     fn a_preview_of_the_held_conflicts_markers_rebases_nothing() {
         let (fixture, merge) = stacked();
-        let (markers, record) = markers_in(&fixture, &merge);
-        let rewrite = commit(&record).preview(&markers).expect("previewed");
+        let (markers, commit) = markers_in(&fixture, &merge);
+        let rewrite = commit.write(&markers, DRY_RUN).expect("previewed");
         // The markers read back as the conflict the commit holds: the write changes nothing
         // (spec §7.5.1).
         assert!(!rewrite.resolved);
@@ -1150,58 +1178,99 @@ mod jj {
             .unwrap()
             .bytes()
             .to_vec();
-        let record = opened.record.expect("a commit's record");
+        let commit = commit(&opened.destination);
         assert_eq!(
             vcs_jj::testing::without_conflict_labels(
                 &String::from_utf8(markers.clone()).expect("UTF-8")
             ),
             "<<<<<<<\nleft\nshared\n|||||||\na\n=======\nright\nshared\n>>>>>>>\n"
         );
-        let rewrite = commit(&record).preview(&markers).expect("previewed");
+        let rewrite = commit.write(&markers, DRY_RUN).expect("previewed");
         assert!(!rewrite.resolved);
         assert_eq!(effects(&rewrite), []);
     }
 
     #[test]
-    fn a_preview_reads_the_content_given_not_the_saved_file() {
+    fn a_save_into_a_commit_writes_the_encoded_result_there_and_no_file() {
+        use merge_core::document::{Command, OutputEnding, PickScope};
+        use merge_core::merge3::Source;
+        let (fixture, merge) = stacked();
+        let mut opened = at_commit(&fixture, &merge.commit)
+            .open(merge_core::document::MergeOptions::default())
+            .expect("labels fit");
+        opened
+            .doc
+            .apply(Command::PickAll {
+                scope: PickScope::Unresolved,
+                sources: vec![Source::Side(0)],
+            })
+            .expect("left is an input");
+        let code = EncodedOutput::new(&opened.doc, OutputEnding::Keep)
+            .unwrap()
+            .save(&opened.destination, None)
+            .expect("written into the commit");
+        assert_eq!(code, ExitCode::Resolved);
+        assert_eq!(
+            fixture.held_in(&fixture.latest(&merge), "a.txt"),
+            vcs_jj::testing::Held::File(LEFT.to_vec())
+        );
+        assert_eq!(opened.destination.file(), None);
+    }
+
+    #[test]
+    fn a_save_the_commit_refuses_is_a_failed_write() {
+        use merge_core::document::OutputEnding;
+        use merge_session::SaveError;
+        use merge_session::ending::Undone;
         let (fixture, merge) = stacked();
         let opened = at_commit(&fixture, &merge.commit)
             .open(merge_core::document::MergeOptions::default())
             .expect("labels fit");
-        // The saved file holds the conflict as the commit does: a write of it changes nothing.
-        let markers =
-            EncodedOutput::new(&opened.doc, merge_core::document::OutputEnding::Keep).unwrap();
-        std::fs::write(&opened.file, markers.bytes()).expect("written");
-        let record = opened.record.expect("a commit's record");
-        let rewrite = commit(&record).preview(LEFT).expect("previewed");
-        assert!(rewrite.resolved);
-        assert_eq!(effects(&rewrite), [(vec!["a.txt"], vec![]), (vec!["a.txt"], vec![])]);
+        // Another run resolves the path in the commit first, so the conflict this run read
+        // is gone.
+        commit(&at_commit(&fixture, &merge.commit).destination)
+            .write(RIGHT, WRITE)
+            .expect("the other run's save is written");
+        let error = EncodedOutput::new(&opened.doc, OutputEnding::Keep)
+            .unwrap()
+            .save(&opened.destination, None)
+            .expect_err("the conflict changed");
+        let SaveError::Commit { path, source: VcsError::Backend { source, .. } } = &error else {
+            panic!("expected a refusal of the commit, got {error:?}");
+        };
+        assert_eq!(path, "a.txt");
+        assert!(
+            matches!(
+                source.downcast_ref::<vcs_jj::JjError>(),
+                Some(vcs_jj::JjError::ConflictChanged { path, .. }) if path == "a.txt"
+            ),
+            "{source:?}"
+        );
+        assert_eq!(Undone::of(&error), Undone::Write);
+        assert_eq!(
+            fixture.held_in(&fixture.latest(&merge), "a.txt"),
+            vcs_jj::testing::Held::File(RIGHT.to_vec())
+        );
     }
 
     #[test]
     fn a_second_save_after_one_that_kept_markers_is_written() {
         let (fixture, merge) = stacked();
-        let opened = at_commit(&fixture, &merge.commit)
-            .open(merge_core::document::MergeOptions::default())
-            .expect("labels fit");
-        let markers =
-            EncodedOutput::new(&opened.doc, merge_core::document::OutputEnding::Keep).unwrap();
-        let text = String::from_utf8(markers.bytes().to_vec()).expect("UTF-8");
+        let (markers, commit) = markers_in(&fixture, &merge);
+        let text = String::from_utf8(markers).expect("UTF-8");
         let edited = text.replacen("\nleft\n", "\nleft edited\n", 1);
         assert_ne!(edited, text, "the left side is in the markers");
-        let record = opened.record.expect("a commit's record");
-        std::fs::write(&opened.file, &edited).expect("written");
-        record.saved(ExitCode::Conflicts).expect("the first save is written");
+        commit.write(edited.as_bytes(), WRITE).expect("the first save is written");
         assert_eq!(
             fixture.held_in(&fixture.latest(&merge), "a.txt"),
             vcs_jj::testing::Held::Conflict
         );
-        // A clone shares the commit the save wrote, as a save job's copy of the record does.
-        let copy = record.clone();
-        let preview = commit(&copy).preview(RIGHT).expect("previewed after the save");
+        // A clone shares the commit the save wrote, as a save job's copy of the destination
+        // does.
+        let copy = commit.clone();
+        let preview = copy.write(RIGHT, DRY_RUN).expect("previewed after the save");
         assert!(preview.resolved, "{preview:?}");
-        std::fs::write(&opened.file, RIGHT).expect("written");
-        copy.saved(ExitCode::Resolved).expect("the second save is written");
+        copy.write(RIGHT, WRITE).expect("the second save is written");
         assert_eq!(
             fixture.held_in(&fixture.latest(&merge), "a.txt"),
             vcs_jj::testing::Held::File(RIGHT.to_vec())
@@ -1212,7 +1281,6 @@ mod jj {
     fn the_working_copys_conflict_has_no_preview() {
         let fixture = jj_on_disk(LEFT, RIGHT);
         let loaded = load(fixture.root().as_std_path(), Path::new("a.txt")).expect("it loads");
-        let record = loaded.record.expect("jj holds the conflict");
-        assert!(record.in_commit().is_none());
+        assert!(loaded.destination.in_commit().is_none(), "{:?}", loaded.destination);
     }
 }

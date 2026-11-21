@@ -41,7 +41,7 @@ impl Session {
     fn open(cx: &mut TestAppContext, doc: MergeDocument, ending: OutputEnding) -> Self {
         let dir = tempfile::tempdir().expect("tempdir");
         let settings = WindowSettings {
-            output: Some(dir.path().join("out")),
+            destination: Some(merge_session::resolve::Destination::file_at(dir.path().join("out"))),
             journal_dir: Some(dir.path().join("journal")),
             line_ending: ending,
             ..WindowSettings::default()

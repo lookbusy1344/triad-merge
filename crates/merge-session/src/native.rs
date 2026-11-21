@@ -8,10 +8,9 @@ use merge_core::text::{DecodeError, Text};
 use vcs::{CommitId, EntryKind, RepoKind, Repository, RevSpec, TermContent, Tree, VcsError};
 use vcs_git::GitRepository;
 use vcs_jj::JjRepository;
-use vcs_jj::config::ConfigEnv;
 
 use crate::dir_diff::{self, Blob, Change, ChangedFile, Content, Difference};
-use crate::repository::RunRepository;
+use crate::repository::{Discovery, RunRepository};
 
 /// What `diff PATH` shows: a revision of the file on the left, the working copy on the right.
 #[derive(Debug)]
@@ -63,7 +62,7 @@ pub enum NativeError {
 pub fn discover(start: &Utf8Path) -> Result<Box<dyn Repository>, VcsError> {
     let repo =
         find_from(start.as_std_path()).ok_or_else(|| VcsError::NotARepository(start.to_owned()))?;
-    open(&repo, None)
+    open(&repo, &Discovery::default())
 }
 
 /// The repository holding `dir` made canonical, as [`nearest_repo`] finds it; none for a
@@ -82,20 +81,11 @@ pub(crate) fn find_from(dir: &Path) -> Option<Repo> {
 ///
 /// [`VcsError::NotUtf8`] for a root that is not UTF-8, [`VcsError::NotARepository`] for a
 /// `.git` git cannot open, and any error from opening the repository.
-pub(crate) fn open(
-    repo: &Repo,
-    jj_config: Option<&ConfigEnv>,
-) -> Result<Box<dyn Repository>, VcsError> {
+pub(crate) fn open(repo: &Repo, discovery: &Discovery) -> Result<Box<dyn Repository>, VcsError> {
     let root =
         Utf8Path::from_path(&repo.root).ok_or_else(|| VcsError::NotUtf8(repo.root.clone()))?;
     Ok(match repo.kind {
-        RepoKind::Jj => {
-            let jj = JjRepository::discover(root)?;
-            Box::new(match jj_config {
-                Some(config) => jj.with_config(config.clone()),
-                None => jj,
-            })
-        }
+        RepoKind::Jj => Box::new(JjRepository::discover(root)?.with_config(discovery.jj_config())),
         RepoKind::Git => Box::new(GitRepository::open(root)?),
     })
 }

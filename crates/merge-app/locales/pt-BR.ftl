@@ -467,7 +467,6 @@ err-kind-directory = diretório
 err-deleted-everywhere = { $path } foi excluído em todos os lados; nada a mesclar
 err-resolved-in-tree = { $path } não tem mais marcadores de conflito na árvore de trabalho, então parece resolvido; marque-o como resolvido ou restaure seus marcadores para mesclá-lo de novo
 err-tree-not-text = { $path }: o arquivo da árvore de trabalho não é texto ({ $detail }), então pode conter edições que um salvamento sobrescreveria; restaure o texto com seus marcadores de conflito ou resolva-o manualmente
-err-temporary = não é possível criar um arquivo temporário para o resultado: { $detail }
 err-not-a-directory = { $path } não é um diretório
 err-mixed = diff recebe dois arquivos ou dois diretórios: { $dir } é um diretório, { $other } não
 err-git-in-jj = { $path } é um repositório jj, onde o triad mescla apenas com a semântica do jj; resolva com `jj resolve`

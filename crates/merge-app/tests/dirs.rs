@@ -20,6 +20,7 @@ use merge_core::diff::DiffOptions;
 use merge_core::diff2::Side;
 use merge_core::index::RegionIx;
 use merge_session::dir_diff::{Change, Content};
+use merge_session::repository::Discovery;
 
 /// `left/` and `right/` below one temporary directory.
 struct Dirs {
@@ -63,6 +64,7 @@ fn start_on(cwd: &Path, source: Source) -> DirStart {
     DirStart {
         cwd: cwd.to_owned(),
         source,
+        discovery: Discovery::default(),
         title: None,
         diff: DiffOptions::default(),
         settings: WindowSettings::default(),
@@ -473,7 +475,7 @@ fn equal_directories_say_so_where_the_list_starts(cx: &mut TestAppContext) {
 
 /// The window on the working copy's changes in the repository at `root`, against `rev`.
 fn changes_start(root: impl AsRef<Path>, rev: Option<&str>) -> DirStart {
-    start_on(root.as_ref(), Source::Changes { rev: rev.map(str::to_owned), jj_config: None })
+    start_on(root.as_ref(), Source::Changes { rev: rev.map(str::to_owned) })
 }
 
 /// A git repository whose `HEAD` holds `a.txt` and `gone.txt`; on disk `a.txt` is edited,

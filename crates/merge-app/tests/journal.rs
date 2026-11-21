@@ -50,7 +50,7 @@ impl Session {
 
     fn settings(&self) -> WindowSettings {
         WindowSettings {
-            output: Some(self.output()),
+            destination: Some(merge_session::resolve::Destination::file_at(self.output())),
             journal_dir: Some(self.dir.path().join("journal")),
             ..WindowSettings::default()
         }
@@ -180,7 +180,10 @@ fn commands_before_the_inputs_are_hashed_are_journalled(cx: &mut TestAppContext)
 fn ending_before_the_inputs_are_hashed_still_keeps_the_latest_journal(cx: &mut TestAppContext) {
     let session = Session::new();
     let output = session.dir.path().join("no-such-dir").join("out");
-    let settings = WindowSettings { output: Some(output.clone()), ..session.settings() };
+    let settings = WindowSettings {
+        destination: Some(merge_session::resolve::Destination::file_at(output.clone())),
+        ..session.settings()
+    };
     let (window, view, _) = open_with(cx, conflict(MergeOptions::default()), &settings);
     work(cx, window, &view);
     // The save fails. Its job writes the journal first, hashing the inputs itself.
@@ -334,7 +337,10 @@ fn cancel_deletes_the_journal_and_a_waiting_write(cx: &mut TestAppContext) {
 fn a_write_failure_keeps_the_latest_journal(cx: &mut TestAppContext) {
     let session = Session::new();
     let output = session.dir.path().join("no-such-dir").join("out");
-    let settings = WindowSettings { output: Some(output.clone()), ..session.settings() };
+    let settings = WindowSettings {
+        destination: Some(merge_session::resolve::Destination::file_at(output.clone())),
+        ..session.settings()
+    };
     let (window, view, finished) = open_with(cx, conflict(MergeOptions::default()), &settings);
     work(cx, window, &view);
     press(cx, window, "secondary-q");
@@ -430,7 +436,10 @@ fn another_output_has_its_own_journal(cx: &mut TestAppContext) {
     work(cx, window, &view);
     wait(cx, JOURNAL_DEBOUNCE);
     let other = session.dir.path().join("other-out");
-    let settings = WindowSettings { output: Some(other.clone()), ..session.settings() };
+    let settings = WindowSettings {
+        destination: Some(merge_session::resolve::Destination::file_at(other.clone())),
+        ..session.settings()
+    };
     let _ = open_with(cx, conflict(MergeOptions::default()), &settings);
     cx.run_until_parked();
     assert!(!cx.has_pending_prompt(), "nothing to restore for this output");
@@ -514,7 +523,9 @@ fn opening_a_window_deletes_journals_past_their_age(cx: &mut TestAppContext) {
 fn a_journal_name_survives_a_new_temporary_output(cx: &mut TestAppContext) {
     let session = Session::new();
     let named = |temp: &str| WindowSettings {
-        output: Some(session.dir.path().join(temp).join("output")),
+        destination: Some(merge_session::resolve::Destination::file_at(
+            session.dir.path().join(temp).join("output"),
+        )),
         journal_name: Some(PathBuf::from("/repo/a.txt")),
         ..session.settings()
     };
@@ -531,7 +542,7 @@ fn a_journal_name_survives_a_new_temporary_output(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert_eq!(output(cx, &after), expected);
     let saves_to = cx.read(|cx| after.read(cx).output().map(Path::to_path_buf));
-    assert_eq!(saves_to, named("jj-resolve-B").output, "this run's output");
+    assert_eq!(saves_to.as_deref(), named("jj-resolve-B").output(), "this run's output");
 }
 
 #[gpui_kit::test]

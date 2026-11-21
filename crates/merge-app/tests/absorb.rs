@@ -55,8 +55,9 @@ mod jj {
             cwd: fixture.root().as_std_path().to_owned(),
             paths: Vec::new(),
             into: None,
+            listed: None,
             settings,
-            jj_config: Some(ConfigEnv::default()),
+            discovery: merge_session::repository::Discovery::new(ConfigEnv::default()),
         };
         let (window, view) = cx.update(|cx| {
             gpui_kit::init(cx);
@@ -66,6 +67,39 @@ mod jj {
         });
         cx.run_until_parked();
         Started { window, view, exits }
+    }
+
+    #[gpui_kit::test]
+    fn a_listing_made_before_the_window_opens_shows_at_once_and_is_not_made_again(
+        cx: &mut TestAppContext,
+    ) {
+        const LIST_ONLY: bool = false;
+        let (fixture, _, _) = stack();
+        let discovery = merge_session::repository::Discovery::new(ConfigEnv::default());
+        let root = fixture.root().as_std_path();
+        // Narrower paths than the window's own, so a second listing would show.
+        let only_a = [std::path::PathBuf::from("a.txt")];
+        let listed =
+            merge_session::jj_native::absorb(root, &only_a, None, &[], LIST_ONLY, None, &discovery)
+                .expect("a.txt's hunk lists");
+        assert_eq!(listed.hunks.len(), 1, "a.txt's hunk alone");
+        let start = AbsorbStart {
+            cwd: root.to_owned(),
+            paths: Vec::new(),
+            into: None,
+            listed: Some(listed.clone()),
+            settings: WindowSettings::default(),
+            discovery,
+        };
+        let (_, view) = cx.update(|cx| {
+            gpui_kit::init(cx);
+            merge_app::init(cx);
+            absorb_window::start(start, |_, _: &mut App| {}, cx).expect("the window opens")
+        });
+        let shown = |cx: &mut TestAppContext| view.read_with(cx, |view, _| view.hunks().to_vec());
+        assert_eq!(shown(cx), listed.hunks, "shown before any job runs");
+        cx.run_until_parked();
+        assert_eq!(shown(cx), listed.hunks, "not listed again");
     }
 
     fn press(cx: &mut TestAppContext, window: AnyWindowHandle, key: &str) {

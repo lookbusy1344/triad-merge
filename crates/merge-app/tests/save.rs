@@ -119,7 +119,7 @@ fn save_with_unresolved_conflicts_asks_then_writes_markers_and_exits_1(cx: &mut 
 fn without_the_confirmation_save_writes_markers_and_exits_1_at_once(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().expect("tempdir");
     let settings = merge_app::WindowSettings {
-        output: Some(dir.path().join("out")),
+        destination: Some(merge_session::resolve::Destination::file_at(dir.path().join("out"))),
         unresolved_save: merge_session::ending::UnresolvedSave::Write,
         ..merge_app::WindowSettings::default()
     };
@@ -167,7 +167,7 @@ fn setup_writing_markers(
 ) -> (TempDir, AnyWindowHandle, gpui_kit::Entity<merge_app::MergeWindow>, common::Finished) {
     let dir = tempfile::tempdir().expect("tempdir");
     let settings = merge_app::WindowSettings {
-        output: Some(dir.path().join("out")),
+        destination: Some(merge_session::resolve::Destination::file_at(dir.path().join("out"))),
         unresolved_save: merge_session::ending::UnresolvedSave::Write,
         ..merge_app::WindowSettings::default()
     };

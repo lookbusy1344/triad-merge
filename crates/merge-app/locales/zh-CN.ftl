@@ -401,7 +401,6 @@ err-kind-directory = 目录
 err-deleted-everywhere = { $path } 在每一方都已删除；没有可合并的内容
 err-resolved-in-tree = { $path } 在工作树中已没有冲突标记，看起来已解决；请将其标记为已解决，或放回标记以重新合并
 err-tree-not-text = { $path }：工作树中的文件不是文本（{ $detail }），可能含有保存会覆盖的编辑；请放回带冲突标记的文本，或手动解决
-err-temporary = 无法为结果创建临时文件：{ $detail }
 err-not-a-directory = { $path } 不是目录
 err-mixed = diff 需要两个文件或两个目录：{ $dir } 是目录，{ $other } 不是
 err-git-in-jj = { $path } 是 jj 仓库，triad 在此只按 jj 的语义合并；请用 `jj resolve` 解决

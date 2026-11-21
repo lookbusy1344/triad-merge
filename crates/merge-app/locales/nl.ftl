@@ -458,7 +458,6 @@ err-kind-directory = map
 err-deleted-everywhere = { $path } is aan elke kant verwijderd; niets om samen te voegen
 err-resolved-in-tree = { $path } heeft geen conflictmarkeringen meer in de werkboom en lijkt dus opgelost; markeer het als opgelost, of zet de markeringen terug om het opnieuw samen te voegen
 err-tree-not-text = { $path }: het bestand in de werkboom is geen tekst ({ $detail }) en kan dus bewerkingen bevatten die een opslag zou overschrijven; zet tekst met de conflictmarkeringen terug, of los het met de hand op
-err-temporary = kan geen tijdelijk bestand voor het resultaat maken: { $detail }
 err-not-a-directory = { $path } is geen map
 err-mixed = diff neemt twee bestanden of twee mappen: { $dir } is een map, { $other } niet
 err-git-in-jj = { $path } is een jj-repository, waar triad alleen met de semantiek van jj samenvoegt; los op met `jj resolve`

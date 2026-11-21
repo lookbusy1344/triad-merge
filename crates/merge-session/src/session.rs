@@ -2,7 +2,7 @@
 //! writes and records, and whether a save is running. The front end holds the tasks that run
 //! a save and the journal's writes, and asks the session what each step does.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use merge_core::document::{Applied, Command, CommandError, MergeDocument, OutputEnding, Start};
 use merge_core::journal::{Journal as JournalFile, input_hashes};
@@ -11,7 +11,7 @@ use merge_core::text::EncodeError;
 
 use crate::ending::{self, After, Closing, Journal, Next, UnresolvedSave};
 use crate::recovery::Recovery;
-use crate::resolve::{InCommit, Record};
+use crate::resolve::{Destination, InCommit, Record};
 use crate::{EncodedOutput, ExitCode, SaveError};
 use vcs::VcsError;
 use vcs_jj::Rewrite;
@@ -79,10 +79,8 @@ impl PendingOutput {
 /// What a session saves to and how.
 #[derive(Debug, Clone, Default)]
 pub struct SaveTarget {
-    /// Where Save & Exit writes; none for a merge that only saves copies.
-    pub output: Option<PathBuf>,
-    /// The VCS conflict each save to `output` is recorded in (spec §7.4).
-    pub record: Option<Record>,
+    /// Where Save & Exit saves; none for a merge that only saves copies.
+    pub destination: Option<Destination>,
     pub line_ending: OutputEnding,
     pub unresolved_save: UnresolvedSave,
 }
@@ -119,7 +117,7 @@ pub struct SaveJob {
 
 enum SaveWork {
     /// Build and write the output, then record it.
-    Write { pending: PendingOutput, output: PathBuf, record: Option<Record> },
+    Write { pending: PendingOutput, destination: Destination },
     /// Record again a save written with `code`, without writing it again.
     Record { record: Option<Record>, code: ExitCode },
 }
@@ -154,10 +152,10 @@ impl SaveJob {
             recovery
         });
         let outcome = match self.work {
-            SaveWork::Write { pending, output, record } => pending
+            SaveWork::Write { pending, destination } => pending
                 .encode()
                 .map_err(SaveError::from)
-                .and_then(|encoded| encoded.save(&output, record.as_ref(), None)),
+                .and_then(|encoded| encoded.save(&destination, None)),
             SaveWork::Record { record, code } => {
                 record.as_ref().map_or(Ok(code), |record| record.resave(code))
             }
@@ -181,8 +179,9 @@ impl PreviewJob {
     /// [`PreviewError::Encode`] when the output encoding cannot hold the result, and
     /// [`PreviewError::Vcs`] when the repository refuses the write.
     pub fn run(self) -> Result<Rewrite, PreviewError> {
+        const DRY_RUN: bool = true;
         let encoded = self.pending.encode()?;
-        Ok(self.commit.preview(encoded.bytes())?)
+        Ok(self.commit.write(encoded.bytes(), DRY_RUN)?)
     }
 }
 
@@ -198,9 +197,11 @@ impl Session {
         &self.doc
     }
 
+    /// The file a save writes; none for a jj commit's conflict or a merge that saves only
+    /// copies.
     #[must_use]
     pub fn output(&self) -> Option<&Path> {
-        self.target.output.as_deref()
+        self.target.destination.as_ref().and_then(Destination::file)
     }
 
     #[must_use]
@@ -306,7 +307,7 @@ impl Session {
     /// What Save does now (spec §6.2).
     #[must_use]
     pub fn save_in_place_requested(&self) -> Next {
-        ending::save_in_place_requested(self.saving, self.target.output.is_some())
+        ending::save_in_place_requested(self.saving, self.target.destination.is_some())
     }
 
     /// What Close does now (spec §6.2): before any Save, whether the merge changed from its
@@ -343,7 +344,7 @@ impl Session {
         if self.saving {
             return Err(CannotSave::Saving);
         }
-        let output = self.target.output.clone().ok_or(CannotSave::NoOutput)?;
+        let destination = self.target.destination.clone().ok_or(CannotSave::NoOutput)?;
         let pending = self.pending_output();
         self.saving = true;
         let journal = self.recovery.take().map(|recovery| JournalFlush {
@@ -352,7 +353,7 @@ impl Session {
             inputs: self.doc.inputs().clone(),
             start: self.doc.start(),
         });
-        let work = SaveWork::Write { pending, output, record: self.target.record.clone() };
+        let work = SaveWork::Write { pending, destination };
         Ok(SaveJob { work, after, journal })
     }
 
@@ -368,7 +369,7 @@ impl Session {
         }
         self.saving = true;
         Ok(SaveJob {
-            work: SaveWork::Record { record: self.target.record.clone(), code },
+            work: SaveWork::Record { record: self.record().cloned(), code },
             after,
             journal: None,
         })
@@ -394,7 +395,7 @@ impl Session {
     /// commit (spec §7.5.1).
     #[must_use]
     pub fn preview(&self) -> Option<PreviewJob> {
-        let commit = self.target.record.as_ref().and_then(Record::in_commit)?;
+        let commit = self.target.destination.as_ref().and_then(Destination::in_commit)?;
         Some(PreviewJob { pending: self.pending_output(), commit: commit.clone() })
     }
 
@@ -402,6 +403,11 @@ impl Session {
     #[must_use]
     pub fn copy(&self) -> (PendingOutput, usize) {
         (self.pending_output(), self.doc.unresolved())
+    }
+
+    /// The VCS conflict a save to the file is recorded in.
+    fn record(&self) -> Option<&Record> {
+        self.target.destination.as_ref().and_then(Destination::record)
     }
 
     /// The output as a save writes it now, to build off the UI thread.
@@ -412,6 +418,8 @@ impl Session {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
     use merge_core::document::Resolution;
     use merge_core::index::RegionIx;
@@ -434,7 +442,8 @@ mod tests {
     }
 
     fn target(output: Option<PathBuf>, unresolved_save: UnresolvedSave) -> SaveTarget {
-        SaveTarget { output, unresolved_save, ..SaveTarget::default() }
+        let destination = output.map(|path| Destination::File { path, record: None });
+        SaveTarget { destination, unresolved_save, ..SaveTarget::default() }
     }
 
     /// A session on [`conflict`] writing to `dir/out`, journalled in `dir/journal` with the
@@ -505,7 +514,8 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut session = journalled(dir.path());
         // The output cannot be written, so a journal on disk was written before it.
-        session.target.output = Some(dir.path().join("none").join("out"));
+        session.target.destination =
+            Some(Destination::file_at(dir.path().join("none").join("out")));
         session.apply(pick_left()).expect("applies");
         let path = session.recovery().and_then(Recovery::path).expect("named").to_owned();
         let job = session.start_save(After::Exit).expect("starts");
@@ -534,7 +544,8 @@ mod tests {
     fn a_failed_save_unlocks_the_session_and_journals_on_from_its_write() {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut session = journalled(dir.path());
-        session.target.output = Some(dir.path().join("none").join("out"));
+        session.target.destination =
+            Some(Destination::file_at(dir.path().join("none").join("out")));
         session.apply(pick_left()).expect("applies");
         let saved = session.start_save(After::Exit).expect("starts").run();
         let next = session.saved(saved);
@@ -581,7 +592,8 @@ mod tests {
     fn a_restore_while_a_save_runs_is_refused_and_changes_nothing() {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut session = journalled(dir.path());
-        session.target.output = Some(dir.path().join("none").join("out"));
+        session.target.destination =
+            Some(Destination::file_at(dir.path().join("none").join("out")));
         session.apply(Command::Clear { region: CONFLICT_REGION }).expect("applies");
         let job = session.start_save(After::Exit).expect("starts");
         let (doc, journal) = picked_journal();
@@ -675,7 +687,8 @@ mod tests {
         let mut session = journalled(dir.path());
         let saved = session.start_save(After::Stay).expect("starts").run();
         assert_eq!(session.saved(saved), Next::Saved(ExitCode::Conflicts));
-        session.target.output = Some(dir.path().join("none").join("out"));
+        session.target.destination =
+            Some(Destination::file_at(dir.path().join("none").join("out")));
         session.apply(pick_left()).expect("applies");
         let saved = session.start_save(After::Stay).expect("starts").run();
         assert!(matches!(session.saved(saved), Next::Failed { after: After::Stay, .. }));

@@ -122,29 +122,24 @@ impl Colouring {
 }
 
 /// Register the highlight queries gpui-component leaves out or breaks
-/// (`docs/gpui-kit-issues.md`). Its C# and Swift grammars come with empty queries, which
-/// colour nothing. C# has no injections; Swift's inject only grammars triad does not build.
-/// Its Kotlin query names nodes its Kotlin grammar lacks, so it fails to compile; Kotlin
-/// takes its grammar crate's own query. Its C++ grammar comes with
-/// only the lines `tree-sitter-cpp` adds to C's query, so C++ takes C's query, then its own,
-/// in the order `tree-sitter-cpp` lists them; its raw-string injections name a grammar by
-/// the string's delimiter, which triad leaves plain. Its TSX grammar comes with
+/// (`docs/gpui-kit-issues.md`): [`Language::highlight_query`] gives C#, Swift, Kotlin and
+/// C++ theirs. gpui-component's C# and Swift queries are empty; its Kotlin query names
+/// nodes its Kotlin grammar lacks; its C++ query holds only the lines C++ adds to C's. C#
+/// has no injections; Swift's inject only grammars triad does not build; C++'s raw-string
+/// injections name a grammar by the string's delimiter, which triad leaves plain. Its TSX
+/// grammar comes with
 /// only the lines `tree-sitter-typescript` adds to JavaScript's query, so TSX takes
 /// TypeScript's whole query and JavaScript's injections, as TypeScript has them.
 pub(crate) fn register_queries() {
     let registry = LanguageRegistry::singleton();
-    let cpp = [tree_sitter_c::HIGHLIGHT_QUERY, tree_sitter_cpp::HIGHLIGHT_QUERY].concat();
-    let queries = [
-        (Language::CSharp, tree_sitter_c_sharp::HIGHLIGHTS_QUERY),
-        (Language::Swift, tree_sitter_swift::HIGHLIGHTS_QUERY),
-        (Language::Kotlin, tree_sitter_kotlin_sg::HIGHLIGHTS_QUERY),
-        (Language::Cpp, cpp.as_str()),
-    ];
-    for (language, highlights) in queries {
+    for language in Language::ALL {
+        let Some(highlights) = language.highlight_query() else {
+            continue;
+        };
         let name = registry_name(language);
         registry.register(
             name,
-            &GrammarConfig::new(name, language.grammar(), Vec::new(), highlights, "", ""),
+            &GrammarConfig::new(name, language.grammar(), Vec::new(), &highlights, "", ""),
         );
     }
     let tsx = registry_name(Language::Tsx);

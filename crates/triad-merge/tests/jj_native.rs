@@ -15,12 +15,18 @@ static SCRATCH: std::sync::LazyLock<tempfile::TempDir> =
 
 /// The binary in `dir`, with no settings file, no git config and no user jj config.
 fn triad(dir: &Utf8Path, args: &[&str]) -> Output {
+    triad_with_jj_config(dir, &SCRATCH.path().join("no-jjconfig.toml"), args)
+}
+
+/// The binary in `dir`, with no settings file, no git config and the user jj config at
+/// `jj_config`.
+fn triad_with_jj_config(dir: &Utf8Path, jj_config: &std::path::Path, args: &[&str]) -> Output {
     Command::new(BINARY)
         .env("TRIAD_LOG_DIR", SCRATCH.path())
         .env("TRIAD_CONFIG", SCRATCH.path().join("no-config.triad"))
         .env("GIT_CONFIG_GLOBAL", SCRATCH.path().join("no-gitconfig"))
         .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("JJ_CONFIG", SCRATCH.path().join("no-jjconfig.toml"))
+        .env("JJ_CONFIG", jj_config)
         .env_remove("TRIAD_LOG")
         .args(args)
         .current_dir(dir)
@@ -190,6 +196,35 @@ mod jj {
         );
         assert_eq!(fixture.held_in(&merge, "a.txt"), Held::Conflict);
         assert_eq!(fixture.operation_count(), operations);
+    }
+
+    #[test]
+    fn the_jj_native_commands_take_the_users_revset_aliases() {
+        let (fixture, merge, _) = stacked();
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let config = dir.path().join("config.toml");
+        let toml = format!("[revset-aliases]\n\"the_merge()\" = \"{}\"\n", merge.commit);
+        std::fs::write(&config, toml).expect("the config is written");
+        let run = |args: &[&str]| outcome(&triad_with_jj_config(fixture.root(), &config, args));
+        assert_eq!(
+            run(&["stack", "the_merge()", "--list"]),
+            (
+                Some(CONFLICTS),
+                format!("{} {} merge\n  a.txt\n", short(&merge.change_id), short(&merge.commit)),
+                String::new()
+            )
+        );
+        assert_eq!(
+            run(&["resolve", "a.txt", "-r", "the_merge()", "--headless"]),
+            (
+                Some(CONFLICTS),
+                format!("a.txt in {} is unchanged\n", short(&merge.change_id)),
+                String::new()
+            )
+        );
+        // Without the user's config the alias names nothing.
+        let (code, out, _) = outcome(&triad(fixture.root(), &["stack", "the_merge()"]));
+        assert_eq!((code, out.as_str()), (Some(ERROR), ""));
     }
 
     #[test]

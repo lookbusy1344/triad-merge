@@ -50,13 +50,6 @@ ropey.workspace = true
 serde_json.workspace = true
 sys-locale.workspace = true
 thiserror.workspace = true
-# Highlight queries gpui-component registers empty (C#, Swift), partly (C++) or broken
-# (Kotlin).
-tree-sitter-c.workspace = true
-tree-sitter-c-sharp.workspace = true
-tree-sitter-cpp.workspace = true
-tree-sitter-kotlin-sg.workspace = true
-tree-sitter-swift.workspace = true
 tracing.workspace = true
 unic-langid.workspace = true
 # The line origin types.

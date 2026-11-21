@@ -167,7 +167,7 @@ Languages and their tree-sitter grammars, for two consumers: syntax colours in t
 
 ## 6. `merge-config`
 
-The config file and what it holds: its format, the settings, the key bindings, and the names of their values. It reads files but writes none except the template, opens no repository and parses no command line. `script/check-workspace` holds it to `merge-core` and `vcs`.
+The config file and what it holds: its format, the settings, the key bindings, and the names of their values. It reads files but writes none except the template, opens no repository and parses no command line. `script/check-workspace` holds it to `merge-core`.
 
 - **`config`** parses the format (`DESIGN.md` §E3.1–3.2): `key = value` lines, `#` comments, and `config-file` includes read in place. It returns `Parsed`: the `Entry`s in order and the `ConfigError`s. It does not know the keys. File access goes through a `Files` trait (`Disk` in the product), so tests run on in-memory files.
 - **`settings`** knows the keys. `Settings` is one struct of every setting: merge options, diff options, colours (`Themed<Colour>` per light and dark), fonts, wrap, layout, scrollbars, the revision ID kind, the UI language, window size and the key bindings. `load(path) -> Loaded` reads a file into `Settings` plus a list of `SettingsError`s; a bad line is reported and skipped, never fatal, and `merge-app` shows the list in its settings banner. `render` prints the settings back in the file's form for `--show-config`; `template` writes a commented default file for Settings….
@@ -211,11 +211,13 @@ The layer under both front ends. It owns everything a merge does outside the eng
 
 `invocation::Window` lists the forms that open a window: `OpenDialog`, `Merge`, `Diff`, `DiffDirs`, `DiffChanges`, `DiffNative`, `Resolve`, `Stack`, `History`, `Absorb`. `merge-cli` fills them; `merge-app` matches on them. `WindowForm` bundles one with its settings, settings errors, working directory and repository.
 
-`repository::RunRepository` is the one repository of a run. It holds the directories the repository may lie in, in order, and opens the first match on first use; semantics, marker style, `resolve`, origins and saves all read the same open repository. `native::nearest_repo` finds the nearest `.jj` directory or `.git` entry, jj on a tie; a `.git` git cannot open is `NotARepository`, never a climb to an outer repository. A `Handoff` carries the repository to a second window, such as from the stack window to a merge window.
+`repository::RunRepository` is the one repository of a run. It holds the directories the repository may lie in, in order, and opens the first match on first use; semantics, marker style, `resolve`, origins and saves all read the same open repository. `native::nearest_repo` finds the nearest `.jj` directory or `.git` entry, jj on a tie; a `.git` git cannot open is `NotARepository`, never a climb to an outer repository. A `Handoff` carries the repository to a second window, such as from the stack window to a merge window. `repository::Discovery` is how a run finds its repositories: a front end builds it once from the run's `Env` (`Discovery::from_env`), and every repository of the run, the windows' later ones included, comes from its constructors, so jj's snapshots, writes and revsets read the user's jj config. `RunRepository::discovery` hands it to the next window.
+
+`diff_tool` holds the two-way diff's file rules: `read_pair` reads the sides of `diff LEFT RIGHT` and opens the working-copy file for jj's right-side copy (spec §7.1); `save` writes a diff window's sides and snapshots the jj working copy.
 
 ### 8.2 Choosing how to merge
 
-`semantics::choose` picks `Semantics::Git` or `Semantics::Jj`. A repository with `.jj` merges with jj's semantics, and a git merge there is an error (`DESIGN.md` §B3). `jj_config` maps jj's `merge.same-change` and `merge.hunk-level` onto the engine's options. `choose_marker_style` reads the repository's conflict style. `language` names the grammar for syntax boundaries.
+`semantics::choose` picks `Semantics::Git` or `Semantics::Jj`. A repository with `.jj` merges with jj's semantics, and a git merge there is an error (`DESIGN.md` §B3). `jj_config` maps jj's `merge.same-change` and `merge.hunk-level` onto the engine's options. `choose_marker_style` reads the repository's conflict style. `apply_semantics` runs both and sets the result in a form's `MergeOptions`, the one step each front-end form takes. `language` names the grammar for syntax boundaries.
 
 ### 8.3 Loading
 
@@ -231,7 +233,7 @@ The layer under both front ends. It owns everything a merge does outside the eng
 
 `ending` decides each step of Save, Save & Exit and Close as pure functions: they take what the window knows and return a `Next` that says what to ask, write or finish. The window does the asking. This keeps the decision table under unit tests and the GPUI code thin.
 
-`EncodedOutput` encodes the result; `write` writes it atomically (`io::write_atomic`: a temporary file beside the target, synced and renamed over it); `save` then records it in the repository. `SaveError` says which part failed and whether the file was written.
+`resolve::Destination` says where a result goes: a file, with the VCS conflict a save records when there is one, or a jj commit's conflict (`InCommit`). `EncodedOutput` encodes the result; `save` writes a file atomically (`io::write_atomic`: a temporary file beside the target, synced and renamed over it) and then records it, or hands the bytes to the commit. `SaveError` says which part failed and whether anything was written.
 
 ### 8.5 Recovery
 
@@ -270,7 +272,7 @@ The GPUI shell: windows, panes, editors, toolbar, menus and keys. It draws what 
 
 ### 10.2 The merge window
 
-`window::MergeWindow` (`DESIGN.md` §A6.2) holds the `Session`, the `RowMap`, the result editor (`Entity<EditorState>`), region bands, highlights, syntax state, scroll, status counts, ruler marks and the journal tasks. Its loop:
+`window::MergeWindow` (`DESIGN.md` §A6.2) keeps each job's methods in a child module of `window`: `output` (watching OUTPUT), `origins` (line origins), `inputs` (input selection), `measuring` (the measurement harness), `scrolling` (scroll sync, wrapping, folds), `journal` (the recovery journal), `save` (the save flow) and `search` (find). `window.rs` holds the type, its construction and its rendering. It holds the `Session`, the `RowMap`, the result editor (`Entity<EditorState>`), region bands, highlights, syntax state, scroll, status counts, ruler marks and the journal tasks. Its loop:
 
 1. The user types in the result editor. The editor applies the edit at once.
 2. `recorder` turns the editor's report into an `EditBatch`; `editor_sync` sends it as `Command::Edit` through the session to `MergeDocument::apply`.

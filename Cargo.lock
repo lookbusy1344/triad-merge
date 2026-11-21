@@ -5646,11 +5646,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tracing",
- "tree-sitter-c",
- "tree-sitter-c-sharp",
- "tree-sitter-cpp",
- "tree-sitter-kotlin-sg",
- "tree-sitter-swift",
  "unic-langid",
  "vcs",
  "vcs-git",
@@ -5697,7 +5692,6 @@ dependencies = [
  "strum",
  "tempfile",
  "thiserror 2.0.21",
- "vcs",
 ]
 
 [[package]]

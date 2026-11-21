@@ -64,8 +64,9 @@ mod jj {
             cwd: fixture.root().as_std_path().to_owned(),
             revset: revset.map(str::to_owned),
             options: MergeOptions::default(),
+            listed: None,
             settings: WindowSettings::default(),
-            jj_config: Some(ConfigEnv::default()),
+            discovery: merge_session::repository::Discovery::new(ConfigEnv::default()),
         };
         let (window, view) = cx.update(|cx| {
             gpui_kit::init(cx);
@@ -120,6 +121,38 @@ mod jj {
                 })
                 .collect()
         })
+    }
+
+    #[gpui_kit::test]
+    fn a_listing_made_before_the_window_opens_shows_at_once_and_is_not_made_again(
+        cx: &mut TestAppContext,
+    ) {
+        let (fixture, merge, _) = stacked();
+        let discovery = merge_session::repository::Discovery::new(ConfigEnv::default());
+        let root = fixture.root().as_std_path();
+        // A narrower revset than the window's own, so a second listing would show.
+        let listed = merge_session::jj_native::stacked(root, Some(&merge.commit), &discovery)
+            .expect("the merge lists");
+        assert_eq!(listed.commits.len(), 1, "the merge alone");
+        let start = StackStart {
+            cwd: root.to_owned(),
+            revset: None,
+            options: MergeOptions::default(),
+            listed: Some(listed.clone()),
+            settings: WindowSettings::default(),
+            discovery,
+        };
+        let (window, view) = cx.update(|cx| {
+            gpui_kit::init(cx);
+            merge_app::init(cx);
+            stack_window::start(start, |_, _: &mut App| {}, cx).expect("the window opens")
+        });
+        let shown = |cx: &mut TestAppContext| view.read_with(cx, |view, _| view.commits().to_vec());
+        assert_eq!(shown(cx), listed.commits, "shown before any job runs");
+        cx.run_until_parked();
+        assert_eq!(shown(cx), listed.commits, "not listed again");
+        click(cx, window, REFRESH_ID.into());
+        assert_eq!(shown(cx).len(), MERGE + 1, "a refresh lists the window's revset");
     }
 
     #[gpui_kit::test]

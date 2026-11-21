@@ -40,7 +40,7 @@ use vcs::{RepoKind, VcsError};
 use crate::env::Env;
 use crate::invocation::{MergeFiles, SemanticsFlags, Window};
 use crate::repository::RunRepository;
-use crate::resolve::Record;
+use crate::resolve::Destination;
 use crate::semantics::{Caller, Mode, SemanticsError, choose};
 use merge_config::settings::Settings;
 
@@ -90,6 +90,9 @@ pub struct WindowForm {
     /// The run's repository, open when a step before the window read it. The window's line
     /// origins take it, so a run opens it once.
     pub repo: RunRepository,
+    /// The listing a jj-native form made before its window opened, which the window shows
+    /// first; none for the other forms.
+    pub listing: Option<jj_native::Listing>,
 }
 
 /// Why a session step failed.
@@ -145,6 +148,30 @@ pub fn choose_semantics(
     };
     tracing::debug!(?caller, ?mode, "chose the merge semantics");
     Ok(mode)
+}
+
+/// [`choose_semantics`] and [`choose_marker_style`], set in `options`: the one step that
+/// settles a merge's semantics before its window opens or its headless run starts.
+///
+/// # Errors
+///
+/// As [`choose_semantics`].
+pub fn apply_semantics(
+    options: &mut MergeOptions,
+    flags: SemanticsFlags,
+    settings: &Settings,
+    repo: &mut RunRepository,
+    output: Option<&Path>,
+    cwd: Option<&Path>,
+    env: &Env,
+) -> Result<(), SessionError> {
+    let Mode { semantics, same_change, hunk_level } =
+        choose_semantics(flags, settings, repo, output, cwd, env)?;
+    options.semantics = semantics;
+    options.same_change = same_change;
+    options.hunk_level = hunk_level;
+    options.marker_style = choose_marker_style(semantics, settings, repo);
+    Ok(())
 }
 
 /// The markers of a merge under `semantics` ([`semantics::marker_style`]), with git's
@@ -229,12 +256,20 @@ pub enum SaveError {
     #[error(transparent)]
     Write(#[from] WriteError),
     /// The output is written, ending the merge with `code`, but the repository did not
-    /// record the save. [`Record::resave`] records it again without writing.
+    /// record the save. [`resolve::Record::resave`] records it again without writing.
     #[error("{path} is written, but the repository did not record the save: {source}")]
     Record {
         /// The conflicted path, relative to the repository root.
         path: Utf8PathBuf,
         code: ExitCode,
+        #[source]
+        source: VcsError,
+    },
+    /// The repository refused the result for a jj commit's conflict: nothing was written.
+    #[error("cannot write {path} into its commit: {source}")]
+    Commit {
+        /// The conflicted path, relative to the repository root.
+        path: Utf8PathBuf,
         #[source]
         source: VcsError,
     },
@@ -295,23 +330,35 @@ impl EncodedOutput {
         Ok(self.code)
     }
 
-    /// Write the bytes to `output`, then record the save in the repository when `record`
-    /// names the conflict there (spec §7.4): through `run`, the run's repository, which then
-    /// reads at the save's operation, or without one in the conflict's repository opened
-    /// afresh.
+    /// Save to `destination`. A file is written, then the save is recorded in the
+    /// repository when the destination names the conflict there (spec §7.4): through `run`,
+    /// the run's repository, which then reads at the save's operation, or without one in the
+    /// conflict's repository opened afresh. A jj commit's conflict takes the bytes into the
+    /// commit, and `run` plays no part.
     ///
     /// # Errors
     ///
-    /// [`SaveError::Write`] when `output` cannot be written; it is then unchanged and nothing
-    /// is recorded. [`SaveError::Record`] when the output is written but the repository
+    /// [`SaveError::Write`] when the file cannot be written; it is then unchanged and nothing
+    /// is recorded. [`SaveError::Record`] when the file is written but the repository
     /// refuses the record, or `run` holds another repository than the conflict's.
+    /// [`SaveError::Commit`] when the repository refuses the result for the commit.
     pub fn save(
         &self,
-        output: &Path,
-        record: Option<&Record>,
+        destination: &Destination,
         run: Option<&mut RunRepository>,
     ) -> Result<ExitCode, SaveError> {
-        let code = self.write(output)?;
+        let (path, record) = match destination {
+            Destination::File { path, record } => (path, record),
+            Destination::Commit(commit) => {
+                const WRITE: bool = false;
+                commit.write(&self.bytes, WRITE).map_err(|source| SaveError::Commit {
+                    path: commit.path().to_owned(),
+                    source,
+                })?;
+                return Ok(self.code);
+            }
+        };
+        let code = self.write(path)?;
         let Some(record) = record else {
             return Ok(code);
         };

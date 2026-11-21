@@ -520,7 +520,6 @@ macro_rules! convert {
 
 convert!(ConflictStyle => MarkerStyle { Diff3 => Diff3, Merge => Merge });
 convert!(LineEndingArg <=> OutputEnding { Keep <=> Keep, Base <=> Base, Lf <=> Lf, Crlf <=> CrLf });
-convert!(RevisionId => vcs::IdKind { Change => Change, Commit => Commit });
 convert!(SameChangeArg <=> SameChange { Accept <=> Accept, Keep <=> Keep });
 convert!(HunkLevelArg <=> HunkLevel { Line <=> Line, Word <=> Word });
 convert!(Algorithm <=> diff::Algorithm {

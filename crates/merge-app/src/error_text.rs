@@ -126,6 +126,9 @@ impl Namer {
             SaveError::Record { path, source, .. } => {
                 self.about_with("err-not-recorded", path.as_str(), source)
             }
+            SaveError::Commit { path, source } => {
+                self.about_with("err-cannot-write", path.as_str(), source)
+            }
         }
     }
 
@@ -338,10 +341,6 @@ impl Namer {
                 self.about_with("err-in", path.as_str(), source)
             }
             ResolveError::NeedsJj(command) => self.needs_jj(command),
-            ResolveError::Temporary(source) => {
-                let detail = self.name(source);
-                self.say("err-temporary", &[("detail", Arg::Text(&detail))])
-            }
         }
     }
 

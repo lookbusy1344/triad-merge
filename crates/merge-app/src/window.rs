@@ -5,12 +5,11 @@
 //! them to the core and applies the core's corrections. Picks, undo and redo come from the
 //! core as patches, which the window applies to the editor with recording muted.
 
-use std::io;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::Duration;
 
 use gpui_kit::base::input::CharMark;
 use gpui_kit::base::input::{self, GutterMark, SpacerNote};
@@ -22,35 +21,29 @@ use gpui_kit::component::input::{
 use gpui_kit::component::native_menu::NativeMenu;
 use gpui_kit::component::{ActiveTheme as _, Theme, h_flex, v_flex};
 use gpui_kit::{
-    AnyElement, AnyWindowHandle, App, AppContext as _, ClickEvent, ClipboardItem, Context,
-    DispatchPhase, Div, ElementId, Entity, EntityInputHandler as _, FocusHandle, FontWeight,
-    HighlightStyle, Hsla, IndentAdjustment, InteractiveElement as _, IntoElement, LineFragment,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels,
-    PromptButton, PromptLevel, Render, Role, ScrollEvent, SharedString, Size,
-    StatefulInteractiveElement as _, Styled as _, StyledText, Subscription, Task,
-    TestSupportExt as _, Toggled, Window, WindowOptions, canvas, div, point,
-    prelude::FluentBuilder as _, px, uniform_list,
+    AnyElement, AnyWindowHandle, App, AppContext as _, ClickEvent, Context, DispatchPhase, Div,
+    ElementId, Entity, FocusHandle, FontWeight, HighlightStyle, Hsla, InteractiveElement as _,
+    IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _,
+    Pixels, PromptLevel, Render, Role, SharedString, Size, StatefulInteractiveElement as _,
+    Styled as _, StyledText, Subscription, Task, TestSupportExt as _, Toggled, Window,
+    WindowOptions, canvas, div, point, prelude::FluentBuilder as _, px, uniform_list,
 };
 use merge_config::settings::{Colours, DEFAULT_COLOURS, Scrollbars};
-use merge_core::boundaries::Boundaries;
 use merge_core::diff::DiffOptions;
 use merge_core::document::{
     Applied, Command, EditBatch, LabelCountError, MergeDocument, MergeOptions, OutputEnding,
     PickScope, Resolution, TextPatch,
 };
 use merge_core::index::{ByteOffset, Line, RegionIx};
-use merge_core::journal::{Journal, RestoreError};
+use merge_core::journal::RestoreError;
 use merge_core::merge3::{Inputs, Kind, LEFT, RIGHT, Source};
 use merge_core::suggest::{self, EditSuggestion};
 use merge_core::text::Text;
 use merge_core::unusual::Unusual;
-use merge_session::SaveError;
-use merge_session::ending::{self, After, Closing, Next, SaveFailed, Undone, UnresolvedSave};
-use merge_session::jj_native::CommitEffect;
+use merge_session::ending::{Closing, SaveFailed, Undone, UnresolvedSave};
 use merge_session::origin::{self, find_merge};
 use merge_session::repository::Handoff;
-use merge_session::resolve::Record;
-use merge_syntax::boundaries::SyntaxBoundaries;
+use merge_session::resolve::Destination;
 use merge_syntax::language::Language;
 use merge_view::blink::AtRest;
 use merge_view::chunks::Limits;
@@ -63,16 +56,13 @@ use merge_view::marks::{self, Band, Tone};
 use merge_view::merge_fold::{self, MergeFold, MergeOpened};
 use merge_view::moves::{self, MoveEnd};
 use merge_view::nav::{self, Pin, Sides, Target};
-use merge_view::origin::hover_text;
 use merge_view::placeholder;
 use merge_view::rows::{self, PaneError, PaneSet, RowIx, RowMap};
 use merge_view::ruler::RulerMark;
 use merge_view::runs::{self, Matched};
-use merge_view::scroll::{Displayed, Geometry, ResultRows};
-use merge_view::search::{Case, Hit, InputMatches};
-use merge_view::selection::InputSelection;
+use merge_view::scroll::ResultRows;
 use merge_view::status::{FileNames, Status};
-use merge_view::tabs::{self, Drawing, Mark};
+use merge_view::tabs::{Drawing, Mark};
 use merge_view::{scroll, status};
 use vcs::{IdKind, RepoKind, VcsError};
 
@@ -80,21 +70,17 @@ use crate::alert;
 use crate::blink::{self, Flash, SearchSteps};
 use crate::choice::{self, Choice, MenuChoice};
 use crate::editor_sync::{self, Caret};
-use crate::file_watch;
-use crate::input_find::{self, Step};
+use crate::input_find::{self};
 use crate::input_select::{
     self, AUTOSCROLL_MAX_ROWS, AUTOSCROLL_TICK, CellHit, INPUT_PANES_CONTEXT, InputSelect,
 };
-use crate::measure::{self, Measure, Measurement, Mode, Report, Run};
+use crate::measure::{self, Measure, Measurement, Mode};
 use crate::move_pill::{MOVE_PILL_INSET, label_pill, move_pill};
-use crate::origin_column::{
-    Annotated, Described, HeadingText, ORIGIN_WIDTH, OriginCell, OriginColumn, Visibility,
-};
+use crate::origin_column::{HeadingText, ORIGIN_WIDTH, OriginCell, OriginColumn, Visibility};
 use crate::output_watch::OutputWatch;
 use crate::pane_scroll::PaneScroll;
 use crate::recorder::Recorded;
 use crate::recovery::JournalTasks;
-use crate::row_wrap::Fit;
 use crate::ruler;
 use crate::scrollbars;
 use crate::settings_banner::{self, render as render_banner};
@@ -106,17 +92,23 @@ use crate::tones::{Palette, Tones};
 use crate::toolbar::{self, Badge, GROUPS, Labels, PICKS, Tool};
 use crate::wrap::Wrap;
 use crate::{
-    Cancel, CarryMovedEdit, ClearChoice, CopyInput, DropDuplicate, ExitCode, Find, GoToLine,
-    GoToMoveEnd, LINE_HEIGHT, NextConflict, NextDifference, PickSelectedLines, PreviousConflict,
-    PreviousDifference, Redo, Save, SaveAndExit, SaveCopyAs, SelectAllInput, TakeBase, TakeLeft,
-    TakeLeftAllUnresolved, TakeLeftThenRight, TakeRight, TakeRightAllUnresolved, TakeRightThenLeft,
-    TakeSortedUnion, TakeWholeLeft, TakeWholeRight, ToggleBase, ToggleBasePane,
-    ToggleCollapseUnchanged, ToggleLeft, ToggleOriginColumn, ToggleRight, ToggleScrollSync,
-    ToggleSoftWrap, ToggleSyntax, ToggleWhitespace, Typography, Undo, finish, go_to_line,
-    ignore_closed_view, strings,
+    Cancel, CarryMovedEdit, ClearChoice, DropDuplicate, GoToLine, GoToMoveEnd, LINE_HEIGHT,
+    NextConflict, NextDifference, PickSelectedLines, PreviousConflict, PreviousDifference, Redo,
+    TakeBase, TakeLeft, TakeLeftAllUnresolved, TakeLeftThenRight, TakeRight,
+    TakeRightAllUnresolved, TakeRightThenLeft, TakeSortedUnion, TakeWholeLeft, TakeWholeRight,
+    ToggleBase, ToggleBasePane, ToggleLeft, ToggleRight, ToggleSyntax, Typography, Undo,
+    go_to_line, ignore_closed_view, strings,
 };
-use merge_session::recovery::{FoundJournal, Locator, Recovery, WriteMode, Written, prune};
-use merge_session::session::{CannotSave, PreviewJob, Refused, SaveJob, SaveTarget, Session};
+use merge_session::session::{PreviewJob, Refused, SaveTarget, Session};
+
+mod inputs;
+mod journal;
+mod measuring;
+mod origins;
+mod output;
+mod save;
+mod scrolling;
+mod search;
 
 /// One row of the side panes at the default text size: an editor line, so the rows and the
 /// result stay level. [`Typography::line_height`] gives it for other sizes.
@@ -359,11 +351,9 @@ pub struct WindowSettings {
     pub collapsing: crate::diff_window::Collapsing,
     /// How the diff window lays out the two sides (spec §5).
     pub diff_layout: merge_config::settings::DiffLayout,
-    /// Where Save & Exit writes (spec §6.2).
-    pub output: Option<PathBuf>,
-    /// The VCS conflict each Save & Exit to `output` is recorded in (spec §7.4); none
-    /// outside `resolve`.
-    pub record: Option<Record>,
+    /// Where Save & Exit saves (spec §6.2), with the VCS conflict each save is recorded in
+    /// (spec §7.4).
+    pub destination: Option<Destination>,
     /// Where the recovery journal goes; none without one.
     pub journal_dir: Option<PathBuf>,
     /// The path that names the journal from one run to the next (spec §6.2); `output` without
@@ -427,6 +417,20 @@ pub enum Watching {
     On,
 }
 
+impl WindowSettings {
+    /// The file Save & Exit writes; none for a jj commit's conflict.
+    #[must_use]
+    pub fn output(&self) -> Option<&Path> {
+        self.destination.as_ref().and_then(Destination::file)
+    }
+
+    /// The path that names the result: the output, or a jj commit's conflicted path.
+    #[must_use]
+    pub fn result_name(&self) -> Option<&Path> {
+        self.destination.as_ref().map(Destination::name)
+    }
+}
+
 impl Default for WindowSettings {
     fn default() -> Self {
         Self {
@@ -435,8 +439,7 @@ impl Default for WindowSettings {
             whitespace: Visibility::Hidden,
             collapsing: crate::diff_window::Collapsing::default(),
             diff_layout: merge_config::settings::DiffLayout::SideBySide,
-            output: None,
-            record: None,
+            destination: None,
             journal_dir: None,
             journal_name: None,
             typography: Typography::default(),
@@ -698,8 +701,7 @@ pub fn open(
 /// Where `settings` say Save & Exit writes, and how.
 fn save_target(settings: &WindowSettings) -> SaveTarget {
     SaveTarget {
-        output: settings.output.clone(),
-        record: settings.record.clone(),
+        destination: settings.destination.clone(),
         line_ending: settings.line_ending,
         unresolved_save: settings.unresolved_save,
     }
@@ -709,7 +711,7 @@ fn save_target(settings: &WindowSettings) -> SaveTarget {
 fn language(doc: &MergeDocument, settings: &WindowSettings) -> Option<Language> {
     let names = Language::of_run(
         settings.file_names.paths(),
-        settings.output.as_deref(),
+        settings.result_name(),
         settings.title.as_deref(),
     );
     merge_session::language(names, doc.inputs())
@@ -826,8 +828,7 @@ impl MergeWindow {
             result_highlighter,
             parsing: colouring.language().is_some(),
             headings: headings(&doc, panes, &settings.file_names),
-            result_heading: status::result_heading(settings.output.as_deref(), strings::role)
-                .into(),
+            result_heading: status::result_heading(settings.result_name(), strings::role).into(),
             file_names: settings.file_names.clone(),
             journal: JournalTasks::default(),
             session: Session::new(doc, save_target(settings), recovery),
@@ -872,146 +873,6 @@ impl MergeWindow {
         this.stamp_output(window, cx);
         this.show_folds(cx);
         this
-    }
-
-    /// The watch on `settings`' output, with a watcher when the settings ask for one.
-    fn watch_output(
-        settings: &WindowSettings,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Option<OutputWatch> {
-        let path = settings.output.as_deref()?;
-        let watch = (settings.watch_output == Watching::On).then(|| {
-            // Without a working directory, a relative path stays relative.
-            let cwd = settings.cwd.as_deref().unwrap_or(Path::new(""));
-            let changed = |this: &mut Self, _: usize, window: &mut Window, cx: &mut Context<_>| {
-                this.output_disk_changed(window, cx);
-            };
-            file_watch::watch(&[Some(path)], cwd, changed, window, cx)
-        });
-        Some(OutputWatch::new(path, watch))
-    }
-
-    /// Read what OUTPUT holds off the UI thread, as the stamp later changes are measured
-    /// against (spec §6.3).
-    fn stamp_output(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(read) = self.output_watch.as_mut().map(OutputWatch::restamp) else {
-            return;
-        };
-        cx.spawn_in(window, async move |this, cx| {
-            let generation = read.generation;
-            let stamp = cx.background_spawn(async move { read.run() }).await;
-            ignore_closed_view(this.update(cx, |this, cx| {
-                if let Some(watch) = &mut this.output_watch {
-                    watch.stamped(generation, stamp);
-                }
-                cx.notify();
-            }));
-        })
-        .detach();
-    }
-
-    /// OUTPUT changed on disk (spec §6.3): read it off the UI thread, and show the banner when
-    /// it no longer holds what it held at the stamp. A save's own write changes nothing.
-    pub fn output_disk_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.session.saving() {
-            return;
-        }
-        let Some(read) = self.output_watch.as_ref().and_then(OutputWatch::check) else {
-            return;
-        };
-        cx.spawn_in(window, async move |this, cx| {
-            let generation = read.generation;
-            let now = cx.background_spawn(async move { read.run() }).await;
-            ignore_closed_view(this.update_in(cx, |this, window, cx| {
-                if this.output_watch.as_mut().is_some_and(|w| w.checked(generation, now)) {
-                    this.ask_output_changed(window, cx);
-                    cx.notify();
-                }
-            }));
-        })
-        .detach();
-    }
-
-    /// The banner's text while OUTPUT differs from its stamp.
-    fn output_banner(&self) -> Option<SharedString> {
-        let watch = self.output_watch.as_ref().filter(|watch| watch.changed())?;
-        let path = watch.path();
-        let name = path
-            .file_name()
-            .map_or_else(|| path.display().to_string(), |name| name.to_string_lossy().into_owned());
-        Some(strings::output_changed_banner(&name).into())
-    }
-
-    /// Ask once, as soon as another program changes OUTPUT, whether to go on with the merge
-    /// (spec §6.2). The merge takes no picks or edits until the answer. Keep Editing goes on;
-    /// Quit closes the window as Close does.
-    fn ask_output_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(watch) = self.output_watch.as_mut() else {
-            return;
-        };
-        if !watch.ask() {
-            return;
-        }
-        let path = watch.path().display().to_string();
-        self.asking_output = true;
-        self.lock_result(cx);
-        let answer = window.prompt(
-            PromptLevel::Warning,
-            &prompt::changed_on_disk(&path),
-            Some(&prompt::output_changed_detail()),
-            &[PromptButton::new(prompt::keep_editing()), PromptButton::new(prompt::quit())],
-            cx,
-        );
-        cx.spawn_in(window, async move |this, cx| {
-            let quit = answer.await == Ok(OUTPUT_QUIT);
-            ignore_closed_view(this.update_in(cx, |this, window, cx| {
-                this.asking_output = false;
-                this.lock_result(cx);
-                if quit {
-                    this.cancel(window, cx);
-                }
-            }));
-        })
-        .detach();
-    }
-
-    /// The recovery journal `settings` asks for, with the inputs' hashes computing.
-    fn journaling(
-        doc: &MergeDocument,
-        settings: &WindowSettings,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Option<Recovery> {
-        settings.journal_dir.clone().map(|dir| {
-            let name = settings.journal_name.clone().or_else(|| settings.output.clone());
-            let recovery = Recovery::new(dir, name);
-            Self::hash_inputs(doc, recovery.locator(), window, cx);
-            recovery
-        })
-    }
-
-    /// Find and annotate the inputs off the UI thread; they show their origins when that
-    /// finishes. Only a three-way merge has the base, left and right a VCS run names.
-    fn load_origins(
-        lookup: OriginLookup,
-        doc: &MergeDocument,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        // Texts share their content, so the copy is O(1).
-        let inputs = doc.inputs().clone();
-        cx.spawn_in(window, async move |this, cx| {
-            let annotations = cx
-                .background_spawn(async move {
-                    let found = lookup.find(&inputs)?;
-                    let texts: Vec<&Text> = origin::merge_inputs(&inputs).map(|(_, t)| t).collect();
-                    Ok::<_, VcsError>((found.annotate(&texts), found.describe()))
-                })
-                .await;
-            ignore_closed_view(this.update(cx, |this, cx| this.loaded_origins(annotations, cx)));
-        })
-        .detach();
     }
 
     /// Count each input's widest line off the UI thread, for the top panes' sideways scroll.
@@ -1081,123 +942,12 @@ impl MergeWindow {
         }
     }
 
-    fn loaded_origins(
-        &mut self,
-        found: Result<(Annotated, Described), VcsError>,
-        cx: &mut Context<Self>,
-    ) {
-        let (annotations, described) = match found {
-            Ok(found) => found,
-            Err(error) => {
-                tracing::warn!(%error, "cannot find the inputs' line origins; none show");
-                return;
-            }
-        };
-        let sources = || origin::merge_inputs(self.session.document().inputs()).map(|(s, _)| s);
-        let sources: Vec<Source> = sources().collect();
-        self.origin_column.described(sources.iter().copied(), described);
-        self.origin_column.annotated(sources, annotations);
-        self.refresh_result_labels(None, cx);
-        cx.notify();
-    }
-
     /// `pane`'s heading as drawn: its title, without a leading ID its chip shows, and the
     /// revision chip; none for a pane the window lacks.
     #[must_use]
     pub fn heading_text(&self, pane: usize) -> Option<HeadingText> {
         let source = *self.panes.sources().get(pane)?;
         Some(self.origin_column.heading(source, &self.headings.get(pane)?.title))
-    }
-
-    /// The revision chip of `pane`'s heading: none for a pane whose input shows no commit.
-    #[must_use]
-    pub fn revision_chip(&self, pane: usize) -> Option<OriginCell> {
-        self.heading_text(pane)?.chip
-    }
-
-    /// The origin column of `pane` on `row`: none for a filler row, a row or pane the window
-    /// lacks, or a line without an origin.
-    #[must_use]
-    pub fn origin_cell(&self, pane: usize, row: RowIx) -> Option<OriginCell> {
-        let source = *self.panes.sources().get(pane)?;
-        let cell = *self.rows.get_row(self.session.document(), row)?.cells.get(pane)?;
-        self.origin_column.cell(source, cell)
-    }
-
-    /// The origin column's cells of one row, pane by pane; none while the column is hidden.
-    fn row_origins(
-        &self,
-        cells: &[Option<usize>],
-    ) -> Option<std::vec::IntoIter<Option<OriginCell>>> {
-        self.origin_column.shown().then(|| {
-            self.panes
-                .sources()
-                .into_iter()
-                .zip(cells)
-                .map(|(source, &line)| self.origin_column.cell(source, line))
-                .collect::<Vec<_>>()
-                .into_iter()
-        })
-    }
-
-    /// The origin of result line `line`, as its gutter shows it; none for a line without one.
-    #[must_use]
-    pub fn result_origin(&self, line: usize) -> Option<OriginCell> {
-        let doc = self.session.document();
-        let origins = self.origin_column.origins();
-        let origin = origins.result_line(doc, Line::new(line))?;
-        Some(OriginCell {
-            label: origins
-                .result_label(doc, line, self.origin_column.kind())
-                .map(SharedString::new),
-            hover: hover_text(origin).into(),
-        })
-    }
-
-    /// Give the result pane's gutter the origins of the current result after `delay`, while
-    /// the column shows. Finding them visits every line, 240 ms at 1M, so it runs off the UI
-    /// thread on a snapshot; a newer call cancels it. Without the column the gutter clears
-    /// at once.
-    fn refresh_result_labels(&mut self, delay: Option<Duration>, cx: &mut Context<Self>) {
-        if !self.origin_column.shown() {
-            self.result_labels = None;
-            self.result.update(cx, |state, cx| state.set_line_labels(None, cx));
-            return;
-        }
-        self.result_labels = Some(cx.spawn(async move |this, cx| {
-            if let Some(delay) = delay {
-                cx.background_executor().timer(delay).await;
-            }
-            let Ok((doc, origins)) = this.update(cx, |this, _| {
-                (this.session.document().snapshot(), this.origin_column.shared())
-            }) else {
-                return;
-            };
-            let runs = cx.background_spawn(async move { origins.result_runs(&doc) }).await;
-            ignore_closed_view(this.update(cx, |this, cx| {
-                this.result_labels = None;
-                let labels = this.origin_column.run_labels(runs, cx.theme().muted_foreground);
-                this.result.update(cx, |state, cx| state.set_line_labels(labels, cx));
-            }));
-        }));
-    }
-
-    /// Whether the panes show the origin column: it is turned on and the origins have
-    /// loaded. A window without origins draws no empty column (spec §7.3).
-    #[must_use]
-    pub fn origin_column(&self) -> bool {
-        self.origin_column.shown()
-    }
-
-    fn toggle_origin_column(
-        &mut self,
-        _: &ToggleOriginColumn,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.origin_column.toggle();
-        self.refresh_result_labels(None, cx);
-        cx.notify();
     }
 
     /// The byte ranges of the result's region bands, as the editor holds them after moving them
@@ -1265,59 +1015,6 @@ impl MergeWindow {
         Some(line_highlights(text.line(line), spans, &syntax, &matched, selected, paint))
     }
 
-    /// The top panes' selection, in its input's bytes.
-    #[must_use]
-    pub fn input_selection(&self) -> Option<InputSelection> {
-        self.input_select.selection()
-    }
-
-    fn press_input(
-        &mut self,
-        hit: &CellHit,
-        event: &MouseDownEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        window.focus(self.input_select.focus(), cx);
-        let inputs = input_select::Inputs {
-            doc: self.session.document(),
-            rows: &self.rows,
-            drawing: self.drawing(),
-        };
-        self.input_select.press(inputs, hit, event);
-        tracing::debug!(selection = ?self.input_select.selection(), "top pane press");
-        cx.notify();
-    }
-
-    fn drag_input(&mut self, hit: &CellHit, event: &MouseMoveEvent, cx: &mut Context<Self>) {
-        let inputs = input_select::Inputs {
-            doc: self.session.document(),
-            rows: &self.rows,
-            drawing: self.drawing(),
-        };
-        if self.input_select.drag(inputs, hit, event) {
-            cx.notify();
-        }
-    }
-
-    /// ⌘C in the top panes: copy their selection; with nothing selected, copy nothing.
-    fn copy_input(&mut self, _: &CopyInput, _: &mut Window, cx: &mut Context<Self>) {
-        let text = self.input_select.text(self.session.document());
-        tracing::debug!(selection = ?self.input_select.selection(), bytes = text.map(str::len), "top pane copy");
-        if let Some(text) = text {
-            cx.write_to_clipboard(ClipboardItem::new_string(text.to_owned()));
-        }
-    }
-
-    /// ⌘A in the top panes: select the whole input of the selection's pane, else the first.
-    fn select_all_input(&mut self, _: &SelectAllInput, _: &mut Window, cx: &mut Context<Self>) {
-        let Some(&first) = self.panes.sources().first() else {
-            return;
-        };
-        self.input_select.select_all(self.session.document(), first);
-        cx.notify();
-    }
-
     /// The panes' titles, in pane order.
     pub fn pane_titles(&self) -> impl Iterator<Item = &SharedString> {
         self.headings.iter().map(|heading| &heading.title)
@@ -1346,384 +1043,6 @@ impl MergeWindow {
     #[must_use]
     pub fn result_chunked(&self) -> bool {
         self.result_highlighter == Highlighter::Chunked
-    }
-
-    /// What a measured run reported, once it has ended.
-    #[must_use]
-    pub fn measured(&self) -> Option<&Report> {
-        self.measurement.report()
-    }
-
-    /// Take one step of a measured run: on the first frame, report when it shows; then act
-    /// once a frame; once the frame after the last action draws, report and finish with 2,
-    /// writing nothing.
-    fn drive_measure(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(run) = self.measurement.running() else {
-            return;
-        };
-        if run.mode() == Mode::Syntax && !run.first() && self.syntax.pending() > 0 {
-            // The next parse to land draws again.
-            return;
-        }
-        if run.first() {
-            let started = run.started();
-            window.on_next_frame(move |_, _| {
-                eprintln!(
-                    "{}: {}",
-                    strings::MEASURE,
-                    measure::span("first frame", started.elapsed())
-                );
-            });
-        }
-        let mode = run.mode();
-        if let Some(report) = self.measurement.frame(Instant::now()) {
-            for line in report.to_string().lines() {
-                eprintln!("{}: {line}", strings::MEASURE);
-            }
-            self.journal.cancel();
-            self.session.end_journal();
-            finish(ExitCode::Cancelled, cx);
-            return;
-        }
-        if matches!(mode, Mode::Open | Mode::Syntax) {
-            window.request_animation_frame();
-            return;
-        }
-        let began = Instant::now();
-        self.measure_step(mode, window, cx);
-        if let Some(run) = self.measurement.running_mut() {
-            run.worked(began.elapsed());
-        }
-        window.request_animation_frame();
-    }
-
-    /// One action of a measured run.
-    fn measure_step(&mut self, mode: Mode, window: &mut Window, cx: &mut Context<Self>) {
-        match mode {
-            Mode::Open | Mode::Syntax => {}
-            Mode::ScrollRows => {
-                let top = self.scroll.top() + measure::SCROLL_STEP;
-                self.scroll.set_top(f32::from(top));
-            }
-            Mode::ScrollResult => self.result.update(cx, |state, cx| {
-                let offset = state.scroll_offset();
-                state.set_scroll_offset(point(offset.x, offset.y - measure::SCROLL_STEP), cx);
-            }),
-            Mode::Type => {
-                if self.measured_steps() == 0 {
-                    let region = nav::middle_difference(self.session.document());
-                    self.go_to(region, window, cx);
-                }
-                self.result.update(cx, |state, cx| {
-                    state.replace_text_in_range(None, "x", window, cx);
-                });
-                // Now, so the action's time holds the core's work.
-                self.send_edits(window, cx);
-            }
-            Mode::Pick => {
-                let sides = [Source::Side(0), Source::Side(1)];
-                let source = sides[self.measured_steps() % sides.len()];
-                self.pick(
-                    nav::middle_difference(self.session.document()),
-                    Some(source),
-                    window,
-                    cx,
-                );
-            }
-        }
-    }
-
-    /// The actions a measured run has taken so far.
-    fn measured_steps(&self) -> usize {
-        self.measurement.running().map_or(0, Run::actions)
-    }
-
-    /// How far the rows are scrolled down.
-    #[must_use]
-    pub fn rows_scroll_top(&self) -> Pixels {
-        self.scroll.top()
-    }
-
-    /// The height of the rows' view.
-    #[must_use]
-    pub fn rows_view_height(&self) -> Pixels {
-        self.scroll.view_height()
-    }
-
-    /// Scroll the rows and the result each to its own lines of the region `go_to` set aside:
-    /// centred when they fit, else their first line at the top (spec §5). Runs in prepaint,
-    /// after the rows lay out and before the result does, so the rows' height is known and
-    /// the result applies its top this frame. Before the result's first layout it waits a
-    /// frame. Returns whether it placed the panes, which then need no sync this frame.
-    fn apply_reveal(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        let Some(region) = self.scroll.revealing(self.session.document().regions().len()) else {
-            return false;
-        };
-        let (line_h, result_view, result_span) = {
-            let state = self.result.read(cx);
-            let Some(line_h) = state.line_height() else {
-                window.refresh();
-                return false;
-            };
-            let result = ResultRows::new(self.session.document(), &self.placeholders);
-            let span = result_heights(result, self.scroll.wrap(), state, &self.collapse.folds)
-                .span(result.span(region));
-            (line_h, state.input_bounds().size.height, span)
-        };
-        let first = self.rows.first_row(region).get();
-        let rows_top = scroll::reveal_top(
-            self.scroll.heights().span(first..first + self.rows.rows_in(region)),
-            f32::from(self.typography.line_height()),
-            f32::from(self.rows_view_height()),
-        );
-        let result_top = scroll::reveal_top(result_span, f32::from(line_h), f32::from(result_view));
-        // The caret sits at the start of a line, so the result goes back to the left edge, as
-        // the caret's own scroll would take it.
-        self.result.update(cx, |state, cx| {
-            state.set_scroll_offset(point(Pixels::ZERO, -px(result_top)), cx);
-        });
-        self.scroll.revealed(rows_top, result_top, &self.panes.sources());
-        // The rows drew this frame already.
-        window.refresh();
-        true
-    }
-
-    /// Copy the scroll position from the pane that moved since the last sync to the other,
-    /// mapped by region (spec §5). Runs in prepaint on every frame, so it sees every source
-    /// of scrolling: wheel, scrollbar and caret.
-    fn sync_scroll(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.scroll.syncing() {
-            return;
-        }
-        let state = self.result.read(cx);
-        let Some(line_h) = state.line_height() else {
-            return;
-        };
-        let geometry = Geometry {
-            row_h: f32::from(self.typography.line_height()),
-            rows_view: f32::from(self.rows_view_height()),
-            line_h: f32::from(line_h),
-            result_view: f32::from(state.input_bounds().size.height),
-        };
-        let result_offset = state.scroll_offset();
-        let (rows, result) =
-            (&self.rows, ResultRows::new(self.session.document(), &self.placeholders));
-        let sources = self.panes.sources();
-        let wrap = self.scroll.wrap();
-        let folds = &self.collapse.folds;
-        // Built only when a pane moved: a wrapped result reads every line's display rows.
-        let mapped = |map: fn(&RowMap, ResultRows, Displayed, Geometry, f32) -> f32| {
-            move |row_heights: &Heights, top| {
-                let displayed = Displayed {
-                    rows: row_heights,
-                    result: &result_heights(result, wrap, state, folds),
-                };
-                map(rows, result, displayed, geometry, top)
-            }
-        };
-        let synced = self.scroll.sync(
-            f32::from(-result_offset.y),
-            f32::from(-result_offset.x),
-            mapped(scroll::rows_to_result),
-            mapped(scroll::result_to_rows),
-            &sources,
-        );
-        if synced.result_left.is_some() || synced.result_top.is_some() {
-            let offset = point(
-                synced.result_left.map_or(result_offset.x, |left| -px(left)),
-                synced.result_top.map_or(result_offset.y, |top| -px(top)),
-            );
-            self.result.update(cx, |state, cx| state.set_scroll_offset(offset, cx));
-        }
-        if synced.rows_moved {
-            // The rows drew this frame already.
-            window.refresh();
-        }
-    }
-
-    /// Measure the top panes' columns, wrap their rows to the widths they laid out at while
-    /// soft wrap is on, and hold their sideways scroll within those widths. Runs in prepaint,
-    /// after the rows lay out.
-    fn fit_rows(&mut self, window: &mut Window, cx: &App) {
-        let font = gpui_kit::font(self.typography.editor_font(cx.theme()));
-        self.scroll.sideways_mut().measure(&font, self.typography.size, window);
-        let old = self.scroll.heights().clone();
-        let changed = if self.scroll.wrap().wraps() {
-            self.wrap_rows(font, cx)
-        } else {
-            self.scroll.unwrap(self.rows.row_count())
-        };
-        if changed {
-            let result_top = f32::from(-self.result.read(cx).scroll_offset().y);
-            self.scroll.keep_place(&old, f32::from(self.typography.line_height()), result_top);
-        }
-        let left = self.scroll.sideways().left();
-        if self.scroll.scroll_sideways_to(left, &self.panes.sources()) || changed {
-            window.refresh();
-        }
-    }
-
-    /// Wrap the top panes' rows to the widths their text laid out at in the last frame.
-    /// Whether their heights changed.
-    fn wrap_rows(&mut self, font: gpui_kit::Font, cx: &App) -> bool {
-        let panes = self.panes.sources().len();
-        let Some(widths) = self.scroll.sideways().views().get(..panes).map(<[Pixels]>::to_vec)
-        else {
-            // Not laid out yet.
-            return false;
-        };
-        let fit = Fit {
-            widths,
-            panes: self.panes,
-            rows: self.rows.row_count(),
-            whitespace: self.whitespace.shown(),
-        };
-        let (doc, rows, sources) = (self.session.document(), &self.rows, self.panes.sources());
-        let drawing = self.drawing();
-        let cells = |row: usize| {
-            let cells = rows.row(doc, RowIx::new(row)).cells;
-            sources
-                .iter()
-                .zip(cells)
-                .map(|(&source, line)| {
-                    line.map(|n| {
-                        tabs::expand(doc.inputs().text(source).line(n), drawing).into_text()
-                    })
-                })
-                .collect::<Vec<_>>()
-        };
-        let mut wrapper = cx.text_system().line_wrapper(font, self.typography.size);
-        self.scroll.fit(fit, cells, |text, width| {
-            if width <= Pixels::ZERO {
-                return Vec::new();
-            }
-            wrapper
-                .wrap_line(&[LineFragment::text(text)], width, IndentAdjustment::NoIndent)
-                .map(|boundary| boundary.ix)
-                .collect()
-        })
-    }
-
-    /// How far the top panes' text is scrolled right.
-    #[must_use]
-    pub fn rows_scroll_left(&self) -> Pixels {
-        self.scroll.sideways().left()
-    }
-
-    /// The top panes' display rows: how many each aligned row takes.
-    #[must_use]
-    pub fn row_heights(&self) -> &Heights {
-        self.scroll.heights()
-    }
-
-    /// Scroll the top panes' text sideways by a wheel's horizontal move, unless the move is
-    /// mostly vertical: the list scrolls by that.
-    fn wheel_sideways(&mut self, event: &ScrollEvent, window: &mut Window, cx: &mut Context<Self>) {
-        let delta = event.delta.pixel_delta(window.line_height());
-        if delta.x.abs() <= delta.y.abs() {
-            return;
-        }
-        let left = self.scroll.sideways().left() - delta.x;
-        if self.scroll.scroll_sideways_to(left, &self.panes.sources()) {
-            cx.notify();
-        }
-    }
-
-    /// Turn soft wrap in the result and the top panes on or off (spec §5, §6.4). Inputs past
-    /// [`SOFT_WRAP_MAX_LINES`] never wrap.
-    fn toggle_soft_wrap(
-        &mut self,
-        _: &ToggleSoftWrap,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let wrap = self.scroll.toggle_wrap();
-        if wrap == Wrap::TooLong {
-            tracing::info!(max_lines = SOFT_WRAP_MAX_LINES, "the inputs are too long to wrap");
-            return;
-        }
-        self.result.update(cx, |state, cx| state.set_soft_wrap(wrap.wraps(), window, cx));
-        // The top panes wrap at the next prepaint.
-        cx.notify();
-    }
-
-    /// Show or hide the whitespace in every pane (spec §5). The sideways extent counts the
-    /// line endings' symbols, so it counts again.
-    fn toggle_whitespace(
-        &mut self,
-        _: &ToggleWhitespace,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.whitespace = self.whitespace.toggled();
-        let shown = self.whitespace.shown();
-        self.result.update(cx, |state, cx| state.set_show_whitespaces(shown, window, cx));
-        Self::count_widest(self.session.document(), self.drawing(), cx);
-        cx.notify();
-    }
-
-    /// Collapse every unchanged region, or show them all (spec §5).
-    fn toggle_collapse_unchanged(
-        &mut self,
-        _: &ToggleCollapseUnchanged,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.collapse.on = !self.collapse.on;
-        self.collapse.opened.clear();
-        self.show_folds(cx);
-        cx.notify();
-    }
-
-    /// Open the region `fold` hides lines of, in every pane.
-    fn open_fold(&mut self, fold: &MergeFold, cx: &mut Context<Self>) {
-        self.collapse.opened.open(self.session.document(), fold);
-        self.show_folds(cx);
-        cx.notify();
-    }
-
-    /// Open the region that hides result line `line`, if one does.
-    fn open_fold_over_line(&mut self, line: usize, cx: &mut Context<Self>) {
-        if let Some(fold) = merge_fold::fold_over_line(&self.collapse.folds, line).cloned() {
-            self.open_fold(&fold, cx);
-        }
-    }
-
-    /// Fold the regions the collapse gives: the result hides their lines behind a spacer row
-    /// each, beside the placeholders, and the top panes their rows behind a fold row each.
-    fn show_folds(&mut self, cx: &mut Context<Self>) {
-        let doc = self.session.document();
-        let folds = self.collapse.folds(doc, &self.rows);
-        let tones = *self.tones(cx);
-        let (spacers, notes, placeholders) =
-            result_spacers(doc, &self.inherited, &tones, &folds, cx.theme().muted_foreground);
-        self.placeholders = placeholders;
-        let hidden: Vec<_> = folds.iter().map(|fold| fold.result.clone()).collect();
-        let changed = folds != self.collapse.folds;
-        self.result.update(cx, |state, cx| {
-            if changed {
-                state.set_hidden_lines(hidden, cx);
-            }
-            state.set_spacers(spacers, cx);
-            state.set_spacer_notes(notes, cx);
-        });
-        self.scroll.set_folds(
-            folds.iter().map(|fold| fold.rows.clone()).collect(),
-            f32::from(self.typography.line_height()),
-        );
-        self.collapse.folds = folds;
-    }
-
-    /// Turn scroll sync off or on (spec §5). Turned on, it brings the top panes to the
-    /// result, down and sideways.
-    fn toggle_scroll_sync(
-        &mut self,
-        _: &ToggleScrollSync,
-        window: &mut Window,
-        _: &mut Context<Self>,
-    ) {
-        self.scroll.toggle_sync();
-        window.refresh();
     }
 
     /// Whether the go-to-line field shows.
@@ -1964,212 +1283,6 @@ impl MergeWindow {
         Ok(applied)
     }
 
-    /// Write the journal once commands pause for [`JOURNAL_DEBOUNCE`].
-    fn schedule_journal(&mut self, cx: &mut Context<Self>) {
-        if self.session.recovery().is_none() {
-            return;
-        }
-        // Replacing the task drops the one waiting, which cancels it.
-        self.journal.waiting = Some(cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(JOURNAL_DEBOUNCE).await;
-            ignore_closed_view(this.update(cx, Self::write_journal));
-        }));
-    }
-
-    /// Start the next write on a background thread. While one runs, it starts the next when
-    /// it ends.
-    fn write_journal(&mut self, cx: &mut Context<Self>) {
-        self.journal.waiting = None;
-        if self.journal.running.is_some() {
-            return;
-        }
-        let Some((write, upto)) = self.session.recovery().and_then(Recovery::next_write) else {
-            return;
-        };
-        self.journal.running = Some(cx.spawn(async move |this, cx| {
-            let mode = write.mode;
-            let result = cx.background_spawn(async move { write.run() }).await;
-            ignore_closed_view(this.update(cx, |this, cx| this.written(mode, upto, result, cx)));
-        }));
-    }
-
-    /// Take the result of a write that leaves the file with `upto` commands.
-    fn written(
-        &mut self,
-        mode: WriteMode,
-        upto: usize,
-        result: io::Result<Written>,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(recovery) = self.session.recovery_mut()
-            && self.journal.written(recovery, mode, upto, result)
-        {
-            self.write_journal(cx);
-        }
-    }
-
-    /// Delete the journal's file on a background thread; then commands made since start a
-    /// new one.
-    fn discard_journal(&mut self, cx: &mut Context<Self>) {
-        self.journal.cancel();
-        let Some(removal) = self.session.recovery_mut().and_then(Recovery::discard) else {
-            self.write_journal(cx);
-            return;
-        };
-        self.journal.running = Some(cx.spawn(async move |this, cx| {
-            let result = cx.background_spawn(async move { removal.run() }).await;
-            ignore_closed_view(this.update(cx, |this, cx| this.removed(result, cx)));
-        }));
-    }
-
-    /// Take the result of the journal's removal.
-    fn removed(&mut self, result: io::Result<Written>, cx: &mut Context<Self>) {
-        if let Some(recovery) = self.session.recovery_mut()
-            && self.journal.removed(recovery, result)
-        {
-            self.write_journal(cx);
-        }
-    }
-
-    /// Off the UI thread, delete old journals, hash the inputs and read the journal they
-    /// name; then name this session's journal and offer any restore.
-    fn hash_inputs(
-        doc: &MergeDocument,
-        locator: Locator,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        // Texts share their content, so the copy is O(1).
-        let inputs = doc.inputs().clone();
-        let start = doc.start();
-        cx.spawn_in(window, async move |this, cx| {
-            let found = cx
-                .background_spawn(async move {
-                    prune(locator.dir(), SystemTime::now());
-                    locator.find(&inputs, &start)
-                })
-                .await;
-            ignore_closed_view(
-                this.update_in(cx, |this, window, cx| this.hashed(found, window, cx)),
-            );
-        })
-        .detach();
-    }
-
-    fn hashed(&mut self, found: FoundJournal, window: &mut Window, cx: &mut Context<Self>) {
-        let start = self.session.document().start();
-        let Some(recovery) = self.session.recovery_mut() else {
-            return;
-        };
-        // A session that ended has hashed them itself.
-        if !recovery.hashed(found.hashes, start) {
-            return;
-        }
-        if !self.offer_restore(found.saved, window, cx) {
-            self.write_journal(cx);
-        }
-    }
-
-    /// Offer `saved`, the journal a crashed session left for these inputs. Returns whether it
-    /// asked.
-    fn offer_restore(
-        &mut self,
-        saved: Option<Journal>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> bool {
-        let Some(journal) = self.session.recovery_mut().and_then(|r| r.offer(saved)) else {
-            return false;
-        };
-        let answer = window.prompt(
-            PromptLevel::Info,
-            &prompt::restore_session(),
-            Some(&prompt::restore_detail()),
-            &[PromptButton::new(prompt::restore()), PromptButton::new(prompt::start_over())],
-            cx,
-        );
-        cx.spawn_in(window, async move |this, cx| {
-            let restore = answer.await == Ok(GO_AHEAD);
-            ignore_closed_view(this.update_in(cx, |this, window, cx| {
-                if restore {
-                    this.restore(journal, window, cx);
-                } else {
-                    this.discard_journal(cx);
-                }
-            }));
-        })
-        .detach();
-        true
-    }
-
-    /// Replay `journal` off the UI thread, then switch the session to it.
-    fn restore(&mut self, journal: Journal, window: &mut Window, cx: &mut Context<Self>) {
-        // Texts share their content and line index, so the copy is O(1).
-        let inputs = self.session.document().inputs().clone();
-        let labels = self.session.document().labels().clone();
-        let boundaries = self.colouring.detected().map(SyntaxBoundaries::new);
-        // The writes stay held while the replay runs, so a crash keeps the journal.
-        cx.spawn_in(window, async move |this, cx| {
-            let (journal, replayed) = cx
-                .background_spawn(async move {
-                    let boundaries = boundaries.as_ref().map(|b| b as &dyn Boundaries);
-                    let replayed = journal.restore_bounded(inputs, labels, boundaries);
-                    (journal, replayed)
-                })
-                .await;
-            ignore_closed_view(this.update_in(cx, |this, window, cx| {
-                this.replayed(journal, replayed, window, cx);
-            }));
-        })
-        .detach();
-    }
-
-    /// Switch the session to `replayed`, the replay of `journal`, or say why it cannot.
-    fn replayed(
-        &mut self,
-        journal: Journal,
-        replayed: Result<MergeDocument, RestoreError>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let restored =
-            replayed.map_err(RebuildError::from).and_then(|doc| with_rows(doc, self.panes));
-        let (doc, rows) = match restored {
-            Ok(restored) => restored,
-            Err(error) => {
-                tracing::warn!(%error, "cannot restore the journal");
-                let detail = error.describe();
-                let answer = window.prompt(
-                    PromptLevel::Warning,
-                    &prompt::cannot_restore(),
-                    Some(&detail),
-                    &[prompt::ok_button()],
-                    cx,
-                );
-                cx.spawn(async move |_, _| {
-                    // The alert's one button only closes it.
-                    let _ = answer.await;
-                })
-                .detach();
-                // It would fail the same way on the next open.
-                self.discard_journal(cx);
-                return;
-            }
-        };
-        if let Err(refused) = self.session.accepts() {
-            // The save ends the session with the merge as it stood, or fails and goes on.
-            tracing::info!(%refused, "the restore came during a save and is dropped");
-            return;
-        }
-        self.journal.cancel();
-        if let Err(refused) = self.session.restore(doc, journal) {
-            tracing::warn!(%refused, "the session refused the restore");
-            return;
-        }
-        self.show_restored(rows, window, cx);
-        self.open_on_first_target(window, cx);
-    }
-
     /// Show `errors`, the config file's bad lines, in the settings banner; no errors close it.
     pub fn set_settings_errors(&mut self, errors: &[String], cx: &mut Context<Self>) {
         self.settings_errors = settings_banner::text(errors);
@@ -2192,17 +1305,6 @@ impl MergeWindow {
     #[must_use]
     pub fn settings_banner(&self) -> Option<&SharedString> {
         self.settings_errors.as_ref()
-    }
-
-    /// Show the session's restored document, laid out in `rows`.
-    fn show_restored(&mut self, rows: RowMap, window: &mut Window, cx: &mut Context<Self>) {
-        self.rows = rows;
-        self.move_ends = moves::move_ends(self.session.document(), &self.rows);
-        self.scroll.rows_changed(self.rows.row_count());
-        self.highlights = Highlights::new(self.panes);
-        self.pinned = None;
-        self.reload_result(window, cx);
-        self.search_inputs_again(cx);
     }
 
     fn follow(&mut self, applied: &Applied, cx: &mut Context<Self>) {
@@ -2524,515 +1626,6 @@ impl MergeWindow {
         if let Some(region) = step(self.session.document(), self.current_region(cx), target) {
             self.jump(region, window, cx);
         }
-    }
-
-    /// Write and record the output, unresolved conflicts as markers, and go on merging
-    /// (spec §6.2). Without an output, ask for a path as Save Copy As does.
-    fn save(&mut self, _: &Save, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.session.saving() {
-            self.send_edits(window, cx);
-        }
-        self.step(self.session.save_in_place_requested(), window, cx);
-    }
-
-    /// Write the output and finish: with 0 when resolved, or with 1 after the user agrees
-    /// to save with conflict markers (spec §6.2).
-    fn save_and_exit(&mut self, _: &SaveAndExit, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.session.saving() {
-            self.send_edits(window, cx);
-        }
-        self.step(self.session.save_requested(), window, cx);
-    }
-
-    /// Carry out the next step of ending the session (spec §6.2).
-    fn step(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
-        match next {
-            Next::Stay => {}
-            Next::ConfirmUnresolved { unresolved } => {
-                self.confirm_unresolved(unresolved, window, cx);
-            }
-            Next::ConfirmClose => Self::confirm_close(window, cx),
-            Next::SaveAndExit => self.save_and_exit(&SaveAndExit, window, cx),
-            Next::Write(after) => self.check_descendants(after, window, cx),
-            Next::Record(code, after) => self.record_again(code, after, window, cx),
-            Next::SaveCopyAs => self.save_copy_as(&SaveCopyAs, window, cx),
-            Next::Failed { undone, error, after } => {
-                let detail = crate::error_text::describe(error.error());
-                // The save wrote the journal first; a failed write tries again.
-                self.write_journal(cx);
-                Self::save_failed(undone, after, detail, window, cx);
-            }
-            Next::Saved(_) => {
-                let unresolved = self.session.document().unresolved();
-                self.save_note = Some(strings::saved(unresolved).into());
-                cx.notify();
-            }
-            Next::SavedUnrecorded { error, .. } => {
-                let error = error.error();
-                tracing::warn!(%error, "the repository did not record the save");
-                // The text says the output is written and why the record failed.
-                self.save_note = Some(crate::error_text::describe(error).into());
-                cx.notify();
-            }
-            Next::Refused { error } => {
-                let detail = crate::error_text::describe(&error);
-                // Nothing is written and the merge goes on, so its journal does too.
-                self.schedule_journal(cx);
-                alert(&prompt::cannot_write(), &detail, window, cx);
-            }
-            Next::Finish { code, journal } => {
-                self.journal.cancel();
-                self.session.finish_journal(journal);
-                self.exit(code, window, cx);
-            }
-        }
-    }
-
-    /// Ask before writing markers for `unresolved` conflicts.
-    fn confirm_unresolved(&self, unresolved: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let answer = window.prompt(
-            PromptLevel::Warning,
-            &prompt::save_unresolved(),
-            Some(&prompt::save_unresolved_detail(
-                unresolved,
-                self.session.document().options().semantics,
-            )),
-            &[
-                PromptButton::new(prompt::save_with_conflicts()),
-                PromptButton::new(prompt::keep_editing()),
-            ],
-            cx,
-        );
-        cx.spawn_in(window, async move |this, cx| {
-            let next = ending::unresolved_answered(answer.await == Ok(GO_AHEAD));
-            ignore_closed_view(this.update_in(cx, |this, window, cx| this.step(next, window, cx)));
-        })
-        .detach();
-    }
-
-    /// Ask for a path, starting in OUTPUT's directory, and write a copy there.
-    fn save_copy_as(&mut self, _: &SaveCopyAs, window: &mut Window, cx: &mut Context<Self>) {
-        self.send_edits(window, cx);
-        let start = self
-            .session
-            .output()
-            .and_then(Path::parent)
-            .map_or_else(PathBuf::new, Path::to_path_buf);
-        let picked = cx.prompt_for_new_path(&start, None);
-        cx.spawn_in(window, async move |this, cx| {
-            // A cancelled or failed picker writes nothing.
-            let Ok(Ok(Some(path))) = picked.await else {
-                return;
-            };
-            ignore_closed_view(this.update_in(cx, |this, window, cx| {
-                this.save_copy(&path, window, cx);
-            }));
-        })
-        .detach();
-    }
-
-    /// Write the output to `path` as Save & Exit would, unresolved conflicts as markers,
-    /// without a confirmation (`docs/DESIGN.md` §E6), off the UI thread. The window stays open;
-    /// OUTPUT, the exit code and the journal are unchanged. A failure shows an alert.
-    pub fn save_copy(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
-        self.send_edits(window, cx);
-        let (pending, unresolved) = self.session.copy();
-        let path = path.to_owned();
-        let before = self.copying.take();
-        self.copying = Some(cx.spawn_in(window, async move |this, cx| {
-            if let Some(before) = before {
-                before.await;
-            }
-            let written = cx.background_spawn(async move { pending.write(&path) }).await;
-            ignore_closed_view(this.update_in(cx, |this, window, cx| {
-                this.copy_written(written, unresolved, window, cx);
-            }));
-        }));
-    }
-
-    fn copy_written(
-        &mut self,
-        written: Result<ExitCode, SaveError>,
-        unresolved: usize,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        match written {
-            Ok(_) => {
-                self.save_note = Some(strings::copy_saved(unresolved).into());
-                cx.notify();
-            }
-            Err(error) => alert(
-                &prompt::cannot_write_copy(),
-                &crate::error_text::describe(&error),
-                window,
-                cx,
-            ),
-        }
-    }
-
-    /// Finish with `code` once the copies being written have landed.
-    fn exit(&mut self, code: ExitCode, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(copying) = self.copying.take() else {
-            finish(code, cx);
-            return;
-        };
-        cx.spawn_in(window, async move |_, cx| {
-            copying.await;
-            ignore_closed_view(cx.update(|_, cx| finish(code, cx)));
-        })
-        .detach();
-    }
-
-    /// Before a save into a jj commit, preview it off the UI thread, and ask first when it
-    /// changes the conflicts of a descendant (spec §7.5.1). Any other save writes at once.
-    /// The result stays locked while the preview runs, so the save writes what it showed.
-    /// The save then goes on as `after` says.
-    fn check_descendants(&mut self, after: After, window: &mut Window, cx: &mut Context<Self>) {
-        if self.save_task.is_some() {
-            return;
-        }
-        let Some(job) = self.session.preview() else {
-            return self.write(after, window, cx);
-        };
-        self.set_saving(true, cx);
-        self.save_task = Some(cx.spawn_in(window, async move |this, cx| {
-            let previewed = cx.background_spawn(async move { job.run() }).await;
-            ignore_closed_view(this.update_in(cx, |this, window, cx| {
-                this.save_task = None;
-                this.set_saving(false, cx);
-                let changed: Vec<CommitEffect> = match previewed {
-                    Ok(rewrite) => rewrite
-                        .rewritten
-                        .into_iter()
-                        .filter(|effect| effect.before != effect.after)
-                        .collect(),
-                    Err(error) => {
-                        // The save meets the same refusal, or an encoding's, and reports it.
-                        tracing::warn!(%error, "cannot preview the save into the commit");
-                        Vec::new()
-                    }
-                };
-                if changed.is_empty() {
-                    this.write(after, window, cx);
-                } else {
-                    Self::confirm_descendants(&changed, after, window, cx);
-                }
-            }));
-        }));
-    }
-
-    /// Ask before a save that changes the conflicts of the descendants in `changed`.
-    fn confirm_descendants(
-        changed: &[CommitEffect],
-        after: After,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let answer = window.prompt(
-            PromptLevel::Info,
-            &prompt::descendants_changed(changed.len()),
-            Some(&strings::descendant_effects(changed)),
-            &[PromptButton::new(prompt::save()), PromptButton::new(prompt::keep_editing())],
-            cx,
-        );
-        cx.spawn_in(window, async move |this, cx| {
-            let save = answer.await == Ok(GO_AHEAD);
-            ignore_closed_view(this.update_in(cx, |this, window, cx| {
-                if save {
-                    this.write(after, window, cx);
-                }
-            }));
-        })
-        .detach();
-    }
-
-    /// Write the output and record the save off the UI thread, then go on as `after` says.
-    fn write(&mut self, after: After, window: &mut Window, cx: &mut Context<Self>) {
-        // The save writes the journal first; its tasks stop.
-        self.journal.cancel();
-        match self.session.start_save(after) {
-            Ok(job) => self.save_in_background(job, window, cx),
-            Err(CannotSave::NoOutput) => Self::fail(&prompt::no_output(), window, cx),
-            Err(CannotSave::Saving) => {}
-        }
-    }
-
-    /// Record again, off the UI thread, a save whose output is written with `code`, without
-    /// writing it again, then go on as `after` says.
-    fn record_again(
-        &mut self,
-        code: ExitCode,
-        after: After,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if let Ok(job) = self.session.start_record(code, after) {
-            self.save_in_background(job, window, cx);
-        }
-    }
-
-    /// Run `job` on a background thread with the result locked, then go on or end the
-    /// session as it says, or say why it failed.
-    fn save_in_background(&mut self, job: SaveJob, window: &mut Window, cx: &mut Context<Self>) {
-        self.set_saving(true, cx);
-        if let Some(watch) = &mut self.output_watch {
-            watch.saving();
-        }
-        self.save_task = Some(cx.spawn_in(window, async move |this, cx| {
-            let saved = cx.background_spawn(async move { job.run() }).await;
-            ignore_closed_view(this.update_in(cx, |this, window, cx| {
-                this.save_task = None;
-                this.set_saving(false, cx);
-                let next = this.session.saved(saved);
-                // The session goes on: OUTPUT may hold the save's write now.
-                if !matches!(next, Next::Finish { .. }) {
-                    this.stamp_output(window, cx);
-                }
-                this.step(next, window, cx);
-            }));
-        }));
-    }
-
-    /// Lock the result while a save writes it, and unlock it after.
-    fn set_saving(&self, saving: bool, cx: &mut Context<Self>) {
-        let locked = saving || self.asking_output;
-        self.result.update(cx, |state, cx| state.set_readonly(locked, cx));
-    }
-
-    /// Lock the result while a save runs or the question about OUTPUT is open.
-    fn lock_result(&self, cx: &mut Context<Self>) {
-        self.set_saving(self.session.saving(), cx);
-    }
-
-    /// Say why a save failed, and offer the answers `undone` allows: try again, which goes
-    /// on as `after` says, save a copy, keep editing, or quit with 3 (spec §6.2). The window
-    /// stays open until the user saves or quits; the journal holds the work meanwhile.
-    fn save_failed(
-        undone: Undone,
-        after: After,
-        detail: String,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        tracing::error!(detail, "cannot save");
-        let answers = undone.answers();
-        let labels: Vec<PromptButton> =
-            answers.iter().map(|&answer| PromptButton::new(failed_label(answer))).collect();
-        let answer =
-            window.prompt(PromptLevel::Critical, &undone_title(undone), Some(&detail), &labels, cx);
-        let handle = window.window_handle();
-        cx.spawn(async move |this, cx| {
-            let answer = answer.await.ok().and_then(|answer| answers.get(answer).copied());
-            let next = ending::failure_answered(answer, undone, after);
-            // Quit, or an alert that closed with its window, ends the session; so does a
-            // window gone before the answer could reach it.
-            let handled = !matches!(next, Next::Finish { .. })
-                && handle
-                    .update(cx, |_, window, cx| {
-                        this.update(cx, |this, cx| this.step(next, window, cx))
-                    })
-                    .is_ok_and(|updated| updated.is_ok());
-            if !handled {
-                cx.update(|cx| {
-                    eprintln!("{}: {detail}", strings::PROGRAM);
-                    finish(ExitCode::Error, cx);
-                });
-            }
-        })
-        .detach();
-    }
-
-    /// Report an error on stderr and in an alert, then finish with 3.
-    fn fail(detail: &str, window: &mut Window, cx: &mut Context<Self>) {
-        tracing::error!(detail, "cannot save");
-        eprintln!("{}: {detail}", strings::PROGRAM);
-        let answer = window.prompt(
-            PromptLevel::Critical,
-            &prompt::cannot_write(),
-            Some(detail),
-            &[PromptButton::new(prompt::quit())],
-            cx,
-        );
-        cx.spawn(async move |_, cx| {
-            // Quit, or the alert closing with the window, finishes alike.
-            let _ = answer.await;
-            cx.update(|cx| finish(ExitCode::Error, cx));
-        })
-        .detach();
-    }
-
-    /// Close the window (spec §6.2). With nothing changed since the last Save, finish at
-    /// once: with that Save's code, or with 2 before any. After a change, ask: Save & Exit,
-    /// Discard (finish as before, writing nothing) or Keep Editing.
-    fn cancel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.session.saving() {
-            self.send_edits(window, cx);
-        }
-        self.step(self.session.close_requested(), window, cx);
-    }
-
-    /// Ask whether to save, discard or keep editing.
-    fn confirm_close(window: &mut Window, cx: &mut Context<Self>) {
-        let answer = window.prompt(
-            PromptLevel::Warning,
-            &prompt::save_changes(),
-            Some(&prompt::discard_detail()),
-            &Closing::ALL.map(|answer| PromptButton::new(closing_label(answer))),
-            cx,
-        );
-        cx.spawn_in(window, async move |this, cx| {
-            let choice = answer.await.ok().and_then(|answer| Closing::ALL.get(answer).copied());
-            ignore_closed_view(this.update_in(cx, |this, window, cx| {
-                let next = this.session.close_answered(choice);
-                this.step(next, window, cx);
-            }));
-        })
-        .detach();
-    }
-
-    /// Open the result's search, from anywhere in the window.
-    fn find(&mut self, _: &Find, window: &mut Window, cx: &mut Context<Self>) {
-        self.result.update(cx, |state, cx| {
-            state.focus(window, cx);
-            state.open_search(false, cx);
-        });
-    }
-
-    /// Follow the result's search into the input panes: search them when its query or case
-    /// changes, and drop their matches when it closes or empties.
-    fn follow_search(&mut self, cx: &mut Context<Self>) {
-        let session = self.result.read(cx).search_session();
-        if let Some(bytes) = self.result_steps.stepped(session) {
-            self.start_found(Found::Result(bytes.start, bytes.end), cx);
-        }
-        self.open_searched_fold(cx);
-        let session = self.result.read(cx).search_session();
-        let wanted = (session.is_active() && !session.query.is_empty()).then(|| {
-            let case = if session.case_insensitive { Case::Insensitive } else { Case::Sensitive };
-            (session.query.clone(), case)
-        });
-        match self.input_find.follow(wanted) {
-            input_find::Follow::Unchanged => {}
-            input_find::Follow::Search => self.search_inputs(Keep::No, cx),
-            input_find::Follow::Cleared => cx.notify(),
-        }
-    }
-
-    /// Open the region whose hidden lines hold the result's current search match, once for
-    /// each match, so a collapse after it stays collapsed (spec §5).
-    fn open_searched_fold(&mut self, cx: &mut Context<Self>) {
-        let state = self.result.read(cx);
-        let session = state.search_session();
-        let current = session
-            .is_active()
-            .then(|| session.matcher.current())
-            .flatten()
-            .and_then(|ix| session.matcher.matched_ranges().get(ix).cloned());
-        if current == self.collapse.searched {
-            return;
-        }
-        let line = current.as_ref().map(|bytes| state.text().offset_to_point(bytes.start).row);
-        self.collapse.searched = current;
-        if let Some(line) = line {
-            self.open_fold_over_line(line, cx);
-        }
-    }
-
-    /// Search the input panes again for the same query after the rows or panes changed,
-    /// keeping each pane's current match.
-    fn search_inputs_again(&mut self, cx: &mut Context<Self>) {
-        if self.input_find.query().is_some() {
-            self.search_inputs(Keep::Yes, cx);
-        }
-    }
-
-    /// Search the visible inputs off the UI thread (`docs/DESIGN.md` §A14 measures why). With
-    /// `keep`, each pane's current match stays if the search still finds it; otherwise a
-    /// pane's first match from the top row is current.
-    fn search_inputs(&mut self, keep: Keep, cx: &mut Context<Self>) {
-        // The search runs on another thread; the query is short.
-        let Some((query, case)) = self.input_find.query().cloned() else {
-            return;
-        };
-        let search = self.input_find.begin();
-        let keep = match keep {
-            Keep::Yes => self.input_find.starts(),
-            Keep::No => Vec::new(),
-        };
-        let inputs = self.session.document().inputs();
-        let sources = self.panes.sources();
-        // `Text` clones share their buffer.
-        let texts: Vec<(Source, Text)> =
-            sources.iter().map(|&source| (source, inputs.text(source).clone())).collect();
-        // A copy of the line ranges, one per region, so the rows can be found off the UI
-        // thread.
-        let regions = self.session.document().regions().to_vec();
-        let rows = self.rows.clone();
-        let from = self.top_row();
-        cx.spawn(async move |this, cx| {
-            let found = cx
-                .background_spawn(async move {
-                    InputMatches::find_in(texts.iter().map(|(s, t)| (*s, t)), &query, case)
-                        .map(|matches| matches.ordered(&regions, &rows))
-                })
-                .await;
-            ignore_closed_view(this.update(cx, |this, cx| {
-                let hits = found
-                    .inspect_err(|error| tracing::warn!(%error, "the input search found nothing"))
-                    .unwrap_or_default();
-                this.input_find.land(search, hits, &sources, &keep, from);
-                cx.notify();
-            }));
-        })
-        .detach();
-    }
-
-    /// Step pane `pane` to its next or previous match and scroll that row to the middle.
-    fn step_input_match(&mut self, pane: usize, step: Step, cx: &mut Context<Self>) {
-        if let Some(row) = self.input_find.step(pane, step).map(|hit| hit.row) {
-            if let Some(fold) = merge_fold::fold_at_row(&self.collapse.folds, row.get()).cloned() {
-                self.open_fold(&fold, cx);
-            }
-            self.scroll.centre(row);
-            self.start_found(Found::Input(pane), cx);
-        }
-        cx.notify();
-    }
-
-    /// Each input pane's search controls, while the result's search runs.
-    fn input_controls(&self, cx: &mut Context<Self>) -> Vec<Option<AnyElement>> {
-        (0..self.headings.len())
-            .map(|pane| {
-                let title = &self.headings[pane].title;
-                let previous = cx.listener(move |this, _: &ClickEvent, _, cx| {
-                    this.step_input_match(pane, Step::Previous, cx);
-                });
-                let next = cx.listener(move |this, _: &ClickEvent, _, cx| {
-                    this.step_input_match(pane, Step::Next, cx);
-                });
-                input_find::controls(&self.input_find, pane, title, previous, next)
-                    .map(IntoElement::into_any_element)
-            })
-            .collect()
-    }
-
-    /// The first row the input panes show.
-    fn top_row(&self) -> RowIx {
-        self.scroll.top_row(self.typography.line_height())
-    }
-
-    /// Input pane `pane`'s match count, `n of m` or `No matches`; `None` while the result's
-    /// search is closed or empty.
-    #[must_use]
-    pub fn input_match_count(&self, pane: usize) -> Option<String> {
-        self.input_find.count(pane)
-    }
-
-    /// Input pane `pane`'s current match.
-    #[must_use]
-    pub fn input_match_current(&self, pane: usize) -> Option<&Hit> {
-        self.input_find.current(pane)
     }
 
     /// Open the go-to-line field, empty.

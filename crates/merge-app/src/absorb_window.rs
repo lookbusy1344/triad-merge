@@ -15,8 +15,8 @@ use gpui_kit::{
     InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render, ScrollHandle,
     Styled as _, TestSupportExt as _, Window, WindowBounds, WindowOptions, div, px,
 };
-use merge_session::jj_config::ConfigEnv;
 use merge_session::jj_native::{AbsorbHunk, Absorbed, Destination, HunkChoice};
+use merge_session::repository::Discovery;
 use merge_session::resolve::ResolveError;
 use merge_view::diff::tone;
 
@@ -62,6 +62,9 @@ const WINDOW_HEIGHT: Pixels = px(600.);
 /// The commits' column, beside the hunks.
 const COMMITS_WIDTH: Pixels = px(300.);
 
+/// A listing handed to the window is a listing, not an apply.
+const LISTED: bool = false;
+
 /// How the run ends: the process exits, or a test records the code.
 type ExitFn = dyn Fn(ExitCode, &mut App);
 
@@ -71,8 +74,10 @@ pub struct AbsorbStart {
     pub cwd: PathBuf,
     pub paths: Vec<PathBuf>,
     pub into: Option<String>,
+    /// The hunks listed before the window opened, shown first; none to list them.
+    pub listed: Option<Absorbed>,
     pub settings: WindowSettings,
-    pub jj_config: Option<ConfigEnv>,
+    pub discovery: Discovery,
 }
 
 pub struct AbsorbWindow {
@@ -150,7 +155,10 @@ pub fn start(
         });
         view
     })?;
-    view.update(cx, AbsorbWindow::refresh);
+    view.update(cx, |this, cx| match this.start.listed.take() {
+        Some(listed) => this.ran(Ok(listed), LISTED, cx),
+        None => this.refresh(cx),
+    });
     Ok((window, view))
 }
 
@@ -230,9 +238,9 @@ impl AbsorbWindow {
         cx: &mut Context<Self>,
     ) {
         self.busy = true;
-        let AbsorbStart { cwd, paths, into, jj_config, .. } = &self.start;
-        let (cwd, paths, into, config) =
-            (cwd.clone(), paths.clone(), into.clone(), jj_config.clone());
+        let AbsorbStart { cwd, paths, into, discovery, .. } = &self.start;
+        let (cwd, paths, into, discovery) =
+            (cwd.clone(), paths.clone(), into.clone(), discovery.clone());
         let ran = cx.background_spawn(async move {
             merge_session::jj_native::absorb(
                 &cwd,
@@ -241,7 +249,7 @@ impl AbsorbWindow {
                 &choices,
                 apply,
                 listed_at.as_deref(),
-                config,
+                &discovery,
             )
         });
         cx.spawn(async move |this, cx| {

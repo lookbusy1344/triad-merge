@@ -34,7 +34,7 @@ use gpui_kit::{
 };
 use merge_config::settings::{Colours, DEFAULT_COLOURS, DiffLayout, Scrollbars};
 use merge_core::diff::DiffOptions;
-use merge_core::diff2::{DiffDocument, Edited, Kind2, Marking, Region2, Rope, Side};
+use merge_core::diff2::{DiffDocument, Edited, Kind2, Marking, Region2, Side};
 use merge_core::edit::TextPatch;
 use merge_core::index::RegionIx;
 use merge_core::line_map::LineMap;
@@ -42,6 +42,7 @@ use merge_core::merge3::Source;
 use merge_core::patch::{DEFAULT_CONTEXT, Scope, Titles};
 use merge_core::text::{Encoding, Text};
 use merge_session::SessionError;
+use merge_session::diff_tool::{self, Saved, SideSave};
 use merge_session::origin::carry;
 use merge_session::repository::{Handoff, WorkingCopy};
 use merge_syntax::language::Language;
@@ -348,15 +349,6 @@ struct SideWrite {
     side: Side,
     /// The pane's change count when the text was taken.
     changes: u64,
-    path: PathBuf,
-    encoding: Encoding,
-    text: Rope,
-}
-
-impl SideWrite {
-    fn run(&self) -> Result<(), SessionError> {
-        merge_session::save_text(&self.path, self.encoding, self.text.chunks())
-    }
 }
 
 /// What follows a read of a pane's file after a change on disk.
@@ -1634,11 +1626,11 @@ impl DiffWindow {
         for side in SIDES {
             self.send_edits(side, window, cx);
         }
-        let writes = self.side_writes();
-        for write in &writes {
+        let (writes, saves): (Vec<_>, Vec<_>) = self.side_writes().into_iter().unzip();
+        for (write, save) in writes.iter().zip(&saves) {
             // A rope clone shares its chunks.
-            let text = write.text.clone();
-            self.pane_mut(write.side).writes.start(write.changes, text, write.encoding);
+            let text = save.text.clone();
+            self.pane_mut(write.side).writes.start(write.changes, text, save.encoding);
         }
         let working_copy = self.working_copy.clone();
         let before = self.saving.take();
@@ -1646,22 +1638,10 @@ impl DiffWindow {
             if let Some(before) = before {
                 before.await;
             }
-            let (written, snapshot) = cx
-                .background_spawn(async move {
-                    let written: Vec<_> = writes
-                        .into_iter()
-                        .map(|write| {
-                            let result = write.run();
-                            (write, result)
-                        })
-                        .collect();
-                    let any_written = written.iter().any(|(_, result)| result.is_ok());
-                    let snapshot = working_copy
-                        .filter(|_| any_written)
-                        .map(|working_copy| working_copy.snapshot());
-                    (written, snapshot)
-                })
+            let Saved { written, snapshot } = cx
+                .background_spawn(async move { diff_tool::save(&saves, working_copy.as_ref()) })
                 .await;
+            let written = writes.into_iter().zip(written).collect();
             ignore_closed_view(this.update_in(cx, |this, window, cx| {
                 this.snapshotted(snapshot);
                 this.saved(written, after, window, cx);
@@ -1671,7 +1651,7 @@ impl DiffWindow {
 
     /// What a save writes: each side with unsaved edits. A revision is read-only, so it is
     /// never modified.
-    fn side_writes(&self) -> Vec<SideWrite> {
+    fn side_writes(&self) -> Vec<(SideWrite, SideSave)> {
         SIDES
             .into_iter()
             .filter_map(|side| {
@@ -1679,13 +1659,12 @@ impl DiffWindow {
                 let (true, Some(path)) = (pane.modified, pane.origin.path()) else {
                     return None;
                 };
-                Some(SideWrite {
-                    side,
-                    changes: pane.changes,
+                let save = SideSave {
                     path: path.to_path_buf(),
                     encoding: pane.encoding,
                     text: self.doc.snapshot(side),
-                })
+                };
+                Some((SideWrite { side, changes: pane.changes }, save))
             })
             .collect()
     }

@@ -458,7 +458,6 @@ err-kind-directory = katalog
 err-deleted-everywhere = { $path } är borttagen på alla sidor; inget att slå samman
 err-resolved-in-tree = { $path } har inga konfliktmarkörer kvar i arbetsträdet och ser därför löst ut; markera den som löst, eller sätt tillbaka markörerna för att slå samman den igen
 err-tree-not-text = { $path }: filen i arbetsträdet är inte text ({ $detail }) och kan därför innehålla ändringar som en sparning skulle skriva över; sätt tillbaka text med konfliktmarkörerna, eller lös den för hand
-err-temporary = kan inte skapa en temporär fil för resultatet: { $detail }
 err-not-a-directory = { $path } är ingen katalog
 err-mixed = diff tar två filer eller två kataloger: { $dir } är en katalog, { $other } är det inte
 err-git-in-jj = { $path } är ett jj-förråd, där triad slår samman enbart med jj:s semantik; lös med `jj resolve`

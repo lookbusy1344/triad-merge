@@ -458,7 +458,6 @@ err-kind-directory = Verzeichnis
 err-deleted-everywhere = { $path } ist auf jeder Seite gelöscht; nichts zusammenzuführen
 err-resolved-in-tree = { $path } hat im Arbeitsbaum keine Konfliktmarker mehr und wirkt daher gelöst; markieren Sie es als gelöst oder setzen Sie die Marker zurück, um es erneut zusammenzuführen
 err-tree-not-text = { $path }: die Datei im Arbeitsbaum ist kein Text ({ $detail }) und kann daher Änderungen enthalten, die ein Speichern überschreiben würde; stellen Sie Text mit den Konfliktmarkern wieder her oder lösen Sie es von Hand
-err-temporary = temporäre Datei für das Ergebnis kann nicht angelegt werden: { $detail }
 err-not-a-directory = { $path } ist kein Verzeichnis
 err-mixed = diff nimmt zwei Dateien oder zwei Verzeichnisse: { $dir } ist ein Verzeichnis, { $other } nicht
 err-git-in-jj = { $path } ist ein jj-Repository, in dem triad nur mit der Semantik von jj zusammenführt; lösen Sie mit `jj resolve`

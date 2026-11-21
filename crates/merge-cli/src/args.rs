@@ -16,7 +16,7 @@ use merge_config::settings::{Choice, HunkLevelArg, SameChangeArg};
 use merge_session::invocation::{
     Absorb, Diff, DiffFlags, History, Merge, MergeFiles, Resolve, SemanticsFlags, Stack, Window,
 };
-use vcs_jj::HunkChoice;
+use merge_session::jj_native::HunkChoice;
 
 /// What the command line asks for.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -35,7 +35,7 @@ fn named(output: &Path) -> WindowSettings {
             Path::new("./foo_LOCAL_1234.c"),
             Path::new("./foo_REMOTE_1234.c"),
         ),
-        output: Some(output.join("foo.c")),
+        destination: Some(merge_session::resolve::Destination::file_at(output.join("foo.c"))),
         ..WindowSettings::default()
     }
 }
@@ -265,8 +265,13 @@ fn open_dialog(cx: &mut TestAppContext) -> AnyWindowHandle {
     let (window, _) = cx.update(|cx| {
         gpui_kit::init(cx);
         merge_app::init(cx);
-        merge_app::open_dialog::open(WindowSettings::default(), false, cx)
-            .expect("the dialog opens")
+        merge_app::open_dialog::open(
+            WindowSettings::default(),
+            merge_session::repository::Discovery::default(),
+            false,
+            cx,
+        )
+        .expect("the dialog opens")
     });
     act(cx, window, TestWindowExt::render_frame);
     window

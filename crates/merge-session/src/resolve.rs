@@ -11,10 +11,9 @@ use merge_core::merge3::{Inputs, Semantics, ShapeError};
 use merge_core::text::{DecodeError, Text};
 use merge_syntax::language::Language;
 use vcs::{CommitId, ConflictTerm, EntryKind, RepoKind, Repository, TermContent, VcsError};
-use vcs_jj::config::ConfigEnv;
 use vcs_jj::{JjRepository, Rewrite};
 
-use crate::repository::RunRepository;
+use crate::repository::{Discovery, RunRepository};
 use crate::{ExitCode, SaveError};
 
 /// A conflict, loaded as a merge's inputs.
@@ -23,8 +22,8 @@ pub struct Loaded {
     /// The conflicted path, relative to the repository root, or to the working directory
     /// outside a repository.
     pub path: Utf8PathBuf,
-    /// The working-tree file, absolute: where the result goes.
-    pub file: Utf8PathBuf,
+    /// Where the result goes.
+    pub destination: Destination,
     pub inputs: Inputs,
     /// Each term's title, or empty without one.
     pub labels: Labels,
@@ -33,12 +32,65 @@ pub struct Loaded {
     /// The shortest markers the VCS reads back as this conflict: jj's length for the file.
     /// None when any length does.
     pub marker_length: Option<usize>,
-    /// Where each save is recorded: the VCS's conflict at the path. None for a file the VCS
-    /// holds no conflict for.
-    pub record: Option<Record>,
     /// The conflict each parent commit holds at the path, for `resolve -r` (spec §7.5.1):
     /// the merge window draws the conflicts the commit inherits in their own tone.
     pub parents: Vec<Inputs>,
+}
+
+/// Where a merge's result goes.
+#[derive(Debug, Clone)]
+pub enum Destination {
+    /// A file, absolute for a conflict `resolve` loaded. Each save is recorded in the VCS's
+    /// conflict at its path when `record` is given: none for a file the VCS holds no
+    /// conflict for.
+    File { path: PathBuf, record: Option<Record> },
+    /// A jj commit's conflict (`resolve -r`): each save writes the result into the commit.
+    Commit(InCommit),
+}
+
+impl Destination {
+    /// The file at `path`, its saves recorded nowhere.
+    #[must_use]
+    pub fn file_at(path: impl Into<PathBuf>) -> Self {
+        Self::File { path: path.into(), record: None }
+    }
+
+    /// The file a save writes; none for a commit.
+    #[must_use]
+    pub fn file(&self) -> Option<&Path> {
+        match self {
+            Self::File { path, .. } => Some(path),
+            Self::Commit(_) => None,
+        }
+    }
+
+    /// The path that names the result: the file, or the conflicted path in the commit,
+    /// relative to the repository root.
+    #[must_use]
+    pub fn name(&self) -> &Path {
+        match self {
+            Self::File { path, .. } => path,
+            Self::Commit(commit) => commit.path.as_std_path(),
+        }
+    }
+
+    /// The VCS's conflict a save to the file is recorded in.
+    #[must_use]
+    pub fn record(&self) -> Option<&Record> {
+        match self {
+            Self::File { record, .. } => record.as_ref(),
+            Self::Commit(_) => None,
+        }
+    }
+
+    /// The jj commit each save writes into; none for a file.
+    #[must_use]
+    pub fn in_commit(&self) -> Option<&InCommit> {
+        match self {
+            Self::File { .. } => None,
+            Self::Commit(commit) => Some(commit),
+        }
+    }
 }
 
 /// The VCS's conflict at one path, which records each save of its working-tree file
@@ -49,21 +101,18 @@ pub struct Record {
     root: Utf8PathBuf,
     /// The conflicted path, relative to the root.
     path: Utf8PathBuf,
-    jj_config: Option<ConfigEnv>,
-    /// A conflict in a commit other than the working copy's (`resolve -r`): each save goes
-    /// back into the commit. None for the working copy's conflict.
-    commit: Option<InCommit>,
+    discovery: Discovery,
 }
 
-/// A jj commit's conflict that `resolve -r` opened: the result goes to a temporary file,
-/// and each save writes it into the commit (spec §7.4).
+/// A jj commit's conflict that `resolve -r` opened: each save writes the result into the
+/// commit (spec §7.4).
 #[derive(Debug, Clone)]
 pub struct InCommit {
     /// The repository's root.
     root: Utf8PathBuf,
     /// The conflicted path, relative to the root.
     path: Utf8PathBuf,
-    jj_config: Option<ConfigEnv>,
+    discovery: Discovery,
     /// The commit the conflict was read from: saved markers parse against its terms.
     id: CommitId,
     /// What the change must hold at the path for a save to go in: `id` before any save,
@@ -72,10 +121,6 @@ pub struct InCommit {
     held: Arc<Mutex<CommitId>>,
     /// The shortest markers jj parses back as this conflict.
     marker_length: usize,
-    /// The temporary file the result is saved to.
-    file: Utf8PathBuf,
-    /// The directory holding `file`, removed when the last copy of the record goes.
-    _dir: Arc<tempfile::TempDir>,
 }
 
 impl Record {
@@ -88,9 +133,6 @@ impl Record {
     /// [`VcsError::OutsideRepository`] when `run` holds another repository than the
     /// conflict's, before any write; [`VcsError`] when `run` holds none or cannot be written.
     pub fn saved_in(&self, run: &mut RunRepository, code: ExitCode) -> Result<(), VcsError> {
-        if self.commit.is_some() {
-            return self.saved(code);
-        }
         let Some(resolved) = resolved_by(code) else {
             return Ok(());
         };
@@ -99,13 +141,6 @@ impl Record {
             return Err(VcsError::OutsideRepository(self.root.join(&self.path)));
         }
         self.record(repo, resolved)
-    }
-
-    /// The jj commit other than the working copy's that holds the conflict, which each
-    /// save rewrites (`resolve -r`). None for the working copy's conflict.
-    #[must_use]
-    pub fn in_commit(&self) -> Option<&InCommit> {
-        self.commit.as_ref()
     }
 
     /// The conflicted path, relative to the repository root.
@@ -124,14 +159,7 @@ impl Record {
         let Some(resolved) = resolved_by(code) else {
             return Ok(());
         };
-        if let Some(commit) = &self.commit {
-            return commit.rewrite(false).map(drop);
-        }
-        let run = RunRepository::find([self.root.as_std_path()]);
-        let mut run = match &self.jj_config {
-            Some(config) => run.with_jj_config(config.clone()),
-            None => run,
-        };
+        let mut run = self.discovery.find([self.root.as_std_path()]);
         self.record(run.require_mut()?, resolved)
     }
 
@@ -159,41 +187,28 @@ impl Record {
 }
 
 impl InCommit {
-    /// The path that names this merge's recovery journal from one run to the next: the
-    /// conflicted file under the root. The result's temporary file is new each run.
+    /// The conflicted file under the root, which names the merge's recovery journal from
+    /// one run to the next.
     #[must_use]
-    pub fn journal_name(&self) -> PathBuf {
+    pub fn worktree_file(&self) -> PathBuf {
         self.root.join(&self.path).into_std_path_buf()
     }
 
-    /// Write the saved result into the commit, or on a `dry_run` report what the write
-    /// would do.
+    /// The conflicted path, relative to the repository root.
+    #[must_use]
+    pub fn path(&self) -> &Utf8Path {
+        &self.path
+    }
+
+    /// Write `content`, the encoded result, into the commit; on a `dry_run`, only report
+    /// what the write would do: the stack window's preview (spec §7.5.1).
     ///
     /// # Errors
     ///
-    /// [`VcsError`] when the result cannot be read, or the repository refuses the write
-    /// ([`JjRepository::write_conflict`]).
-    pub fn rewrite(&self, dry_run: bool) -> Result<Rewrite, VcsError> {
-        let content = std::fs::read(&self.file).map_err(|source| VcsError::Backend {
-            context: "reading the saved result",
-            source: Box::new(source),
-        })?;
-        self.write(&content, dry_run)
-    }
-
-    /// What writing `content` into the commit would do, without writing it: the stack
-    /// window's preview (spec §7.5.1).
-    ///
-    /// # Errors
-    ///
-    /// [`VcsError`] when the repository refuses the write.
-    pub fn preview(&self, content: &[u8]) -> Result<Rewrite, VcsError> {
-        self.write(content, DRY_RUN)
-    }
-
-    fn write(&self, content: &[u8], dry_run: bool) -> Result<Rewrite, VcsError> {
-        let config = self.jj_config.clone().unwrap_or_else(ConfigEnv::from_process);
-        let mut repo = JjRepository::discover(&self.root)?.with_config(config);
+    /// [`VcsError`] when the repository refuses the write
+    /// ([`JjRepository::write_conflict_since`]).
+    pub fn write(&self, content: &[u8], dry_run: bool) -> Result<Rewrite, VcsError> {
+        let mut repo = JjRepository::discover(&self.root)?.with_config(self.discovery.jj_config());
         // A poisoned lock still holds a whole commit ID: the lock guards one assignment.
         let mut held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
         let rewrite = repo.write_conflict_since(
@@ -228,11 +243,9 @@ pub struct Opened {
     pub doc: MergeDocument,
     /// As [`Loaded::path`].
     pub path: Utf8PathBuf,
-    /// As [`Loaded::file`].
-    pub file: Utf8PathBuf,
+    /// As [`Loaded::destination`].
+    pub destination: Destination,
     pub repo: Option<RepoKind>,
-    /// As [`Loaded::record`].
-    pub record: Option<Record>,
     /// As [`Loaded::parents`].
     pub parents: Vec<Inputs>,
 }
@@ -253,9 +266,8 @@ impl Loaded {
         Ok(Opened {
             doc: crate::align(self.inputs, options, self.labels, names)?,
             path: self.path,
-            file: self.file,
+            destination: self.destination,
             repo: self.repo,
-            record: self.record,
             parents: self.parents,
         })
     }
@@ -300,8 +312,6 @@ pub enum ResolveError {
     /// A jj-native command run outside a jj repository (spec §1.2).
     #[error("{0} needs a jj repository")]
     NeedsJj(&'static str),
-    #[error("cannot make a temporary file for the result: {0}")]
-    Temporary(std::io::Error),
 }
 
 impl ResolveError {
@@ -375,7 +385,7 @@ pub fn load(
     snapshot: Snapshot,
 ) -> Result<Loaded, ResolveError> {
     let file = absolute(&cwd.join(path))?;
-    let jj_config = run.jj_config().cloned();
+    let discovery = run.discovery().clone();
     let Some(repo) = run.open_mut()? else {
         let cwd = absolute(cwd)?;
         let shown = file.strip_prefix(&cwd).map_or_else(|_| file.clone(), Utf8Path::to_owned);
@@ -393,12 +403,7 @@ pub fn load(
         return from_markers(relative, file, Some(repo.kind()));
     };
     let recorded = repo.recorded(&relative)?;
-    let record = Some(Record {
-        root: repo.root().to_owned(),
-        path: relative.clone(),
-        jj_config,
-        commit: None,
-    });
+    let record = Some(Record { root: repo.root().to_owned(), path: relative.clone(), discovery });
     if conflict.sides.iter().all(|side| side.content == TermContent::Absent) {
         return Err(ResolveError::DeletedEverywhere(relative));
     }
@@ -418,7 +423,8 @@ pub fn load(
         let parsed = parse_markers(&relative, &text)?;
         if !same_conflict(&parsed, &inputs) {
             tracing::info!(path = %relative, "the working-tree file differs from the stages; opening it from its markers");
-            return Ok(Loaded { record, ..from_parsed(relative, file, Some(repo.kind()), parsed) });
+            let destination = Destination::File { path: file.into_std_path_buf(), record };
+            return Ok(from_parsed(relative, destination, Some(repo.kind()), parsed));
         }
     }
     // jj parses back only markers at least as long as its materialiser writes them.
@@ -427,12 +433,11 @@ pub fn load(
         .or_else(|| (repo.kind() == RepoKind::Jj).then(|| merge_core::jj::marker_length(&inputs)));
     Ok(Loaded {
         path: relative,
-        file,
+        destination: Destination::File { path: file.into_std_path_buf(), record },
         inputs,
         labels: Labels::new(side_labels, base_labels),
         repo: Some(repo.kind()),
         marker_length,
-        record,
         parents: Vec::new(),
     })
 }
@@ -440,22 +445,20 @@ pub fn load(
 /// The conflict at `path`, relative to `cwd`, in the one commit `rev` names in the jj
 /// repository holding `cwd`, without checking it out (`resolve -r`, spec §7.5.1). The
 /// working copy is snapshotted first, and `rev` takes the user's revset aliases
-/// ([`JjRepository::single_commit`]). The result saves to a temporary file; each save writes
-/// it back into the commit.
+/// ([`JjRepository::single_commit`]). Each save writes the result into the commit.
 ///
 /// # Errors
 ///
 /// [`ResolveError::NeedsJj`] outside a jj repository; [`ResolveError::Vcs`] when `rev` names
 /// no commit or several, or the conflict cannot be read; [`ResolveError::NotConflicted`] when
-/// the path is resolved there; the term errors of [`load`]; and [`ResolveError::Temporary`]
-/// when the temporary file cannot be made.
+/// the path is resolved there; and the term errors of [`load`].
 pub fn load_at_commit(
     cwd: &Path,
     rev: &str,
     path: &Path,
-    jj_config: Option<ConfigEnv>,
+    discovery: &Discovery,
 ) -> Result<Loaded, ResolveError> {
-    let mut repo = crate::jj_native::open(cwd, jj_config.clone(), "resolve -r")?;
+    let mut repo = crate::jj_native::open(cwd, discovery, "resolve -r")?;
     let root = repo.root().to_owned();
     let file = absolute(&cwd.join(path))?;
     let relative =
@@ -484,26 +487,17 @@ pub fn load_at_commit(
             }
         })
         .collect();
-    let dir = tempfile::Builder::new()
-        .prefix("triad-resolve-")
-        .tempdir()
-        .map_err(ResolveError::Temporary)?;
-    let name = relative.file_name().unwrap_or(relative.as_str());
-    let temporary = Utf8PathBuf::from_path_buf(dir.path().join(name)).map_err(VcsError::NotUtf8)?;
     let commit = InCommit {
-        root: root.clone(),
+        root,
         path: relative.clone(),
-        jj_config: jj_config.clone(),
+        discovery: discovery.clone(),
         held: Arc::new(Mutex::new(id.clone())),
         id,
         marker_length,
-        file: temporary.clone(),
-        _dir: Arc::new(dir),
     };
     Ok(Loaded {
-        record: Some(Record { root, path: relative.clone(), jj_config, commit: Some(commit) }),
         path: relative,
-        file: temporary,
+        destination: Destination::Commit(commit),
         inputs,
         labels: Labels::new(side_labels, base_labels),
         repo: Some(RepoKind::Jj),
@@ -519,9 +513,6 @@ fn parent_inputs(path: &Utf8Path, conflict: vcs::Conflict) -> Result<Inputs, Res
     Inputs::new(sides, bases)
         .map_err(|source| ResolveError::Shape { path: path.to_owned(), source })
 }
-
-/// [`Record::preview`] writes nothing.
-const DRY_RUN: bool = true;
 
 /// Each term's text and title, `role` and its position naming a term in an error.
 fn decode(
@@ -606,7 +597,8 @@ fn from_markers(
         Err(source) => return Err(ResolveError::Decode { path, source }),
     };
     let parsed = parse_markers(&path, &text)?;
-    Ok(from_parsed(path, file, repo, parsed))
+    let destination = Destination::File { path: file.into_std_path_buf(), record: None };
+    Ok(from_parsed(path, destination, repo, parsed))
 }
 
 /// `text`'s conflict markers, `path` naming the file in errors.
@@ -619,19 +611,18 @@ fn parse_markers(path: &Utf8Path, text: &Text) -> Result<Parsed, ResolveError> {
 
 fn from_parsed(
     path: Utf8PathBuf,
-    file: Utf8PathBuf,
+    destination: Destination,
     repo: Option<RepoKind>,
     parsed: Parsed,
 ) -> Loaded {
     Loaded {
         path,
-        file,
+        destination,
         inputs: parsed.inputs,
         labels: parsed.labels,
         repo,
         // The VCS reads the markers back at any length.
         marker_length: None,
-        record: None,
         parents: Vec::new(),
     }
 }
@@ -723,12 +714,11 @@ mod tests {
         let text = |s: &str| Text::decode(s.as_bytes().to_vec()).expect("decodes");
         Loaded {
             path: Utf8PathBuf::from(path),
-            file: Utf8PathBuf::from("/repo").join(path),
+            destination: Destination::File { path: Path::new("/repo").join(path), record: None },
             inputs: Inputs::three_way(text(base), text(left), text(right)),
             labels: Labels::none(),
             repo: None,
             marker_length: None,
-            record: None,
             parents: Vec::new(),
         }
     }

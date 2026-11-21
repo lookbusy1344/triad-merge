@@ -41,14 +41,13 @@ mod jj {
             fixture.root().as_std_path(),
             &commit.commit,
             Path::new("a.txt"),
-            Some(ConfigEnv::default()),
+            &merge_session::repository::Discovery::new(ConfigEnv::default()),
         )
         .expect("it loads")
         .open(MergeOptions::default())
         .expect("labels fit");
         let settings = WindowSettings {
-            output: Some(opened.file.into_std_path_buf()),
-            record: opened.record,
+            destination: Some(opened.destination),
             repo: opened.repo,
             ..WindowSettings::default()
         };
@@ -69,7 +68,7 @@ mod jj {
             root,
             &commit.commit,
             Path::new("a.txt"),
-            Some(ConfigEnv::default()),
+            &merge_session::repository::Discovery::new(ConfigEnv::default()),
         )
         .expect("it loads")
         .open(MergeOptions::default())
@@ -192,12 +191,34 @@ mod jj {
         cx.run_until_parked();
         let picked = cx.read(|cx| view.read(cx).document().text());
         assert_eq!(picked, "left\n");
-        // The first window never finishes: a crash. The run after it loads the same conflict
-        // into a new temporary file.
+        // The first window never finishes: a crash. The run after it loads the same conflict.
         let (_, after) = open_journalled(cx, &fixture, &merge, journal.path());
         assert!(cx.has_pending_prompt(), "a restore is offered");
         cx.simulate_prompt_answer("Restore");
         cx.run_until_parked();
         assert_eq!(cx.read(|cx| after.read(cx).document().text()), picked);
+    }
+
+    #[gpui_kit::test]
+    fn a_merge_in_a_commit_is_named_by_its_path_and_saves_into_the_commit(cx: &mut TestAppContext) {
+        let (fixture, merge, _) = stacked();
+        let journal = tempfile::tempdir().expect("tempdir");
+        let (window, view) = open_journalled(cx, &fixture, &merge, journal.path());
+        let (title, output) = cx.read(|cx| {
+            let view = view.read(cx);
+            (view.result_title().to_string(), view.output().map(Path::to_path_buf))
+        });
+        assert_eq!(title, "a.txt");
+        assert_eq!(output, None, "a commit's conflict has no file");
+        pick_left(cx, window);
+        press(cx, window, "secondary-s");
+        let (message, _) = cx.pending_prompt().expect("the descendants' question");
+        assert_eq!(message, TWO_CHANGED);
+        cx.simulate_prompt_answer(SAVE);
+        cx.run_until_parked();
+        assert_eq!(
+            fixture.held_in(&fixture.latest(&merge), "a.txt"),
+            Held::File(b"left\n".to_vec())
+        );
     }
 }

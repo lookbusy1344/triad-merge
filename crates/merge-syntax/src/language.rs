@@ -7,6 +7,7 @@
 //! extension triad knows gives the language. Without one, a script's `#!` line names it. None is plain
 //! text.
 
+use std::borrow::Cow;
 use std::path::Path;
 
 /// A language with a grammar.
@@ -178,6 +179,37 @@ impl Language {
             Self::Zig => tree_sitter_zig::LANGUAGE,
         }
         .into()
+    }
+
+    /// The highlight query triad gives this language's grammar where the editors' bundled
+    /// query is missing or weaker; none to keep the bundled one. C++ takes C's query first,
+    /// since `tree-sitter-cpp`'s query holds only the lines C++ adds.
+    #[must_use]
+    pub fn highlight_query(self) -> Option<Cow<'static, str>> {
+        match self {
+            Self::CSharp => Some(Cow::Borrowed(tree_sitter_c_sharp::HIGHLIGHTS_QUERY)),
+            Self::Swift => Some(Cow::Borrowed(tree_sitter_swift::HIGHLIGHTS_QUERY)),
+            Self::Kotlin => Some(Cow::Borrowed(tree_sitter_kotlin_sg::HIGHLIGHTS_QUERY)),
+            Self::Cpp => Some(Cow::Owned(
+                [tree_sitter_c::HIGHLIGHT_QUERY, tree_sitter_cpp::HIGHLIGHT_QUERY].concat(),
+            )),
+            Self::Rust
+            | Self::Go
+            | Self::Python
+            | Self::Html
+            | Self::JavaScript
+            | Self::TypeScript
+            | Self::Tsx
+            | Self::Json
+            | Self::Yaml
+            | Self::Toml
+            | Self::Css
+            | Self::C
+            | Self::Java
+            | Self::Markdown
+            | Self::Bash
+            | Self::Zig => None,
+        }
     }
 
     /// The language of a file named `path`: by its whole name, else by its extension in any
@@ -552,6 +584,52 @@ mod tests {
         let tree = parser.parse(source, None).expect("the parse runs");
         let root = tree.root_node();
         (root.kind().to_owned(), root.has_error())
+    }
+
+    /// The text and capture name of each capture `language`'s own query makes in `source`,
+    /// in document order.
+    fn captures(language: Language, source: &str) -> Vec<(String, String)> {
+        use tree_sitter::StreamingIterator as _;
+        let query_text = language.highlight_query().expect("triad gives a query");
+        let grammar = language.grammar();
+        let query = tree_sitter::Query::new(&grammar, &query_text).expect("the query compiles");
+        let mut parser = tree_sitter::Parser::new();
+        parser.set_language(&grammar).expect("the grammar loads");
+        let tree = parser.parse(source, None).expect("the parse runs");
+        let mut cursor = tree_sitter::QueryCursor::new();
+        let mut found = Vec::new();
+        let mut matches = cursor.matches(&query, tree.root_node(), source.as_bytes());
+        while let Some(m) = matches.next() {
+            for capture in m.captures {
+                let name = query.capture_names()[capture.index as usize].to_owned();
+                found.push((source[capture.node.byte_range()].to_owned(), name));
+            }
+        }
+        found
+    }
+
+    #[test]
+    fn each_given_query_compiles_and_colours_its_sample() {
+        let first_line = |source: &'static str| source.lines().next().expect("a first line");
+        for (language, source) in [
+            (Language::CSharp, include_str!("../../../fixtures/syntax/sample.cs")),
+            (Language::Swift, include_str!("../../../fixtures/syntax/sample.swift")),
+            (Language::Kotlin, include_str!("../../../fixtures/syntax/sample.kt")),
+            (Language::Cpp, include_str!("../../../fixtures/syntax/sample.cpp")),
+        ] {
+            let found = captures(language, source);
+            let comment = (first_line(source).to_owned(), "comment".to_owned());
+            assert!(found.contains(&comment), "{language:?}: the opening comment is a comment");
+        }
+    }
+
+    #[test]
+    fn the_cpp_query_holds_c_s_lines() {
+        let found = captures(Language::Cpp, "#include <string>\n");
+        assert!(
+            found.contains(&("#include".to_owned(), "keyword".to_owned())),
+            "C's query colours the include: {found:?}"
+        );
     }
 
     #[test]

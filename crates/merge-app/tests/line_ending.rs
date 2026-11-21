@@ -22,7 +22,7 @@ fn setup(
 ) -> (TempDir, AnyWindowHandle, Entity<MergeWindow>, common::Finished) {
     let dir = tempfile::tempdir().expect("tempdir");
     let settings = WindowSettings {
-        output: Some(dir.path().join("out")),
+        destination: Some(merge_session::resolve::Destination::file_at(dir.path().join("out"))),
         line_ending: ending,
         ..WindowSettings::default()
     };

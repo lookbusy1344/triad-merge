@@ -401,7 +401,6 @@ err-kind-directory = 目錄
 err-deleted-everywhere = { $path } 在每一方都已刪除；沒有可合併的內容
 err-resolved-in-tree = { $path } 在工作樹中已沒有衝突標記，看起來已解決；請將其標記為已解決，或放回標記以重新合併
 err-tree-not-text = { $path }：工作樹中的檔案不是文字（{ $detail }），可能含有儲存會覆寫的編輯；請放回帶衝突標記的文字，或手動解決
-err-temporary = 無法為結果建立暫存檔：{ $detail }
 err-not-a-directory = { $path } 不是目錄
 err-mixed = diff 需要兩個檔案或兩個目錄：{ $dir } 是目錄，{ $other } 不是
 err-git-in-jj = { $path } 是 jj 儲存庫，triad 在此只按 jj 的語意合併；請用 `jj resolve` 解決

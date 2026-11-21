@@ -19,7 +19,7 @@ use gpui_kit::{
 };
 use merge_core::document::Labels;
 use merge_session::invocation::MergeFiles;
-use merge_session::repository::{Handoff, RunRepository};
+use merge_session::repository::{Discovery, Handoff};
 use merge_syntax::language::Language;
 use merge_view::status::FileNames;
 
@@ -130,6 +130,8 @@ pub struct OpenDialog {
     mode: Mode,
     error: Option<SharedString>,
     settings: WindowSettings,
+    /// How a diff finds its repository.
+    discovery: Discovery,
     watch: bool,
     /// The inputs loading off the UI thread; Start waits for them.
     loading: Option<Task<()>>,
@@ -138,8 +140,18 @@ pub struct OpenDialog {
 
 /// What Start loads off the UI thread.
 enum Load {
-    Merge { files: MergeFiles, output: PathBuf, settings: WindowSettings },
-    Diff { left: PathBuf, right: PathBuf, settings: WindowSettings, watch: bool },
+    Merge {
+        files: MergeFiles,
+        output: PathBuf,
+        settings: WindowSettings,
+    },
+    Diff {
+        left: PathBuf,
+        right: PathBuf,
+        settings: WindowSettings,
+        discovery: Discovery,
+        watch: bool,
+    },
 }
 
 /// Opens the window of the inputs a [`Load`] loaded.
@@ -156,7 +168,7 @@ impl Load {
                         .map_err(|e| crate::error_text::describe(&e))?;
                 let settings = WindowSettings {
                     repo: run::repo_kind(settings.cwd.as_deref(), &output),
-                    output: Some(output),
+                    destination: Some(merge_session::resolve::Destination::file_at(output)),
                     file_names: FileNames::three_way(&files.base, &files.left, &files.right),
                     ..settings
                 };
@@ -166,9 +178,9 @@ impl Load {
                         .map_err(|e| crate::error_text::describe(&e))
                 }))
             }
-            Self::Diff { left, right, settings, watch } => {
+            Self::Diff { left, right, settings, discovery, watch } => {
                 let cwd = settings.cwd.as_deref();
-                let repo = RunRepository::of_diff_tool(cwd, &right);
+                let repo = discovery.of_diff_tool(cwd, &right);
                 let kind = repo.kind();
                 let origins = DiffLookup::Tool {
                     paths: [left.clone(), right.clone()],
@@ -207,6 +219,7 @@ impl Load {
 /// [`OpenError::Window`] when the platform refuses a window.
 pub fn open(
     settings: WindowSettings,
+    discovery: Discovery,
     watch: bool,
     cx: &mut App,
 ) -> Result<(AnyWindowHandle, Entity<OpenDialog>), OpenError> {
@@ -225,13 +238,14 @@ pub fn open(
             finish(ExitCode::Cancelled, cx);
             true
         });
-        cx.new(|cx| OpenDialog::new(settings, watch, window, cx))
+        cx.new(|cx| OpenDialog::new(settings, discovery, watch, window, cx))
     })?)
 }
 
 impl OpenDialog {
     fn new(
         settings: WindowSettings,
+        discovery: Discovery,
         watch: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -252,6 +266,7 @@ impl OpenDialog {
             mode: Mode::default(),
             error: None,
             settings,
+            discovery,
             watch,
             loading: None,
             _subscriptions: subscriptions,
@@ -322,7 +337,13 @@ impl OpenDialog {
             Mode::Merge => {
                 Load::Merge { files: MergeFiles { base, left, right }, output, settings }
             }
-            Mode::Diff => Load::Diff { left, right, settings, watch: self.watch },
+            Mode::Diff => Load::Diff {
+                left,
+                right,
+                settings,
+                discovery: self.discovery.clone(),
+                watch: self.watch,
+            },
         })
     }
 

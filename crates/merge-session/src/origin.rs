@@ -12,12 +12,22 @@ use std::path::{Component, Path, PathBuf};
 use camino::{Utf8Path, Utf8PathBuf};
 use std::convert::Infallible;
 
+use merge_config::settings::RevisionId;
 use merge_core::diff::{DiffOptions, diff_lines};
 use merge_core::merge3::{Inputs, Source as Input};
 use merge_core::text::{Encoding, Text};
 use vcs::{Annotation, CommitId, LineOrigin, RepoKind, Repository, RevSpec, VcsError};
 
 use crate::repository::RunRepository;
+
+/// The ID the line origins name a jj revision by, as the config file's `revision-id` sets it.
+#[must_use]
+pub fn id_kind(revision: RevisionId) -> vcs::IdKind {
+    match revision {
+        RevisionId::Change => vcs::IdKind::Change,
+        RevisionId::Commit => vcs::IdKind::Commit,
+    }
+}
 
 /// How an input's lines relate to its revision's file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

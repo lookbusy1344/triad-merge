@@ -9,9 +9,10 @@ use merge_config::keybind::KeyBindings;
 use merge_config::settings::Settings as Stored;
 use merge_core::diff::DiffOptions;
 use merge_core::document::{MergeDocument, MergeOptions};
-use merge_core::text::Text;
 use merge_session::WindowForm;
+use merge_session::diff_tool::{self, ToolPair, ToolSide};
 use merge_session::invocation::{Absorb, History, Resolve, Stack, Window};
+use merge_session::jj_native::Listing;
 use merge_session::repository::{Handoff, RunRepository};
 use merge_session::resolve::Snapshot;
 use merge_session::semantics::Caller;
@@ -40,7 +41,8 @@ const WATCH_FILES: bool = true;
 #[must_use]
 pub fn run(form: WindowForm) -> ExitCode {
     let started = Instant::now();
-    let WindowForm { window, settings: mut stored, settings_errors: errors, cwd, repo } = form;
+    let WindowForm { window, settings: mut stored, settings_errors: errors, cwd, repo, listing } =
+        form;
     let system = sys_locale::get_locale();
     crate::set_language(stored.ui_language, system.as_deref());
     let bindings = std::mem::take(&mut stored.key_bindings);
@@ -71,7 +73,7 @@ pub fn run(form: WindowForm) -> ExitCode {
                 ),
                 origins: Some(origin_lookup(dir, &merge.output, merge.title.as_deref(), repo)),
                 title: merge.title,
-                output: Some(merge.output),
+                destination: Some(merge_session::resolve::Destination::file_at(merge.output)),
                 measure,
                 file_names: FileNames::three_way(&files.base, &files.left, &files.right),
                 ..base
@@ -79,18 +81,17 @@ pub fn run(form: WindowForm) -> ExitCode {
             launch_merge(doc, settings, errors, bindings)
         }
         Window::Resolve(resolve) => run_resolve(resolve, repo, base, errors, bindings),
-        Window::OpenDialog => {
-            launch(bindings, move |cx| open_dialog::open(base, WATCH_FILES, cx).map(drop))
-        }
+        Window::OpenDialog => launch(bindings, move |cx| {
+            open_dialog::open(base, repo.discovery().clone(), WATCH_FILES, cx).map(drop)
+        }),
         Window::Diff(diff) => {
             let pair = ToolPair {
                 paths: [diff.left, diff.right],
                 absent: [None, None],
                 readonly: [diff.readonly_left, diff.readonly_right],
-                title: diff.title,
             };
             let ToolDiff { left, right, origins, kind, title } =
-                match tool_diff(pair, repo, working_dir(dir)) {
+                match tool_diff(pair, diff.title, repo, working_dir(dir)) {
                     Ok(loaded) => loaded,
                     Err(error) => return report(&error.to_string()),
                 };
@@ -106,6 +107,7 @@ pub fn run(form: WindowForm) -> ExitCode {
             let start = DirStart {
                 cwd: working_dir(dir),
                 source,
+                discovery: repo.discovery().clone(),
                 title: diff.title,
                 diff: diff.diff,
                 settings: base,
@@ -114,10 +116,10 @@ pub fn run(form: WindowForm) -> ExitCode {
             launch_dirs(start, bindings)
         }
         Window::DiffChanges { rev, diff, title } => {
-            let source = Source::Changes { rev, jj_config: repo.jj_config().cloned() };
             let start = DirStart {
                 cwd: working_dir(dir),
-                source,
+                source: Source::Changes { rev },
+                discovery: repo.discovery().clone(),
                 title,
                 diff,
                 settings: base,
@@ -129,9 +131,11 @@ pub fn run(form: WindowForm) -> ExitCode {
             let window = NativeDiff { path, rev, op, diff, title };
             run_native_diff(window, repo, base, errors, bindings)
         }
-        Window::History(history) => run_history(history, &repo, base, bindings),
-        Window::Stack(stack) => run_stack(stack, &repo, base, bindings),
-        Window::Absorb(absorb) => run_absorb(absorb, &repo, working_dir(dir), base, bindings),
+        Window::History(history) => run_history(history, listing, &repo, base, bindings),
+        Window::Stack(stack) => run_stack(stack, listing, &repo, base, bindings),
+        Window::Absorb(absorb) => {
+            run_absorb(absorb, listing, &repo, working_dir(dir), base, bindings)
+        }
     }
 }
 
@@ -143,9 +147,11 @@ fn launch_dirs(start: DirStart, bindings: KeyBindings) -> ExitCode {
     })
 }
 
-/// The history window on `history`'s file, whose diff windows watch their files.
+/// The history window on `history`'s file, whose diff windows watch their files, showing
+/// `listing` first when it is the history's.
 fn run_history(
     history: History,
+    listing: Option<Listing>,
     repo: &RunRepository,
     base: WindowSettings,
     bindings: KeyBindings,
@@ -154,7 +160,8 @@ fn run_history(
         cwd: working_dir(base.cwd.as_deref()),
         path: history.path,
         limit: history.limit,
-        jj_config: repo.jj_config().cloned(),
+        listed: listing.and_then(Listing::history),
+        discovery: repo.discovery().clone(),
         settings: base,
         watch: WATCH_FILES,
     };
@@ -165,9 +172,11 @@ fn run_history(
 }
 
 /// The absorb window on `absorb`'s paths and `--into`, from the working directory `cwd`,
-/// whose hunks' lines take `settings`' font and colours.
+/// whose hunks' lines take `settings`' font and colours, showing `listing` first when it is
+/// the hunks'.
 fn run_absorb(
     absorb: Absorb,
+    listing: Option<Listing>,
     repo: &RunRepository,
     cwd: PathBuf,
     settings: WindowSettings,
@@ -177,8 +186,9 @@ fn run_absorb(
         cwd,
         paths: absorb.paths,
         into: absorb.into,
+        listed: listing.and_then(Listing::absorb),
         settings,
-        jj_config: repo.jj_config().cloned(),
+        discovery: repo.discovery().clone(),
     };
     launch(bindings, move |cx| {
         absorb_window::start(start, |code, _| exit(code), cx).map(drop)?;
@@ -186,9 +196,11 @@ fn run_absorb(
     })
 }
 
-/// The stack window on `stack`'s revset, whose merge windows read with the run's jj config.
+/// The stack window on `stack`'s revset, whose merge windows read with the run's jj config,
+/// showing `listing` first when it is the commits'.
 fn run_stack(
     stack: Stack,
+    listing: Option<Listing>,
     repo: &RunRepository,
     base: WindowSettings,
     bindings: KeyBindings,
@@ -197,39 +209,14 @@ fn run_stack(
         cwd: working_dir(base.cwd.as_deref()),
         revset: stack.revset,
         options: stack.options,
-        jj_config: repo.jj_config().cloned(),
+        listed: listing.and_then(Listing::stack),
+        discovery: repo.discovery().clone(),
         settings: base,
     };
     launch(bindings, move |cx| {
         stack_window::start(start, |code, _| exit(code), cx).map(drop)?;
         Ok(())
     })
-}
-
-/// The working-copy file that `right`, the right side of `jj diff --tool`, copies, so its
-/// edits save there (spec §7.1). Only a path in jj's temporary directory opens `repo`.
-fn jj_working_copy(repo: &mut RunRepository, right: &Path, cwd: &Path) -> Option<PathBuf> {
-    merge_session::origin::jj_diff_copy(right, cwd)?;
-    let found = match repo.open() {
-        Ok(Some(open)) => merge_session::diff_tool::jj_working_copy(open, right, cwd),
-        Ok(None) => Ok(None),
-        Err(error) => Err(error.into()),
-    };
-    found.unwrap_or_else(|error| {
-        // The window still opens on jj's copy, and its banner says edits there are lost.
-        tracing::warn!(%error, "cannot tell whether the right side is the working copy");
-        None
-    })
-}
-
-/// The files `diff LEFT RIGHT` compares, as `git difftool` and `jj diff --tool` pass them.
-pub(crate) struct ToolPair {
-    pub paths: [PathBuf; 2],
-    /// A side whose file is absent opens empty and read-only, titled so.
-    pub absent: [Option<String>; 2],
-    pub readonly: [bool; 2],
-    /// `--title`: the window's title, and the file's path for the line origins.
-    pub title: Option<String>,
 }
 
 /// A tool diff's sides, loaded, with its line origins' lookup, its repository's kind and
@@ -242,53 +229,34 @@ pub(crate) struct ToolDiff {
     pub title: Option<String>,
 }
 
-/// Load `pair` from the working directory `cwd`, in the run's repository `repo`. A right
-/// side that copies jj's working copy opens the working-copy file, and the left copy turns
-/// read-only, since its edits would be lost (spec §7.1).
+/// Load `pair` from the working directory `cwd`, in the run's repository `repo`, as
+/// [`diff_tool::read_pair`] reads it. `title`, from `--title`, names the window and the
+/// file's path for the line origins.
 ///
 /// # Errors
 ///
 /// When a side cannot be read or decoded.
 pub(crate) fn tool_diff(
     pair: ToolPair,
+    title: Option<String>,
     mut repo: RunRepository,
     cwd: PathBuf,
 ) -> Result<ToolDiff, merge_session::SessionError> {
-    let ToolPair { paths: [left, right], absent: [left_absent, right_absent], readonly, title } =
-        pair;
-    let [readonly_left, readonly_right] = readonly;
-    let working_copy = (!readonly_right && right_absent.is_none())
-        .then(|| jj_working_copy(&mut repo, &right, &cwd))
-        .flatten();
-    let (right_file, readonly_left) = match working_copy {
-        Some(file) => (file, true),
-        None => (right.clone(), readonly_left),
-    };
-    let left_side = tool_side(left.clone(), left_absent, readonly_left)?;
-    let right_side = tool_side(right_file, right_absent, readonly_right)?;
+    let [left, right] = diff_tool::read_pair(&pair, &mut repo, &cwd)?.map(diff_file);
     let kind = repo.kind();
-    let origins = DiffLookup::Tool {
-        paths: [left, right],
-        title: title.clone(),
-        cwd,
-        repo: Handoff::new(repo),
-    };
-    Ok(ToolDiff { left: left_side, right: right_side, origins, kind, title })
+    let origins =
+        DiffLookup::Tool { paths: pair.paths, title: title.clone(), cwd, repo: Handoff::new(repo) };
+    Ok(ToolDiff { left, right, origins, kind, title })
 }
 
-/// The side at `path`, or an empty read-only side titled `absent`.
-fn tool_side(
-    path: PathBuf,
-    absent: Option<String>,
-    read_only: bool,
-) -> Result<DiffFile, merge_session::SessionError> {
-    let Some(title) = absent else {
-        let text = merge_session::read_text(&path)?;
-        return Ok(DiffFile { origin: Origin::File(path), text, read_only });
-    };
-    Text::decode(Vec::new())
-        .map(|text| DiffFile::revision(text, title))
-        .map_err(|source| merge_session::SessionError::Decode { path, source })
+/// The pane a tool diff's side opens.
+fn diff_file(side: ToolSide) -> DiffFile {
+    match side {
+        ToolSide::File { path, text, read_only } => {
+            DiffFile { origin: Origin::File(path), text, read_only }
+        }
+        ToolSide::Absent { title, text } => DiffFile::revision(text, title),
+    }
 }
 
 /// The parts of a `diff PATH` window form.
@@ -359,20 +327,15 @@ fn run_resolve(
     };
     let cwd = working_dir(base.cwd.as_deref());
     if resolve.path.is_none() {
-        let queue = Queue::new(cwd, resolve.options, base, |code, _| exit(code));
-        let queue = match repo.jj_config() {
-            Some(config) => queue.with_jj_config(config.clone()),
-            None => queue,
-        };
+        let discovery = repo.discovery().clone();
+        let queue = Queue::new(cwd, discovery, resolve.options, base, |code, _| exit(code));
         return launch(bindings, move |cx| {
             resolve_queue::start(queue, cx);
             Ok(())
         });
     }
     let loaded = match resolve.in_commit() {
-        Some(rev) => {
-            merge_session::resolve::load_at_commit(&cwd, rev, &target, repo.jj_config().cloned())
-        }
+        Some(rev) => merge_session::resolve::load_at_commit(&cwd, rev, &target, repo.discovery()),
         None => merge_session::resolve::load(&mut repo, &cwd, &target, Snapshot::Take),
     };
     let opened = match loaded
@@ -506,7 +469,7 @@ fn window_settings(stored: &Stored) -> WindowSettings {
         scrollbars: stored.scrollbars,
         base_pane: stored.base_pane,
         origin_column: stored.origin_column.into(),
-        revision_id: stored.revision_id.into(),
+        revision_id: merge_session::origin::id_kind(stored.revision_id),
         diff_options: stored.two_way(),
         options: MergeOptions {
             diff: stored.diff.clone(),

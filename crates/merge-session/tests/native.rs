@@ -460,7 +460,7 @@ mod jj {
     use super::{Change, Content, LeftAt, Revision, absent, file, listed, load, named};
     use merge_session::dir_diff::ChangedFile;
     use merge_session::native;
-    use merge_session::repository::RunRepository;
+    use merge_session::repository::{Discovery, RunRepository};
     use vcs::RepoKind;
     use vcs_jj::testing::Fixture;
 
@@ -567,11 +567,44 @@ mod jj {
             config.to_str().expect("UTF-8").to_owned(),
         )]);
         let config = vcs_jj::config::ConfigEnv { environment, ..Default::default() };
-        let mut run = RunRepository::of_file(path.as_std_path()).with_jj_config(config);
+        let mut run = Discovery::new(config).of_file(path.as_std_path());
         let diff = native::load(&mut run, path.as_std_path(), Some("older()"))
             .expect("the alias names a revision");
         assert_eq!(diff.left.content(), "one\n");
         assert_eq!(diff.left_at, named("older()"));
+    }
+
+    #[test]
+    fn every_repository_of_a_run_reads_the_jj_config_its_env_names() {
+        let fixture = Fixture::new();
+        fixture.commit("one", &[("a.txt", b"one\n")]);
+        fixture.commit("two", &[("a.txt", b"two\n")]);
+        let path = fixture.write("a.txt", b"three\n");
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let config = dir.path().join("config.toml");
+        std::fs::write(&config, "[revset-aliases]\n\"older()\" = \"@--\"\n")
+            .expect("the config is written");
+        let env = merge_session::env::Env {
+            jj_config: Some(config.into_os_string()),
+            ..merge_session::env::Env::default()
+        };
+        let discovery = Discovery::from_env(&env);
+        let (root, file) = (fixture.root().as_std_path(), path.as_std_path());
+        let runs = [
+            ("find", discovery.find([root])),
+            ("of_merge", discovery.of_merge(Some(root), None)),
+            ("of_diff_tool", discovery.of_diff_tool(Some(root), file)),
+            ("of_file", discovery.of_file(file)),
+            ("of_resolve", discovery.of_resolve(root, None)),
+        ];
+        for (constructor, mut run) in runs {
+            let diff = native::load(&mut run, file, Some("older()"))
+                .unwrap_or_else(|e| panic!("{constructor}: the alias names a revision: {e}"));
+            assert_eq!(diff.left.content(), "one\n", "{constructor}");
+        }
+        let mut handed_on = discovery.find([root]).discovery().find([root]);
+        let diff = native::load(&mut handed_on, file, Some("older()")).expect("handed on");
+        assert_eq!(diff.left.content(), "one\n", "a repository found from the run's discovery");
     }
 
     #[test]
@@ -580,8 +613,8 @@ mod jj {
         let fixture = Fixture::new();
         fixture.commit("one", &[("a.txt", b"one\n")]);
         let path = fixture.write("a.txt", b"two\n");
-        let mut run = RunRepository::of_file(path.as_std_path())
-            .with_jj_config(vcs_jj::config::ConfigEnv::default());
+        let mut run =
+            Discovery::new(vcs_jj::config::ConfigEnv::default()).of_file(path.as_std_path());
         let diff = native::load(&mut run, path.as_std_path(), Some("trunk()"))
             .expect("jj's default alias names a revision");
         assert_eq!(diff.left.content(), "");

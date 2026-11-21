@@ -29,8 +29,6 @@ tracing.workspace = true
 tracing-appender.workspace = true
 tracing-subscriber.workspace = true
 vcs.workspace = true
-# The jj-native commands' report types.
-vcs-jj.workspace = true
 
 [dev-dependencies]
 # Object IDs of the fixture commits, and the git config `install` writes.
@@ -46,6 +44,7 @@ tempfile.workspace = true
 # Reads the jj config `install` writes.
 toml.workspace = true
 vcs-git = { workspace = true, features = ["testing"] }
+# jj fixtures for the tests and the `resolve` bench.
 vcs-jj = { workspace = true, features = ["testing"] }
 
 [[bench]]
