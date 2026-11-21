@@ -231,7 +231,7 @@ The layer under both front ends. It owns everything a merge does outside the eng
 
 `ending` decides each step of Save, Save & Exit and Close as pure functions: they take what the window knows and return a `Next` that says what to ask, write or finish. The window does the asking. This keeps the decision table under unit tests and the GPUI code thin.
 
-`EncodedOutput` encodes the result; `write` writes it atomically (`io::write_atomic`: a temporary file beside the target, synced and renamed over it); `save` then records it in the repository. `SaveError` says which part failed and whether the file was written.
+`resolve::Destination` says where a result goes: a file, with the VCS conflict a save records when there is one, or a jj commit's conflict (`InCommit`). `EncodedOutput` encodes the result; `save` writes a file atomically (`io::write_atomic`: a temporary file beside the target, synced and renamed over it) and then records it, or hands the bytes to the commit. `SaveError` says which part failed and whether anything was written.
 
 ### 8.5 Recovery
 

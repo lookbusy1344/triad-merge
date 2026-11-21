@@ -71,7 +71,7 @@ pub fn run(form: WindowForm) -> ExitCode {
                 ),
                 origins: Some(origin_lookup(dir, &merge.output, merge.title.as_deref(), repo)),
                 title: merge.title,
-                output: Some(merge.output),
+                destination: Some(merge_session::resolve::Destination::file(merge.output)),
                 measure,
                 file_names: FileNames::three_way(&files.base, &files.left, &files.right),
                 ..base

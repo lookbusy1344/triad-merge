@@ -51,7 +51,7 @@ fn load(root: &Path) -> resolve::Loaded {
 }
 
 fn record(root: &Path) -> Record {
-    load(root).record.expect("the VCS holds the conflict")
+    load(root).destination.record().cloned().expect("the VCS holds the conflict")
 }
 
 /// A jj conflict in `a.txt` beside `files` clean files, checked out to disk.

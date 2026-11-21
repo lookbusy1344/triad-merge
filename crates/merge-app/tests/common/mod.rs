@@ -51,7 +51,10 @@ pub fn open_saving(
     doc: MergeDocument,
     output: &std::path::Path,
 ) -> (AnyWindowHandle, Entity<MergeWindow>, Finished) {
-    let settings = WindowSettings { output: Some(output.to_owned()), ..WindowSettings::default() };
+    let settings = WindowSettings {
+        destination: Some(merge_session::resolve::Destination::file(output.to_owned())),
+        ..WindowSettings::default()
+    };
     open_with(cx, doc, &settings)
 }
 

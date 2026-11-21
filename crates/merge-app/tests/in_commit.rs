@@ -47,8 +47,7 @@ mod jj {
         .open(MergeOptions::default())
         .expect("labels fit");
         let settings = WindowSettings {
-            output: Some(opened.file.into_std_path_buf()),
-            record: opened.record,
+            destination: Some(opened.destination),
             repo: opened.repo,
             ..WindowSettings::default()
         };

@@ -62,7 +62,7 @@ impl Undone {
     #[must_use]
     pub fn of(error: &SaveError) -> Self {
         match error {
-            SaveError::Encode(_) | SaveError::Write(_) => Self::Write,
+            SaveError::Encode(_) | SaveError::Write(_) | SaveError::Commit { .. } => Self::Write,
             SaveError::Record { code, .. } => Self::Record(*code),
         }
     }

@@ -49,7 +49,7 @@ use merge_session::ending::{self, After, Closing, Next, SaveFailed, Undone, Unre
 use merge_session::jj_native::CommitEffect;
 use merge_session::origin::{self, find_merge};
 use merge_session::repository::Handoff;
-use merge_session::resolve::Record;
+use merge_session::resolve::Destination;
 use merge_syntax::boundaries::SyntaxBoundaries;
 use merge_syntax::language::Language;
 use merge_view::blink::AtRest;
@@ -359,11 +359,9 @@ pub struct WindowSettings {
     pub collapsing: crate::diff_window::Collapsing,
     /// How the diff window lays out the two sides (spec §5).
     pub diff_layout: merge_config::settings::DiffLayout,
-    /// Where Save & Exit writes (spec §6.2).
-    pub output: Option<PathBuf>,
-    /// The VCS conflict each Save & Exit to `output` is recorded in (spec §7.4); none
-    /// outside `resolve`.
-    pub record: Option<Record>,
+    /// Where Save & Exit saves (spec §6.2), with the VCS conflict each save is recorded in
+    /// (spec §7.4).
+    pub destination: Option<Destination>,
     /// Where the recovery journal goes; none without one.
     pub journal_dir: Option<PathBuf>,
     /// The path that names the journal from one run to the next (spec §6.2); `output` without
@@ -427,6 +425,15 @@ pub enum Watching {
     On,
 }
 
+impl WindowSettings {
+    /// The file Save & Exit writes; for a jj commit's conflict, the temporary file the
+    /// window names.
+    #[must_use]
+    pub fn output(&self) -> Option<&Path> {
+        self.destination.as_ref().map(Destination::path)
+    }
+}
+
 impl Default for WindowSettings {
     fn default() -> Self {
         Self {
@@ -435,8 +442,7 @@ impl Default for WindowSettings {
             whitespace: Visibility::Hidden,
             collapsing: crate::diff_window::Collapsing::default(),
             diff_layout: merge_config::settings::DiffLayout::SideBySide,
-            output: None,
-            record: None,
+            destination: None,
             journal_dir: None,
             journal_name: None,
             typography: Typography::default(),
@@ -698,8 +704,7 @@ pub fn open(
 /// Where `settings` say Save & Exit writes, and how.
 fn save_target(settings: &WindowSettings) -> SaveTarget {
     SaveTarget {
-        output: settings.output.clone(),
-        record: settings.record.clone(),
+        destination: settings.destination.clone(),
         line_ending: settings.line_ending,
         unresolved_save: settings.unresolved_save,
     }
@@ -707,11 +712,8 @@ fn save_target(settings: &WindowSettings) -> SaveTarget {
 
 /// The language of `doc`'s merge: the one its file names give, else its inputs' first lines.
 fn language(doc: &MergeDocument, settings: &WindowSettings) -> Option<Language> {
-    let names = Language::of_run(
-        settings.file_names.paths(),
-        settings.output.as_deref(),
-        settings.title.as_deref(),
-    );
+    let names =
+        Language::of_run(settings.file_names.paths(), settings.output(), settings.title.as_deref());
     merge_session::language(names, doc.inputs())
 }
 
@@ -826,8 +828,7 @@ impl MergeWindow {
             result_highlighter,
             parsing: colouring.language().is_some(),
             headings: headings(&doc, panes, &settings.file_names),
-            result_heading: status::result_heading(settings.output.as_deref(), strings::role)
-                .into(),
+            result_heading: status::result_heading(settings.output(), strings::role).into(),
             file_names: settings.file_names.clone(),
             journal: JournalTasks::default(),
             session: Session::new(doc, save_target(settings), recovery),
@@ -880,7 +881,7 @@ impl MergeWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<OutputWatch> {
-        let path = settings.output.as_deref()?;
+        let path = settings.output()?;
         let watch = (settings.watch_output == Watching::On).then(|| {
             // Without a working directory, a relative path stays relative.
             let cwd = settings.cwd.as_deref().unwrap_or(Path::new(""));
@@ -984,7 +985,8 @@ impl MergeWindow {
         cx: &mut Context<Self>,
     ) -> Option<Recovery> {
         settings.journal_dir.clone().map(|dir| {
-            let name = settings.journal_name.clone().or_else(|| settings.output.clone());
+            let name =
+                settings.journal_name.clone().or_else(|| settings.output().map(Path::to_path_buf));
             let recovery = Recovery::new(dir, name);
             Self::hash_inputs(doc, recovery.locator(), window, cx);
             recovery

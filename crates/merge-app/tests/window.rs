@@ -94,7 +94,10 @@ fn labels_title_their_panes_and_markers_ignore_file_names(cx: &mut TestAppContex
 #[gpui_kit::test]
 fn the_result_pane_shows_the_output_file_name(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().expect("temporary directory");
-    let settings = WindowSettings { output: Some(dir.path().join("foo.c")), ..git_names() };
+    let settings = WindowSettings {
+        destination: Some(merge_session::resolve::Destination::file(dir.path().join("foo.c"))),
+        ..git_names()
+    };
     let (_, view, _) = open_with(cx, doc("a\n", "b\n", "c\n"), &settings);
     let title = cx.read(|cx| view.read(cx).result_title().to_string());
     assert_eq!(title, "foo.c");

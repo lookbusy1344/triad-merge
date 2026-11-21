@@ -126,6 +126,9 @@ impl Namer {
             SaveError::Record { path, source, .. } => {
                 self.about_with("err-not-recorded", path.as_str(), source)
             }
+            SaveError::Commit { path, source } => {
+                self.about_with("err-cannot-write", path.as_str(), source)
+            }
         }
     }
 

@@ -20,6 +20,7 @@ use merge_session::invocation::{
     Absorb, Diff, History, Merge, Resolve, SemanticsFlags, Stack, Window,
 };
 use merge_session::repository::RunRepository;
+use merge_session::resolve::Destination;
 use merge_session::{
     EncodedOutput, SaveError, SessionError, choose_marker_style, choose_semantics, jj_config, load,
     replay, resolve,
@@ -501,18 +502,16 @@ fn resolve_in_commit(
     if let Some(commands) = &resolve.commands {
         replay::apply_file(&mut opened.doc, commands)?;
     }
-    let output = encoded(&opened.doc, ending, opened.file.as_std_path())?;
-    let code = output.write(opened.file.as_std_path()).map_err(SaveError::from)?;
-    let rewrite = opened
-        .record
-        .as_ref()
-        .and_then(resolve::Record::in_commit)
-        .map(|commit| commit.rewrite(resolve.dry_run))
-        .transpose()
+    let output = encoded(&opened.doc, ending, opened.path.as_std_path())?;
+    let commit = match &opened.destination {
+        Destination::Commit(commit) => commit,
+        file @ Destination::File { .. } => return Ok(output.save(file, None)?),
+    };
+    let rewrite = commit
+        .write(output.bytes(), resolve.dry_run)
         .map_err(|source| CliError::Rewrite { path: opened.path.clone(), source })?;
-    if let Some(rewrite) = rewrite {
-        report(stdout, &jj_native::rewrite_report(&opened.path, &rewrite, resolve.dry_run), code);
-    }
+    let code = output.code();
+    report(stdout, &jj_native::rewrite_report(&opened.path, &rewrite, resolve.dry_run), code);
     Ok(code)
 }
 
@@ -547,11 +546,8 @@ fn resolve_headless(
         if let Some(path) = &resolve.commands {
             replay::apply_file(&mut opened.doc, path)?;
         }
-        let written = encoded(&opened.doc, ending, opened.file.as_std_path())?.save(
-            opened.file.as_std_path(),
-            opened.record.as_ref(),
-            Some(repo),
-        )?;
+        let written = encoded(&opened.doc, ending, opened.destination.path())?
+            .save(&opened.destination, Some(repo))?;
         Ok(if written == ExitCode::Resolved { code } else { written })
     })
 }

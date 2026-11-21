@@ -35,7 +35,7 @@ fn named(output: &Path) -> WindowSettings {
             Path::new("./foo_LOCAL_1234.c"),
             Path::new("./foo_REMOTE_1234.c"),
         ),
-        output: Some(output.join("foo.c")),
+        destination: Some(merge_session::resolve::Destination::file(output.join("foo.c"))),
         ..WindowSettings::default()
     }
 }

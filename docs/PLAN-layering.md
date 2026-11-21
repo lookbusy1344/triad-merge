@@ -8,17 +8,15 @@ This file is part K of the plan, kept apart while the work is open. Cite it by p
 
 The pure crates hold up: `merge-core`, `merge-syntax` and `merge-view` have no GPUI, no file system, no process and no environment; the dependency graph has no cycle; the front ends reach repositories only through `RunRepository` and `dyn vcs::Repository`. The leaks are above them. `merge-session` is not yet the whole layer under the front ends, so the CLI and the GUI each assemble runs, and the GUI holds spec rules and one defect. This part closes those leaks.
 
-## K1 The GUI exits through its destructors
+## K1 A save into a commit takes the bytes — done
 
-`merge-app::run::exit` calls `std::process::exit` inside the GPUI loop, so no destructor runs. `resolve::load_at_commit` holds the result's `triad-resolve-*` temporary directory in `InCommit`; every GUI `resolve -r` and stack-window merge leaves that directory and the merged text in the system's temporary directory.
+`resolve::Destination` names where a result goes: a file and its record, or a jj commit's conflict. A save into a commit hands the encoded bytes to `InCommit::write`; nothing writes a file. A refusal is `SaveError::Commit`, a failed write.
 
-Fix: a finished window quits the app with its code; `launch` returns the code once the loop ends, and the binary returns it from `main`. Test: a merge session in a commit removes its temporary directory when dropped, and the app's finish path drops what it holds before the process ends.
+## K2 No temporary file for a commit's conflict
 
-## K2 A save into a commit takes the bytes
+`merge-app::run::exit` calls `std::process::exit` inside the GPUI loop, so no destructor runs; on macOS the platform's own quit, `terminate:`, exits the process the same way. `resolve::load_at_commit` still makes a `triad-resolve-*` directory for the path the merge window names as its output, and the exit leaves it in the system's temporary directory. Since K1 nothing writes it.
 
-`resolve_in_commit` writes the merge to the temporary file, and `InCommit::rewrite` reads it back. `InCommit::write` takes bytes already. `rewrite` takes the encoded bytes; the temporary file stays only as the GUI's save target where a save needs a path.
-
-Test: a headless `resolve -r` writes into the commit what the merge encodes, with the temporary file removed before the rewrite.
+Fix: a commit's conflict has no file. The merge window takes its title, language and journal name from the conflicted path, and watches no output. Test: a load at a commit creates no directory, and the window on it saves into the commit.
 
 ## K3 The run's repository comes from the environment
 

@@ -13,7 +13,7 @@ use merge_core::document::{MergeDocument, MergeOptions};
 use merge_session::jj_config::ConfigEnv;
 use merge_session::repository::{Handoff, RunRepository};
 use merge_session::resolve::Snapshot;
-use merge_session::resolve::{InCommit, Opened, Record};
+use merge_session::resolve::{InCommit, Opened};
 
 use crate::window::{OpenError, OriginLookup, WindowSettings};
 use crate::{ExitCode, Finish};
@@ -172,25 +172,20 @@ pub fn window_settings(
     repo: RunRepository,
     base: WindowSettings,
 ) -> (MergeDocument, WindowSettings) {
-    let journal_name = opened
-        .record
-        .as_ref()
-        .and_then(Record::in_commit)
-        .map(InCommit::journal_name)
-        .or(base.journal_name);
-    let file = opened.file.into_std_path_buf();
+    let journal_name =
+        opened.destination.in_commit().map(InCommit::journal_name).or(base.journal_name);
+    let file = opened.destination.path().to_path_buf();
     let title = opened.path.into_string();
     let settings = WindowSettings {
         repo: opened.repo,
         origins: Some(OriginLookup {
-            output: file.clone(),
+            output: file,
             title: Some(title.clone()),
             cwd: cwd.to_owned(),
             repo: Handoff::new(repo),
         }),
         title: Some(title),
-        output: Some(file),
-        record: opened.record,
+        destination: Some(opened.destination),
         parents: opened.parents,
         journal_name,
         ..base
