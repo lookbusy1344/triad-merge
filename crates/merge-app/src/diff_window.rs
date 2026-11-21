@@ -379,6 +379,40 @@ struct HeldTop {
     last: bool,
 }
 
+/// How far a pane scrolls right and down when it next lays out; an axis left unset keeps
+/// the pane's own. A pane reads back its old offset until it lays out, so one call gives it
+/// both axes: two calls, one per axis, would undo each other.
+#[derive(Clone, Copy, Default, PartialEq)]
+struct ScrollTarget {
+    left: Option<Pixels>,
+    top: Option<Pixels>,
+}
+
+impl ScrollTarget {
+    fn left(left: Pixels) -> Self {
+        Self { left: Some(left), top: None }
+    }
+
+    fn top(top: Pixels) -> Self {
+        Self { left: None, top: Some(top) }
+    }
+
+    fn is_empty(self) -> bool {
+        self == Self::default()
+    }
+
+    /// Take each axis `later` sets.
+    fn set(&mut self, later: Self) {
+        self.left = later.left.or(self.left);
+        self.top = later.top.or(self.top);
+    }
+
+    /// The editor's scroll offset for this target over the pane's `offset` now.
+    fn over(self, offset: gpui_kit::Point<Pixels>) -> gpui_kit::Point<Pixels> {
+        point(self.left.map_or(offset.x, |left| -left), self.top.map_or(offset.y, |top| -top))
+    }
+}
+
 pub struct DiffWindow {
     menu_bar: crate::menu_bar::WindowMenu,
     doc: DiffDocument,
@@ -424,10 +458,8 @@ pub struct DiffWindow {
     settings_errors: Option<SharedString>,
     /// Each pane's scroll top after the last sync, left then right.
     synced: [Pixels; 2],
-    /// A scroll top for the left pane, set after it drew, to apply before it draws next.
-    left_top: Option<Pixels>,
-    /// The same for the left pane's left offset.
-    left_left: Option<Pixels>,
+    /// The scroll offset each pane takes when it next lays out, left then right.
+    targets: [ScrollTarget; 2],
     /// Where the panes stood sideways at the last sync, left as the rows and right as the
     /// result.
     sideways_sync: ScrollSync,
@@ -692,8 +724,7 @@ impl DiffWindow {
             snapshot_failed: None,
             settings_errors: None,
             synced: [Pixels::ZERO; 2],
-            left_top: None,
-            left_left: None,
+            targets: [ScrollTarget::default(); 2],
             sideways_sync: ScrollSync::default(),
             ruler_feed,
             ruler_drag: ruler::Dragging::default(),
@@ -1932,7 +1963,7 @@ impl DiffWindow {
     /// caret.
     fn sync_scroll(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.level_wrapped(window, cx);
-        self.sync_sideways(window, cx);
+        self.sync_sideways(cx);
         let top = |side: Side| -self.pane(side).editor.read(cx).scroll_offset().y;
         let tops = [top(Side::Left), top(Side::Right)];
         let moved =
@@ -1944,21 +1975,13 @@ impl DiffWindow {
         self.synced = [target; 2];
         // The copy buttons follow the rows.
         cx.notify();
-        match from.other() {
-            Side::Right => self.scroll_to(Side::Right, target, cx),
-            Side::Left => {
-                // The left pane laid out this frame already, and its paint drops an offset
-                // set now: apply it before the left lays out in the next frame.
-                self.left_top = Some(target);
-                window.refresh();
-            }
-        }
+        self.scroll_pane(from.other(), ScrollTarget::top(target));
     }
 
     /// Give both panes the left offset of the one that moved since the last sync. A pane
     /// whose lines end short of that offset stops at its end, and does not pull the other
     /// back.
-    fn sync_sideways(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn sync_sideways(&mut self, cx: &mut Context<Self>) {
         let left = |side: Side| -self.panes[index(side)].editor.read(cx).scroll_offset().x;
         let follow = self.sideways_sync.step(
             f32::from(left(Side::Left)),
@@ -1966,31 +1989,29 @@ impl DiffWindow {
             |left| left,
             |left| left,
         );
-        match follow {
-            Some(Follow::Result(target)) => self.scroll_left_to(Side::Right, px(target), cx),
-            Some(Follow::Rows(target)) => {
-                // As for a top: the left pane takes it before it lays out next.
-                self.left_left = Some(px(target));
-                window.refresh();
-            }
-            None => {}
-        }
+        let (side, target) = match follow {
+            Some(Follow::Result(target)) => (Side::Right, target),
+            Some(Follow::Rows(target)) => (Side::Left, target),
+            None => return,
+        };
+        self.scroll_pane(side, ScrollTarget::left(px(target)));
     }
 
-    /// Apply a scroll top and left offset that `sync_scroll` set aside for the left pane.
-    fn sync_left(&mut self, cx: &mut Context<Self>) {
-        if let Some(top) = self.left_top.take() {
-            self.scroll_to(Side::Left, top, cx);
-        }
-        if let Some(left) = self.left_left.take() {
-            self.scroll_left_to(Side::Left, left, cx);
-        }
+    /// Set part of the offset `side`'s pane takes when it next lays out: the left before
+    /// it lays out, the right after the sync (`render_panes`).
+    fn scroll_pane(&mut self, side: Side, target: ScrollTarget) {
+        self.targets[index(side)].set(target);
     }
 
-    fn scroll_left_to(&self, side: Side, left: Pixels, cx: &mut Context<Self>) {
+    /// Give `side`'s pane its target, both axes in one call.
+    fn apply_target(&mut self, side: Side, cx: &mut Context<Self>) {
+        let target = std::mem::take(&mut self.targets[index(side)]);
+        if target.is_empty() {
+            return;
+        }
         self.pane(side).editor.update(cx, |state, cx| {
-            let y = state.scroll_offset().y;
-            state.set_scroll_offset(point(-left, y), cx);
+            let offset = target.over(state.scroll_offset());
+            state.set_scroll_offset(offset, cx);
         });
     }
 
@@ -2018,9 +2039,7 @@ impl DiffWindow {
         // The carets sit at the start of a line, so the panes go back to the left edge, as
         // the carets' own scroll would take them.
         for side in SIDES {
-            self.pane(side).editor.update(cx, |state, cx| {
-                state.set_scroll_offset(point(Pixels::ZERO, -px(top)), cx);
-            });
+            self.scroll_pane(side, ScrollTarget { left: Some(Pixels::ZERO), top: Some(px(top)) });
         }
         self.sideways_sync.place(0.0, 0.0);
     }
@@ -2052,15 +2071,8 @@ impl DiffWindow {
         let top = held.anchor.top(f32::from(row_h), |line| map.buffer_line_to_display_row(line));
         self.held_top = (!held.last).then_some(HeldTop { due: false, ..held });
         for side in SIDES {
-            self.scroll_to(side, px(top), cx);
+            self.scroll_pane(side, ScrollTarget::top(px(top)));
         }
-    }
-
-    fn scroll_to(&self, side: Side, top: Pixels, cx: &mut Context<Self>) {
-        self.pane(side).editor.update(cx, |state, cx| {
-            let x = state.scroll_offset().x;
-            state.set_scroll_offset(point(x, -top), cx);
-        });
     }
 
     /// The scroll top both panes share: the right's when it moved since the last sync, as
@@ -2217,9 +2229,10 @@ impl DiffWindow {
                 ignore_closed_view(this.update(cx, |this, cx| this.ruler_click(click, window, cx)));
             },
             move |top, _, cx| {
-                ignore_closed_view(
-                    scrolled.update(cx, |this, cx| this.scroll_to(Side::Right, px(top), cx)),
-                );
+                ignore_closed_view(scrolled.update(cx, |this, cx| {
+                    this.scroll_pane(Side::Right, ScrollTarget::top(px(top)));
+                    cx.notify();
+                }));
             },
         )
     }
@@ -2240,7 +2253,8 @@ impl DiffWindow {
                 // Spacers and folds part display rows from lines.
                 let row = state.display_map().buffer_line_to_display_row(line);
                 let top = merge_view::ruler::centred_top(row, f32::from(line_h), view);
-                self.scroll_to(Side::Right, px(top), cx);
+                self.scroll_pane(Side::Right, ScrollTarget::top(px(top)));
+                cx.notify();
             }
         }
     }
@@ -2545,9 +2559,9 @@ impl DiffWindow {
                 canvas(
                     move |_, window, cx| {
                         ignore_closed_view(this.update(cx, |this, cx| {
-                            this.sync_left(cx);
                             this.apply_held_top(cx);
                             this.apply_reveal(window, cx);
+                            this.apply_target(Side::Left, cx);
                         }));
                     },
                     |_, (), _, _| {},
@@ -2562,9 +2576,15 @@ impl DiffWindow {
                 let this = cx.entity().downgrade();
                 canvas(
                     move |_, window, cx| {
-                        ignore_closed_view(
-                            this.update(cx, |this, cx| this.sync_scroll(window, cx)),
-                        );
+                        ignore_closed_view(this.update(cx, |this, cx| {
+                            this.sync_scroll(window, cx);
+                            this.apply_target(Side::Right, cx);
+                            // The left laid out this frame already, and its paint
+                            // drops an offset set now: it takes its target next frame.
+                            if !this.targets[index(Side::Left)].is_empty() {
+                                window.refresh();
+                            }
+                        }));
                     },
                     |_, (), _, _| {},
                 )

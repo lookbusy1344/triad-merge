@@ -185,6 +185,8 @@ The map from one pane's top to the other's (`rows_to_result`, `result_to_rows`, 
 
 Zed's split diff gives both editors the same rows through spacer blocks. triad's rows and result differ in line count, so it maps by region.
 
+**The diff window.** Both panes are editors, and a canvas between them runs the same sync after the left pane's prepaint. An editor applies a scroll offset only as it lays out and reads back its old one till then, so a second `set_scroll_offset` in one frame undoes the first's other axis. Each sync, reveal, reload and ruler move therefore records a `ScrollTarget` per pane, an optional left and top, and each pane takes its target in one call: the right after the sync, the left before it next lays out.
+
 **Sideways.** The top panes' text sits in a clipping cell per pane and shifts by one shared offset (`sideways::Sideways`). The list keeps vertical wheel moves (`restrict_scroll_to_axis`); a wheel listener on the rows takes the sideways part when it is larger. The offset runs to the widest line a shown pane holds, counted off the UI thread with tabs expanded, times the advance of `m`, less the text width an invisible canvas records each frame. A second `ScrollSync` with identity maps keeps rows and result level sideways.
 
 **Wrapped top panes.** The list holds one item per display row. `row_wrap::RowWrap` gives each aligned row the display rows of its tallest cell, wrapping each cell with GPUI's `LineWrapper` in prepaint at the recorded width. `merge_view::heights::Heights` maps items to display rows and back. Scroll sync, reveal, Go to Line and search steps work in aligned rows and convert through the heights; the result's come from the editor's display map. When heights change, the rows keep their top aligned row.
@@ -338,7 +340,7 @@ A caret, scroll or row position held across a command could fall out of range af
 
 #### A13.3 Window size
 
-`window.rs` and `diff_window.rs` are large because the windows have many features; their logic with state sits in components (§A6.2). The two windows share `OriginColumn`, `editor_sync`, `blink`, `ruler`, `settings_banner` and `Wrap`. Their remaining shared method names are accessors and wiring of 2–9 lines. The diff window keeps eight loose scroll fields; a `DiffScroll` like `PaneScroll` waits for a diff scroll bug to start from (PLAN.md §3).
+`window.rs` and `diff_window.rs` are large because the windows have many features; their logic with state sits in components (§A6.2). The two windows share `OriginColumn`, `editor_sync`, `blink`, `ruler`, `settings_banner` and `Wrap`. Their remaining shared method names are accessors and wiring of 2–9 lines. The diff window keeps seven loose scroll fields; a `DiffScroll` like `PaneScroll` waits for a diff scroll bug to start from (PLAN.md §3).
 
 #### A13.4 Recovery gate
 

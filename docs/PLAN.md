@@ -58,7 +58,7 @@ In order. Each is one or more commits.
 | Whole-text copies: `Recompute::run`, `MergeDocument::output` (both off the UI thread), 8-byte line starts | A measurement that calls for them | §A6.7 |
 | A `script/measure-app` mode with the origin column shown, to time the result's labels after a pause at 1M lines | — | §C5.4 |
 | Intra-line pairing by alignment: pair a changed region's lines by similarity, not by position, so an inserted line does not shift every pair after it. It does not fix a file whose every line changes indentation: the line diff anchors on blank lines there and faces each function with the next; `ignore-whitespace = amount` aligns such files | The owner's decision | spec §5, §A4.7 |
-| `DiffScroll`: the diff window's eight scroll fields in one component, as `PaneScroll` | A diff scroll bug | §A13.3 |
+| `DiffScroll`: the diff window's seven scroll fields in one component, as `PaneScroll` | A diff scroll bug | §A13.3 |
 | The two-way diff under histogram on a line repeated on every few lines, such as `}`: 2.1 s at 100k lines against Myers's 29 ms (`diff-load-braced`) | — | §A4.7 |
 | A histogram diff that gives git's hunks faster: 1.5 s against jj's 70 ms on the 100k-line `deep` triple | — | §B6 |
 | Deep refinement under jj semantics on one core: `load-deep-rust` at 1M lines takes 517 ms at `main` against 491 ms at the 2026-11-09 import, on the same toolchain; `load-jj` moved under 3%. Parallel refinement hides it (458 ms); bisect it as `align`'s was | — | §B6 |

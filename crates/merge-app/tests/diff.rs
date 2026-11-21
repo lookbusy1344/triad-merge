@@ -1650,6 +1650,36 @@ fn a_pane_held_at_its_end_does_not_pull_the_other_back(cx: &mut TestAppContext) 
     );
 }
 
+/// A file `SCROLL_LINES` long whose first line is `width` characters wide.
+fn wide_and_tall(width: usize) -> String {
+    format!("{}\n{}", "x".repeat(width), numbered(1))
+}
+
+/// How far `side`'s pane is scrolled right and down.
+fn pane_offset(cx: &mut TestAppContext, view: &Entity<DiffWindow>, side: Side) -> (Pixels, Pixels) {
+    cx.read(|cx| {
+        let offset = view.read(cx).editor(side).read(cx).scroll_offset();
+        (-offset.x, -offset.y)
+    })
+}
+
+#[gpui_kit::test]
+fn a_diagonal_scroll_moves_the_other_pane_both_ways(cx: &mut TestAppContext) {
+    // A trackpad swipe sideways drifts down a little, and one down drifts sideways.
+    let down = LINE * 10.;
+    for side in SIDES_OF_TEST {
+        let o = open(cx, &Files::new(&wide_and_tall(400), &wide_and_tall(400)));
+        act(cx, o.window, |window, cx| {
+            window.scroll(pane_id(side), ScrollDelta::Pixels(point(-SIDEWAYS, -down)), cx);
+        });
+        for _ in 0..SETTLE_FRAMES {
+            act(cx, o.window, TestWindowExt::render_frame);
+        }
+        assert_eq!(pane_offset(cx, &o.view, side), (SIDEWAYS, down), "{side:?} itself");
+        assert_eq!(pane_offset(cx, &o.view, side.other()), (SIDEWAYS, down), "from {side:?}");
+    }
+}
+
 #[gpui_kit::test]
 fn the_scroll_sync_toggle_leaves_the_diff_panes_scrolling_sideways_together(
     cx: &mut TestAppContext,
