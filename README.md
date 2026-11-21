@@ -182,7 +182,6 @@ The GPUI shell, `merge-app`, holds 15,000 lines of product code; `merge-core` ho
 | [`docs/STYLE.md`](docs/STYLE.md) | UI style |
 | [`docs/json-schema.md`](docs/json-schema.md) | JSON output and merge commands |
 | [`docs/PLAN-diff-editor.md`](docs/PLAN-diff-editor.md) | The diff editor plan, part H |
-| [`docs/PLAN-layering.md`](docs/PLAN-layering.md) | The layering plan, part K |
 | [`CHANGELOG.md`](CHANGELOG.md) | What changed in each release |
 | [`docs/release.md`](docs/release.md) | The steps of a release |
 | [`docs/release-checklist.md`](docs/release-checklist.md) | Manual checks before a release |
