@@ -4,6 +4,8 @@
 # - The build holds one copy of gix, the one jj-lib uses.
 # - merge-config reaches no repository: of the workspace crates it depends on merge-core and
 #   vcs alone (DESIGN.md §A13.7).
+# - The front ends reach the VCS backends only through merge-session: merge-cli and merge-app
+#   take vcs-jj and vcs-git as dev-dependencies alone.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -31,6 +33,15 @@ for dep in $config_deps; do
     echo "error: merge-config depends on $dep; it may depend on $config_allowed" >&2
     status=1
   fi
+done
+
+for front in merge-cli merge-app; do
+  backends=$(jq -r --arg front "$front" '.packages[] | select(.name == $front) | .dependencies[]
+    | select((.name == "vcs-jj" or .name == "vcs-git") and .kind != "dev") | .name' <<<"$metadata" | sort -u)
+  for dep in $backends; do
+    echo "error: $front depends on $dep; it reaches the backends through merge-session" >&2
+    status=1
+  done
 done
 
 exit "$status"

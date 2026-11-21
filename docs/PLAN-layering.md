@@ -28,9 +28,9 @@ The pure crates hold up: `merge-core`, `merge-syntax` and `merge-view` have no G
 
 `merge_session::diff_tool::read_pair` holds spec §7.1's rule for `jj diff --tool`: the right side opens the working-copy file and the left turns read-only. `diff_tool::save` writes a diff window's sides and snapshots jj's working copy when a write succeeded. The GUI maps the sides onto panes and takes the save's results. Headless tests cover both rules, an absent side, an unreadable side and a failed write.
 
-## K6 One jj facade
+## K6 One jj facade — done
 
-`merge_session::jj_native` re-exports `vcs_jj`'s report types, yet `merge-cli` imports them from `vcs-jj` too. The front ends take them from `merge-session` only; `vcs-jj` leaves `merge-cli`'s normal dependencies.
+The front ends take the jj-native report types from `merge_session::jj_native` only. `vcs-jj` and `vcs-git` are dev-dependencies of `merge-cli` and `merge-app`, for fixtures; `script/check-workspace` fails on a normal dependency.
 
 ## K7 MergeWindow in parts
 

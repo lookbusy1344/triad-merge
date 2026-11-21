@@ -4,12 +4,12 @@ use std::fmt::Write as _;
 
 use camino::Utf8Path;
 use merge_session::jj_native::stays;
-use serde_json::json;
-use vcs::IdKind;
-use vcs_jj::{
+use merge_session::jj_native::{
     AbsorbHunk, Absorbed, CommitEffect, FileVersion, Goes, Origin, Rewrite, SHORT_OPERATION,
     StackCommit, Stay, VersionState,
 };
+use serde_json::json;
+use vcs::IdKind;
 
 use crate::ExitCode;
 
@@ -270,8 +270,8 @@ fn line(text: &mut String, args: std::fmt::Arguments<'_>) {
 
 #[cfg(test)]
 mod tests {
+    use merge_session::jj_native::{CommitEffect, StackPath};
     use vcs::ChangeInfo;
-    use vcs_jj::{CommitEffect, StackPath};
 
     use super::*;
 
@@ -410,7 +410,7 @@ mod tests {
     }
 
     fn absorbed() -> Absorbed {
-        let hunk = |number, goes| vcs_jj::AbsorbHunk {
+        let hunk = |number, goes| merge_session::jj_native::AbsorbHunk {
             number,
             path: "a.txt".into(),
             left: 2..3,
