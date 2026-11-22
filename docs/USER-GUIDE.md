@@ -195,7 +195,11 @@ triad-merge evolog -r xyz --list --limit 5   # print the newest 5 of change xyz
 triad-merge diff --since 0123abcd            # a window of the files @'s change edited since
 triad-merge diff src/lib.rs --since 0123abcd # one file, in the diff window
 triad-merge diff --since 0123abcd -r xyz --inspect --json
+triad-merge evolog -r '@-'                   # the change below @
+triad-merge diff --since 0123abcd -r '@-'    # the change below @ since version 0123abcd
 ```
+
+`evolog -r`, `diff --since` and its `-r` each take a revset that names one commit, with your revset aliases. A revset that names no commit, or several, is an error. `--since` also takes the commit ID of a hidden version, as `evolog` lists it.
 
 `evolog` opens a window that lists each version: its commit, the time and description of the operation that wrote it, and `(conflict)` when the version holds one. Click a version, or select it with ↑ and ↓ and press Enter, to open the directory window on what the change edited since that version, as `diff --since COMMIT` does. A version that differs in nothing opens no window and says `No difference from the current version.` One directory window is open at a time; another version brings it forward. Closing the evolog window, or Escape or ⌘W, ends the run with 0.
 
@@ -231,13 +235,15 @@ triad-merge stack                     # a window of the conflicted mutable commi
 triad-merge stack 'trunk()..@'        # any revset
 triad-merge stack --list              # print the list instead
 triad-merge resolve src/lib.rs -r xyz # resolve in commit xyz; @ stays where it is
+triad-merge resolve src/lib.rs -r '@-'
+triad-merge resolve src/lib.rs -r 'description(wip) & mine()'
 ```
 
 `stack` opens a window that lists each commit's change, commit and summary, then its conflicted paths. The working-copy commit carries jj's `@`, on lime, when it is listed. Hover over a commit to see its full IDs, its date and its whole description. `(inherited)` marks a path whose parent holds a conflict there too: resolve the parent, listed below it, first and the child often clears with it. A muted inherited path is untouched: the commit holds it as its parent does, so resolving the parent resolves it. Open an inherited path and a banner across the merge window names the listed commit where its conflict arises, and each conflict the parent holds too shows greyed side colours, grey marks and an `inherited` pill in place of orange (`color-inherited`); a resolution saved in the child first will likely conflict again once that commit is resolved. `--json` gives that commit as each path's `origin`, and `untouched` for a muted path. Click a path, or select it with ↑ and ↓ and press Enter, to open its conflict in the merge window, as `resolve -r` does. One merge window is open at a time. Each save lists the commits again and says what it did. With a merge window open, Preview Save shows what saving its result would do to each descendant's conflicts. Like any jj command it snapshots the working copy first; it changes nothing else. Closing the stack window, or Escape or ⌘W, ends the run: 0 when no conflicted commit is left, 1 otherwise. With nothing conflicted, `stack` opens no window and exits 0.
 
 `stack --list` prints the same list and exits the same way.
 
-`-r` takes any revset that names one commit, with your revset aliases, as `stack` does, and snapshots the working copy first.
+`-r` takes any revset that names one commit, with your revset aliases, as `stack` does, and snapshots the working copy first. A revset that names no commit, or several, is an error.
 
 Each save to `-r` rewrites the commit and rebases its descendants, as any jj rewrite does. The headless report lists each descendant with its conflicted paths before and after:
 
@@ -283,11 +289,12 @@ triad-merge absorb src/                      # only these paths
 triad-merge absorb --into 'trunk()..@'       # only these commits (default mutable())
 triad-merge absorb --keep 2                  # hunk 2 stays in the working copy
 triad-merge absorb --move 1=xyz              # hunk 1 into xyz, a mutable ancestor
+triad-merge absorb --move 1='@--'            # hunk 1 into the grandparent of @
 triad-merge absorb --apply                   # write, as listed
 triad-merge absorb --keep 2 --apply --listed-at 6c1e0e2b7f3a   # write with choices
 ```
 
-Hunk numbers hold only for the listing that printed them. `--move` and `--keep` with `--apply` need `--listed-at`, the listing's operation, and triad refuses when the repository has moved past it: an edit or a jj command since the listing. List again and choose again.
+`--into` takes any revset. The `REV` of `--move` is a revset that names one commit. Both use your revset aliases. Hunk numbers hold only for the listing that printed them. `--move` and `--keep` with `--apply` need `--listed-at`, the listing's operation, and triad refuses when the repository has moved past it: an edit or a jj command since the listing. List again and choose again.
 
 ```
 absorbed 1 hunks into 1 commits
