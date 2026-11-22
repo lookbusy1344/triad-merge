@@ -106,13 +106,10 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
   - Never drop an error silently. Handle it, return it, or log it with `tracing` and say why going on is safe.
   - `Option` for a value that may be absent, never an error or a sentinel.
 - **Named constants.** No magic numbers.
-- **UI style.** Style a view right when it is first built; a later restyle costs more than reading first. Zed, checked out at `~/Documents/dev/other/zed`, is the reference. The `gpui` skill holds the general rules; the points below are triad's.
-  - Before writing a view, read `docs/STYLE.md`, then the Zed view that does the same job; its § Working from Zed names one for each kind of view. Copy Zed's layout, heights, padding, icons and keys in triad's sizes.
+- **UI style.** Style a view right when it is first built; a later restyle costs more than reading first. The `gpui` skill holds the general rules; `docs/STYLE.md` holds triad's figures and wins where they differ. Zed, the reference, is checked out at `~/Documents/dev/other/zed`.
+  - Before writing a view, read `docs/STYLE.md`, then the Zed view its § Working from Zed names for that kind of view.
   - Build from the shared parts: `tool_window` and `pick_list` for a window that lists things, `menu_button` for a menu, `toolbar` for the toolbar. Make a new shared part when a second view needs the same thing, never a copy.
-  - 12 px chrome text, `.small()` controls, a 4 px grid, sizes as named `Pixels` constants, colours from the theme. Windows of the same kind look and behave alike: the same frame, the same keys, Escape and Cancel to close.
-  - Where STYLE.md says nothing, follow Zed and add the rule to STYLE.md in the same change. A view that departs from both says why in a comment.
-  - Never show a message in a window the user cannot see: one another window covers, such as a tool window behind the merge window it just opened, or one minimised or closing. Show it where the user will see it, in a banner or status line, and test that it shows there.
-  - Test the layout against STYLE.md's figures (`tests/common/mod.rs`, `tool_window::assert_frame`), then run the app and look at it before calling the view done.
+  - Test the layout against STYLE.md's figures (`tool_window::assert_frame` in `crates/merge-app/tests/common/mod.rs`), then run the app and look at it before calling the view done.
 - **Borrow before you copy.** triad holds whole files, often several copies of a large one.
   - Parameters take `&str`, `&[T]` and `&Path`. Take ownership only to store or consume the value.
   - Return borrows, slices or iterators when the data outlives the call; an owned value only when the function builds it.

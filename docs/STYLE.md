@@ -21,7 +21,7 @@ Before building or changing a view, find the Zed view that does the same job and
 
 ## Units
 
-One rem is the theme's `font_size`, 16 px; gpui-component's `Root` sets it on every window. Spacing helpers follow Tailwind: `gap_1` is 4 px, `gap_2` 8 px, `p_3` 12 px, `gap_4` 16 px. Sizes sit on a 4 px grid, with 2 px for insets.
+A px is GPUI's `Pixels`, a logical pixel: a point on macOS. The spec's settings in points map to `px()` unchanged. One rem is the theme's `font_size`, 16 px; gpui-component's `Root` sets it on every window. Spacing helpers follow Tailwind: `gap_1` is 4 px, `gap_2` 8 px, `p_3` 12 px, `gap_4` 16 px. Sizes sit on a 4 px grid, with 2 px for insets.
 
 ## Type
 
@@ -29,14 +29,16 @@ One rem is the theme's `font_size`, 16 px; gpui-component's `Root` sets it on ev
 |---|---|---|
 | Dialog and menu text, tab labels, field labels, errors | 12 px | `text_xs()` |
 | A window's base text, under its controls | 14 px | `text_sm()` |
-| Toolbar labels, the conflict badge, and the menus the toolbar opens | the `toolbar-font-size` setting, 8.4 by default | `Typography::toolbar_size` |
-| Editor and pane text | the `font-size` setting, 10 by default (spec §6.4) | `Typography` |
+| Toolbar labels, the conflict badge, and the menus the toolbar opens | the `toolbar-font-size` setting, 8.4 px by default | `Typography::toolbar_size` |
+| Editor and pane text | the `font-size` setting, 10 px by default (spec §6.4) | `Typography` |
 
 Chrome takes the theme's UI font, as Zed's does: the toolbar, the headings, the status bar, the dialogs and the tool windows. The panes and editors take the `font` setting, else the theme's monospace font (`Typography::editor_font`); so do commit IDs. Zed's scale is 14, 12 and 10 px; triad's chrome takes 12 px. Two settings size text: `font-size` the editors and panes, `toolbar-font-size` the toolbar, its badge and its menus, which take one value so they change together. Other chrome sizes are constants. Secondary text, such as field labels, takes `muted_foreground`. Text is normal weight. Semibold marks a heading: a pane's heading, a prompt's message, a list's group heading. Italic marks deletion notes and spacer notes.
 
 ## Errors
 
 Every error and warning takes `alert::style`: 12 px chrome text on 16 px lines, as a tooltip's and the status bar's, wrapping, in a status colour. An error on the background is `danger`, with the accessible role of an alert. A banner across a window is `danger` with its text in `danger_foreground`, or `warning` with `warning_foreground` for a warning, and keeps 12 px text in a window whose base text is the editor's. A dialog keeps room for one line of error under its fields, so a short error shows whole and the controls do not move when it appears; a longer one scrolls in that room.
+
+A message never goes to a window the user cannot see: one another window covers, such as a tool window behind the merge window it just opened, or one minimised or closing. It goes where the user will see it, in a banner or the status line of the visible window, and a test checks that it shows there.
 
 ## Controls
 
@@ -117,9 +119,9 @@ One look marks a moved block wherever triad shows one (spec §4.3, §4.6, §5). 
 | Pill | One row tall, 4 px padding, 16 px in from the pane's right edge, translucent pale blue, bold deep blue text at the chip text size. An arrow toward the other end, then its input's initial and first line: `R5 →`, `↓ L40`, `↑ B1` | The first row of each end in the diff window and the merge window's top panes, base included; never in the result. Several pills on one row stand in move order, 4 px apart (`MOVE_PILL_GAP`), then the inherited pill | `move_pill::move_pill` |
 | Inherited pill | The pill's shape, filled with the inherited colour at 85%, bold text in the background colour: `inherited` | The first row of each unresolved inherited conflict in the side panes and the result; after the row's move pills | `move_pill::label_pill` |
 | Gutter mark | `M` in the move tone | The diff window only. The merge window's top-pane gutters hold pick targets, and the result's gutter names each line's input | `merge_view::diff::MOVE_MARK` |
+| Duplicate on the ruler | The copy's tone inside a 2 px outline in the conflict tone; the conflict tone alone on a mark too short for both | The merge window's ruler, over each copy the result holds | `DUPLICATE_OUTLINE` in `ruler.rs` |
 
 A top-pane line number in a region that differs is a toggle that picks its line (`PLAN.md` §G8). It keeps the line-number column's width and muted colour; a picked line's number is bold in its pane's mark tone. No box or background: the bands already tint the row, and the pick targets keep the region's state.
-| Duplicate on the ruler | The copy's tone inside a 2 px outline in the conflict tone; the conflict tone alone on a mark too short for both | The merge window's ruler, over each copy the result holds | `DUPLICATE_OUTLINE` in `ruler.rs` |
 
 - A pill's press and Go to Other End of Move (⇧⌘M) go to the other end with a jump's blink. An end named by a base line shows the base pane first.
 - Initials: `L` left, `R` right, `B` base, as the result gutter's marks.
