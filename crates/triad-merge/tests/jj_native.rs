@@ -63,6 +63,20 @@ fn a_jj_native_command_in_a_git_repository_says_it_needs_jj() {
         outcome(&absorb),
         (Some(ERROR), String::new(), "triad-merge: absorb needs a jj repository\n".to_owned())
     );
+    let evolog = triad(fixture.root(), &["evolog", "--list"]);
+    assert_eq!(
+        outcome(&evolog),
+        (Some(ERROR), String::new(), "triad-merge: evolog needs a jj repository\n".to_owned())
+    );
+    let since = triad(fixture.root(), &["diff", "--since", "HEAD", "--inspect"]);
+    assert_eq!(
+        outcome(&since),
+        (
+            Some(ERROR),
+            String::new(),
+            "triad-merge: diff --since needs a jj repository\n".to_owned()
+        )
+    );
 }
 
 mod jj {
@@ -381,5 +395,97 @@ mod jj {
         let args = ["resolve", "b.txt", "-r", &merge.change_id, "--headless"];
         let (code, _, err) = outcome(&triad(fixture.root(), &args));
         assert_eq!((code, err.as_str()), (Some(ERROR), "triad-merge: b.txt is not conflicted\n"));
+    }
+
+    /// `parent` holding `a.txt`; `child` on it adding `b.txt` and `c.txt`; then `parent`
+    /// rewritten, which rebases `child`. The child before and after the rebase.
+    fn rebased_child() -> (Fixture, Committed, Committed) {
+        let fixture = Fixture::new();
+        let parent = fixture.commit_on(&[], "parent", &[("a.txt", b"1\n")]);
+        let child = fixture.commit_on(
+            &[&parent],
+            "child",
+            &[("a.txt", b"1\n"), ("b.txt", b"x\n"), ("c.txt", b"c1\nc2\nc3\n")],
+        );
+        fixture.amend(&parent, &[("a.txt", b"0\n")]);
+        let rebased = fixture.latest(&child);
+        (fixture, child, rebased)
+    }
+
+    #[test]
+    fn evolog_lists_a_changes_versions_newest_first() {
+        let (fixture, old, new) = rebased_child();
+        let ops = fixture.operation_ids();
+        let short = |id: &str| id[..vcs_jj::SHORT_OPERATION].to_owned();
+        let args = ["evolog", "-r", &new.change_id, "--list"];
+        let (code, out, err) = outcome(&triad(fixture.root(), &args));
+        assert_eq!((code, err.as_str()), (Some(RESOLVED), ""), "{out}");
+        let fields: Vec<(String, String, String)> = out
+            .lines()
+            .map(|l| {
+                let mut words = l.split(' ');
+                let mut next = || words.next().unwrap_or_default().to_owned();
+                let (commit, op, _time) = (next(), next(), next());
+                (commit, op, words.collect::<Vec<_>>().join(" "))
+            })
+            .collect();
+        assert_eq!(
+            fields,
+            [
+                (short(&new.commit), short(&ops[0]), "amend".to_owned()),
+                (short(&old.commit), short(&ops[1]), "commit".to_owned()),
+            ],
+            "{out}"
+        );
+        let args = ["evolog", "-r", &new.change_id, "--json", "--limit", "1"];
+        let (_, json, _) = outcome(&triad(fixture.root(), &args));
+        let value: serde_json::Value = serde_json::from_str(&json).expect("JSON");
+        assert_eq!(value["change_id"], new.change_id.as_str());
+        assert_eq!(value["versions"].as_array().map(Vec::len), Some(1));
+        assert_eq!(value["versions"][0]["commit"], new.commit.as_str());
+        assert_eq!(value["versions"][0]["operation"], ops[0].as_str());
+        assert_eq!(value["versions"][0]["description"], "amend");
+        assert_eq!(value["versions"][0]["conflicted"], false);
+    }
+
+    #[test]
+    fn diff_since_a_version_a_rebase_made_lists_nothing() {
+        let (fixture, old, new) = rebased_child();
+        let args = ["diff", "--since", &old.commit, "-r", &new.change_id, "--inspect"];
+        assert_eq!(
+            outcome(&triad(fixture.root(), &args)),
+            (Some(RESOLVED), "files: 0\n".to_owned(), String::new())
+        );
+    }
+
+    #[test]
+    fn diff_since_lists_the_changes_own_edits_with_renames() {
+        let (fixture, old, rebased) = rebased_child();
+        let new = fixture
+            .amend(&rebased, &[("a.txt", b"0\n"), ("b.txt", b"y\n"), ("d.txt", b"c1\nc2\nc3\n")]);
+        let args = ["diff", "--since", &old.commit, "-r", &new.commit, "--inspect"];
+        assert_eq!(
+            outcome(&triad(fixture.root(), &args)),
+            (
+                Some(CONFLICTS),
+                "modified text b.txt\nrenamed text c.txt => d.txt\nfiles: 2\n".to_owned(),
+                String::new()
+            )
+        );
+        let json_args = ["diff", "--since", &old.commit, "-r", &new.commit, "--inspect", "--json"];
+        let (_, json, _) = outcome(&triad(fixture.root(), &json_args));
+        let value: serde_json::Value = serde_json::from_str(&json).expect("JSON");
+        assert_eq!(value["command"], "diff-changes");
+        assert_eq!(value["changes"], 2);
+    }
+
+    #[test]
+    fn diff_since_a_revision_naming_no_commit_fails() {
+        let (fixture, _, _) = rebased_child();
+        let args = ["diff", "--since", "none()", "--inspect"];
+        assert_eq!(
+            outcome(&triad(fixture.root(), &args)),
+            (Some(ERROR), String::new(), "triad-merge: unknown revision none()\n".to_owned())
+        );
     }
 }

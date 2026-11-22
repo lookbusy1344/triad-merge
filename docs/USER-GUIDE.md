@@ -185,6 +185,26 @@ f09f484b2665 2026-11-13T15:35:02+00:00 add workspace 'default' (absent)
 
 `(absent)`, `(conflict)` and `(other)` mark an operation where the path held no file, a conflict, or a symlink or directory. `diff --op` opens one version without the window; `--op` takes what `jj --at-op` takes: an ID prefix, `@`, `@-`. The history is as fine as jj's snapshots: one per jj command, or more with jj's file watcher.
 
+### Compare a change with an earlier version of itself (jj-enabled)
+
+jj keeps each version of a change in its evolog: every snapshot, describe, rebase and squash. `diff --since` shows what changed in a change since an earlier version, with a rebase taken out: triad rebases the earlier version onto the change's parents first, as `jj interdiff` does.
+
+```sh
+triad-merge evolog --list                    # the versions of @'s change, newest first
+triad-merge evolog -r xyz --list --limit 5   # the newest 5 of change xyz
+triad-merge diff --since 0123abcd --inspect  # the files @'s change edited since that version
+triad-merge diff --since 0123abcd -r xyz --inspect --json
+```
+
+`evolog --list` prints one line per version: the commit, the operation that wrote it, its time and description, and `(conflict)` when the version holds one.
+
+```
+5c0e9a3b71d2 6f1d0a27c94e 2026-11-22T10:04:11+01:00 rebase commit
+0123abcd8e9f 3a9c55e1b0d7 2026-11-22T09:58:40+01:00 snapshot working copy
+```
+
+`--since` takes any revision that names one commit; an earlier version's commit ID works though the commit is hidden. The listing exits 0 when nothing differs, as after a rebase alone, and 1 when files differ. A file the rebase leaves conflicted shows with jj's conflict markers. The windows for both commands are not built yet: give `evolog` `--list` or `--json`, and `diff --since` `--inspect`.
+
 ### Resolve conflicts in any commit (jj-enabled)
 
 jj records conflicts in commits, so a rebase never stops halfway. triad resolves them where they sit, without `jj edit`.

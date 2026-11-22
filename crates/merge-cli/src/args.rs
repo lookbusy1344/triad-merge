@@ -65,6 +65,11 @@ pub enum JjBatch {
     Stack { revset: Option<String>, json: bool },
     /// The versions of a file across jj's operation log.
     History { path: PathBuf, limit: Option<usize>, json: bool },
+    /// The versions of the change in the commit `rev` names across its evolog.
+    Evolog { rev: Option<String>, limit: Option<usize>, json: bool },
+    /// The files that differ between the version `since` names, rebased, and the change in
+    /// the commit `rev` names.
+    Interdiff { since: String, rev: Option<String>, json: bool },
     /// The working copy's hunks, each with the ancestor it goes into; moved there with
     /// `apply`.
     Absorb {
@@ -95,6 +100,10 @@ pub enum UsageError {
     RevWithTwoFiles,
     #[error("--op applies only to diff PATH")]
     OpWithTwoFiles,
+    #[error("--since does not apply to diff LEFT RIGHT")]
+    SinceWithTwoFiles,
+    #[error("{0} opens no window yet; add {1}")]
+    NoWindowYet(&'static str, &'static str),
     #[error("--readonly-left and --readonly-right need a file")]
     ReadonlyWithoutTwoFiles,
     #[error("--inspect needs LEFT RIGHT")]
@@ -259,6 +268,21 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// The versions of a change across jj's evolog, newest first (jj only).
+    Evolog {
+        /// The commit whose change to list; default `@`.
+        #[arg(short = 'r', long = "revision", value_name = "REV")]
+        rev: Option<String>,
+        /// List at most N versions, the newest.
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+        /// Print the list instead of opening the window.
+        #[arg(long)]
+        list: bool,
+        /// Print the list as JSON instead of opening the window.
+        #[arg(long)]
+        json: bool,
+    },
     /// The working copy's hunks, each with the commit that wrote its lines, in a window to
     /// send them there; or listed, and moved with --apply (jj only).
     Absorb {
@@ -405,6 +429,17 @@ struct DiffCli {
     /// Compare PATH with its version in the working-copy commit at jj operation OP (jj only).
     #[arg(long, value_name = "OP", conflicts_with_all = ["rev", "inspect"])]
     op: Option<String>,
+    /// Compare the change with its earlier version OLD, rebased onto the change's parents
+    /// (jj only).
+    #[arg(
+        long,
+        value_name = "OLD",
+        conflicts_with_all = ["rev", "op", "readonly_left", "readonly_right"]
+    )]
+    since: Option<String>,
+    /// With --since: the commit holding the change; default `@`.
+    #[arg(short = 'r', long = "revision", value_name = "REV", requires = "since")]
+    revision: Option<String>,
     /// Print the regions; no window.
     #[arg(long, conflicts_with_all = ["title", "readonly_left", "readonly_right"])]
     inspect: bool,
@@ -525,6 +560,13 @@ impl Cli {
                     json,
                 })))
             }
+            Some(Command::Evolog { rev, limit, list, json }) => {
+                if list || json {
+                    Ok(Invocation::Batch(Batch::Jj(JjBatch::Evolog { rev, limit, json })))
+                } else {
+                    Err(UsageError::NoWindowYet("evolog", "--list or --json"))
+                }
+            }
             Some(Command::History { path, limit, list, json }) => Ok(if list || json {
                 Invocation::Batch(Batch::Jj(JjBatch::History { path, limit, json }))
             } else {
@@ -584,6 +626,24 @@ impl DiffCli {
         let mut files = self.files.into_iter();
         let paths = (files.next(), files.next(), files.next());
         let unified = self.unified.map(|n| n.unwrap_or(patch::DEFAULT_CONTEXT));
+        if let Some(since) = self.since {
+            return match (paths, self.inspect) {
+                (_, _) if unified.is_some() => Err(UsageError::UnifiedWithoutTwoFiles),
+                ((None, None, None), true) => {
+                    Ok(Invocation::Batch(Batch::Jj(JjBatch::Interdiff {
+                        since,
+                        rev: self.revision,
+                        json: self.json,
+                    })))
+                }
+                ((Some(_), None, None), true) => Err(UsageError::InspectNative),
+                ((_, None, None), false) => {
+                    Err(UsageError::NoWindowYet("diff --since", "--inspect"))
+                }
+                ((Some(_), Some(_), None), _) => Err(UsageError::SinceWithTwoFiles),
+                _ => Err(UsageError::DiffFiles(count)),
+            };
+        }
         match (paths, self.rev, self.inspect) {
             ((None, None, None), _, _) if unified.is_some() => {
                 Err(UsageError::UnifiedWithoutTwoFiles)

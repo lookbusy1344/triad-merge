@@ -11,6 +11,8 @@ mod absorb;
 mod evolog;
 #[path = "jj/history.rs"]
 mod history;
+#[path = "jj/interdiff.rs"]
+mod interdiff;
 #[path = "jj/oracle.rs"]
 mod oracle;
 #[path = "jj/snapshot.rs"]

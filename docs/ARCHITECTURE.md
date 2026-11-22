@@ -144,6 +144,7 @@ The jj-native API (`DESIGN.md` part I) sits on `JjRepository` outside the trait:
 - `native`: `stack(revset)` lists conflicted commits and their paths; `conflict_at`, `parent_conflicts_at` read a conflict in any commit; `write_conflict` writes a resolution into a commit in one transaction and rebases its descendants. `CommitEffect` reports what a write would do to each descendant, for the stack window's preview.
 - `history`: a file's versions in the working-copy commit across the operation log, and `working_copy_at(op)`.
 - `evolog`: the versions of a change across the operations that rewrote it.
+- `interdiff`: an earlier version of a change rebased onto the change's parents, as `jj interdiff` builds it; the paths that differ and what each side holds, conflicts written with jj's markers.
 - `absorb`: the working copy's hunks against its parents, each with the ancestor it goes into, and the moves the user chose.
 
 Every write follows jj's own order: snapshot, rewrite in one transaction, rebase descendants, check out a moved working-copy commit. `testing` (feature) builds jj repositories through jj-lib, in the default (colocated) layout unless a test names another. `examples/` generate the jj oracle corpora from jj-lib and from jj's CLI (`DESIGN.md` §B5.2, §I5).
@@ -224,7 +225,7 @@ The layer under both front ends. It owns everything a merge does outside the eng
 
 - `load` reads a merge's files into `Inputs` and builds the `MergeDocument`.
 - `resolve::load` reads a conflict for `resolve`: from the repository through `read_conflict`, or else from the file's conflict markers (`merge_core::markers`). `load_at_commit` reads one in another jj commit for the stack window.
-- `native` loads the inputs of `diff PATH` (the working-copy file and its parent revision, or a jj operation's version) and lists changed files for `diff [--rev]`.
+- `native` loads the inputs of `diff PATH` (the working-copy file and its parent revision, or a jj operation's version) and lists changed files for `diff [--rev]` and `diff --since`.
 - `dir_diff` lists the files that differ between two directories.
 - `origin` finds which commit each input's line origins come from: one whose file holds the input's exact bytes, or for the working copy its parent by a line diff (`DESIGN.md` §C3). `carry` moves an annotation onto an edited text.
 
@@ -242,7 +243,7 @@ The layer under both front ends. It owns everything a merge does outside the eng
 
 ### 8.6 Other services
 
-`install` writes tool entries through each backend's `tool_config`. `jj_native` opens the jj repository for `stack`, `history` and `absorb` and refuses a git one. `stamp` fingerprints OUTPUT so the window can tell another program changed it. `env` captures the environment variables that locate git's, jj's and triad's config.
+`install` writes tool entries through each backend's `tool_config`. `jj_native` opens the jj repository for `stack`, `history`, `evolog` and `absorb` and refuses a git one. `stamp` fingerprints OUTPUT so the window can tell another program changed it. `env` captures the environment variables that locate git's, jj's and triad's config.
 
 ## 9. `merge-cli`
 

@@ -7,7 +7,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 use merge_core::text::{DecodeError, Text};
 use vcs::{CommitId, EntryKind, RepoKind, Repository, RevSpec, TermContent, Tree, VcsError};
 use vcs_git::GitRepository;
-use vcs_jj::JjRepository;
+use vcs_jj::{Interdiff, InterdiffSide, JjRepository};
 
 use crate::dir_diff::{self, Blob, Change, ChangedFile, Content, Difference};
 use crate::repository::{Discovery, RunRepository};
@@ -305,6 +305,62 @@ pub fn changed_files(repo: &mut RunRepository, rev: Option<&str>) -> Result<List
         }
     })?;
     Ok(Listing { against: Against { root, rev: rev.to_owned(), pinned }, files })
+}
+
+/// What `diff --since` lists: an earlier version of a change, rebased onto the change's
+/// parents, against the change (spec §7.5.4).
+#[derive(Debug, Clone)]
+pub struct InterdiffListing {
+    /// The repository's root, which the paths are relative to.
+    pub root: PathBuf,
+    pub interdiff: Interdiff,
+    pub files: Vec<ChangedFile>,
+}
+
+/// The files that differ between the version of a change `since` names, rebased onto the
+/// parents of the commit `rev` names (default `@`), and that commit, in the jj repository
+/// holding `cwd`, with renames and copies paired as [`changed_files`] pairs them. The
+/// working copy is snapshotted first.
+///
+/// # Errors
+///
+/// [`NativeError::NeedsJj`] in a git repository; [`NativeError::Vcs`] outside any
+/// repository, for a revision that names no commit or several, or when the trees cannot be
+/// read.
+pub fn interdiff(
+    cwd: &Path,
+    since: &str,
+    rev: Option<&str>,
+    discovery: &Discovery,
+) -> Result<InterdiffListing, NativeError> {
+    let mut repo =
+        crate::jj_native::jj_at(cwd, discovery)?.ok_or(NativeError::NeedsJj("diff --since"))?;
+    let interdiff = repo.interdiff(since, rev.unwrap_or(crate::jj_native::WORKING_COPY))?;
+    let side = |side: InterdiffSide| match side {
+        InterdiffSide::Absent => Side::Absent,
+        InterdiffSide::File(bytes) => Side::File(bytes),
+        InterdiffSide::Other => Side::Special,
+    };
+    let mut listed = Vec::new();
+    for path in repo.interdiff_paths(&interdiff)? {
+        let [old, new] = repo.interdiff_sides(&interdiff, &path)?;
+        if let Some((change, content, blob)) = compared(side(old), side(new))? {
+            listed.push((ChangedFile { path: path.into_std_path_buf(), change, content }, blob));
+        }
+    }
+    let files = dir_diff::with_rewrites(listed, |file| {
+        let path =
+            Utf8Path::from_path(&file.path).ok_or_else(|| VcsError::NotUtf8(file.path.clone()))?;
+        let [old, new] = repo.interdiff_sides(&interdiff, path)?;
+        match if file.change == Change::Deleted { old } else { new } {
+            InterdiffSide::File(bytes) => Ok(bytes),
+            InterdiffSide::Absent | InterdiffSide::Other => Err(NativeError::Find {
+                path: file.path.clone(),
+                source: io::ErrorKind::NotFound.into(),
+            }),
+        }
+    })?;
+    Ok(InterdiffListing { root: repo.root().as_std_path().to_owned(), interdiff, files })
 }
 
 /// The revision of `commits`: the empty tree for none, else their full IDs.

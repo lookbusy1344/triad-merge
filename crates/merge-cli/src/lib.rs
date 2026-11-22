@@ -410,6 +410,16 @@ fn jj_native_batch(
             let text = jj_native::history_report(&path, &versions, json)?;
             Ok(report(stdout, &text, ExitCode::Resolved))
         }
+        JjBatch::Evolog { rev, limit, json } => {
+            let evolog = merge_session::jj_native::evolog(cwd, rev.as_deref(), limit, discovery)?;
+            let text = jj_native::evolog_report(&evolog, json)?;
+            Ok(report(stdout, &text, ExitCode::Resolved))
+        }
+        JjBatch::Interdiff { since, rev, json } => {
+            let listing = merge_session::native::interdiff(cwd, &since, rev.as_deref(), discovery)?;
+            let (text, code) = inspect::files_report("diff-changes", &listing.files, json)?;
+            Ok(report(stdout, &text, code))
+        }
         JjBatch::Absorb { paths, into, choices, apply, listed_at, json } => {
             let absorbed = merge_session::jj_native::absorb(
                 cwd,

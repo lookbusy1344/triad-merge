@@ -8,8 +8,9 @@ use vcs::{RepoKind, Repository as _, VcsError};
 use vcs_jj::JjRepository;
 /// The reports the front ends show.
 pub use vcs_jj::{
-    AbsorbHunk, Absorbed, CommitEffect, Destination, FileVersion, Goes, HunkChoice, JjError,
-    Origin, Rewrite, SHORT_OPERATION, StackCommit, StackPath, Stay, VersionState,
+    AbsorbHunk, Absorbed, ChangeVersion, CommitEffect, Destination, Evolog, FileVersion, Goes,
+    HunkChoice, Interdiff, JjError, Origin, Rewrite, SHORT_OPERATION, StackCommit, StackPath, Stay,
+    VersionOperation, VersionState,
 };
 
 use crate::repository::Discovery;
@@ -65,14 +66,24 @@ pub fn open(
     discovery: &Discovery,
     command: &'static str,
 ) -> Result<JjRepository, ResolveError> {
+    jj_at(cwd, discovery)?.ok_or(ResolveError::NeedsJj(command))
+}
+
+/// The jj repository holding `cwd`, reading the user's jj config as `discovery` says; none
+/// for a git repository.
+///
+/// # Errors
+///
+/// [`VcsError::NotARepository`] outside any repository, and the errors of jj-lib's load.
+pub(crate) fn jj_at(cwd: &Path, discovery: &Discovery) -> Result<Option<JjRepository>, VcsError> {
     let found = crate::native::find_from(cwd).ok_or_else(|| {
         VcsError::NotARepository(Utf8PathBuf::from(cwd.to_string_lossy().into_owned()))
     })?;
     if found.kind != RepoKind::Jj {
-        return Err(ResolveError::NeedsJj(command));
+        return Ok(None);
     }
     let root = Utf8PathBuf::from_path_buf(found.root).map_err(VcsError::NotUtf8)?;
-    Ok(JjRepository::discover(&root)?.with_config(discovery.jj_config()))
+    Ok(Some(JjRepository::discover(&root)?.with_config(discovery.jj_config())))
 }
 
 /// The conflicted commits `revset` names in the jj repository holding `cwd`, children first
@@ -200,6 +211,25 @@ pub fn stays(stay: &Stay) -> String {
         Stay::Kept => "stays: kept".to_owned(),
     }
 }
+
+/// The versions of the change in the one commit `rev` names, default `@`, in the jj
+/// repository holding `cwd`, newest first, at most `limit` of them (`evolog`).
+///
+/// # Errors
+///
+/// As [`open`], and as [`JjRepository::evolog`] fails.
+pub fn evolog(
+    cwd: &Path,
+    rev: Option<&str>,
+    limit: Option<usize>,
+    discovery: &Discovery,
+) -> Result<Evolog, ResolveError> {
+    let mut repo = open(cwd, discovery, "evolog")?;
+    Ok(repo.evolog(rev.unwrap_or(WORKING_COPY), limit)?)
+}
+
+/// The revision `evolog` and `diff --since` read without `-r`.
+pub const WORKING_COPY: &str = "@";
 
 #[cfg(test)]
 mod tests {

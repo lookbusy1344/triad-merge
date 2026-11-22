@@ -6,6 +6,7 @@ mod absorb;
 pub mod config;
 mod evolog;
 mod history;
+mod interdiff;
 mod native;
 #[cfg(feature = "testing")]
 pub mod testing;
@@ -14,6 +15,7 @@ pub mod tool_config;
 pub use absorb::{AbsorbHunk, Absorbed, DEFAULT_INTO, Destination, Goes, HunkChoice, Stay};
 pub use evolog::{ChangeVersion, Evolog, VersionOperation};
 pub use history::{FileVersion, SHORT_OPERATION, VersionState};
+pub use interdiff::{Interdiff, InterdiffSide};
 pub use native::{CommitEffect, DEFAULT_ALIASES, Origin, Rewrite, StackCommit, StackPath};
 
 use std::collections::HashMap;

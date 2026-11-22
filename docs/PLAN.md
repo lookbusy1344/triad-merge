@@ -25,7 +25,7 @@ As of 2026-11-21.
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
 | Layering: the session layer under both front ends, whole | Done | `docs/ARCHITECTURE.md` |
 | jj-native features | Done: conflicts across a stack (`stack`, `resolve -r`), operation-log history (`history`, `diff --op`) and absorb by hunk (`absorb`); the stack window, with a preview of a save's effect on the descendants, a confirmation before a save changes them, a banner in the merge window naming the listed commit an inherited conflict arises in, untouched inherited paths muted, and inherited conflict regions in the merge window grey (`color-inherited`); the history window; the absorb window, by hunk; these windows and the directory window share one frame after Zed's panels (`docs/STYLE.md`): a header with a count and the buttons, status icons with tooltips that name each state and file-name-first paths, keys for the lists, and Escape and Cancel to close; the conflict badge names the sides a conflict keeps; absorb, `resolve -r` and the default revset aliases checked against jj's CLI (§I5); `stack`, `resolve -r`, `history`, `absorb` and a three-sided save checked through the built binary in scenario repositories (`script/test-jj-repos`) | I |
-| Evolog: versions of a change, interdiff, earlier resolutions | Spec set (§7.5.4, §7.5.5); the evolog walk in `vcs-jj` done (§K1, §I6); the rest in the order of §K6 | K |
+| Evolog: versions of a change, interdiff, earlier resolutions | Spec set (§7.5.4, §7.5.5); the evolog walk (§K1) and the command lines of `evolog` and `diff --since --inspect` (§K2) done (§I6); `evolog` without `--list` or `--json` and `diff --since` without `--inspect` refuse until their windows land (§K3); the rest in the order of §K6 | K |
 
 The conformance suite runs on git, jj and internal jj repositories, and six of its checks on jj's experimental simple store (§A7.1). Every spec §9 target is met (§A6.7). Toolchain: stable Rust 1.100, with `rust-version` 1.100. Dependencies: jj-lib and jj-core 0.47.1 on gix 0.90; gpui-kit 0.8.1 with the vendored `gpui-base` patch; gpui-kit 0.9 is not adopted (`docs/gpui-kit-issues.md`).
 
@@ -84,6 +84,7 @@ In order. Each is one or more commits.
 | A `fallback-encoding` setting to turn the Windows-1252 fallback off | Someone who needs it off | §G17 |
 | Review and diff features: blank lines in a merge (§G4), §G7, §G12–§G14 | Owner's choice on §G15's open point for §G4 | G |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
+| An oracle for `diff --since` from `jj interdiff --git`, through `script/gen-jj-cli-oracle` | — | §K2 |
 | The absorb oracle's generator builds text files only: no renames, executable bits, symlinks, conflicted inputs or immutable commits | — | §I5 |
 | jj-cli's config defaults other than the revset aliases: none checked for whether triad depends on one | — | §I5 |
 | Absorb: split one hunk between commits | Part H's line selection (§H6) | §I4 |
@@ -305,7 +306,7 @@ Spec §7.5.4 and §7.5.5. Both rest on jj's evolog: the predecessors each operat
 
 ### K2 Interdiff on the command line
 
-`JjRepository::interdiff_tree(old, new)`: jj-lib's `rewrite::rebase_to_dest_parent` of `old` onto `new`, as `jj interdiff` builds it. `merge-session` reads a path from the two trees, conflicted paths written with jj's markers, and lists changed paths with the directory diff's rename pairing. `merge-cli`: `diff --since`, `-r`, `evolog --list` and `--json`, with `--inspect` and `--json` for both diff forms. Oracle: `jj interdiff --git` and `jj evolog` output from `script/gen-jj-cli-oracle`.
+`JjRepository::interdiff_tree(old, new)`: jj-lib's `rewrite::rebase_to_dest_parent` of `old` onto `new`, as `jj interdiff` builds it. `merge-session` reads a path from the two trees, conflicted paths written with jj's markers, and lists changed paths with the directory diff's rename pairing. `merge-cli`: `diff --since`, `-r`, `evolog --list` and `--json`, with `--inspect` and `--json` for the listing. Done; the oracle from `jj interdiff` stays open (§3).
 
 ### K3 Interdiff in the windows
 
