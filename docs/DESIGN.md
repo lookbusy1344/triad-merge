@@ -862,6 +862,7 @@ Features git cannot have (spec §1.2, §7.5). Each rests on something jj records
 | `stack`, `resolve -r REV PATH` | Conflicts in commits; descendants rebase on a rewrite |
 | `history PATH`, `diff PATH --op OP` | The operation log's working-copy snapshots |
 | `absorb` | Annotation; descendants rebase on a rewrite |
+| `evolog` | The predecessors each operation records for the commits it rewrites |
 
 Each ships a command line with `--json`, `--headless` or `--inspect` for scripts, tests and agents. A command that fits a window triad has opens it; `stack`, `history` and `absorb` have windows of their own (§I2, §I3, §I4). In a git repository each refuses with `needs a jj repository` and exits with 3.
 
@@ -907,6 +908,10 @@ Each ships a command line with `--json`, `--headless` or `--inspect` for scripts
 - The absorb window (`merge-app::absorb_window`) holds one choice per hunk, an index into the destinations or none to keep it. Apply sends every hunk's choice explicitly, a full commit ID for a move, with `--listed-at` the listing's operation, so the write uses the numbers the window showed or refuses. It runs off the UI thread; a success lists again, a refusal keeps the choices. Choosing is by click: a hunk, then a commit. `merge-cli` lists once before the window opens, so a run with no hunk, a git repository or a bad `--into` exits without one; the window shows that listing first.
 - Choices rewrite the plan before any tree is built. Each target commit gets the parents' tree with its hunks spliced into each file; `absorb_hunks` merges that over the parents' tree into the target, rewrites descendants in topological order and abandons an emptied working copy.
 - Listing and `--apply` run the same code inside `JjRepository::rewrite`: a listing is a dry run, which snapshots and drops the transaction. A listing builds no trees and writes no file to the store; only `--apply` does. The listing reports the head operation after its snapshot. `--listed-at OP` is checked inside the rewrite, after the snapshot, against the head: hunk numbers come from a diff of the working copy, so any operation since the listing, an edit snapshotted or a jj command, may renumber them. The command line asks for it whenever `--apply` carries choices; `--apply` alone recomputes the plan and needs none. An abandoned working copy leaves its change with no visible commit; the rewrite then counts the target as resolved.
+
+### I6 Versions of a change
+
+- `JjRepository::evolog` (`evolog.rs`) snapshots, resolves one commit with the user's aliases, then runs jj-lib's `evolution::walk_predecessors` from it, as `jj evolog` does: newest first, a version with several predecessors, such as a squash, followed by each of them. A hidden commit resolves by its commit ID, so a walk can start from an earlier version. `--limit` cuts the stream before any further commit is read. The walk stops at the first operation that stores no predecessors; jj-lib emits the commits it still holds with no operation.
 
 ### I5 Oracles from jj's CLI
 

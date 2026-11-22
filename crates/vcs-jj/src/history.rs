@@ -153,7 +153,7 @@ impl JjRepository {
 
 /// When `op` ended, RFC 3339 in its own offset; the instant in UTC when the offset is out of
 /// range.
-fn time(op: &Operation) -> String {
+pub(crate) fn time(op: &Operation) -> String {
     let end = &op.metadata().time.end;
     let Ok(instant) = jiff::Timestamp::from_millisecond(end.timestamp.0) else {
         return end.timestamp.0.to_string();

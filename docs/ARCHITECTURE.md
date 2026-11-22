@@ -143,6 +143,7 @@ The jj-native API (`DESIGN.md` part I) sits on `JjRepository` outside the trait:
 
 - `native`: `stack(revset)` lists conflicted commits and their paths; `conflict_at`, `parent_conflicts_at` read a conflict in any commit; `write_conflict` writes a resolution into a commit in one transaction and rebases its descendants. `CommitEffect` reports what a write would do to each descendant, for the stack window's preview.
 - `history`: a file's versions in the working-copy commit across the operation log, and `working_copy_at(op)`.
+- `evolog`: the versions of a change across the operations that rewrote it.
 - `absorb`: the working copy's hunks against its parents, each with the ancestor it goes into, and the moves the user chose.
 
 Every write follows jj's own order: snapshot, rewrite in one transaction, rebase descendants, check out a moved working-copy commit. `testing` (feature) builds jj repositories through jj-lib, in the default (colocated) layout unless a test names another. `examples/` generate the jj oracle corpora from jj-lib and from jj's CLI (`DESIGN.md` §B5.2, §I5).

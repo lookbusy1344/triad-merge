@@ -7,6 +7,8 @@
 
 #[path = "jj/absorb.rs"]
 mod absorb;
+#[path = "jj/evolog.rs"]
+mod evolog;
 #[path = "jj/history.rs"]
 mod history;
 #[path = "jj/oracle.rs"]
