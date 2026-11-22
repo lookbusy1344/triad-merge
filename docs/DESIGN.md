@@ -862,7 +862,7 @@ Features git cannot have (spec §1.2, §7.5). Each rests on something jj records
 | `stack`, `resolve -r REV PATH` | Conflicts in commits; descendants rebase on a rewrite |
 | `history PATH`, `diff PATH --op OP` | The operation log's working-copy snapshots |
 | `absorb` | Annotation; descendants rebase on a rewrite |
-| `evolog`, `diff --since` | The predecessors each operation records for the commits it rewrites |
+| `evolog`, `diff --since`, earlier resolutions | The predecessors each operation records for the commits it rewrites |
 
 Each ships a command line with `--json`, `--headless` or `--inspect` for scripts, tests and agents. A command that fits a window triad has opens it; `stack`, `history` and `absorb` have windows of their own (§I2, §I3, §I4). In a git repository each refuses with `needs a jj repository` and exits with 3.
 
@@ -914,6 +914,13 @@ Each ships a command line with `--json`, `--headless` or `--inspect` for scripts
 - `JjRepository::evolog` (`evolog.rs`) snapshots, resolves one commit with the user's aliases, then runs jj-lib's `evolution::walk_predecessors` from it, as `jj evolog` does: newest first, a version with several predecessors, such as a squash, followed by each of them. A hidden commit resolves by its commit ID, so a walk can start from an earlier version. `--limit` cuts the stream before any further commit is read. The walk stops at the first operation that stores no predecessors; jj-lib emits the commits it still holds with no operation.
 - `JjRepository::interdiff` resolves both commits after one snapshot and keeps only their IDs, short forms and whether the parents differ. `interdiff_paths` and `interdiff_sides` each rebuild the trees from the IDs: jj-lib's `rewrite::rebase_to_dest_parent` merges the old tree's change onto the new commit's parents' tree, and returns the old tree as it is when the parents are the same. A side holding a conflict of files is written with jj's markers in the user's `ui.conflict-marker-style`, with the rebase's labels, as `jj diff` shows it; any other conflict is `InterdiffSide::Other`.
 - `merge_session::native::interdiff` lists the paths whose bytes differ and pairs renames and copies with `dir_diff::with_rewrites`, as `diff --rev` lists the working copy's changes, so both listings pair files alike.
+
+### I7 Earlier resolutions
+
+- `JjRepository::earlier_resolutions` walks the evolog from the commit read, without a snapshot: the load took one. It reads the path's `MergedTreeValue` in every version, one tree lookup each, and keeps the walk in memory with each version's predecessor IDs. A version holding a file whose predecessor holds a conflict resolves it; the run goes back through the first conflicted predecessor to its oldest. The predecessor links, not the walk's order, decide the pairs, so a squash's second line of predecessors pairs only within itself. Only the pairs' conflicts and files are read.
+- The oldest version of the run holds the conflict as the rebase or merge made it, before any partial edit. A resolution spread over several snapshots so pairs with the first conflict, and its regions key as a later rebase brings them back.
+- `merge_view::earlier::Earlier::find` merges each pair's conflict with the document's options and no syntax boundaries, as `Inherited::find` aligns a parent, and keys its regions the same way. The result pane shows an unresolved conflict as its sides' lines, and `MergeDocument::region_lines` gives each region's lines there, so no markers are written: a line diff of that text against the resolved file, with exact comparison, finds the neighbour lines on each side of the region. A neighbour inside a hunk gives the region no resolution. Keys of another arity have another length, so a pair of another shape matches nothing without a check of its own. A region's offers keep the pairs' order, newest first, each text once.
+- `merge_session::jj_native::earlier_resolutions` decodes each pair's conflict as a parent's (`resolve::parent_inputs`) and its file as text; one that does not decode is logged and dropped, since it only loses an offer.
 
 ### I5 Oracles from jj's CLI
 

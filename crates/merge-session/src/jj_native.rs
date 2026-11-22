@@ -228,6 +228,55 @@ pub fn evolog(
     Ok(repo.evolog(rev.unwrap_or(WORKING_COPY), limit)?)
 }
 
+/// An earlier resolution of a conflict (spec §7.5.5): an earlier version of it, the file
+/// the version that resolved it held, and that version.
+#[derive(Debug, Clone)]
+pub struct EarlierResolution {
+    pub conflict: merge_core::merge3::Inputs,
+    pub resolved: merge_core::text::Text,
+    pub version: ChangeVersion,
+}
+
+/// The earlier resolutions of the conflict at `path`, relative to the root, in the evolog of
+/// the commit `id` in the jj repository at `root`, newest first. A version whose conflict or
+/// file does not decode as text is logged and left out: it only loses an offer.
+///
+/// # Errors
+///
+/// As [`open`], and as [`JjRepository::earlier_resolutions`] fails.
+pub fn earlier_resolutions(
+    root: &Utf8Path,
+    id: &vcs::CommitId,
+    path: &Utf8Path,
+    discovery: &Discovery,
+) -> Result<Vec<EarlierResolution>, ResolveError> {
+    let repo = open(root.as_std_path(), discovery, "resolve")?;
+    let pairs = repo.earlier_resolutions(id, path)?;
+    Ok(pairs
+        .into_iter()
+        .filter_map(|pair| {
+            let decoded = crate::resolve::parent_inputs(path, pair.conflict).and_then(|conflict| {
+                merge_core::text::Text::decode(pair.resolved)
+                    .map(|resolved| (conflict, resolved))
+                    .map_err(|source| ResolveError::NotText {
+                        path: path.to_owned(),
+                        term: format!("the file at {}", pair.version.commit),
+                        source,
+                    })
+            });
+            match decoded {
+                Ok((conflict, resolved)) => {
+                    Some(EarlierResolution { conflict, resolved, version: pair.version })
+                }
+                Err(error) => {
+                    tracing::warn!(%error, %path, "an earlier resolution does not load");
+                    None
+                }
+            }
+        })
+        .collect())
+}
+
 /// The revision `evolog` and `diff --since` read without `-r`.
 pub const WORKING_COPY: &str = "@";
 

@@ -136,3 +136,92 @@ fn a_revision_naming_no_commit_or_several_is_refused() {
         other => panic!("expected an ambiguous revision, got {other:?}"),
     }
 }
+
+/// The bytes of each side and base of `conflict`, sides first.
+fn terms(conflict: &vcs::Conflict) -> (Vec<Vec<u8>>, Vec<Vec<u8>>) {
+    let bytes = |terms: &[vcs::ConflictTerm]| {
+        terms
+            .iter()
+            .map(|term| match &term.content {
+                vcs::TermContent::File { bytes, .. } => bytes.clone(),
+                other => panic!("a file term, got {other:?}"),
+            })
+            .collect()
+    };
+    (bytes(&conflict.sides), bytes(&conflict.bases))
+}
+
+fn resolutions(fixture: &Fixture, commit: &str) -> Vec<vcs_jj::ResolvedPair> {
+    open(fixture)
+        .earlier_resolutions(&vcs::CommitId::new(commit.to_owned()), "a.txt".into())
+        .expect("the earlier resolutions")
+}
+
+#[test]
+fn a_rebase_that_brings_a_conflict_back_finds_the_earlier_resolution() {
+    let fixture = Fixture::new();
+    let parent = fixture.commit_on(&[], "parent", &[("a.txt", b"1\n")]);
+    let child = fixture.commit_on(&[&parent], "child", &[("a.txt", b"2\n")]);
+    let parent = fixture.amend(&parent, &[("a.txt", b"3\n")]);
+    let conflicted = fixture.latest(&child);
+    let resolved = fixture.amend(&conflicted, &[("a.txt", b"4\n")]);
+    fixture.amend(&parent, &[("a.txt", b"5\n")]);
+    let again = fixture.latest(&child);
+    assert_eq!(fixture.held_in(&again, "a.txt"), vcs_jj::testing::Held::Conflict);
+    let pairs = resolutions(&fixture, &again.commit);
+    assert_eq!(pairs.len(), 1, "{pairs:?}");
+    assert_eq!(pairs[0].resolved, b"4\n");
+    assert_eq!(pairs[0].version.commit.as_str(), resolved.commit);
+    // The conflict the first rebase made: the new parent's file, the child's, over the old
+    // parent's.
+    assert_eq!(
+        terms(&pairs[0].conflict),
+        (vec![b"3\n".to_vec(), b"2\n".to_vec()], vec![b"1\n".to_vec()])
+    );
+}
+
+#[test]
+fn a_resolution_over_several_snapshots_pairs_with_the_first_conflict() {
+    let fixture = Fixture::new();
+    fixture.three_way("a.txt", [b"a\nb\n", b"a\nL\n", b"a\nR\n"]);
+    fixture.check_out_to_disk();
+    let file = fixture.root().join("a.txt");
+    let mut markers = std::fs::read(&file).expect("the markers");
+    markers.extend_from_slice(b"z\n");
+    std::fs::write(&file, &markers).expect("an edit beside the conflict");
+    open(&fixture).snapshot().expect("the snapshot");
+    assert_eq!(fixture.held_at(0, "a.txt"), vcs_jj::testing::Held::Conflict);
+    std::fs::write(&file, b"a\nLR\nz\n").expect("the resolution");
+    open(&fixture).snapshot().expect("the snapshot");
+    let pairs = resolutions(&fixture, &fixture.working_copy_id());
+    assert_eq!(pairs.len(), 1, "{pairs:?}");
+    assert_eq!(pairs[0].resolved, b"a\nLR\nz\n");
+    assert_eq!(
+        terms(&pairs[0].conflict),
+        (vec![b"a\nL\n".to_vec(), b"a\nR\n".to_vec()], vec![b"a\nb\n".to_vec()])
+    );
+}
+
+#[test]
+fn a_conflict_never_resolved_has_no_earlier_resolution() {
+    let fixture = Fixture::new();
+    let parent = fixture.commit_on(&[], "parent", &[("a.txt", b"1\n")]);
+    let child = fixture.commit_on(&[&parent], "child", &[("a.txt", b"2\n")]);
+    let parent = fixture.amend(&parent, &[("a.txt", b"3\n")]);
+    fixture.amend(&parent, &[("a.txt", b"3\n"), ("c.txt", b"c\n")]);
+    let twice = fixture.latest(&child);
+    assert_eq!(fixture.held_in(&twice, "a.txt"), vcs_jj::testing::Held::Conflict);
+    assert_eq!(resolutions(&fixture, &twice.commit), []);
+}
+
+#[test]
+fn deleting_a_conflicted_file_is_no_resolution() {
+    let fixture = Fixture::new();
+    let parent = fixture.commit_on(&[], "parent", &[("a.txt", b"1\n")]);
+    let child = fixture.commit_on(&[&parent], "child", &[("a.txt", b"2\n")]);
+    fixture.amend(&parent, &[("a.txt", b"3\n")]);
+    let conflicted = fixture.latest(&child);
+    let deleted = fixture.amend(&conflicted, &[("b.txt", b"b\n")]);
+    assert_eq!(fixture.held_in(&deleted, "a.txt"), vcs_jj::testing::Held::Absent);
+    assert_eq!(resolutions(&fixture, &deleted.commit), []);
+}

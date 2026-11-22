@@ -3,6 +3,7 @@
 pub mod blink;
 pub mod chunks;
 pub mod diff;
+pub mod earlier;
 pub mod fold;
 pub mod heights;
 pub mod highlight;

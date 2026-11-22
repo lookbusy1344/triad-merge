@@ -62,7 +62,7 @@ impl Inherited {
 }
 
 /// What `region` of `inputs` holds: each base's text, then each side's.
-fn key<'a>(inputs: &'a Inputs, region: &Region) -> Vec<&'a str> {
+pub(crate) fn key<'a>(inputs: &'a Inputs, region: &Region) -> Vec<&'a str> {
     let bases = inputs.bases().iter().zip(&region.bases);
     let sides = inputs.sides().iter().zip(&region.sides);
     bases.chain(sides).map(|(text, lines)| text.span(lines.clone())).collect()

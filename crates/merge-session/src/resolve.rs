@@ -507,7 +507,10 @@ pub fn load_at_commit(
 }
 
 /// A parent's conflict at `path` as inputs to align.
-fn parent_inputs(path: &Utf8Path, conflict: vcs::Conflict) -> Result<Inputs, ResolveError> {
+pub(crate) fn parent_inputs(
+    path: &Utf8Path,
+    conflict: vcs::Conflict,
+) -> Result<Inputs, ResolveError> {
     let (sides, _) = decode(path, "side", conflict.sides)?;
     let (bases, _) = decode(path, "base", conflict.bases)?;
     Inputs::new(sides, bases)

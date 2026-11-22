@@ -1056,6 +1056,39 @@ mod jj {
     }
 
     #[test]
+    fn a_conflict_a_rebase_brought_back_carries_its_earlier_resolution() {
+        let fixture = vcs_jj::testing::Fixture::new();
+        let parent = fixture.commit_on(&[], "parent", &[("a.txt", b"1\n")]);
+        let child = fixture.commit_on(&[&parent], "child", &[("a.txt", b"2\n")]);
+        let parent = fixture.amend(&parent, &[("a.txt", b"3\n")]);
+        let resolved = fixture.amend(&fixture.latest(&child), &[("a.txt", b"4\n")]);
+        fixture.amend(&parent, &[("a.txt", b"5\n")]);
+        let again = fixture.latest(&child);
+        let earlier = merge_session::jj_native::earlier_resolutions(
+            fixture.root(),
+            &vcs::CommitId::new(again.commit.clone()),
+            camino::Utf8Path::new("a.txt"),
+            &Discovery::new(ConfigEnv::default()),
+        )
+        .expect("the earlier resolutions");
+        let found: Vec<_> = earlier
+            .iter()
+            .map(|e| {
+                (
+                    content(e.conflict.sides()),
+                    content(e.conflict.bases()),
+                    e.resolved.content().to_owned(),
+                    e.version.commit.as_str().to_owned(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            found,
+            [(vec!["3\n", "2\n"], vec!["1\n"], "4\n".to_owned(), resolved.commit.clone())]
+        );
+    }
+
+    #[test]
     fn resolve_at_a_revision_carries_each_parent_s_conflict_at_the_path() {
         let (fixture, merge) = stacked();
         let child = at_commit(&fixture, &format!("{}+", merge.commit));

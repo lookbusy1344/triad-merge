@@ -13,7 +13,7 @@ pub mod testing;
 pub mod tool_config;
 
 pub use absorb::{AbsorbHunk, Absorbed, DEFAULT_INTO, Destination, Goes, HunkChoice, Stay};
-pub use evolog::{ChangeVersion, Evolog, VersionOperation};
+pub use evolog::{ChangeVersion, Evolog, ResolvedPair, VersionOperation};
 pub use history::{FileVersion, SHORT_OPERATION, VersionState};
 pub use interdiff::{Interdiff, InterdiffSide};
 pub use native::{CommitEffect, DEFAULT_ALIASES, Origin, Rewrite, StackCommit, StackPath};

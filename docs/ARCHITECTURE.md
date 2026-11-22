@@ -143,7 +143,7 @@ The jj-native API (`DESIGN.md` part I) sits on `JjRepository` outside the trait:
 
 - `native`: `stack(revset)` lists conflicted commits and their paths; `conflict_at`, `parent_conflicts_at` read a conflict in any commit; `write_conflict` writes a resolution into a commit in one transaction and rebases its descendants. `CommitEffect` reports what a write would do to each descendant, for the stack window's preview.
 - `history`: a file's versions in the working-copy commit across the operation log, and `working_copy_at(op)`.
-- `evolog`: the versions of a change across the operations that rewrote it.
+- `evolog`: the versions of a change across the operations that rewrote it, and the earlier resolutions of a conflict among them.
 - `interdiff`: an earlier version of a change rebased onto the change's parents, as `jj interdiff` builds it; the paths that differ and what each side holds, conflicts written with jj's markers.
 - `absorb`: the working copy's hunks against its parents, each with the ancestor it goes into, and the moves the user chose.
 
@@ -191,6 +191,7 @@ The view model: everything the windows compute that is not drawing. It turns a `
 - **`marks`**, **`ruler`**, **`placeholder`**, **`merge_fold`**: each region's gutter label and tone, the overview ruler's marks, the hatched row that stands for an empty region in the result, and folded unchanged regions.
 - **`status`**: `Status` counts conflicts, unresolved regions and differences for the status bar; `pane_headings` and `result_heading` title the panes.
 - **`origin`**: line origins per row and per result line, the gutter label at the start of each run, and the hover text.
+- **`earlier`**: the conflict regions an earlier version of the conflict was resolved in, and the lines each was resolved to.
 - **`inherited`**, **`moves`**, **`line_pick`**, **`selection`**, **`search`**: conflicts inherited from a parent commit, moved-block ends, which lines a press picks, selection in a read-only pane, and literal search over every visible input with Aho-Corasick.
 
 ### 7.2 The diff window
@@ -243,7 +244,7 @@ The layer under both front ends. It owns everything a merge does outside the eng
 
 ### 8.6 Other services
 
-`install` writes tool entries through each backend's `tool_config`. `jj_native` opens the jj repository for `stack`, `history`, `evolog` and `absorb` and refuses a git one. `stamp` fingerprints OUTPUT so the window can tell another program changed it. `env` captures the environment variables that locate git's, jj's and triad's config.
+`install` writes tool entries through each backend's `tool_config`. `jj_native` opens the jj repository for `stack`, `history`, `evolog` and `absorb` and refuses a git one, and reads a conflict's earlier resolutions. `stamp` fingerprints OUTPUT so the window can tell another program changed it. `env` captures the environment variables that locate git's, jj's and triad's config.
 
 ## 9. `merge-cli`
 

@@ -274,6 +274,12 @@ impl Text {
         }
     }
 
+    /// Text triad already holds as a string, such as a merge's result, as UTF-8.
+    #[must_use]
+    pub fn from_utf8(content: String) -> Text {
+        Text::new(Encoding::Utf8, content)
+    }
+
     pub(crate) fn new(encoding: Encoding, content: String) -> Text {
         let line_starts = if content.is_empty() {
             Vec::new()
