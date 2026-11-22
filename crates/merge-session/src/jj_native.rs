@@ -23,6 +23,9 @@ pub enum Listing {
     Stack(Stacked),
     Absorb(Absorbed),
     History(FileHistory),
+    Evolog(Evolog),
+    Interdiff(crate::native::InterdiffListing),
+    InterdiffFile(crate::native::InterdiffFile),
 }
 
 impl Listing {
@@ -31,7 +34,7 @@ impl Listing {
     pub fn stack(self) -> Option<Stacked> {
         match self {
             Self::Stack(listed) => Some(listed),
-            Self::Absorb(_) | Self::History(_) => None,
+            _ => None,
         }
     }
 
@@ -40,7 +43,7 @@ impl Listing {
     pub fn absorb(self) -> Option<Absorbed> {
         match self {
             Self::Absorb(listed) => Some(listed),
-            Self::Stack(_) | Self::History(_) => None,
+            _ => None,
         }
     }
 
@@ -49,7 +52,34 @@ impl Listing {
     pub fn history(self) -> Option<FileHistory> {
         match self {
             Self::History(listed) => Some(listed),
-            Self::Stack(_) | Self::Absorb(_) => None,
+            _ => None,
+        }
+    }
+
+    /// The evolog window's listing; none for another form's.
+    #[must_use]
+    pub fn evolog(self) -> Option<Evolog> {
+        match self {
+            Self::Evolog(listed) => Some(listed),
+            _ => None,
+        }
+    }
+
+    /// The diff window's file of `diff PATH --since`; none for another form's.
+    #[must_use]
+    pub fn interdiff_file(self) -> Option<crate::native::InterdiffFile> {
+        match self {
+            Self::InterdiffFile(file) => Some(file),
+            _ => None,
+        }
+    }
+
+    /// The directory window's listing of `diff --since`; none for another form's.
+    #[must_use]
+    pub fn interdiff(self) -> Option<crate::native::InterdiffListing> {
+        match self {
+            Self::Interdiff(listed) => Some(listed),
+            _ => None,
         }
     }
 }

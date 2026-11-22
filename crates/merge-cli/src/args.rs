@@ -14,7 +14,8 @@ use merge_config::named::Named;
 use merge_config::settings::{Algorithm, Settings, Whitespace};
 use merge_config::settings::{Choice, HunkLevelArg, SameChangeArg};
 use merge_session::invocation::{
-    Absorb, Diff, DiffFlags, History, Merge, MergeFiles, Resolve, SemanticsFlags, Stack, Window,
+    Absorb, Diff, DiffFlags, DiffSince, Evolog as EvologForm, History, Merge, MergeFiles, Resolve,
+    SemanticsFlags, Stack, Window,
 };
 use merge_session::jj_native::HunkChoice;
 
@@ -102,8 +103,6 @@ pub enum UsageError {
     OpWithTwoFiles,
     #[error("--since does not apply to diff LEFT RIGHT")]
     SinceWithTwoFiles,
-    #[error("{0} opens no window yet; add {1}")]
-    NoWindowYet(&'static str, &'static str),
     #[error("--readonly-left and --readonly-right need a file")]
     ReadonlyWithoutTwoFiles,
     #[error("--inspect needs LEFT RIGHT")]
@@ -560,13 +559,11 @@ impl Cli {
                     json,
                 })))
             }
-            Some(Command::Evolog { rev, limit, list, json }) => {
-                if list || json {
-                    Ok(Invocation::Batch(Batch::Jj(JjBatch::Evolog { rev, limit, json })))
-                } else {
-                    Err(UsageError::NoWindowYet("evolog", "--list or --json"))
-                }
-            }
+            Some(Command::Evolog { rev, limit, list, json }) => Ok(if list || json {
+                Invocation::Batch(Batch::Jj(JjBatch::Evolog { rev, limit, json }))
+            } else {
+                Invocation::Window(Window::Evolog(EvologForm { rev, limit }))
+            }),
             Some(Command::History { path, limit, list, json }) => Ok(if list || json {
                 Invocation::Batch(Batch::Jj(JjBatch::History { path, limit, json }))
             } else {
@@ -637,8 +634,14 @@ impl DiffCli {
                     })))
                 }
                 ((Some(_), None, None), true) => Err(UsageError::InspectNative),
-                ((_, None, None), false) => {
-                    Err(UsageError::NoWindowYet("diff --since", "--inspect"))
+                ((path, None, None), false) => {
+                    Ok(Invocation::Window(Window::DiffSince(DiffSince {
+                        path,
+                        since,
+                        rev: self.revision,
+                        diff: self.diff.over(&settings.two_way()),
+                        title: self.title,
+                    })))
                 }
                 ((Some(_), Some(_), None), _) => Err(UsageError::SinceWithTwoFiles),
                 _ => Err(UsageError::DiffFiles(count)),
@@ -1418,6 +1421,48 @@ mod tests {
         };
         assert_eq!(stack.revset.as_deref(), Some("::@"));
         assert_eq!(clap_kind(&["stack", "a", "b"]), ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn evolog_opens_a_window_without_list_or_json() {
+        assert_eq!(
+            ok(&["evolog"]),
+            Invocation::Window(Window::Evolog(EvologForm { rev: None, limit: None }))
+        );
+        assert_eq!(
+            ok(&["evolog", "-r", "x", "--limit", "3"]),
+            Invocation::Window(Window::Evolog(EvologForm {
+                rev: Some("x".to_owned()),
+                limit: Some(3)
+            }))
+        );
+    }
+
+    #[test]
+    fn diff_since_opens_the_directory_window_or_with_a_path_the_diff_window() {
+        let since = |path: Option<&str>, rev: Option<&str>| {
+            Invocation::Window(Window::DiffSince(DiffSince {
+                path: path.map(Into::into),
+                since: "old".to_owned(),
+                rev: rev.map(str::to_owned),
+                diff: Settings::default().two_way(),
+                title: None,
+            }))
+        };
+        assert_eq!(ok(&["diff", "--since", "old"]), since(None, None));
+        assert_eq!(ok(&["diff", "--since", "old", "-r", "x"]), since(None, Some("x")));
+        assert_eq!(ok(&["diff", "a.txt", "--since", "old"]), since(Some("a.txt"), None));
+    }
+
+    #[test]
+    fn diff_since_refuses_two_files_a_listed_path_and_a_revision_without_it() {
+        assert_eq!(usage(&["diff", "a", "b", "--since", "old"]), UsageError::SinceWithTwoFiles);
+        assert_eq!(usage(&["diff", "a", "--since", "old", "--inspect"]), UsageError::InspectNative);
+        assert_eq!(clap_kind(&["diff", "-r", "x"]), ErrorKind::MissingRequiredArgument);
+        assert_eq!(
+            clap_kind(&["diff", "--since", "old", "--rev", "x"]),
+            ErrorKind::ArgumentConflict
+        );
     }
 
     #[test]

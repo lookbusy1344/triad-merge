@@ -39,6 +39,8 @@ pub struct ChangeVersion {
 pub struct Evolog {
     /// The change ID of the commit the walk starts from, in jj's reverse hex.
     pub change_id: String,
+    /// The change ID as jj shows it: its shortest unique prefix, at least 8 characters.
+    pub short_change_id: String,
     pub versions: Vec<ChangeVersion>,
 }
 
@@ -79,7 +81,9 @@ impl JjRepository {
                 Ok(version_of(&entry))
             })
             .collect::<Result<_, VcsError>>()?;
-        Ok(Evolog { change_id: start.change_id().reverse_hex(), versions })
+        let short_change_id =
+            self.change_info(&start)?.change_id.unwrap_or_else(|| start.change_id().reverse_hex());
+        Ok(Evolog { change_id: start.change_id().reverse_hex(), short_change_id, versions })
     }
 
     /// The earlier resolutions of the conflict at `path` in the evolog of the commit `id`,

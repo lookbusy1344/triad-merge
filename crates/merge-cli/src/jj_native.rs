@@ -575,6 +575,7 @@ mod tests {
     fn evolog_report_marks_a_conflict_and_a_version_without_an_operation() {
         let evolog = Evolog {
             change_id: "kxyz".to_owned(),
+            short_change_id: "kxyz".to_owned(),
             versions: vec![
                 ChangeVersion {
                     commit: vcs::CommitId::new("0123456789abcdef".to_owned()),

@@ -264,7 +264,7 @@ impl HistoryWindow {
         let options = base.diff_options.clone();
         let settings = DiffSettings {
             watch: self.start.watch,
-            ..crate::run::diff_settings(None, options, base, origins, Some(RepoKind::Jj))
+            ..crate::run::diff_settings(None, options, base, Some(origins), Some(RepoKind::Jj))
         };
         match diff_window::open(left, right, &settings, cx) {
             Ok((window, _)) => {

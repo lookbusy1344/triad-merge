@@ -198,7 +198,7 @@ impl Load {
                 let diff_options = settings.diff_options.clone();
                 let settings = diff_window::DiffSettings {
                     watch,
-                    ..run::diff_settings(None, diff_options, settings, origins, kind)
+                    ..run::diff_settings(None, diff_options, settings, Some(origins), kind)
                 };
                 Ok(Box::new(move |cx| {
                     diff_window::open(left, right, &settings, cx)

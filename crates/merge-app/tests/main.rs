@@ -14,6 +14,7 @@ mod collapse;
 mod common;
 mod diff;
 mod dirs;
+mod evolog;
 mod history;
 mod in_commit;
 mod input_find;

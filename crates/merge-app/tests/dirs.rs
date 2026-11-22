@@ -67,6 +67,7 @@ fn start_on(cwd: &Path, source: Source) -> DirStart {
         discovery: Discovery::default(),
         title: None,
         diff: DiffOptions::default(),
+        listed: None,
         settings: WindowSettings::default(),
         watch: false,
     }
@@ -576,6 +577,91 @@ mod jj {
         let mut repo = vcs_jj::JjRepository::discover(fixture.root()).expect("the repository");
         vcs::Repository::snapshot(&mut repo).expect("the snapshot");
         fixture
+    }
+
+    /// The characters of an ID jj shows in a small repository: its shortest unique prefix,
+    /// at least 8.
+    const SHORT: usize = 8;
+
+    /// `child` adding `b.txt` as `x\n` on `parent`; `parent` rewritten, which rebases
+    /// `child`; then `child` edited to hold `b.txt` as `y\n` and `c.txt`. The child before
+    /// the rebase and after the edit.
+    fn edited_after_a_rebase(
+        fixture: &Fixture,
+    ) -> (vcs_jj::testing::Committed, vcs_jj::testing::Committed) {
+        let parent = fixture.commit_on(&[], "parent", &[("a.txt", b"1\n")]);
+        let child = fixture.commit_on(&[&parent], "child", &[("a.txt", b"1\n"), ("b.txt", b"x\n")]);
+        fixture.amend(&parent, &[("a.txt", b"0\n")]);
+        let rebased = fixture.latest(&child);
+        let edited =
+            fixture.amend(&rebased, &[("a.txt", b"0\n"), ("b.txt", b"y\n"), ("c.txt", b"c\n")]);
+        (child, edited)
+    }
+
+    fn since_start(fixture: &Fixture, since: &str, rev: &str) -> DirStart {
+        DirStart {
+            discovery: Discovery::new(vcs_jj::config::ConfigEnv::default()),
+            ..start_on(
+                fixture.root().as_std_path(),
+                Source::Interdiff { since: since.to_owned(), rev: Some(rev.to_owned()) },
+            )
+        }
+    }
+
+    #[gpui_kit::test]
+    fn a_change_s_edits_since_a_version_are_listed_without_the_rebase(cx: &mut TestAppContext) {
+        let fixture = Fixture::new();
+        let (old, new) = edited_after_a_rebase(&fixture);
+        let started = open(cx, since_start(&fixture, &old.commit, &new.change_id));
+        assert_eq!(
+            listed(cx, &started.view),
+            [
+                ("b.txt".to_owned(), Change::Modified, Content::Text),
+                ("c.txt".to_owned(), Change::Added, Content::Text),
+            ]
+        );
+        let since = &old.commit[..SHORT];
+        assert_eq!(label(cx, started.window, SUMMARY_ID.into()), format!("2 files since {since}"));
+    }
+
+    #[gpui_kit::test]
+    fn a_file_opens_both_versions_read_only_the_earlier_one_rebased(cx: &mut TestAppContext) {
+        let fixture = Fixture::new();
+        let (old, new) = edited_after_a_rebase(&fixture);
+        let started = open(cx, since_start(&fixture, &old.commit, &new.change_id));
+        click(cx, started.window, file_id(0));
+        let [(_, view)] = &diff_windows(cx)[..] else { panic!("one diff window") };
+        let change = &new.change_id[..SHORT];
+        let (old_short, new_short) = (&old.commit[..SHORT], &new.commit[..SHORT]);
+        assert_eq!(
+            side(cx, view, Side::Left),
+            ("x\n".to_owned(), format!("{change} at {old_short}, rebased"), true)
+        );
+        assert_eq!(
+            side(cx, view, Side::Right),
+            ("y\n".to_owned(), format!("{change} at {new_short}"), true)
+        );
+    }
+
+    #[gpui_kit::test]
+    fn a_file_the_earlier_version_lacks_opens_empty_on_the_left(cx: &mut TestAppContext) {
+        let fixture = Fixture::new();
+        let (old, new) = edited_after_a_rebase(&fixture);
+        let started = open(cx, since_start(&fixture, &old.commit, &new.change_id));
+        click(cx, started.window, file_id(1));
+        let [(_, view)] = &diff_windows(cx)[..] else { panic!("one diff window") };
+        assert_eq!(side(cx, view, Side::Left), (String::new(), "c.txt (no file)".to_owned(), true));
+        assert_eq!(side(cx, view, Side::Right).0, "c\n");
+    }
+
+    #[gpui_kit::test]
+    fn an_earlier_version_naming_no_commit_shows_the_error(cx: &mut TestAppContext) {
+        let fixture = Fixture::new();
+        let (_, new) = edited_after_a_rebase(&fixture);
+        let started = open(cx, since_start(&fixture, "none()", &new.change_id));
+        assert_eq!(listed(cx, &started.view), []);
+        let shown = note(cx, &started.view).expect("an error");
+        assert!(shown.contains("none()"), "{shown}");
     }
 
     #[gpui_kit::test]

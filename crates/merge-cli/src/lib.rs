@@ -239,6 +239,44 @@ fn prepare_window(
             Prepared::new(Window::DiffNative { path, rev, op, diff, title }, repo)
         }
         Window::OpenDialog => Prepared::new(Window::OpenDialog, run.discovery.find([])),
+        Window::DiffSince(since) => {
+            let cwd = need_cwd()?;
+            let (old, rev) = (since.since.as_str(), since.rev.as_deref());
+            let listing = match &since.path {
+                Some(path) => Listing::InterdiffFile(merge_session::native::interdiff_path(
+                    cwd,
+                    path,
+                    old,
+                    rev,
+                    run.discovery,
+                )?),
+                None => Listing::Interdiff(merge_session::native::interdiff(
+                    cwd,
+                    old,
+                    rev,
+                    run.discovery,
+                )?),
+            };
+            Prepared {
+                window: Window::DiffSince(since),
+                repo: run.discovery.of_resolve(cwd, None),
+                listing: Some(listing),
+            }
+        }
+        Window::Evolog(evolog) => {
+            let cwd = need_cwd()?;
+            let listed = merge_session::jj_native::evolog(
+                cwd,
+                evolog.rev.as_deref(),
+                evolog.limit,
+                run.discovery,
+            )?;
+            Prepared {
+                window: Window::Evolog(evolog),
+                repo: run.discovery.of_resolve(cwd, None),
+                listing: Some(Listing::Evolog(listed)),
+            }
+        }
         Window::History(history) => {
             let cwd = need_cwd()?;
             let listed = file_history(cwd, &history.path, history.limit, run.discovery)?;

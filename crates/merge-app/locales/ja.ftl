@@ -118,6 +118,12 @@ no-file = { $name }（ファイルなし）
 history-title = { $path } の履歴
 history-empty = バージョンはありません。
 version-conflict = （競合）
+evolog-title = { $change } のバージョン
+interdiff-title = { $short } 以降の { $change }
+dirs-since = { $files }（{ $short } 以降）
+interdiff-rebased = { $short } 時点の { $change }（リベース済み）
+interdiff-version = { $short } 時点の { $change }
+evolog-no-difference = 現在のバージョンとの差分はありません。
 version-absent = （なし）
 version-other = （その他）
 

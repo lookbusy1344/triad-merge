@@ -289,7 +289,8 @@ The top panes are rows, not editors: `pane_scroll`, `row_wrap` and `sideways` sc
 ### 10.3 Other windows
 
 - `diff_window`: the two-way diff, two editable panes over a `DiffDocument`, with region recomputation debounced off the UI thread; `unified_pane` for the unified layout.
-- `dir_window`, `stack_window`, `history_window`, `absorb_window`: tool windows that list things and open a merge or diff window per item. All share `tool_window` (frame) and `pick_list` (rows).
+- `dir_window`, `stack_window`, `history_window`, `absorb_window`: tool windows that list things and open a merge or diff window per item. `dir_window` lists two directories, the working copy's changes, or a jj change's edits since an earlier version (`diff --since`). All share `tool_window` (frame) and `pick_list` (rows).
+- `evolog_window`: a jj change's versions; each opens `dir_window` on the change's edits since that version.
 - `open_dialog`, `about`, `prompt_view` (Linux alerts), `menu_bar` (Linux and Windows in-window menus).
 
 ### 10.4 Shared parts

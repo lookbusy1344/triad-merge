@@ -44,6 +44,33 @@ pub enum Window {
     History(History),
     /// `absorb [PATH...]`: the working copy's hunks, each sent to a commit or kept.
     Absorb(Absorb),
+    /// `diff [PATH] --since OLD [-r REV]`: a jj change against an earlier version of
+    /// itself, rebased onto the change's parents; without a path, its files in a list.
+    DiffSince(DiffSince),
+    /// `evolog [-r REV]`: a jj change's versions, each opening `DiffSince` in a list.
+    Evolog(Evolog),
+}
+
+/// `diff [PATH] --since OLD [-r REV]` in a window (spec §7.5.4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiffSince {
+    /// One file, relative to the working directory; none for the list of files.
+    pub path: Option<PathBuf>,
+    /// The earlier version.
+    pub since: String,
+    /// The commit holding the change; none for `@`.
+    pub rev: Option<String>,
+    pub diff: DiffOptions,
+    pub title: Option<String>,
+}
+
+/// `evolog [-r REV]` in a window (spec §7.5.4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Evolog {
+    /// The commit whose change to list; none for `@`.
+    pub rev: Option<String>,
+    /// List at most this many versions, the newest.
+    pub limit: Option<usize>,
 }
 
 /// `absorb [PATH...] [--into REVSET]` in a window (spec §7.5.3).

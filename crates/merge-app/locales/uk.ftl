@@ -173,6 +173,12 @@ no-file = { $name } (немає файлу)
 history-title = Історія { $path }
 history-empty = Немає версій.
 version-conflict = (конфлікт)
+evolog-title = Версії { $change }
+interdiff-title = { $change } з { $short }
+dirs-since = { $files } з { $short }
+interdiff-rebased = { $change } на { $short }, перебазовано
+interdiff-version = { $change } на { $short }
+evolog-no-difference = Немає відмінностей від поточної версії.
 version-absent = (відсутній)
 version-other = (інше)
 

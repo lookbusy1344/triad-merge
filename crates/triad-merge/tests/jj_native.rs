@@ -77,6 +77,15 @@ fn a_jj_native_command_in_a_git_repository_says_it_needs_jj() {
             "triad-merge: diff --since needs a jj repository\n".to_owned()
         )
     );
+    // The window forms list before a window opens, so they refuse the same way.
+    for (args, command) in [
+        (&["evolog"][..], "evolog"),
+        (&["diff", "--since", "HEAD"], "diff --since"),
+        (&["diff", "a.txt", "--since", "HEAD"], "diff --since"),
+    ] {
+        let message = format!("triad-merge: {command} needs a jj repository\n");
+        assert_eq!(outcome(&triad(fixture.root(), args)), (Some(ERROR), String::new(), message));
+    }
 }
 
 mod jj {
@@ -482,10 +491,16 @@ mod jj {
     #[test]
     fn diff_since_a_revision_naming_no_commit_fails() {
         let (fixture, _, _) = rebased_child();
-        let args = ["diff", "--since", "none()", "--inspect"];
-        assert_eq!(
-            outcome(&triad(fixture.root(), &args)),
-            (Some(ERROR), String::new(), "triad-merge: unknown revision none()\n".to_owned())
-        );
+        let message = "triad-merge: unknown revision none()\n".to_owned();
+        // The window forms load before a window opens, so they fail the same way.
+        for args in [
+            &["diff", "--since", "none()", "--inspect"][..],
+            &["diff", "--since", "none()"],
+            &["diff", "a.txt", "--since", "none()"],
+            &["evolog", "-r", "none()"],
+        ] {
+            let failed = outcome(&triad(fixture.root(), args));
+            assert_eq!(failed, (Some(ERROR), String::new(), message.clone()), "{args:?}");
+        }
     }
 }

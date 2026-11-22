@@ -190,11 +190,16 @@ f09f484b2665 2026-11-13T15:35:02+00:00 add workspace 'default' (absent)
 jj keeps each version of a change in its evolog: every snapshot, describe, rebase and squash. `diff --since` shows what changed in a change since an earlier version, with a rebase taken out: triad rebases the earlier version onto the change's parents first, as `jj interdiff` does.
 
 ```sh
-triad-merge evolog --list                    # the versions of @'s change, newest first
-triad-merge evolog -r xyz --list --limit 5   # the newest 5 of change xyz
-triad-merge diff --since 0123abcd --inspect  # the files @'s change edited since that version
+triad-merge evolog                           # a window of the versions of @'s change
+triad-merge evolog -r xyz --list --limit 5   # print the newest 5 of change xyz
+triad-merge diff --since 0123abcd            # a window of the files @'s change edited since
+triad-merge diff src/lib.rs --since 0123abcd # one file, in the diff window
 triad-merge diff --since 0123abcd -r xyz --inspect --json
 ```
+
+`evolog` opens a window that lists each version: its commit, the time and description of the operation that wrote it, and `(conflict)` when the version holds one. Click a version, or select it with ↑ and ↓ and press Enter, to open the directory window on what the change edited since that version, as `diff --since COMMIT` does. A version that differs in nothing opens no window and says `No difference from the current version.` One directory window is open at a time; another version brings it forward. Closing the evolog window, or Escape or ⌘W, ends the run with 0.
+
+The directory window of `diff --since` is titled `CHANGE since SHORT`. A file opens in the diff window with the earlier version, rebased, on the left and the change on the right. Both sides are read-only: the comparison is of two commits, not of files on disk.
 
 `evolog --list` prints one line per version: the commit, the operation that wrote it, its time and description, and `(conflict)` when the version holds one.
 
@@ -203,7 +208,7 @@ triad-merge diff --since 0123abcd -r xyz --inspect --json
 0123abcd8e9f 3a9c55e1b0d7 2026-11-22T09:58:40+01:00 snapshot working copy
 ```
 
-`--since` takes any revision that names one commit; an earlier version's commit ID works though the commit is hidden. The listing exits 0 when nothing differs, as after a rebase alone, and 1 when files differ. A file the rebase leaves conflicted shows with jj's conflict markers. The windows for both commands are not built yet: give `evolog` `--list` or `--json`, and `diff --since` `--inspect`.
+`--since` takes any revision that names one commit; an earlier version's commit ID works though the commit is hidden. The `--inspect` listing exits 0 when nothing differs, as after a rebase alone, and 1 when files differ. A file the rebase leaves conflicted shows with jj's conflict markers.
 
 ### Resolve conflicts in any commit (jj-enabled)
 

@@ -118,6 +118,12 @@ no-file = { $name } (파일 없음)
 history-title = { $path } 기록
 history-empty = 버전이 없습니다.
 version-conflict = (충돌)
+evolog-title = { $change }의 버전
+interdiff-title = { $short } 이후의 { $change }
+dirs-since = { $files }, { $short } 이후
+interdiff-rebased = { $short } 시점의 { $change } (리베이스됨)
+interdiff-version = { $short } 시점의 { $change }
+evolog-no-difference = 현재 버전과 차이가 없습니다.
 version-absent = (없음)
 version-other = (기타)
 

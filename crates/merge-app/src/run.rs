@@ -11,8 +11,9 @@ use merge_core::diff::DiffOptions;
 use merge_core::document::{MergeDocument, MergeOptions};
 use merge_session::WindowForm;
 use merge_session::diff_tool::{self, ToolPair, ToolSide};
-use merge_session::invocation::{Absorb, History, Resolve, Stack, Window};
+use merge_session::invocation::{Absorb, DiffSince, Evolog, History, Resolve, Stack, Window};
 use merge_session::jj_native::Listing;
+use merge_session::native::InterdiffFile;
 use merge_session::repository::{Handoff, RunRepository};
 use merge_session::resolve::Snapshot;
 use merge_session::semantics::Caller;
@@ -23,6 +24,7 @@ use crate::absorb_window::{self, AbsorbStart};
 use crate::assets::AppAssets;
 use crate::diff_window::{self, DiffFile, DiffLookup, DiffSettings, Origin};
 use crate::dir_window::{self, DirStart, Source};
+use crate::evolog_window::{self, EvologStart};
 use crate::history_window::{self, HistoryStart};
 use crate::measure::{self, Measure};
 use crate::resolve_queue::{self, Queue};
@@ -104,38 +106,76 @@ pub fn run(form: WindowForm) -> ExitCode {
                 right: diff.right,
                 readonly: [diff.readonly_left, diff.readonly_right],
             };
-            let start = DirStart {
-                cwd: working_dir(dir),
-                source,
-                discovery: repo.discovery().clone(),
-                title: diff.title,
-                diff: diff.diff,
-                settings: base,
-                watch: WATCH_FILES,
-            };
+            let start = dir_start(source, diff.title, diff.diff, &repo, base);
             launch_dirs(start, bindings)
         }
         Window::DiffChanges { rev, diff, title } => {
-            let start = DirStart {
-                cwd: working_dir(dir),
-                source: Source::Changes { rev },
-                discovery: repo.discovery().clone(),
-                title,
-                diff,
-                settings: base,
-                watch: WATCH_FILES,
-            };
-            launch_dirs(start, bindings)
+            launch_dirs(dir_start(Source::Changes { rev }, title, diff, &repo, base), bindings)
         }
         Window::DiffNative { path, rev, op, diff, title } => {
             let window = NativeDiff { path, rev, op, diff, title };
             run_native_diff(window, repo, base, errors, bindings)
         }
         Window::History(history) => run_history(history, listing, &repo, base, bindings),
+        Window::Evolog(evolog) => {
+            let diff = stored.two_way();
+            run_evolog(evolog, listing, &repo, diff, base, bindings)
+        }
+        Window::DiffSince(since) => run_diff_since(since, listing, &repo, base, errors, bindings),
         Window::Stack(stack) => run_stack(stack, listing, &repo, base, bindings),
         Window::Absorb(absorb) => {
             run_absorb(absorb, listing, &repo, working_dir(dir), base, bindings)
         }
+    }
+}
+
+/// `diff [PATH] --since OLD [-r REV]` (spec §7.5.4): with a path, the diff window on the
+/// file's two versions; without, the directory window on `listing`'s files.
+fn run_diff_since(
+    since: DiffSince,
+    listing: Option<Listing>,
+    repo: &RunRepository,
+    base: WindowSettings,
+    errors: Vec<String>,
+    bindings: KeyBindings,
+) -> ExitCode {
+    let DiffSince { path, since, rev, diff, title } = since;
+    if path.is_some() {
+        let Some(InterdiffFile { interdiff, path, texts }) =
+            listing.and_then(Listing::interdiff_file)
+        else {
+            return report("diff --since has no file to open");
+        };
+        let ToolDiff { left, right, origins, kind, title: shown } =
+            dir_window::interdiff_diff(&interdiff, texts, path.into_string());
+        let settings = diff_settings(title.or(shown), diff, base, origins, kind);
+        return launch_diff(left, right, settings, errors, bindings);
+    }
+    let listed = listing.and_then(Listing::interdiff);
+    let title =
+        title.or_else(|| listed.as_ref().map(|l| dir_window::interdiff_title(&l.interdiff)));
+    let start =
+        DirStart { listed, ..dir_start(Source::Interdiff { since, rev }, title, diff, repo, base) };
+    launch_dirs(start, bindings)
+}
+
+/// The directory window on `source`, listing its files once it opens.
+fn dir_start(
+    source: Source,
+    title: Option<String>,
+    diff: DiffOptions,
+    repo: &RunRepository,
+    base: WindowSettings,
+) -> DirStart {
+    DirStart {
+        cwd: working_dir(base.cwd.as_deref()),
+        source,
+        discovery: repo.discovery().clone(),
+        title,
+        diff,
+        listed: None,
+        settings: base,
+        watch: WATCH_FILES,
     }
 }
 
@@ -167,6 +207,32 @@ fn run_history(
     };
     launch(bindings, move |cx| {
         history_window::start(start, |code, _| exit(code), cx).map(drop)?;
+        Ok(())
+    })
+}
+
+/// The evolog window on `evolog`'s change, whose directory windows compare with `diff`,
+/// showing `listing` first when it is the evolog's.
+fn run_evolog(
+    evolog: Evolog,
+    listing: Option<Listing>,
+    repo: &RunRepository,
+    diff: DiffOptions,
+    base: WindowSettings,
+    bindings: KeyBindings,
+) -> ExitCode {
+    let start = EvologStart {
+        cwd: working_dir(base.cwd.as_deref()),
+        rev: evolog.rev,
+        limit: evolog.limit,
+        listed: listing.and_then(Listing::evolog),
+        diff,
+        settings: base,
+        discovery: repo.discovery().clone(),
+        watch: WATCH_FILES,
+    };
+    launch(bindings, move |cx| {
+        evolog_window::start(start, |code, _| exit(code), cx).map(drop)?;
         Ok(())
     })
 }
@@ -224,7 +290,8 @@ fn run_stack(
 pub(crate) struct ToolDiff {
     pub left: DiffFile,
     pub right: DiffFile,
-    pub origins: DiffLookup,
+    /// None for sides no file on disk holds, such as two versions of a jj change.
+    pub origins: Option<DiffLookup>,
     pub kind: Option<RepoKind>,
     pub title: Option<String>,
 }
@@ -246,7 +313,7 @@ pub(crate) fn tool_diff(
     let kind = repo.kind();
     let origins =
         DiffLookup::Tool { paths: pair.paths, title: title.clone(), cwd, repo: Handoff::new(repo) };
-    Ok(ToolDiff { left, right, origins, kind, title })
+    Ok(ToolDiff { left, right, origins: Some(origins), kind, title })
 }
 
 /// The pane a tool diff's side opens.
@@ -295,7 +362,7 @@ fn run_native_diff(
         Ok(sides) => sides,
         Err(error) => return report(&error.to_string()),
     };
-    let settings = diff_settings(title, diff, base, origins, kind);
+    let settings = diff_settings(title, diff, base, Some(origins), kind);
     launch_diff(left, right, settings, errors, bindings)
 }
 
@@ -385,17 +452,17 @@ pub(crate) fn diff_settings(
     title: Option<String>,
     options: DiffOptions,
     base: WindowSettings,
-    origins: DiffLookup,
+    origins: Option<DiffLookup>,
     repo: Option<RepoKind>,
 ) -> DiffSettings {
     DiffSettings {
-        working_copy: origins.working_copy(),
+        working_copy: origins.as_ref().and_then(DiffLookup::working_copy),
         title,
         options,
         watch: true,
         typography: base.typography,
         window_size: base.window_size,
-        origins: Some(origins),
+        origins,
         origin_column: base.origin_column,
         revision_id: base.revision_id,
         theme: base.theme,
@@ -589,7 +656,7 @@ mod tests {
             rev: None,
             repo: Handoff::new(RunRepository::none()),
         };
-        let diff = diff_settings(None, DiffOptions::default(), base, lookup, None);
+        let diff = diff_settings(None, DiffOptions::default(), base, Some(lookup), None);
         assert_eq!(diff.colours, colours);
         assert_eq!(diff.theme, merge_config::settings::Theme::Dark);
         assert_eq!(diff.syntax, crate::window::Syntax::Plain);
