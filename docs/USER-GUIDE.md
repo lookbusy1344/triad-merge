@@ -210,6 +210,18 @@ The directory window of `diff --since` is titled `CHANGE since SHORT`. A file op
 
 `--since` takes any revision that names one commit; an earlier version's commit ID works though the commit is hidden. The `--inspect` listing exits 0 when nothing differs, as after a rebase alone, and 1 when files differ. A file the rebase leaves conflicted shows with jj's conflict markers.
 
+### Reuse an earlier resolution (jj-enabled)
+
+When a change returns to a conflict it held before, as `jj restore --from` an earlier version does, the resolution you gave then is in the change's evolog. `--reuse` takes it.
+
+```sh
+triad-merge resolve src/lib.rs --reuse --headless             # take each earlier resolution, then save
+triad-merge resolve src/lib.rs --reuse --headless --dry-run   # say how many it would take; write nothing
+triad-merge resolve src/lib.rs -r xyz --reuse --headless      # in commit xyz
+```
+
+It prints `reused 2 earlier resolutions`, then saves as `resolve --headless` does. A conflict with no earlier resolution stays. `--commands` runs after the reuse. A conflict a rebase made after you resolved it holds your resolution as one side, so it matches nothing: pick that side.
+
 ### Resolve conflicts in any commit (jj-enabled)
 
 jj records conflicts in commits, so a rebase never stops halfway. triad resolves them where they sit, without `jj edit`.

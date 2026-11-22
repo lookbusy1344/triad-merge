@@ -202,6 +202,8 @@ pub struct Resolve {
     pub rev: Option<String>,
     /// `--dry-run`: report what writing into the commit would do, and write nothing.
     pub dry_run: bool,
+    /// `--reuse`: take each conflict's newest earlier resolution first (spec §7.5.5).
+    pub reuse: bool,
 }
 
 impl Resolve {

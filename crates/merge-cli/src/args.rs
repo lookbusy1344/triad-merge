@@ -341,6 +341,7 @@ enum Command {
 }
 
 #[derive(Debug, clap::Args)]
+#[command(group(ArgGroup::new("dry_run_target").multiple(true).args(["revision", "reuse"])))]
 struct ResolveCli {
     #[arg(value_name = "PATH")]
     path: Option<PathBuf>,
@@ -354,9 +355,14 @@ struct ResolveCli {
     /// Resolve PATH in the commit REV names, without checking it out (jj only).
     #[arg(short = 'r', long = "revision", value_name = "REV", requires = "path")]
     revision: Option<String>,
-    /// With --headless and --revision: report what the save would do; write nothing.
-    #[arg(long, requires_all = ["headless", "revision"])]
+    /// With --headless, and --revision or --reuse: report what the save would do; write
+    /// nothing.
+    #[arg(long, requires = "headless", requires = "dry_run_target")]
     dry_run: bool,
+    /// With --headless and a PATH: take each conflict's newest earlier resolution from the
+    /// change's evolog, before any --commands (jj only).
+    #[arg(long, requires_all = ["headless", "path"])]
+    reuse: bool,
     #[command(flatten)]
     diff: DiffArgs,
     #[command(flatten)]
@@ -385,6 +391,7 @@ impl ResolveCli {
             semantics: self.semantics.flags(),
             rev: self.revision,
             dry_run: self.dry_run,
+            reuse: self.reuse,
         };
         Ok(if self.headless {
             Invocation::Batch(Batch::Resolve(resolve))
@@ -1228,6 +1235,7 @@ mod tests {
                 semantics: SemanticsFlags::default(),
                 rev: None,
                 dry_run: false,
+                reuse: false,
             }))
         );
         let args = [
@@ -1266,6 +1274,7 @@ mod tests {
                 },
                 rev: None,
                 dry_run: false,
+                reuse: false,
             }))
         );
     }
@@ -1421,6 +1430,25 @@ mod tests {
         };
         assert_eq!(stack.revset.as_deref(), Some("::@"));
         assert_eq!(clap_kind(&["stack", "a", "b"]), ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn resolve_reuse_needs_headless_and_a_path_and_allows_a_dry_run() {
+        let Invocation::Batch(Batch::Resolve(resolve)) =
+            ok(&["resolve", "a.txt", "--reuse", "--headless", "--dry-run"])
+        else {
+            panic!("a headless resolve");
+        };
+        assert_eq!((resolve.reuse, resolve.dry_run, resolve.rev), (true, true, None));
+        assert_eq!(clap_kind(&["resolve", "a.txt", "--reuse"]), ErrorKind::MissingRequiredArgument);
+        assert_eq!(
+            clap_kind(&["resolve", "--reuse", "--headless"]),
+            ErrorKind::MissingRequiredArgument
+        );
+        assert_eq!(
+            clap_kind(&["resolve", "a.txt", "--headless", "--dry-run"]),
+            ErrorKind::MissingRequiredArgument
+        );
     }
 
     #[test]

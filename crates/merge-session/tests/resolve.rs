@@ -74,6 +74,14 @@ fn conflicted(cwd: &Path) -> Result<Conflicted, ResolveError> {
 }
 
 #[test]
+fn a_git_conflict_has_no_earlier_resolutions_to_look_for() {
+    let (fixture, _) = git_stopped(&[], &[("a.txt", files(BOTH_CHANGED))]);
+    let loaded =
+        load(fixture.root().as_std_path(), Path::new("a.txt")).expect("the conflict loads");
+    assert!(loaded.destination.earlier_source(loaded.repo).is_none());
+}
+
+#[test]
 fn a_git_conflict_loads_its_stages_titled_by_the_stopped_merge() {
     let (fixture, [one, right]) =
         git_stopped(&[("clean.txt", b"c\n")], &[("a.txt", files(BOTH_CHANGED))]);
@@ -1086,6 +1094,48 @@ mod jj {
             found,
             [(vec!["3\n", "2\n"], vec!["1\n"], "4\n".to_owned(), resolved.commit.clone())]
         );
+    }
+
+    /// `child`, the working-copy commit, on `parent`; `parent` rewritten so `child`
+    /// conflicts, `child` resolved as `4\n`, then `parent` rewritten again so `child`
+    /// conflicts once more. The resolving version.
+    fn conflict_back_in_the_working_copy(fixture: &vcs_jj::testing::Fixture) -> String {
+        let parent = fixture.commit_on(&[], "parent", &[("a.txt", b"1\n")]);
+        let child = fixture.commit_on(&[&parent], "child", &[("a.txt", b"2\n")]);
+        fixture.edit(&child);
+        let parent = fixture.amend(&parent, &[("a.txt", b"3\n")]);
+        let resolved = fixture.amend(&fixture.latest(&child), &[("a.txt", b"4\n")]);
+        fixture.amend(&parent, &[("a.txt", b"5\n")]);
+        fixture.check_out_to_disk();
+        resolved.commit
+    }
+
+    #[test]
+    fn a_working_copy_conflict_finds_its_earlier_resolutions_in_the_working_copy_s_evolog() {
+        let fixture = vcs_jj::testing::Fixture::new();
+        let resolved = conflict_back_in_the_working_copy(&fixture);
+        let loaded = load(fixture.root().as_std_path(), Path::new("a.txt")).expect("it loads");
+        let source = loaded.destination.earlier_source(loaded.repo).expect("a jj conflict");
+        let found: Vec<_> = source
+            .find()
+            .expect("the earlier resolutions")
+            .iter()
+            .map(|e| (e.resolved.content().to_owned(), e.version.commit.as_str().to_owned()))
+            .collect();
+        assert_eq!(found, [("4\n".to_owned(), resolved)]);
+    }
+
+    #[test]
+    fn a_conflict_read_from_a_commit_finds_its_earlier_resolutions_in_that_commit_s_evolog() {
+        let fixture = vcs_jj::testing::Fixture::new();
+        let resolved = conflict_back_in_the_working_copy(&fixture);
+        // A new working-copy commit, so `@` holds another change.
+        fixture.check_out(&[&fixture.working_copy_commit()]);
+        let loaded = at_commit(&fixture, "@-");
+        let source = loaded.destination.earlier_source(loaded.repo).expect("a jj conflict");
+        let found = source.find().expect("the earlier resolutions");
+        let commits: Vec<_> = found.iter().map(|e| e.version.commit.as_str().to_owned()).collect();
+        assert_eq!(commits, [resolved]);
     }
 
     #[test]

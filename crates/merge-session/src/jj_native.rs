@@ -267,6 +267,36 @@ pub struct EarlierResolution {
     pub version: ChangeVersion,
 }
 
+/// A jj conflict whose earlier resolutions a merge looks for (spec §7.5.5): the commit it
+/// was read from, or none for the working-copy commit, and its path.
+#[derive(Debug, Clone)]
+pub struct EarlierSource {
+    pub(crate) root: Utf8PathBuf,
+    pub(crate) path: Utf8PathBuf,
+    pub(crate) commit: Option<vcs::CommitId>,
+    pub(crate) discovery: Discovery,
+}
+
+impl EarlierSource {
+    /// The conflict's earlier resolutions, newest first, as [`earlier_resolutions`] finds
+    /// them. Reads only: no snapshot.
+    ///
+    /// # Errors
+    ///
+    /// As [`earlier_resolutions`], and [`vcs::VcsError::NoWorkingCopy`] when the workspace
+    /// has no working copy.
+    pub fn find(&self) -> Result<Vec<EarlierResolution>, ResolveError> {
+        let repo = open(self.root.as_std_path(), &self.discovery, "resolve")?;
+        let id = match &self.commit {
+            Some(id) => id.clone(),
+            None => repo
+                .working_copy_id()?
+                .ok_or_else(|| VcsError::NoWorkingCopy(repo.root().to_owned()))?,
+        };
+        Ok(decoded(&self.path, repo.earlier_resolutions(&id, &self.path)?))
+    }
+}
+
 /// The earlier resolutions of the conflict at `path`, relative to the root, in the evolog of
 /// the commit `id` in the jj repository at `root`, newest first. A version whose conflict or
 /// file does not decode as text is logged and left out: it only loses an offer.
@@ -281,8 +311,12 @@ pub fn earlier_resolutions(
     discovery: &Discovery,
 ) -> Result<Vec<EarlierResolution>, ResolveError> {
     let repo = open(root.as_std_path(), discovery, "resolve")?;
-    let pairs = repo.earlier_resolutions(id, path)?;
-    Ok(pairs
+    Ok(decoded(path, repo.earlier_resolutions(id, path)?))
+}
+
+/// `pairs` decoded as text; a pair that does not decode is logged and left out.
+fn decoded(path: &Utf8Path, pairs: Vec<vcs_jj::ResolvedPair>) -> Vec<EarlierResolution> {
+    pairs
         .into_iter()
         .filter_map(|pair| {
             let decoded = crate::resolve::parent_inputs(path, pair.conflict).and_then(|conflict| {
@@ -304,7 +338,7 @@ pub fn earlier_resolutions(
                 }
             }
         })
-        .collect())
+        .collect()
 }
 
 /// The revision `evolog` and `diff --since` read without `-r`.

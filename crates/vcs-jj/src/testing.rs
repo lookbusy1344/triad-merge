@@ -327,6 +327,29 @@ impl Fixture {
         Committed::of(&amended)
     }
 
+    /// Rewrite `commit` to hold `from`'s whole tree, conflicts included, as
+    /// `jj restore --from FROM --into COMMIT` does.
+    #[expect(
+        clippy::must_use_candidate,
+        reason = "called for its effect on the repository; tests often ignore the result"
+    )]
+    pub fn restore(&self, commit: &Committed, from: &Committed) -> Committed {
+        let repo = self.repo();
+        let original = repo.store().get_commit(&commit.id).expect("the commit");
+        let tree = repo.store().get_commit(&from.id).expect("the source commit").tree();
+        let mut tx = repo.start_transaction();
+        let restored = tx
+            .repo_mut()
+            .rewrite_commit(&original)
+            .set_tree(tree)
+            .write()
+            .block_on()
+            .expect("the restored commit");
+        tx.repo_mut().rebase_descendants().block_on().expect("the descendants rebase");
+        self.finish(tx, "restore");
+        Committed::of(&restored)
+    }
+
     /// The full IDs of `commit`'s parents.
     #[must_use]
     pub fn parents_of(&self, commit: &Committed) -> Vec<String> {

@@ -252,11 +252,11 @@ The command line and every form that runs without a window. A library with no GU
 
 - **`args`** parses spec §6.1's command line with clap's derive API into an `Invocation`:
   - `Window(merge_session::invocation::Window)`;
-  - `Batch`: `Headless`, `Resolve` (headless), `Inspect`, `DiffInspect`, `ChangesInspect`, `Install`, or `Jj(JjBatch)` with `Stack`, `History` and `Absorb`;
+  - `Batch`: `Headless`, `Resolve` (headless), `Inspect`, `DiffInspect`, `ChangesInspect`, `Install`, or `Jj(JjBatch)` with `Stack`, `History`, `Evolog`, `Interdiff` and `Absorb`;
   - `ShowConfig`.
 
   `parse_with` takes the loaded `Settings`, so a flag's default is the config file's value. Flag names and values come from `merge-config::named`.
-- **`lib`**: `run(args, settings_path, stdout, stderr) -> Outcome` is the entry point. It loads the settings, parses, and either runs a batch form to an `ExitCode` or settles a window form (repository, semantics, `resolve` target) and returns `Outcome::Window(WindowForm)`. stdout and stderr are parameters, so the tests capture them. `headless` writes the automatic merge, with replayed commands, without a window.
+- **`lib`**: `run(args, settings_path, stdout, stderr) -> Outcome` is the entry point. It loads the settings, parses, and either runs a batch form to an `ExitCode` or settles a window form (repository, semantics, `resolve` target) and returns `Outcome::Window(WindowForm)`. stdout and stderr are parameters, so the tests capture them. `headless` writes the automatic merge, with replayed commands, without a window. `resolve --reuse` matches earlier resolutions with `merge-view::earlier`, the one use `merge-cli` makes of `merge-view`.
 - **`inspect`** prints a merge's regions, or a two-way diff, as text or as the JSON of `docs/json-schema.md`, or a unified patch.
 - **`jj_native`** formats the reports of the jj-native batch forms as text or JSON.
 - **`install`** names this program and reports what `merge_session::install` wrote.

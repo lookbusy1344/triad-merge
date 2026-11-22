@@ -7,7 +7,8 @@ use std::collections::HashMap;
 use std::ops::Range;
 
 use merge_core::diff::{DiffOptions, Hunk, diff_lines};
-use merge_core::document::{Labels, MergeDocument, MergeOptions};
+use merge_core::document::{Command, Labels, MergeDocument, MergeOptions, Resolution};
+use merge_core::edit::{EditBatch, TextPatch};
 use merge_core::index::RegionIx;
 use merge_core::merge3::{Inputs, Kind};
 use merge_core::text::Text;
@@ -82,6 +83,34 @@ impl Earlier {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
+
+    /// The unresolved regions of `doc` with earlier resolutions, in order: those a pill marks
+    /// and Reuse Earlier Resolutions takes.
+    pub fn pending<'a>(&'a self, doc: &'a MergeDocument) -> impl Iterator<Item = RegionIx> + 'a {
+        self.regions().filter(|&ix| *doc.resolution(ix) == Resolution::Unresolved)
+    }
+
+    /// The edit that puts `offer`'s text in place of `region`'s lines in `doc`'s result.
+    #[must_use]
+    pub fn take(doc: &MergeDocument, region: RegionIx, offer: &Offer) -> Command {
+        let patch = TextPatch { range: doc.region_bytes(region), text: offer.text.clone() };
+        Command::Edit(EditBatch(vec![patch]))
+    }
+
+    /// The edit that takes the newest earlier resolution of every pending region, as one undo
+    /// step, and the number of regions it takes; none when no region is pending.
+    #[must_use]
+    pub fn take_all(&self, doc: &MergeDocument) -> Option<(Command, usize)> {
+        let patches: Vec<TextPatch> = self
+            .pending(doc)
+            .filter_map(|ix| {
+                let newest = self.offers(ix).first()?;
+                Some(TextPatch { range: doc.region_bytes(ix), text: newest.text.clone() })
+            })
+            .collect();
+        let taken = patches.len();
+        (taken > 0).then_some((Command::Edit(EditBatch(patches)), taken))
+    }
 }
 
 /// Each conflict region of `conflict`, merged with `options`, keyed by its text, and the
@@ -138,6 +167,8 @@ fn image(hunks: &[Hunk], line: usize) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
+    use merge_core::document::Resolution;
+    use merge_core::merge3::Source;
     use merge_core::testing::{text, three};
 
     use super::*;
@@ -239,6 +270,61 @@ mod tests {
             offered(&doc(middle()), &pairs),
             [(1, vec![("new\n".to_owned(), 0), ("old\n".to_owned(), 1)])]
         );
+    }
+
+    fn two() -> Inputs {
+        three("a\nb\nc\nd\ne\n", "a\nX\nc\nd\nP\n", "a\nY\nc\nd\nQ\n")
+    }
+
+    fn found(doc: &MergeDocument, pairs: &[(Inputs, Text)]) -> Earlier {
+        Earlier::find(doc, pairs.iter().map(|(conflict, resolved)| (conflict, resolved)))
+    }
+
+    #[test]
+    fn taking_all_resolves_each_region_with_an_offer_as_one_undo_step() {
+        let mut doc = doc(two());
+        let shown = doc.text();
+        let earlier = found(&doc, &[pair(two(), "a\nXY\nc\nd\nPQ\n")]);
+        let (command, taken) = earlier.take_all(&doc).expect("two regions to take");
+        assert_eq!(taken, 2);
+        doc.apply(command).expect("the take applies");
+        assert_eq!(doc.text(), "a\nXY\nc\nd\nPQ\n");
+        assert_eq!(doc.unresolved(), 0);
+        doc.apply(Command::Undo).expect("the undo applies");
+        assert_eq!(doc.text(), shown);
+        assert_eq!(doc.unresolved(), 2);
+    }
+
+    #[test]
+    fn taking_all_takes_the_newest_offer_and_skips_a_resolved_region() {
+        let mut doc = doc(two());
+        let earlier =
+            found(&doc, &[pair(two(), "a\nnew\nc\nd\nPQ\n"), pair(two(), "a\nold\nc\nd\nPQ\n")]);
+        doc.apply(Command::Pick { region: RegionIx::new(3), sources: vec![Source::Side(0)] })
+            .expect("the pick applies");
+        assert_eq!(earlier.pending(&doc).collect::<Vec<_>>(), [RegionIx::new(1)]);
+        let (command, taken) = earlier.take_all(&doc).expect("one region to take");
+        assert_eq!(taken, 1);
+        doc.apply(command).expect("the take applies");
+        assert_eq!(doc.text(), "a\nnew\nc\nd\nP\n");
+        assert_eq!(earlier.pending(&doc).count(), 0);
+    }
+
+    #[test]
+    fn taking_all_with_nothing_to_take_is_none() {
+        let doc = doc(two());
+        assert_eq!(Earlier::NONE.take_all(&doc), None);
+    }
+
+    #[test]
+    fn taking_one_offer_edits_that_region_alone() {
+        let mut doc = doc(two());
+        let earlier = found(&doc, &[pair(two(), "a\nold\nc\nd\nPQ\n")]);
+        let offer = &earlier.offers(RegionIx::new(1))[0];
+        doc.apply(Earlier::take(&doc, RegionIx::new(1), offer)).expect("the take applies");
+        assert_eq!(doc.resolution(RegionIx::new(1)), &Resolution::Edited);
+        assert_eq!(doc.resolution(RegionIx::new(3)), &Resolution::Unresolved);
+        assert!(doc.text().starts_with("a\nold\nc\nd\n"), "{}", doc.text());
     }
 
     #[test]

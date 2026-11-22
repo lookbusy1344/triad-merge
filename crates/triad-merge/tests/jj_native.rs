@@ -82,6 +82,8 @@ fn a_jj_native_command_in_a_git_repository_says_it_needs_jj() {
         (&["evolog"][..], "evolog"),
         (&["diff", "--since", "HEAD"], "diff --since"),
         (&["diff", "a.txt", "--since", "HEAD"], "diff --since"),
+        (&["resolve", "a.txt", "--reuse", "--headless"], "resolve --reuse"),
+        (&["resolve", "a.txt", "-r", "HEAD", "--reuse", "--headless"], "resolve --reuse"),
     ] {
         let message = format!("triad-merge: {command} needs a jj repository\n");
         assert_eq!(outcome(&triad(fixture.root(), args)), (Some(ERROR), String::new(), message));
@@ -486,6 +488,92 @@ mod jj {
         let value: serde_json::Value = serde_json::from_str(&json).expect("JSON");
         assert_eq!(value["command"], "diff-changes");
         assert_eq!(value["changes"], 2);
+    }
+
+    /// `child`, the working-copy commit on disk, on `parent`; `parent` rewritten so `child`
+    /// conflicts in `a.txt`, sides `3\n` and `2\n`; `child` resolved as `4\n`; then the
+    /// conflict brought back, as `jj restore --from` the conflicted version does. The child.
+    fn conflict_back(fixture: &Fixture) -> Committed {
+        let parent = fixture.commit_on(&[], "parent", &[("a.txt", b"1\n")]);
+        let child = fixture.commit_on(&[&parent], "child", &[("a.txt", b"2\n")]);
+        fixture.edit(&child);
+        fixture.amend(&parent, &[("a.txt", b"3\n")]);
+        let conflicted = fixture.latest(&child);
+        let resolved = fixture.amend(&conflicted, &[("a.txt", b"4\n")]);
+        fixture.restore(&resolved, &conflicted);
+        fixture.check_out_to_disk();
+        fixture.latest(&child)
+    }
+
+    #[test]
+    fn resolve_reuse_takes_the_earlier_resolution_and_records_the_save() {
+        let fixture = Fixture::new();
+        conflict_back(&fixture);
+        let args = ["resolve", "a.txt", "--reuse", "--headless"];
+        assert_eq!(
+            outcome(&triad(fixture.root(), &args)),
+            (Some(RESOLVED), "reused 1 earlier resolution\n".to_owned(), String::new())
+        );
+        let on_disk = std::fs::read(fixture.root().join("a.txt")).expect("a.txt reads");
+        assert_eq!(on_disk, b"4\n");
+        assert_eq!(fixture.held_at(0, "a.txt"), Held::File(b"4\n".to_vec()));
+    }
+
+    #[test]
+    fn resolve_reuse_dry_run_reports_and_writes_nothing() {
+        let fixture = Fixture::new();
+        conflict_back(&fixture);
+        let before = std::fs::read(fixture.root().join("a.txt")).expect("a.txt reads");
+        let operations = fixture.operation_count();
+        let args = ["resolve", "a.txt", "--reuse", "--headless", "--dry-run"];
+        assert_eq!(
+            outcome(&triad(fixture.root(), &args)),
+            (Some(RESOLVED), "would reuse 1 earlier resolution\n".to_owned(), String::new())
+        );
+        assert_eq!(std::fs::read(fixture.root().join("a.txt")).expect("a.txt reads"), before);
+        assert_eq!(fixture.operation_count(), operations, "nothing written");
+    }
+
+    #[test]
+    fn resolve_reuse_runs_before_the_commands() {
+        let fixture = Fixture::new();
+        conflict_back(&fixture);
+        let commands = fixture.root().join("commands.jsonl");
+        // The undo takes back the reuse, so the conflict stays.
+        std::fs::write(&commands, "\"Undo\"\n").expect("the commands are written");
+        let args = ["resolve", "a.txt", "--reuse", "--headless", "--commands", commands.as_str()];
+        let (code, out, err) = outcome(&triad(fixture.root(), &args));
+        assert_eq!(
+            (code, out.as_str(), err.as_str()),
+            (Some(CONFLICTS), "reused 1 earlier resolution\n", "")
+        );
+        assert_eq!(fixture.held_at(0, "a.txt"), Held::Conflict);
+    }
+
+    #[test]
+    fn resolve_reuse_with_no_earlier_resolution_reuses_none_and_leaves_the_conflict() {
+        let (fixture, merge, _) = stacked();
+        let args = ["resolve", "a.txt", "-r", &merge.change_id, "--reuse", "--headless"];
+        let (code, out, err) = outcome(&triad(fixture.root(), &args));
+        assert_eq!((code, err.as_str()), (Some(CONFLICTS), ""), "{out}");
+        assert_eq!(out.lines().next(), Some("reused 0 earlier resolutions"));
+    }
+
+    #[test]
+    fn resolve_reuse_in_a_commit_writes_the_resolution_into_it() {
+        let fixture = Fixture::new();
+        let child = conflict_back(&fixture);
+        fixture.check_out(&[&child]);
+        let args = ["resolve", "a.txt", "-r", "@-", "--reuse", "--headless"];
+        let (code, out, err) = outcome(&triad(fixture.root(), &args));
+        assert_eq!((code, err.as_str()), (Some(RESOLVED), ""), "{out}");
+        let change = &child.change_id[..SHORT];
+        let heading: Vec<_> = out.lines().take(2).collect();
+        assert_eq!(
+            heading,
+            ["reused 1 earlier resolution", &format!("resolved a.txt in {change}")]
+        );
+        assert_eq!(fixture.held_in(&fixture.latest(&child), "a.txt"), Held::File(b"4\n".to_vec()));
     }
 
     #[test]

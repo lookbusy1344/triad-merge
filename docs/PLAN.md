@@ -25,7 +25,7 @@ As of 2026-11-21.
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
 | Layering: the session layer under both front ends, whole | Done | `docs/ARCHITECTURE.md` |
 | jj-native features | Done: conflicts across a stack (`stack`, `resolve -r`), operation-log history (`history`, `diff --op`) and absorb by hunk (`absorb`); the stack window, with a preview of a save's effect on the descendants, a confirmation before a save changes them, a banner in the merge window naming the listed commit an inherited conflict arises in, untouched inherited paths muted, and inherited conflict regions in the merge window grey (`color-inherited`); the history window; the absorb window, by hunk; these windows and the directory window share one frame after Zed's panels (`docs/STYLE.md`): a header with a count and the buttons, status icons with tooltips that name each state and file-name-first paths, keys for the lists, and Escape and Cancel to close; the conflict badge names the sides a conflict keeps; absorb, `resolve -r` and the default revset aliases checked against jj's CLI (§I5); `stack`, `resolve -r`, `history`, `absorb` and a three-sided save checked through the built binary in scenario repositories (`script/test-jj-repos`) | I |
-| Evolog: versions of a change, interdiff, earlier resolutions | Spec set (§7.5.4, §7.5.5); the evolog walk (§K1), `evolog` and `diff --since` on the command line (§K2) and in the evolog, directory and diff windows (§K3), and the resolution index (§K4) done (§I6, §I7); reuse in the merge window and `resolve --reuse` (§K5) open | K |
+| Evolog: versions of a change, interdiff, earlier resolutions | Spec set (§7.5.4, §7.5.5); the evolog walk (§K1), `evolog` and `diff --since` on the command line (§K2) and in the evolog, directory and diff windows (§K3), the resolution index (§K4) and `resolve --reuse --headless` (§K5) done (§I6, §I7); reuse in the merge window (§K5) open | K |
 
 The conformance suite runs on git, jj and internal jj repositories, and six of its checks on jj's experimental simple store (§A7.1). Every spec §9 target is met (§A6.7). Toolchain: stable Rust 1.100, with `rust-version` 1.100. Dependencies: jj-lib and jj-core 0.47.1 on gix 0.90; gpui-kit 0.8.1 with the vendored `gpui-base` patch; gpui-kit 0.9 is not adopted (`docs/gpui-kit-issues.md`).
 
@@ -37,7 +37,7 @@ Build profiles (root `Cargo.toml`): `release` aborts on panic and strips symbols
 
 In order. Each is one or more commits.
 
-1. **Evolog features** (part K): reuse of earlier resolutions (§K5).
+1. **Evolog features** (part K): reuse of earlier resolutions in the merge window (§K5).
 2. **Close M3.** Skipped for now by the owner. The spoken VoiceOver steps of `docs/release-checklist.md`, with the owner at the machine: every control reachable and named, a pick toggled from VoiceOver, the result's text read. Rerun checklist step 6 on jj.
 3. **Screen-reader support** (part J). Skipped for now by the owner: live status, conflict regions, scrolling the row table, in the order of §J7.
 4. **Review and diff features** (part G): §G7 and §G12–§G14.
@@ -84,7 +84,7 @@ In order. Each is one or more commits.
 | A `fallback-encoding` setting to turn the Windows-1252 fallback off | Someone who needs it off | §G17 |
 | Review and diff features: blank lines in a merge (§G4), §G7, §G12–§G14 | Owner's choice on §G15's open point for §G4 | G |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
-| RUSTSEC-2026-0592 in `url` 2.5.8, through GPUI: `cargo update -p url` to 2.5.9, then `cargo audit` and `cargo deny check`. `script/checks` and so `script/pre-push` fail until then | 2.5.9 reaching the 3-day publish age | `.cargo/config.toml` |
+| RUSTSEC-2026-0592 in `url` 2.5.8, through GPUI: `cargo update -p url` to 2.5.9, then `cargo audit` and `cargo deny check`. `script/checks` and so `script/pre-push` fail until then | 2.5.9 reaching the 3-day publish age: try again after 24 Nov 2026, not before | `.cargo/config.toml` |
 | An oracle for `diff --since` from `jj interdiff --git`, through `script/gen-jj-cli-oracle` | — | §K2 |
 | The absorb oracle's generator builds text files only: no renames, executable bits, symlinks, conflicted inputs or immutable commits | — | §I5 |
 | jj-cli's config defaults other than the revset aliases: none checked for whether triad depends on one | — | §I5 |
@@ -319,7 +319,7 @@ The evolog window from `tool_window` and `pick_list`, after the history window. 
 
 ### K5 Reuse in the merge window and headless
 
-The `resolved before` pill, the right-click suggestions, Merge → Reuse Earlier Resolutions, the status bar count, `resolve --reuse --headless [--dry-run]`. The search runs off the UI thread after open. Tests: headless output bytes, one undo step for the bulk take, the pill gone once the region resolves, git refusing `--reuse`.
+The `resolved before` pill, the right-click suggestions, Merge → Reuse Earlier Resolutions, the status bar count, `resolve --reuse --headless [--dry-run]`. The search runs off the UI thread after open. Tests: headless output bytes, one undo step for the bulk take, the pill gone once the region resolves, git refusing `--reuse`. `resolve --reuse --headless` done; the merge window open.
 
 ### K6 Order
 
