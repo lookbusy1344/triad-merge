@@ -84,8 +84,8 @@ impl Earlier {
         self.0.is_empty()
     }
 
-    /// The unresolved regions of `doc` with earlier resolutions, in order: those a pill marks
-    /// and Reuse Earlier Resolutions takes.
+    /// The unresolved regions of `doc` with earlier resolutions, in order: those
+    /// [`Earlier::take_all`] takes.
     pub fn pending<'a>(&'a self, doc: &'a MergeDocument) -> impl Iterator<Item = RegionIx> + 'a {
         self.regions().filter(|&ix| *doc.resolution(ix) == Resolution::Unresolved)
     }
