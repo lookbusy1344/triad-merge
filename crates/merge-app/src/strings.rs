@@ -16,8 +16,8 @@ use merge_core::text::{Encoding, LineEnding};
 use merge_session::ExitCode;
 use merge_session::dir_diff::{Change, ChangedFile, Content};
 use merge_session::jj_native::{
-    AbsorbHunk, Absorbed, CommitEffect, FileVersion, Goes, Rewrite, SHORT_OPERATION, StackCommit,
-    StackPath, Stay, VersionState, stays,
+    AbsorbHunk, Absorbed, ChangeVersion, CommitEffect, FileVersion, Goes, Rewrite, SHORT_OPERATION,
+    StackCommit, StackPath, Stay, VersionState, stays,
 };
 use merge_session::native::{LeftAt, Revision};
 use merge_view::nav::Sides;
@@ -214,6 +214,8 @@ texts! {
     stack_title = "stack-title";
     stack_empty = "stack-empty";
     history_empty = "history-empty";
+    /// The evolog window's note for a version that differs in nothing (spec §7.5.4).
+    evolog_no_difference = "evolog-no-difference";
     /// The stack and history windows' button that lists again.
     refresh = "refresh";
     /// The stack window's button that previews a save.
@@ -416,6 +418,56 @@ pub(crate) fn history_version(version: &FileVersion) -> Row {
 /// The history window's summary: the versions listed.
 pub(crate) fn history_summary(versions: usize) -> String {
     t!("count-versions", count = versions)
+}
+
+/// The evolog window's title (spec §7.5.4).
+pub(crate) fn evolog_title(change: &str) -> String {
+    t!("evolog-title", change = change)
+}
+
+/// The characters of a commit or operation ID the evolog window shows, as `evolog --list`
+/// prints them.
+const SHORT_ID: usize = SHORT_OPERATION;
+
+/// A listed version of a change, as `evolog --list` prints it: the commit and the time its
+/// operation ended, then the operation's description, and `(conflict)` when the version holds
+/// a conflict. A version without an operation shows `-`.
+pub(crate) fn evolog_version(version: &ChangeVersion) -> Row {
+    let commit: String = version.commit.as_str().chars().take(SHORT_ID).collect();
+    let (lead, text) = match &version.operation {
+        Some(op) => (format!("{commit} {}", op.time), op.description.clone()),
+        None => (commit, NO_OPERATION.to_owned()),
+    };
+    Row {
+        lead: Some(lead.into()),
+        text: text.into(),
+        trail: version.conflicted.then(|| t!("version-conflict")),
+        ..Row::default()
+    }
+}
+
+/// What `evolog --list` prints in place of a missing operation.
+const NO_OPERATION: &str = "-";
+
+/// The directory window's title for `diff --since` (spec §7.5.4).
+pub(crate) fn interdiff_title(change: &str, since: &str) -> String {
+    t!("interdiff-title", change = change, short = since)
+}
+
+/// The directory window's summary for `diff --since`: the files listed.
+pub(crate) fn interdiff_summary(files: usize, since: &str) -> String {
+    let files = t!("count-files", count = files);
+    t!("dirs-since", files = &files, short = since)
+}
+
+/// A `diff --since` pane's title: the change at a version, rebased onto the change's parents
+/// when `rebased`.
+pub(crate) fn interdiff_side(change: &str, at: &str, rebased: bool) -> String {
+    if rebased {
+        t!("interdiff-rebased", change = change, short = at)
+    } else {
+        t!("interdiff-version", change = change, short = at)
+    }
 }
 
 texts! {
@@ -1464,6 +1516,39 @@ mod tests {
             }
         );
         assert_eq!(history_title("src/a.txt"), "History of src/a.txt");
+    }
+
+    #[test]
+    fn evolog_rows_and_titles_read_as_the_spec_gives_them() {
+        use merge_session::jj_native::VersionOperation;
+        let version = |operation: Option<VersionOperation>, conflicted| ChangeVersion {
+            commit: vcs::CommitId::new("0123456789abcdef".to_owned()),
+            operation,
+            conflicted,
+        };
+        let op = VersionOperation {
+            id: "fedcba".to_owned(),
+            time: "2026-11-13T10:00:00+01:00".to_owned(),
+            description: "rebase commit".to_owned(),
+        };
+        assert_eq!(
+            evolog_version(&version(Some(op), true)),
+            Row {
+                lead: Some("0123456789ab 2026-11-13T10:00:00+01:00".into()),
+                text: "rebase commit".into(),
+                trail: Some("(conflict)".into()),
+                ..Row::default()
+            }
+        );
+        assert_eq!(
+            evolog_version(&version(None, false)),
+            Row { lead: Some("0123456789ab".into()), text: "-".into(), ..Row::default() }
+        );
+        assert_eq!(evolog_title("kxqpzmvw"), "Versions of kxqpzmvw");
+        assert_eq!(interdiff_title("kxqpzmvw", "01234567"), "kxqpzmvw since 01234567");
+        assert_eq!(interdiff_summary(1, "01234567"), "1 file since 01234567");
+        assert_eq!(interdiff_side("kxqpzmvw", "01234567", true), "kxqpzmvw at 01234567, rebased");
+        assert_eq!(interdiff_side("kxqpzmvw", "01234567", false), "kxqpzmvw at 01234567");
     }
 
     #[test]

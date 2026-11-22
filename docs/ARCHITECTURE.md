@@ -143,6 +143,8 @@ The jj-native API (`DESIGN.md` part I) sits on `JjRepository` outside the trait:
 
 - `native`: `stack(revset)` lists conflicted commits and their paths; `conflict_at`, `parent_conflicts_at` read a conflict in any commit; `write_conflict` writes a resolution into a commit in one transaction and rebases its descendants. `CommitEffect` reports what a write would do to each descendant, for the stack window's preview.
 - `history`: a file's versions in the working-copy commit across the operation log, and `working_copy_at(op)`.
+- `evolog`: the versions of a change across the operations that rewrote it, and the earlier resolutions of a conflict among them.
+- `interdiff`: an earlier version of a change rebased onto the change's parents, as `jj interdiff` builds it; the paths that differ and what each side holds, conflicts written with jj's markers.
 - `absorb`: the working copy's hunks against its parents, each with the ancestor it goes into, and the moves the user chose.
 
 Every write follows jj's own order: snapshot, rewrite in one transaction, rebase descendants, check out a moved working-copy commit. `testing` (feature) builds jj repositories through jj-lib, in the default (colocated) layout unless a test names another. `examples/` generate the jj oracle corpora from jj-lib and from jj's CLI (`DESIGN.md` §B5.2, §I5).
@@ -189,6 +191,7 @@ The view model: everything the windows compute that is not drawing. It turns a `
 - **`marks`**, **`ruler`**, **`placeholder`**, **`merge_fold`**: each region's gutter label and tone, the overview ruler's marks, the hatched row that stands for an empty region in the result, and folded unchanged regions.
 - **`status`**: `Status` counts conflicts, unresolved regions and differences for the status bar; `pane_headings` and `result_heading` title the panes.
 - **`origin`**: line origins per row and per result line, the gutter label at the start of each run, and the hover text.
+- **`earlier`**: the conflict regions an earlier version of the conflict was resolved in, and the lines each was resolved to.
 - **`inherited`**, **`moves`**, **`line_pick`**, **`selection`**, **`search`**: conflicts inherited from a parent commit, moved-block ends, which lines a press picks, selection in a read-only pane, and literal search over every visible input with Aho-Corasick.
 
 ### 7.2 The diff window
@@ -223,7 +226,7 @@ The layer under both front ends. It owns everything a merge does outside the eng
 
 - `load` reads a merge's files into `Inputs` and builds the `MergeDocument`.
 - `resolve::load` reads a conflict for `resolve`: from the repository through `read_conflict`, or else from the file's conflict markers (`merge_core::markers`). `load_at_commit` reads one in another jj commit for the stack window.
-- `native` loads the inputs of `diff PATH` (the working-copy file and its parent revision, or a jj operation's version) and lists changed files for `diff [--rev]`.
+- `native` loads the inputs of `diff PATH` (the working-copy file and its parent revision, or a jj operation's version) and lists changed files for `diff [--rev]` and `diff --since`.
 - `dir_diff` lists the files that differ between two directories.
 - `origin` finds which commit each input's line origins come from: one whose file holds the input's exact bytes, or for the working copy its parent by a line diff (`DESIGN.md` §C3). `carry` moves an annotation onto an edited text.
 
@@ -241,7 +244,7 @@ The layer under both front ends. It owns everything a merge does outside the eng
 
 ### 8.6 Other services
 
-`install` writes tool entries through each backend's `tool_config`. `jj_native` opens the jj repository for `stack`, `history` and `absorb` and refuses a git one. `stamp` fingerprints OUTPUT so the window can tell another program changed it. `env` captures the environment variables that locate git's, jj's and triad's config.
+`install` writes tool entries through each backend's `tool_config`. `jj_native` opens the jj repository for `stack`, `history`, `evolog` and `absorb` and refuses a git one, and reads a conflict's earlier resolutions. `stamp` fingerprints OUTPUT so the window can tell another program changed it. `env` captures the environment variables that locate git's, jj's and triad's config.
 
 ## 9. `merge-cli`
 
@@ -249,11 +252,11 @@ The command line and every form that runs without a window. A library with no GU
 
 - **`args`** parses spec §6.1's command line with clap's derive API into an `Invocation`:
   - `Window(merge_session::invocation::Window)`;
-  - `Batch`: `Headless`, `Resolve` (headless), `Inspect`, `DiffInspect`, `ChangesInspect`, `Install`, or `Jj(JjBatch)` with `Stack`, `History` and `Absorb`;
+  - `Batch`: `Headless`, `Resolve` (headless), `Inspect`, `DiffInspect`, `ChangesInspect`, `Install`, or `Jj(JjBatch)` with `Stack`, `History`, `Evolog`, `Interdiff` and `Absorb`;
   - `ShowConfig`.
 
   `parse_with` takes the loaded `Settings`, so a flag's default is the config file's value. Flag names and values come from `merge-config::named`.
-- **`lib`**: `run(args, settings_path, stdout, stderr) -> Outcome` is the entry point. It loads the settings, parses, and either runs a batch form to an `ExitCode` or settles a window form (repository, semantics, `resolve` target) and returns `Outcome::Window(WindowForm)`. stdout and stderr are parameters, so the tests capture them. `headless` writes the automatic merge, with replayed commands, without a window.
+- **`lib`**: `run(args, settings_path, stdout, stderr) -> Outcome` is the entry point. It loads the settings, parses, and either runs a batch form to an `ExitCode` or settles a window form (repository, semantics, `resolve` target) and returns `Outcome::Window(WindowForm)`. stdout and stderr are parameters, so the tests capture them. `headless` writes the automatic merge, with replayed commands, without a window. `resolve --reuse` matches earlier resolutions with `merge-view::earlier`, the one use `merge-cli` makes of `merge-view`.
 - **`inspect`** prints a merge's regions, or a two-way diff, as text or as the JSON of `docs/json-schema.md`, or a unified patch.
 - **`jj_native`** formats the reports of the jj-native batch forms as text or JSON.
 - **`install`** names this program and reports what `merge_session::install` wrote.
@@ -286,7 +289,8 @@ The top panes are rows, not editors: `pane_scroll`, `row_wrap` and `sideways` sc
 ### 10.3 Other windows
 
 - `diff_window`: the two-way diff, two editable panes over a `DiffDocument`, with region recomputation debounced off the UI thread; `unified_pane` for the unified layout.
-- `dir_window`, `stack_window`, `history_window`, `absorb_window`: tool windows that list things and open a merge or diff window per item. All share `tool_window` (frame) and `pick_list` (rows).
+- `dir_window`, `stack_window`, `history_window`, `absorb_window`: tool windows that list things and open a merge or diff window per item. `dir_window` lists two directories, the working copy's changes, or a jj change's edits since an earlier version (`diff --since`). All share `tool_window` (frame) and `pick_list` (rows).
+- `evolog_window`: a jj change's versions; each opens `dir_window` on the change's edits since that version.
 - `open_dialog`, `about`, `prompt_view` (Linux alerts), `menu_bar` (Linux and Windows in-window menus).
 
 ### 10.4 Shared parts

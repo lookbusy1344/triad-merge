@@ -8,8 +8,9 @@ use vcs::{RepoKind, Repository as _, VcsError};
 use vcs_jj::JjRepository;
 /// The reports the front ends show.
 pub use vcs_jj::{
-    AbsorbHunk, Absorbed, CommitEffect, Destination, FileVersion, Goes, HunkChoice, JjError,
-    Origin, Rewrite, SHORT_OPERATION, StackCommit, StackPath, Stay, VersionState,
+    AbsorbHunk, Absorbed, ChangeVersion, CommitEffect, Destination, Evolog, FileVersion, Goes,
+    HunkChoice, Interdiff, JjError, Origin, Rewrite, SHORT_OPERATION, StackCommit, StackPath, Stay,
+    VersionOperation, VersionState,
 };
 
 use crate::repository::Discovery;
@@ -22,6 +23,9 @@ pub enum Listing {
     Stack(Stacked),
     Absorb(Absorbed),
     History(FileHistory),
+    Evolog(Evolog),
+    Interdiff(crate::native::InterdiffListing),
+    InterdiffFile(crate::native::InterdiffFile),
 }
 
 impl Listing {
@@ -30,7 +34,7 @@ impl Listing {
     pub fn stack(self) -> Option<Stacked> {
         match self {
             Self::Stack(listed) => Some(listed),
-            Self::Absorb(_) | Self::History(_) => None,
+            _ => None,
         }
     }
 
@@ -39,7 +43,7 @@ impl Listing {
     pub fn absorb(self) -> Option<Absorbed> {
         match self {
             Self::Absorb(listed) => Some(listed),
-            Self::Stack(_) | Self::History(_) => None,
+            _ => None,
         }
     }
 
@@ -48,7 +52,34 @@ impl Listing {
     pub fn history(self) -> Option<FileHistory> {
         match self {
             Self::History(listed) => Some(listed),
-            Self::Stack(_) | Self::Absorb(_) => None,
+            _ => None,
+        }
+    }
+
+    /// The evolog window's listing; none for another form's.
+    #[must_use]
+    pub fn evolog(self) -> Option<Evolog> {
+        match self {
+            Self::Evolog(listed) => Some(listed),
+            _ => None,
+        }
+    }
+
+    /// The diff window's file of `diff PATH --since`; none for another form's.
+    #[must_use]
+    pub fn interdiff_file(self) -> Option<crate::native::InterdiffFile> {
+        match self {
+            Self::InterdiffFile(file) => Some(file),
+            _ => None,
+        }
+    }
+
+    /// The directory window's listing of `diff --since`; none for another form's.
+    #[must_use]
+    pub fn interdiff(self) -> Option<crate::native::InterdiffListing> {
+        match self {
+            Self::Interdiff(listed) => Some(listed),
+            _ => None,
         }
     }
 }
@@ -65,14 +96,24 @@ pub fn open(
     discovery: &Discovery,
     command: &'static str,
 ) -> Result<JjRepository, ResolveError> {
+    jj_at(cwd, discovery)?.ok_or(ResolveError::NeedsJj(command))
+}
+
+/// The jj repository holding `cwd`, reading the user's jj config as `discovery` says; none
+/// for a git repository.
+///
+/// # Errors
+///
+/// [`VcsError::NotARepository`] outside any repository, and the errors of jj-lib's load.
+pub(crate) fn jj_at(cwd: &Path, discovery: &Discovery) -> Result<Option<JjRepository>, VcsError> {
     let found = crate::native::find_from(cwd).ok_or_else(|| {
         VcsError::NotARepository(Utf8PathBuf::from(cwd.to_string_lossy().into_owned()))
     })?;
     if found.kind != RepoKind::Jj {
-        return Err(ResolveError::NeedsJj(command));
+        return Ok(None);
     }
     let root = Utf8PathBuf::from_path_buf(found.root).map_err(VcsError::NotUtf8)?;
-    Ok(JjRepository::discover(&root)?.with_config(discovery.jj_config()))
+    Ok(Some(JjRepository::discover(&root)?.with_config(discovery.jj_config())))
 }
 
 /// The conflicted commits `revset` names in the jj repository holding `cwd`, children first
@@ -200,6 +241,108 @@ pub fn stays(stay: &Stay) -> String {
         Stay::Kept => "stays: kept".to_owned(),
     }
 }
+
+/// The versions of the change in the one commit `rev` names, default `@`, in the jj
+/// repository holding `cwd`, newest first, at most `limit` of them (`evolog`).
+///
+/// # Errors
+///
+/// As [`open`], and as [`JjRepository::evolog`] fails.
+pub fn evolog(
+    cwd: &Path,
+    rev: Option<&str>,
+    limit: Option<usize>,
+    discovery: &Discovery,
+) -> Result<Evolog, ResolveError> {
+    let mut repo = open(cwd, discovery, "evolog")?;
+    Ok(repo.evolog(rev.unwrap_or(WORKING_COPY), limit)?)
+}
+
+/// An earlier resolution of a conflict (spec §7.5.5): an earlier version of it, the file
+/// the version that resolved it held, and that version.
+#[derive(Debug, Clone)]
+pub struct EarlierResolution {
+    pub conflict: merge_core::merge3::Inputs,
+    pub resolved: merge_core::text::Text,
+    pub version: ChangeVersion,
+}
+
+/// A jj conflict whose earlier resolutions a merge looks for (spec §7.5.5): the commit it
+/// was read from, or none for the working-copy commit, and its path.
+#[derive(Debug, Clone)]
+pub struct EarlierSource {
+    pub(crate) root: Utf8PathBuf,
+    pub(crate) path: Utf8PathBuf,
+    pub(crate) commit: Option<vcs::CommitId>,
+    pub(crate) discovery: Discovery,
+}
+
+impl EarlierSource {
+    /// The conflict's earlier resolutions, newest first, as [`earlier_resolutions`] finds
+    /// them. Reads only: no snapshot.
+    ///
+    /// # Errors
+    ///
+    /// As [`earlier_resolutions`], and [`vcs::VcsError::NoWorkingCopy`] when the workspace
+    /// has no working copy.
+    pub fn find(&self) -> Result<Vec<EarlierResolution>, ResolveError> {
+        let repo = open(self.root.as_std_path(), &self.discovery, "resolve")?;
+        let id = match &self.commit {
+            Some(id) => id.clone(),
+            None => repo
+                .working_copy_id()?
+                .ok_or_else(|| VcsError::NoWorkingCopy(repo.root().to_owned()))?,
+        };
+        Ok(decoded(&self.path, repo.earlier_resolutions(&id, &self.path)?))
+    }
+}
+
+/// The earlier resolutions of the conflict at `path`, relative to the root, in the evolog of
+/// the commit `id` in the jj repository at `root`, newest first. A version whose conflict or
+/// file does not decode as text is logged and left out: it only loses an offer.
+///
+/// # Errors
+///
+/// As [`open`], and as [`JjRepository::earlier_resolutions`] fails.
+pub fn earlier_resolutions(
+    root: &Utf8Path,
+    id: &vcs::CommitId,
+    path: &Utf8Path,
+    discovery: &Discovery,
+) -> Result<Vec<EarlierResolution>, ResolveError> {
+    let repo = open(root.as_std_path(), discovery, "resolve")?;
+    Ok(decoded(path, repo.earlier_resolutions(id, path)?))
+}
+
+/// `pairs` decoded as text; a pair that does not decode is logged and left out.
+fn decoded(path: &Utf8Path, pairs: Vec<vcs_jj::ResolvedPair>) -> Vec<EarlierResolution> {
+    pairs
+        .into_iter()
+        .filter_map(|pair| {
+            let decoded = crate::resolve::parent_inputs(path, pair.conflict).and_then(|conflict| {
+                merge_core::text::Text::decode(pair.resolved)
+                    .map(|resolved| (conflict, resolved))
+                    .map_err(|source| ResolveError::NotText {
+                        path: path.to_owned(),
+                        term: format!("the file at {}", pair.version.commit),
+                        source,
+                    })
+            });
+            match decoded {
+                Ok((conflict, resolved)) => {
+                    Some(EarlierResolution { conflict, resolved, version: pair.version })
+                }
+                Err(error) => {
+                    tracing::warn!(%error, %path, "an earlier resolution does not load");
+                    None
+                }
+            }
+        })
+        .collect()
+}
+
+/// The revision `evolog` and `diff --since` read without `-r`.
+pub const WORKING_COPY: &str = "@";
 
 #[cfg(test)]
 mod tests {

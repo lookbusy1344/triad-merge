@@ -185,6 +185,47 @@ f09f484b2665 2026-11-13T15:35:02+00:00 add workspace 'default' (absent)
 
 `(absent)`, `(conflict)` and `(other)` mark an operation where the path held no file, a conflict, or a symlink or directory. `diff --op` opens one version without the window; `--op` takes what `jj --at-op` takes: an ID prefix, `@`, `@-`. The history is as fine as jj's snapshots: one per jj command, or more with jj's file watcher.
 
+### Compare a change with an earlier version of itself (jj-enabled)
+
+jj keeps each version of a change in its evolog: every snapshot, describe, rebase and squash. `diff --since` shows what changed in a change since an earlier version, with a rebase taken out: triad rebases the earlier version onto the change's parents first, as `jj interdiff` does.
+
+```sh
+triad-merge evolog                           # a window of the versions of @'s change
+triad-merge evolog -r xyz --list --limit 5   # print the newest 5 of change xyz
+triad-merge diff --since 0123abcd            # a window of the files @'s change edited since
+triad-merge diff src/lib.rs --since 0123abcd # one file, in the diff window
+triad-merge diff --since 0123abcd -r xyz --inspect --json
+triad-merge evolog -r '@-'                   # the change below @
+triad-merge diff --since 0123abcd -r '@-'    # the change below @ since version 0123abcd
+```
+
+`evolog -r`, `diff --since` and its `-r` each take a revset that names one commit, with your revset aliases. A revset that names no commit, or several, is an error. `--since` also takes the commit ID of a hidden version, as `evolog` lists it.
+
+`evolog` opens a window that lists each version: its commit, the time and description of the operation that wrote it, and `(conflict)` when the version holds one. Click a version, or select it with ↑ and ↓ and press Enter, to open the directory window on what the change edited since that version, as `diff --since COMMIT` does. A version that differs in nothing opens no window and says `No difference from the current version.` One directory window is open at a time; another version brings it forward. Closing the evolog window, or Escape or ⌘W, ends the run with 0.
+
+The directory window of `diff --since` is titled `CHANGE since SHORT`. A file opens in the diff window with the earlier version, rebased, on the left and the change on the right. Both sides are read-only: the comparison is of two commits, not of files on disk.
+
+`evolog --list` prints one line per version: the commit, the operation that wrote it, its time and description, and `(conflict)` when the version holds one.
+
+```
+5c0e9a3b71d2 6f1d0a27c94e 2026-11-22T10:04:11+01:00 rebase commit
+0123abcd8e9f 3a9c55e1b0d7 2026-11-22T09:58:40+01:00 snapshot working copy
+```
+
+`--since` takes any revision that names one commit; an earlier version's commit ID works though the commit is hidden. The `--inspect` listing exits 0 when nothing differs, as after a rebase alone, and 1 when files differ. A file the rebase leaves conflicted shows with jj's conflict markers.
+
+### Reuse an earlier resolution (jj-enabled)
+
+When a change returns to a conflict it held before, as `jj restore --from` an earlier version does, the resolution you gave then is in the change's evolog. `--reuse` takes it.
+
+```sh
+triad-merge resolve src/lib.rs --reuse --headless             # take each earlier resolution, then save
+triad-merge resolve src/lib.rs --reuse --headless --dry-run   # say how many it would take; write nothing
+triad-merge resolve src/lib.rs -r xyz --reuse --headless      # in commit xyz
+```
+
+It prints `reused 2 earlier resolutions`, then saves as `resolve --headless` does. A conflict with no earlier resolution stays. `--commands` runs after the reuse. A conflict a rebase made after you resolved it holds your resolution as one side, so it matches nothing: pick that side.
+
 ### Resolve conflicts in any commit (jj-enabled)
 
 jj records conflicts in commits, so a rebase never stops halfway. triad resolves them where they sit, without `jj edit`.
@@ -194,13 +235,15 @@ triad-merge stack                     # a window of the conflicted mutable commi
 triad-merge stack 'trunk()..@'        # any revset
 triad-merge stack --list              # print the list instead
 triad-merge resolve src/lib.rs -r xyz # resolve in commit xyz; @ stays where it is
+triad-merge resolve src/lib.rs -r '@-'
+triad-merge resolve src/lib.rs -r 'description(wip) & mine()'
 ```
 
 `stack` opens a window that lists each commit's change, commit and summary, then its conflicted paths. The working-copy commit carries jj's `@`, on lime, when it is listed. Hover over a commit to see its full IDs, its date and its whole description. `(inherited)` marks a path whose parent holds a conflict there too: resolve the parent, listed below it, first and the child often clears with it. A muted inherited path is untouched: the commit holds it as its parent does, so resolving the parent resolves it. Open an inherited path and a banner across the merge window names the listed commit where its conflict arises, and each conflict the parent holds too shows greyed side colours, grey marks and an `inherited` pill in place of orange (`color-inherited`); a resolution saved in the child first will likely conflict again once that commit is resolved. `--json` gives that commit as each path's `origin`, and `untouched` for a muted path. Click a path, or select it with ↑ and ↓ and press Enter, to open its conflict in the merge window, as `resolve -r` does. One merge window is open at a time. Each save lists the commits again and says what it did. With a merge window open, Preview Save shows what saving its result would do to each descendant's conflicts. Like any jj command it snapshots the working copy first; it changes nothing else. Closing the stack window, or Escape or ⌘W, ends the run: 0 when no conflicted commit is left, 1 otherwise. With nothing conflicted, `stack` opens no window and exits 0.
 
 `stack --list` prints the same list and exits the same way.
 
-`-r` takes any revset that names one commit, with your revset aliases, as `stack` does, and snapshots the working copy first.
+`-r` takes any revset that names one commit, with your revset aliases, as `stack` does, and snapshots the working copy first. A revset that names no commit, or several, is an error.
 
 Each save to `-r` rewrites the commit and rebases its descendants, as any jj rewrite does. The headless report lists each descendant with its conflicted paths before and after:
 
@@ -246,11 +289,12 @@ triad-merge absorb src/                      # only these paths
 triad-merge absorb --into 'trunk()..@'       # only these commits (default mutable())
 triad-merge absorb --keep 2                  # hunk 2 stays in the working copy
 triad-merge absorb --move 1=xyz              # hunk 1 into xyz, a mutable ancestor
+triad-merge absorb --move 1='@--'            # hunk 1 into the grandparent of @
 triad-merge absorb --apply                   # write, as listed
 triad-merge absorb --keep 2 --apply --listed-at 6c1e0e2b7f3a   # write with choices
 ```
 
-Hunk numbers hold only for the listing that printed them. `--move` and `--keep` with `--apply` need `--listed-at`, the listing's operation, and triad refuses when the repository has moved past it: an edit or a jj command since the listing. List again and choose again.
+`--into` takes any revset. The `REV` of `--move` is a revset that names one commit. Both use your revset aliases. Hunk numbers hold only for the listing that printed them. `--move` and `--keep` with `--apply` need `--listed-at`, the listing's operation, and triad refuses when the repository has moved past it: an edit or a jj command since the listing. List again and choose again.
 
 ```
 absorbed 1 hunks into 1 commits

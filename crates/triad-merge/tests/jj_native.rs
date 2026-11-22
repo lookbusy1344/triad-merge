@@ -63,6 +63,31 @@ fn a_jj_native_command_in_a_git_repository_says_it_needs_jj() {
         outcome(&absorb),
         (Some(ERROR), String::new(), "triad-merge: absorb needs a jj repository\n".to_owned())
     );
+    let evolog = triad(fixture.root(), &["evolog", "--list"]);
+    assert_eq!(
+        outcome(&evolog),
+        (Some(ERROR), String::new(), "triad-merge: evolog needs a jj repository\n".to_owned())
+    );
+    let since = triad(fixture.root(), &["diff", "--since", "HEAD", "--inspect"]);
+    assert_eq!(
+        outcome(&since),
+        (
+            Some(ERROR),
+            String::new(),
+            "triad-merge: diff --since needs a jj repository\n".to_owned()
+        )
+    );
+    // The window forms list before a window opens, so they refuse the same way.
+    for (args, command) in [
+        (&["evolog"][..], "evolog"),
+        (&["diff", "--since", "HEAD"], "diff --since"),
+        (&["diff", "a.txt", "--since", "HEAD"], "diff --since"),
+        (&["resolve", "a.txt", "--reuse", "--headless"], "resolve --reuse"),
+        (&["resolve", "a.txt", "-r", "HEAD", "--reuse", "--headless"], "resolve --reuse"),
+    ] {
+        let message = format!("triad-merge: {command} needs a jj repository\n");
+        assert_eq!(outcome(&triad(fixture.root(), args)), (Some(ERROR), String::new(), message));
+    }
 }
 
 mod jj {
@@ -381,5 +406,189 @@ mod jj {
         let args = ["resolve", "b.txt", "-r", &merge.change_id, "--headless"];
         let (code, _, err) = outcome(&triad(fixture.root(), &args));
         assert_eq!((code, err.as_str()), (Some(ERROR), "triad-merge: b.txt is not conflicted\n"));
+    }
+
+    /// `parent` holding `a.txt`; `child` on it adding `b.txt` and `c.txt`; then `parent`
+    /// rewritten, which rebases `child`. The child before and after the rebase.
+    fn rebased_child() -> (Fixture, Committed, Committed) {
+        let fixture = Fixture::new();
+        let parent = fixture.commit_on(&[], "parent", &[("a.txt", b"1\n")]);
+        let child = fixture.commit_on(
+            &[&parent],
+            "child",
+            &[("a.txt", b"1\n"), ("b.txt", b"x\n"), ("c.txt", b"c1\nc2\nc3\n")],
+        );
+        fixture.amend(&parent, &[("a.txt", b"0\n")]);
+        let rebased = fixture.latest(&child);
+        (fixture, child, rebased)
+    }
+
+    #[test]
+    fn evolog_lists_a_changes_versions_newest_first() {
+        let (fixture, old, new) = rebased_child();
+        let ops = fixture.operation_ids();
+        let short = |id: &str| id[..vcs_jj::SHORT_OPERATION].to_owned();
+        let args = ["evolog", "-r", &new.change_id, "--list"];
+        let (code, out, err) = outcome(&triad(fixture.root(), &args));
+        assert_eq!((code, err.as_str()), (Some(RESOLVED), ""), "{out}");
+        let fields: Vec<(String, String, String)> = out
+            .lines()
+            .map(|l| {
+                let mut words = l.split(' ');
+                let mut next = || words.next().unwrap_or_default().to_owned();
+                let (commit, op, _time) = (next(), next(), next());
+                (commit, op, words.collect::<Vec<_>>().join(" "))
+            })
+            .collect();
+        assert_eq!(
+            fields,
+            [
+                (short(&new.commit), short(&ops[0]), "amend".to_owned()),
+                (short(&old.commit), short(&ops[1]), "commit".to_owned()),
+            ],
+            "{out}"
+        );
+        let args = ["evolog", "-r", &new.change_id, "--json", "--limit", "1"];
+        let (_, json, _) = outcome(&triad(fixture.root(), &args));
+        let value: serde_json::Value = serde_json::from_str(&json).expect("JSON");
+        assert_eq!(value["change_id"], new.change_id.as_str());
+        assert_eq!(value["versions"].as_array().map(Vec::len), Some(1));
+        assert_eq!(value["versions"][0]["commit"], new.commit.as_str());
+        assert_eq!(value["versions"][0]["operation"], ops[0].as_str());
+        assert_eq!(value["versions"][0]["description"], "amend");
+        assert_eq!(value["versions"][0]["conflicted"], false);
+    }
+
+    #[test]
+    fn diff_since_a_version_a_rebase_made_lists_nothing() {
+        let (fixture, old, new) = rebased_child();
+        let args = ["diff", "--since", &old.commit, "-r", &new.change_id, "--inspect"];
+        assert_eq!(
+            outcome(&triad(fixture.root(), &args)),
+            (Some(RESOLVED), "files: 0\n".to_owned(), String::new())
+        );
+    }
+
+    #[test]
+    fn diff_since_lists_the_changes_own_edits_with_renames() {
+        let (fixture, old, rebased) = rebased_child();
+        let new = fixture
+            .amend(&rebased, &[("a.txt", b"0\n"), ("b.txt", b"y\n"), ("d.txt", b"c1\nc2\nc3\n")]);
+        let args = ["diff", "--since", &old.commit, "-r", &new.commit, "--inspect"];
+        assert_eq!(
+            outcome(&triad(fixture.root(), &args)),
+            (
+                Some(CONFLICTS),
+                "modified text b.txt\nrenamed text c.txt => d.txt\nfiles: 2\n".to_owned(),
+                String::new()
+            )
+        );
+        let json_args = ["diff", "--since", &old.commit, "-r", &new.commit, "--inspect", "--json"];
+        let (_, json, _) = outcome(&triad(fixture.root(), &json_args));
+        let value: serde_json::Value = serde_json::from_str(&json).expect("JSON");
+        assert_eq!(value["command"], "diff-changes");
+        assert_eq!(value["changes"], 2);
+    }
+
+    /// `child`, the working-copy commit on disk, on `parent`; `parent` rewritten so `child`
+    /// conflicts in `a.txt`, sides `3\n` and `2\n`; `child` resolved as `4\n`; then the
+    /// conflict brought back, as `jj restore --from` the conflicted version does. The child.
+    fn conflict_back(fixture: &Fixture) -> Committed {
+        let parent = fixture.commit_on(&[], "parent", &[("a.txt", b"1\n")]);
+        let child = fixture.commit_on(&[&parent], "child", &[("a.txt", b"2\n")]);
+        fixture.edit(&child);
+        fixture.amend(&parent, &[("a.txt", b"3\n")]);
+        let conflicted = fixture.latest(&child);
+        let resolved = fixture.amend(&conflicted, &[("a.txt", b"4\n")]);
+        fixture.restore(&resolved, &conflicted);
+        fixture.check_out_to_disk();
+        fixture.latest(&child)
+    }
+
+    #[test]
+    fn resolve_reuse_takes_the_earlier_resolution_and_records_the_save() {
+        let fixture = Fixture::new();
+        conflict_back(&fixture);
+        let args = ["resolve", "a.txt", "--reuse", "--headless"];
+        assert_eq!(
+            outcome(&triad(fixture.root(), &args)),
+            (Some(RESOLVED), "reused 1 earlier resolution\n".to_owned(), String::new())
+        );
+        let on_disk = std::fs::read(fixture.root().join("a.txt")).expect("a.txt reads");
+        assert_eq!(on_disk, b"4\n");
+        assert_eq!(fixture.held_at(0, "a.txt"), Held::File(b"4\n".to_vec()));
+    }
+
+    #[test]
+    fn resolve_reuse_dry_run_reports_and_writes_nothing() {
+        let fixture = Fixture::new();
+        conflict_back(&fixture);
+        let before = std::fs::read(fixture.root().join("a.txt")).expect("a.txt reads");
+        let operations = fixture.operation_count();
+        let args = ["resolve", "a.txt", "--reuse", "--headless", "--dry-run"];
+        assert_eq!(
+            outcome(&triad(fixture.root(), &args)),
+            (Some(RESOLVED), "would reuse 1 earlier resolution\n".to_owned(), String::new())
+        );
+        assert_eq!(std::fs::read(fixture.root().join("a.txt")).expect("a.txt reads"), before);
+        assert_eq!(fixture.operation_count(), operations, "nothing written");
+    }
+
+    #[test]
+    fn resolve_reuse_runs_before_the_commands() {
+        let fixture = Fixture::new();
+        conflict_back(&fixture);
+        let commands = fixture.root().join("commands.jsonl");
+        // The undo takes back the reuse, so the conflict stays.
+        std::fs::write(&commands, "\"Undo\"\n").expect("the commands are written");
+        let args = ["resolve", "a.txt", "--reuse", "--headless", "--commands", commands.as_str()];
+        let (code, out, err) = outcome(&triad(fixture.root(), &args));
+        assert_eq!(
+            (code, out.as_str(), err.as_str()),
+            (Some(CONFLICTS), "reused 1 earlier resolution\n", "")
+        );
+        assert_eq!(fixture.held_at(0, "a.txt"), Held::Conflict);
+    }
+
+    #[test]
+    fn resolve_reuse_with_no_earlier_resolution_reuses_none_and_leaves_the_conflict() {
+        let (fixture, merge, _) = stacked();
+        let args = ["resolve", "a.txt", "-r", &merge.change_id, "--reuse", "--headless"];
+        let (code, out, err) = outcome(&triad(fixture.root(), &args));
+        assert_eq!((code, err.as_str()), (Some(CONFLICTS), ""), "{out}");
+        assert_eq!(out.lines().next(), Some("reused 0 earlier resolutions"));
+    }
+
+    #[test]
+    fn resolve_reuse_in_a_commit_writes_the_resolution_into_it() {
+        let fixture = Fixture::new();
+        let child = conflict_back(&fixture);
+        fixture.check_out(&[&child]);
+        let args = ["resolve", "a.txt", "-r", "@-", "--reuse", "--headless"];
+        let (code, out, err) = outcome(&triad(fixture.root(), &args));
+        assert_eq!((code, err.as_str()), (Some(RESOLVED), ""), "{out}");
+        let change = &child.change_id[..SHORT];
+        let heading: Vec<_> = out.lines().take(2).collect();
+        assert_eq!(
+            heading,
+            ["reused 1 earlier resolution", &format!("resolved a.txt in {change}")]
+        );
+        assert_eq!(fixture.held_in(&fixture.latest(&child), "a.txt"), Held::File(b"4\n".to_vec()));
+    }
+
+    #[test]
+    fn diff_since_a_revision_naming_no_commit_fails() {
+        let (fixture, _, _) = rebased_child();
+        let message = "triad-merge: unknown revision none()\n".to_owned();
+        // The window forms load before a window opens, so they fail the same way.
+        for args in [
+            &["diff", "--since", "none()", "--inspect"][..],
+            &["diff", "--since", "none()"],
+            &["diff", "a.txt", "--since", "none()"],
+            &["evolog", "-r", "none()"],
+        ] {
+            let failed = outcome(&triad(fixture.root(), args));
+            assert_eq!(failed, (Some(ERROR), String::new(), message.clone()), "{args:?}");
+        }
     }
 }

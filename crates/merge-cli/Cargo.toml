@@ -22,6 +22,8 @@ merge-core.workspace = true
 merge-session.workspace = true
 # The language a merge's file names give.
 merge-syntax.workspace = true
+# The matching of earlier resolutions that `resolve --reuse` takes.
+merge-view.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

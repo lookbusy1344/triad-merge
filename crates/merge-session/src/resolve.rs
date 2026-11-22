@@ -13,6 +13,7 @@ use merge_syntax::language::Language;
 use vcs::{CommitId, ConflictTerm, EntryKind, RepoKind, Repository, TermContent, VcsError};
 use vcs_jj::{JjRepository, Rewrite};
 
+use crate::jj_native::EarlierSource;
 use crate::repository::{Discovery, RunRepository};
 use crate::{ExitCode, SaveError};
 
@@ -80,6 +81,28 @@ impl Destination {
         match self {
             Self::File { record, .. } => record.as_ref(),
             Self::Commit(_) => None,
+        }
+    }
+
+    /// Where a merge into this destination looks for earlier resolutions (spec §7.5.5): a
+    /// jj commit's conflict, or a jj working-copy conflict a save records. None for git, a
+    /// file no VCS records, or `repo` other than jj.
+    #[must_use]
+    pub fn earlier_source(&self, repo: Option<RepoKind>) -> Option<EarlierSource> {
+        match (self, repo) {
+            (Self::Commit(commit), _) => Some(EarlierSource {
+                root: commit.root.clone(),
+                path: commit.path.clone(),
+                commit: Some(commit.id.clone()),
+                discovery: commit.discovery.clone(),
+            }),
+            (Self::File { record: Some(record), .. }, Some(RepoKind::Jj)) => Some(EarlierSource {
+                root: record.root.clone(),
+                path: record.path.clone(),
+                commit: None,
+                discovery: record.discovery.clone(),
+            }),
+            (Self::File { .. }, _) => None,
         }
     }
 
@@ -507,7 +530,10 @@ pub fn load_at_commit(
 }
 
 /// A parent's conflict at `path` as inputs to align.
-fn parent_inputs(path: &Utf8Path, conflict: vcs::Conflict) -> Result<Inputs, ResolveError> {
+pub(crate) fn parent_inputs(
+    path: &Utf8Path,
+    conflict: vcs::Conflict,
+) -> Result<Inputs, ResolveError> {
     let (sides, _) = decode(path, "side", conflict.sides)?;
     let (bases, _) = decode(path, "base", conflict.bases)?;
     Inputs::new(sides, bases)

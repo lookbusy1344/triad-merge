@@ -1,6 +1,6 @@
 # triad — plan
 
-Where the project stands and what comes next. [SPEC.md](SPEC.md) sets the behaviour, [DESIGN.md](DESIGN.md) holds the design of what is built (parts A–F), [PLAN-diff-editor.md](PLAN-diff-editor.md) holds part H while it is open; part I, the jj-native features, is in `DESIGN.md`. Parts G and J are below. A reference such as §B5.8 names part B, section 5.8, in whichever file holds that part. jj holds the history.
+Where the project stands and what comes next. [SPEC.md](SPEC.md) sets the behaviour, [DESIGN.md](DESIGN.md) holds the design of what is built (parts A–F), [PLAN-diff-editor.md](PLAN-diff-editor.md) holds part H while it is open; part I, the jj-native features, is in `DESIGN.md`. Parts G, J and K are below. A reference such as §B5.8 names part B, section 5.8, in whichever file holds that part. jj holds the history.
 
 ## 1. Status
 
@@ -25,6 +25,7 @@ As of 2026-11-21.
 | Diff editor: `jj split`, `jj squash -i`; `stage` for git | Planned | H |
 | Layering: the session layer under both front ends, whole | Done | `docs/ARCHITECTURE.md` |
 | jj-native features | Done: conflicts across a stack (`stack`, `resolve -r`), operation-log history (`history`, `diff --op`) and absorb by hunk (`absorb`); the stack window, with a preview of a save's effect on the descendants, a confirmation before a save changes them, a banner in the merge window naming the listed commit an inherited conflict arises in, untouched inherited paths muted, and inherited conflict regions in the merge window grey (`color-inherited`); the history window; the absorb window, by hunk; these windows and the directory window share one frame after Zed's panels (`docs/STYLE.md`): a header with a count and the buttons, status icons with tooltips that name each state and file-name-first paths, keys for the lists, and Escape and Cancel to close; the conflict badge names the sides a conflict keeps; absorb, `resolve -r` and the default revset aliases checked against jj's CLI (§I5); `stack`, `resolve -r`, `history`, `absorb` and a three-sided save checked through the built binary in scenario repositories (`script/test-jj-repos`) | I |
+| Evolog: versions of a change, interdiff, earlier resolutions | Spec set (§7.5.4, §7.5.5); the evolog walk (§K1), `evolog` and `diff --since` on the command line (§K2) and in the evolog, directory and diff windows (§K3), the resolution index (§K4) and `resolve --reuse --headless` (§K5) done (§I6, §I7); reuse in the merge window dropped (§K5) | K |
 
 The conformance suite runs on git, jj and internal jj repositories, and six of its checks on jj's experimental simple store (§A7.1). Every spec §9 target is met (§A6.7). Toolchain: stable Rust 1.100, with `rust-version` 1.100. Dependencies: jj-lib and jj-core 0.47.1 on gix 0.90; gpui-kit 0.8.1 with the vendored `gpui-base` patch; gpui-kit 0.9 is not adopted (`docs/gpui-kit-issues.md`).
 
@@ -82,6 +83,8 @@ In order. Each is one or more commits.
 | A `fallback-encoding` setting to turn the Windows-1252 fallback off | Someone who needs it off | §G17 |
 | Review and diff features: blank lines in a merge (§G4), §G7, §G12–§G14 | Owner's choice on §G15's open point for §G4 | G |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
+| RUSTSEC-2026-0592 in `url` 2.5.8, through GPUI: `cargo update -p url` to 2.5.9, then `cargo audit` and `cargo deny check`. `script/checks` and so `script/pre-push` fail until then | 2.5.9 reaching the 3-day publish age: try again after 24 Nov 2026, not before | `.cargo/config.toml` |
+| An oracle for `diff --since` from `jj interdiff --git`, through `script/gen-jj-cli-oracle` | — | §K2 |
 | The absorb oracle's generator builds text files only: no renames, executable bits, symlinks, conflicted inputs or immutable commits | — | §I5 |
 | jj-cli's config defaults other than the revset aliases: none checked for whether triad depends on one | — | §I5 |
 | Absorb: split one hunk between commits | Part H's line selection (§H6) | §I4 |
@@ -292,3 +295,31 @@ Every action reachable without the mouse in each window: merge, diff, open dialo
 ### J7 Order
 
 J1, J2, J3, J4, J6; J5 when a test of J2–J4 needs the real tree.
+
+## K. Evolog features
+
+Spec §7.5.4 and §7.5.5. Both rest on jj's evolog: the predecessors each operation records for the commits it rewrites. jj alone records them, so both ship for jj alone.
+
+### K1 The evolog walk
+
+`JjRepository::evolog(rev, limit)` in `vcs-jj`, outside `vcs::Repository`: snapshot, resolve `rev` to one commit, then jj-lib's `evolution::walk_predecessors` from it. Each version: the commit, its change, its operation's ID, end time and description, and whether it holds a conflict. Tests on colocated and internal repositories: snapshots of `@`, a `describe`, a rebase, a squash with two predecessors, `--limit`, a hidden commit's ID as the start, a revision naming several commits.
+
+### K2 Interdiff on the command line
+
+`JjRepository::interdiff_tree(old, new)`: jj-lib's `rewrite::rebase_to_dest_parent` of `old` onto `new`, as `jj interdiff` builds it. `merge-session` reads a path from the two trees, conflicted paths written with jj's markers, and lists changed paths with the directory diff's rename pairing. `merge-cli`: `diff --since`, `-r`, `evolog --list` and `--json`, with `--inspect` and `--json` for the listing. Done; the oracle from `jj interdiff` stays open (§3).
+
+### K3 Interdiff in the windows
+
+The evolog window from `tool_window` and `pick_list`, after the history window. The directory window and the diff window on two read-only trees, with the titles §7.5.4 gives. `No difference from the current version.` when the listing is empty. Done.
+
+### K4 The resolution index
+
+`merge-session`: walk the evolog for `PATH`, find each run of conflicted versions and the resolved version after it, merge the run's oldest conflict, and give each region its resolution by the neighbour rule. Key the regions as `merge_view::inherited` keys them. Cost: one tree lookup per version, as `history` (§I3), and a merge only per run. Tests: a rebase that brings a conflict back, a partial resolution over several snapshots, a region whose neighbour the resolution edits, two runs with different resolutions of one region, a conflict at the start and end of the file.
+
+### K5 Reuse
+
+`resolve --reuse --headless [--dry-run]`. Done. The merge window's offers (a pill, suggestions, a menu item, a status count) are dropped: jj carries a resolution through later rebases, so a matching conflict comes back only when a change returns to a conflicted version (§I7). The cost of the window parts outweighs that case.
+
+### K6 Order
+
+K1, then K2 and K4, which share K1 only, then K3 and K5. One commit per step, with `USER-GUIDE.md` and `DESIGN.md` part I updated as each command lands.

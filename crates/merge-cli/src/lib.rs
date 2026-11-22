@@ -72,6 +72,8 @@ pub enum CliError {
     /// The result is written, but the repository refused it.
     #[error("{path}: {source}")]
     Rewrite { path: camino::Utf8PathBuf, source: vcs::VcsError },
+    #[error("cannot reuse the earlier resolutions: {0}")]
+    Reuse(#[source] merge_core::document::CommandError),
 }
 
 /// [`apply_semantics`] for `merge`, reading the run's repository `repo`.
@@ -239,6 +241,44 @@ fn prepare_window(
             Prepared::new(Window::DiffNative { path, rev, op, diff, title }, repo)
         }
         Window::OpenDialog => Prepared::new(Window::OpenDialog, run.discovery.find([])),
+        Window::DiffSince(since) => {
+            let cwd = need_cwd()?;
+            let (old, rev) = (since.since.as_str(), since.rev.as_deref());
+            let listing = match &since.path {
+                Some(path) => Listing::InterdiffFile(merge_session::native::interdiff_path(
+                    cwd,
+                    path,
+                    old,
+                    rev,
+                    run.discovery,
+                )?),
+                None => Listing::Interdiff(merge_session::native::interdiff(
+                    cwd,
+                    old,
+                    rev,
+                    run.discovery,
+                )?),
+            };
+            Prepared {
+                window: Window::DiffSince(since),
+                repo: run.discovery.of_resolve(cwd, None),
+                listing: Some(listing),
+            }
+        }
+        Window::Evolog(evolog) => {
+            let cwd = need_cwd()?;
+            let listed = merge_session::jj_native::evolog(
+                cwd,
+                evolog.rev.as_deref(),
+                evolog.limit,
+                run.discovery,
+            )?;
+            Prepared {
+                window: Window::Evolog(evolog),
+                repo: run.discovery.of_resolve(cwd, None),
+                listing: Some(Listing::Evolog(listed)),
+            }
+        }
         Window::History(history) => {
             let cwd = need_cwd()?;
             let listed = file_history(cwd, &history.path, history.limit, run.discovery)?;
@@ -344,7 +384,8 @@ fn batch_form(
                     stdout,
                 );
             }
-            resolve_headless(&resolve, settings.line_ending, cwd, &targets, &mut repo, stderr)
+            let streams = (stdout, stderr);
+            resolve_headless(&resolve, settings.line_ending, cwd, &targets, &mut repo, streams)
         }
         Batch::Inspect { files, options, semantics, json } => {
             let chosen = choose_semantics(
@@ -410,6 +451,16 @@ fn jj_native_batch(
             let text = jj_native::history_report(&path, &versions, json)?;
             Ok(report(stdout, &text, ExitCode::Resolved))
         }
+        JjBatch::Evolog { rev, limit, json } => {
+            let evolog = merge_session::jj_native::evolog(cwd, rev.as_deref(), limit, discovery)?;
+            let text = jj_native::evolog_report(&evolog, json)?;
+            Ok(report(stdout, &text, ExitCode::Resolved))
+        }
+        JjBatch::Interdiff { since, rev, json } => {
+            let listing = merge_session::native::interdiff(cwd, &since, rev.as_deref(), discovery)?;
+            let (text, code) = inspect::files_report("diff-changes", &listing.files, json)?;
+            Ok(report(stdout, &text, code))
+        }
         JjBatch::Absorb { paths, into, choices, apply, listed_at, json } => {
             let absorbed = merge_session::jj_native::absorb(
                 cwd,
@@ -442,6 +493,9 @@ fn resolve_prepare(
     stdout: &mut impl Write,
 ) -> Result<(Vec<PathBuf>, RunRepository), CliError> {
     let mut repo = run.discovery.of_resolve(cwd, resolve.path.as_deref());
+    if resolve.reuse && repo.kind() != Some(vcs::RepoKind::Jj) {
+        return Err(resolve::ResolveError::NeedsJj("resolve --reuse").into());
+    }
     let targets = resolve_targets(&mut repo, cwd, resolve.path.as_deref(), stdout)?;
     if let Some(first) = targets.first() {
         let (flags, output) = (resolve.semantics, Some(first.as_path()));
@@ -489,6 +543,10 @@ fn resolve_in_commit(
 ) -> Result<ExitCode, CliError> {
     let loaded = resolve::load_at_commit(cwd, rev, path, discovery)?;
     let mut opened = loaded.open(resolve.options.clone()).map_err(SessionError::from)?;
+    if resolve.reuse {
+        let taken = reuse(&mut opened)?;
+        report(stdout, &reuse_line(taken, resolve.dry_run), ExitCode::Resolved);
+    }
     if let Some(commands) = &resolve.commands {
         replay::apply_file(&mut opened.doc, commands)?;
     }
@@ -519,7 +577,7 @@ fn resolve_headless(
     cwd: &Path,
     targets: &[PathBuf],
     repo: &mut RunRepository,
-    stderr: &mut impl Write,
+    (stdout, stderr): (&mut impl Write, &mut impl Write),
 ) -> Result<ExitCode, CliError> {
     // Without a path, the list snapshotted `repo`, and each save is recorded through it, so
     // each load reads at the step before without scanning the working tree again.
@@ -533,13 +591,51 @@ fn resolve_headless(
             loaded => loaded?,
         };
         let mut opened = loaded.open(resolve.options.clone()).map_err(SessionError::from)?;
+        if resolve.reuse {
+            let taken = reuse(&mut opened)?;
+            report(stdout, &reuse_line(taken, resolve.dry_run), ExitCode::Resolved);
+        }
         if let Some(path) = &resolve.commands {
             replay::apply_file(&mut opened.doc, path)?;
         }
-        let written = encoded(&opened.doc, ending, opened.destination.name())?
-            .save(&opened.destination, Some(repo))?;
+        let output = encoded(&opened.doc, ending, opened.destination.name())?;
+        let written = if resolve.dry_run {
+            output.code()
+        } else {
+            output.save(&opened.destination, Some(repo))?
+        };
         Ok(if written == ExitCode::Resolved { code } else { written })
     })
+}
+
+/// Take the newest earlier resolution of every unresolved conflict region of `opened`'s
+/// merge, as one step (spec §7.5.5). Gives the number of regions taken.
+///
+/// # Errors
+///
+/// [`CliError::Resolve`] for a conflict no jj repository holds, or when the evolog cannot be
+/// read; [`CliError::Reuse`] when the take does not apply.
+fn reuse(opened: &mut resolve::Opened) -> Result<usize, CliError> {
+    let source = opened
+        .destination
+        .earlier_source(opened.repo)
+        .ok_or(resolve::ResolveError::NeedsJj("resolve --reuse"))?;
+    let found = source.find()?;
+    let pairs = found.iter().map(|earlier| (&earlier.conflict, &earlier.resolved));
+    let Some((take, taken)) =
+        merge_view::earlier::Earlier::find(&opened.doc, pairs).take_all(&opened.doc)
+    else {
+        return Ok(0);
+    };
+    opened.doc.apply(take).map_err(CliError::Reuse)?;
+    Ok(taken)
+}
+
+/// What `resolve --reuse` reports: the regions it took, or with `dry_run` would take.
+fn reuse_line(taken: usize, dry_run: bool) -> String {
+    let verb = if dry_run { "would reuse" } else { "reused" };
+    let noun = if taken == 1 { "resolution" } else { "resolutions" };
+    format!("{verb} {taken} earlier {noun}\n")
 }
 
 /// The files `resolve` works on: `path`, relative to `cwd`; without one, every conflicted

@@ -118,6 +118,12 @@ no-file = { $name }（无文件）
 history-title = { $path } 的历史
 history-empty = 没有版本。
 version-conflict = （冲突）
+evolog-title = { $change } 的版本
+interdiff-title = 自 { $short } 以来的 { $change }
+dirs-since = { $files }，自 { $short } 以来
+interdiff-rebased = { $short } 时的 { $change }（已变基）
+interdiff-version = { $short } 时的 { $change }
+evolog-no-difference = 与当前版本没有差异。
 version-absent = （不存在）
 version-other = （其他）
 

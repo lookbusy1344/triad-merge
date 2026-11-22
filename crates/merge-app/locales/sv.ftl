@@ -161,6 +161,12 @@ no-file = { $name } (ingen fil)
 history-title = Historik för { $path }
 history-empty = Inga versioner.
 version-conflict = (konflikt)
+evolog-title = Versioner av { $change }
+interdiff-title = { $change } sedan { $short }
+dirs-since = { $files } sedan { $short }
+interdiff-rebased = { $change } vid { $short }, ombaserad
+interdiff-version = { $change } vid { $short }
+evolog-no-difference = Ingen skillnad mot den aktuella versionen.
 version-absent = (saknas)
 version-other = (annan)
 

@@ -5,8 +5,8 @@ use std::fmt::Write as _;
 use camino::Utf8Path;
 use merge_session::jj_native::stays;
 use merge_session::jj_native::{
-    AbsorbHunk, Absorbed, CommitEffect, FileVersion, Goes, Origin, Rewrite, SHORT_OPERATION,
-    StackCommit, Stay, VersionState,
+    AbsorbHunk, Absorbed, CommitEffect, Evolog, FileVersion, Goes, Origin, Rewrite,
+    SHORT_OPERATION, StackCommit, Stay, VersionState,
 };
 use serde_json::json;
 use vcs::IdKind;
@@ -170,6 +170,54 @@ pub fn history_report(
     Ok(text)
 }
 
+/// `evolog`'s report: one line per version, newest first: the commit's short ID, the
+/// operation's short ID, its time and description, and a mark when the commit holds a
+/// conflict; `-` for the operation and time of a version without one. Or as JSON.
+///
+/// # Errors
+///
+/// [`serde_json::Error`] when the JSON cannot be written.
+pub fn evolog_report(evolog: &Evolog, json: bool) -> Result<String, serde_json::Error> {
+    if json {
+        let listed: Vec<_> = evolog
+            .versions
+            .iter()
+            .map(|v| {
+                let op = v.operation.as_ref();
+                json!({
+                    "commit": v.commit.as_str(),
+                    "operation": op.map(|op| &op.id),
+                    "time": op.map(|op| &op.time),
+                    "description": op.map(|op| &op.description),
+                    "conflicted": v.conflicted,
+                })
+            })
+            .collect();
+        return Ok(format!(
+            "{}\n",
+            serde_json::to_string_pretty(
+                &json!({"change_id": evolog.change_id, "versions": listed})
+            )?
+        ));
+    }
+    let mut text = String::new();
+    for v in &evolog.versions {
+        let commit: String = v.commit.as_str().chars().take(SHORT_OPERATION).collect();
+        let mark = if v.conflicted { " (conflict)" } else { "" };
+        match &v.operation {
+            Some(op) => {
+                let short: String = op.id.chars().take(SHORT_OPERATION).collect();
+                line(
+                    &mut text,
+                    format_args!("{commit} {short} {} {}{mark}", op.time, op.description),
+                );
+            }
+            None => line(&mut text, format_args!("{commit} - -{mark}")),
+        }
+    }
+    Ok(text)
+}
+
 /// `absorb`'s report: a listing first names the operation it read; then one line per hunk,
 /// its number, path, line ranges and the commit it goes into or `stays`; then each skipped
 /// path; with `apply`, a closing count and the rebased descendants. Or as JSON.
@@ -270,7 +318,7 @@ fn line(text: &mut String, args: std::fmt::Arguments<'_>) {
 
 #[cfg(test)]
 mod tests {
-    use merge_session::jj_native::{CommitEffect, StackPath};
+    use merge_session::jj_native::{ChangeVersion, CommitEffect, StackPath, VersionOperation};
     use vcs::ChangeInfo;
 
     use super::*;
@@ -521,5 +569,39 @@ mod tests {
             serde_json::from_str(&absorb_report(&absorbed(), true, true).expect("a report"))
                 .expect("JSON");
         assert_eq!(fresh["stale"], false);
+    }
+
+    #[test]
+    fn evolog_report_marks_a_conflict_and_a_version_without_an_operation() {
+        let evolog = Evolog {
+            change_id: "kxyz".to_owned(),
+            short_change_id: "kxyz".to_owned(),
+            versions: vec![
+                ChangeVersion {
+                    commit: vcs::CommitId::new("0123456789abcdef".to_owned()),
+                    operation: Some(VersionOperation {
+                        id: "fedcba9876543210".to_owned(),
+                        time: "2026-11-22T10:00:00+01:00".to_owned(),
+                        description: "rebase commit".to_owned(),
+                    }),
+                    conflicted: true,
+                },
+                ChangeVersion {
+                    commit: vcs::CommitId::new("aaaabbbbccccdddd".to_owned()),
+                    operation: None,
+                    conflicted: false,
+                },
+            ],
+        };
+        assert_eq!(
+            evolog_report(&evolog, false).expect("a report"),
+            "0123456789ab fedcba987654 2026-11-22T10:00:00+01:00 rebase commit (conflict)\n\
+             aaaabbbbcccc - -\n"
+        );
+        let json: serde_json::Value =
+            serde_json::from_str(&evolog_report(&evolog, true).expect("a report")).expect("JSON");
+        assert_eq!(json["versions"][0]["conflicted"], true);
+        assert_eq!(json["versions"][1]["operation"], serde_json::Value::Null);
+        assert_eq!(json["versions"][1]["time"], serde_json::Value::Null);
     }
 }

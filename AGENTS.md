@@ -6,7 +6,7 @@ When a task finishes, update `PLAN.md` §1–§3 in the same change. §1 states 
 
 Docs describe the current design in the present tense. No before-and-after stories; a measurement is a present fact.
 
-You have skills for Rust development and jj version control.
+You have skills for Rust development, GPUI and jj version control. Load the `gpui` skill before writing, styling, reviewing or testing any view, window or key binding in `merge-app`; where it and `docs/STYLE.md` differ, `STYLE.md` wins.
 
 ## jj first, git parity
 
@@ -106,7 +106,7 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
   - Never drop an error silently. Handle it, return it, or log it with `tracing` and say why going on is safe.
   - `Option` for a value that may be absent, never an error or a sentinel.
 - **Named constants.** No magic numbers.
-- **UI style.** Style a view right when it is first built; a later restyle costs more than reading first. Zed, checked out at `~/Documents/dev/other/zed`, is the reference.
+- **UI style.** Style a view right when it is first built; a later restyle costs more than reading first. Zed, checked out at `~/Documents/dev/other/zed`, is the reference. The `gpui` skill holds the general rules; the points below are triad's.
   - Before writing a view, read `docs/STYLE.md`, then the Zed view that does the same job; its § Working from Zed names one for each kind of view. Copy Zed's layout, heights, padding, icons and keys in triad's sizes.
   - Build from the shared parts: `tool_window` and `pick_list` for a window that lists things, `menu_button` for a menu, `toolbar` for the toolbar. Make a new shared part when a second view needs the same thing, never a copy.
   - 12 px chrome text, `.small()` controls, a 4 px grid, sizes as named `Pixels` constants, colours from the theme. Windows of the same kind look and behave alike: the same frame, the same keys, Escape and Cancel to close.

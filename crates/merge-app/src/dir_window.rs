@@ -1,5 +1,6 @@
-//! The directory diff window (spec §6.1): the files that differ between two directories, or
-//! between a revision and the working copy, by path. A text file opens in the diff window,
+//! The directory diff window (spec §6.1): the files that differ between two directories,
+//! between a revision and the working copy, or between two versions of a jj change
+//! (spec §7.5.4), by path. A text file opens in the diff window,
 //! one at a time: as `diff LEFT RIGHT` opens it, or against the revision as `diff PATH
 //! --rev REV` does. Closing that window lists the files again. Binary, undecodable and
 //! special files are listed and do not open. Closing the window, or Escape or Cancel,
@@ -18,7 +19,8 @@ use gpui_kit::{
 use merge_core::diff::DiffOptions;
 use merge_core::text::Text;
 use merge_session::dir_diff::{self, Change, ChangedFile};
-use merge_session::native::{self, Against, Listing};
+use merge_session::jj_native::Interdiff;
+use merge_session::native::{self, Against, InterdiffListing, Listing};
 use merge_session::repository::{Discovery, Handoff};
 
 use crate::diff_window::{self, DiffFile, DiffLookup, DiffSettings};
@@ -56,6 +58,20 @@ pub enum Source {
     /// `diff [--rev REV]`: the working copy's changes against `rev`, or its parent revision,
     /// in the repository holding the working directory.
     Changes { rev: Option<String> },
+    /// `diff --since OLD [-r REV]`: a jj change against its earlier version `since`,
+    /// rebased onto the change's parents. Both sides are read-only.
+    Interdiff { since: String, rev: Option<String> },
+}
+
+/// What a listing compared, which a listed file loads from.
+#[derive(Clone)]
+enum Compared {
+    Changes(Against),
+    /// The repository's root and the two versions.
+    Interdiff {
+        root: PathBuf,
+        interdiff: Interdiff,
+    },
 }
 
 /// What the directory window opens with: what it lists, and what its diff windows take.
@@ -68,6 +84,8 @@ pub struct DirStart {
     pub title: Option<String>,
     /// The comparison options each diff window takes.
     pub diff: DiffOptions,
+    /// For [`Source::Interdiff`]: the files listed before the window opened, shown first.
+    pub listed: Option<InterdiffListing>,
     pub settings: WindowSettings,
     /// The diff windows watch their files on disk; tests turn it off.
     pub watch: bool,
@@ -78,8 +96,8 @@ pub struct DirWindow {
     exit: Rc<ExitFn>,
     /// The files listed; none before a listing lands.
     files: Option<Vec<ChangedFile>>,
-    /// For [`Source::Changes`]: the repository's root and the revision of the last listing.
-    against: Option<Against>,
+    /// For a repository's listing: what the last listing compared.
+    compared: Option<Compared>,
     listing: ListJob,
     /// The diff window open on a file.
     open: Option<AnyWindowHandle>,
@@ -125,7 +143,7 @@ pub fn start(
             start,
             exit,
             files: None,
-            against: None,
+            compared: None,
             listing: ListJob::Idle,
             open: None,
             loading: false,
@@ -147,7 +165,12 @@ pub fn start(
         // The finishing diff window is still borrowed; close it once that ends.
         cx.defer(move |cx| ignore_closed_view(view.update(cx, DirWindow::compared)));
     }));
-    view.update(cx, DirWindow::refresh);
+    view.update(cx, |this, cx| match this.start.listed.take() {
+        Some(InterdiffListing { root, interdiff, files }) => {
+            this.arrived_list(Ok((files, Some(Compared::Interdiff { root, interdiff }))), cx);
+        }
+        None => this.refresh(cx),
+    });
     Ok((window, view))
 }
 
@@ -160,8 +183,8 @@ enum ListJob {
     Stale,
 }
 
-/// A listing: its files, and for [`Source::Changes`] what they were compared with.
-type Listed = Result<(Vec<ChangedFile>, Option<Against>), String>;
+/// A listing: its files, and for a repository's listing what it compared.
+type Listed = Result<(Vec<ChangedFile>, Option<Compared>), String>;
 
 /// List `source`'s files from the working directory `cwd`.
 fn list(source: &Source, cwd: &Path, discovery: &Discovery) -> Listed {
@@ -173,9 +196,59 @@ fn list(source: &Source, cwd: &Path, discovery: &Discovery) -> Listed {
             let mut repo = discovery.find([cwd]);
             let Listing { against, files } =
                 native::changed_files(&mut repo, rev.as_deref()).map_err(to_string)?;
-            Ok((files, Some(against)))
+            Ok((files, Some(Compared::Changes(against))))
+        }
+        Source::Interdiff { since, rev } => {
+            let InterdiffListing { root, interdiff, files } =
+                native::interdiff(cwd, since, rev.as_deref(), discovery).map_err(to_string)?;
+            Ok((files, Some(Compared::Interdiff { root, interdiff })))
         }
     }
+}
+
+/// The diff window's sides for `file` of a [`Source::Interdiff`] listing.
+fn load_interdiff(
+    file: &ChangedFile,
+    root: &Path,
+    interdiff: &Interdiff,
+    discovery: &Discovery,
+) -> Result<ToolDiff, String> {
+    let from = match &file.change {
+        Change::Renamed { from } | Change::Copied { from } => from,
+        Change::Added | Change::Deleted | Change::Modified => &file.path,
+    };
+    let texts =
+        native::load_interdiff(root, interdiff, from, &file.path, discovery).map_err(to_string)?;
+    Ok(interdiff_diff(interdiff, texts, file.display_path()))
+}
+
+/// The change both versions belong to, as titles name it.
+fn change_of(interdiff: &Interdiff) -> &str {
+    interdiff.new_info.change_id.as_deref().unwrap_or(&interdiff.new_info.commit)
+}
+
+/// The directory window's title for `diff --since` (spec §7.5.4).
+pub(crate) fn interdiff_title(interdiff: &Interdiff) -> String {
+    strings::interdiff_title(change_of(interdiff), &interdiff.old_info.commit)
+}
+
+/// A `diff --since` diff window's sides (spec §7.5.4): the file in the earlier version,
+/// rebased, on the left and in the change on the right, both read-only. A side without the
+/// file opens empty.
+pub(crate) fn interdiff_diff(
+    interdiff: &Interdiff,
+    [old, new]: [Option<Text>; 2],
+    shown: String,
+) -> ToolDiff {
+    let change = change_of(interdiff);
+    let side = |text: Option<Text>, title: String| match text {
+        Some(text) => DiffFile::revision(text, title),
+        None => DiffFile::revision(Text::from_utf8(String::new()), strings::no_file(&shown)),
+    };
+    let left =
+        side(old, strings::interdiff_side(change, &interdiff.old_info.commit, interdiff.rebased));
+    let right = side(new, strings::interdiff_side(change, &interdiff.new_info.commit, false));
+    ToolDiff { left, right, origins: None, kind: Some(vcs::RepoKind::Jj), title: Some(shown) }
 }
 
 fn to_string(error: impl std::error::Error + 'static) -> String {
@@ -211,7 +284,7 @@ fn load_changed(
     let kind = repo.kind();
     let rev = against.pinned().map(str::to_owned);
     let origins = DiffLookup::Native { path, rev, repo: Handoff::new(repo) };
-    Ok(ToolDiff { left, right, origins, kind, title: Some(shown) })
+    Ok(ToolDiff { left, right, origins: Some(origins), kind, title: Some(shown) })
 }
 
 /// The diff window's sides for `file`, below `start`'s directories. A side without the file
@@ -281,6 +354,9 @@ impl DirWindow {
                 Source::Dirs { left: left.clone(), right: right.clone(), readonly: *readonly }
             }
             Source::Changes { rev } => Source::Changes { rev: rev.clone() },
+            Source::Interdiff { since, rev } => {
+                Source::Interdiff { since: since.clone(), rev: rev.clone() }
+            }
         }
     }
 
@@ -297,13 +373,13 @@ impl DirWindow {
             return self.refresh(cx);
         }
         match listed {
-            Ok((files, against)) => {
+            Ok((files, compared)) => {
                 // The selection follows its file by path; it goes when the file drops out.
                 let selected = self.selected.and_then(|ix| self.files().get(ix));
                 self.selected =
                     selected.and_then(|old| files.iter().position(|file| file.path == old.path));
                 self.files = Some(files);
-                self.against = against;
+                self.compared = compared;
                 self.note = None;
             }
             Err(error) => self.note = Some(Note::Error(error.into())),
@@ -327,17 +403,20 @@ impl DirWindow {
             return;
         }
         let discovery = self.start.discovery.clone();
-        let loaded = match (self.source_owned(), self.against.clone()) {
+        let loaded = match (self.source_owned(), self.compared.clone()) {
             (Source::Dirs { left, right, readonly }, _) => {
                 let cwd = self.start.cwd.clone();
                 cx.background_spawn(async move {
                     load_file(&listed, [left, right], readonly, cwd, &discovery)
                 })
             }
-            (Source::Changes { .. }, Some(against)) => {
+            (_, Some(Compared::Changes(against))) => {
                 cx.background_spawn(async move { load_changed(&listed, &against, &discovery) })
             }
-            (Source::Changes { .. }, None) => return,
+            (_, Some(Compared::Interdiff { root, interdiff })) => cx.background_spawn(async move {
+                load_interdiff(&listed, &root, &interdiff, &discovery)
+            }),
+            (Source::Changes { .. } | Source::Interdiff { .. }, None) => return,
         };
         self.loading = true;
         cx.spawn(async move |this, cx| {
@@ -459,8 +538,16 @@ impl Render for DirWindow {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let muted = cx.theme().muted_foreground;
         let summary = self.files.as_ref().map(|files| {
-            let against = self.against.as_ref().map(|against| against.rev.as_str());
-            strings::dirs_summary(files.len(), against).into()
+            match &self.compared {
+                Some(Compared::Changes(against)) => {
+                    strings::dirs_summary(files.len(), Some(&against.rev))
+                }
+                Some(Compared::Interdiff { interdiff, .. }) => {
+                    strings::interdiff_summary(files.len(), &interdiff.old_info.commit)
+                }
+                None => strings::dirs_summary(files.len(), None),
+            }
+            .into()
         });
         let empty = (self.files.as_ref().is_some_and(Vec::is_empty)
             && self.listing == ListJob::Idle)

@@ -14,7 +14,8 @@ use merge_config::named::Named;
 use merge_config::settings::{Algorithm, Settings, Whitespace};
 use merge_config::settings::{Choice, HunkLevelArg, SameChangeArg};
 use merge_session::invocation::{
-    Absorb, Diff, DiffFlags, History, Merge, MergeFiles, Resolve, SemanticsFlags, Stack, Window,
+    Absorb, Diff, DiffFlags, DiffSince, Evolog as EvologForm, History, Merge, MergeFiles, Resolve,
+    SemanticsFlags, Stack, Window,
 };
 use merge_session::jj_native::HunkChoice;
 
@@ -65,6 +66,11 @@ pub enum JjBatch {
     Stack { revset: Option<String>, json: bool },
     /// The versions of a file across jj's operation log.
     History { path: PathBuf, limit: Option<usize>, json: bool },
+    /// The versions of the change in the commit `rev` names across its evolog.
+    Evolog { rev: Option<String>, limit: Option<usize>, json: bool },
+    /// The files that differ between the version `since` names, rebased, and the change in
+    /// the commit `rev` names.
+    Interdiff { since: String, rev: Option<String>, json: bool },
     /// The working copy's hunks, each with the ancestor it goes into; moved there with
     /// `apply`.
     Absorb {
@@ -95,6 +101,8 @@ pub enum UsageError {
     RevWithTwoFiles,
     #[error("--op applies only to diff PATH")]
     OpWithTwoFiles,
+    #[error("--since does not apply to diff LEFT RIGHT")]
+    SinceWithTwoFiles,
     #[error("--readonly-left and --readonly-right need a file")]
     ReadonlyWithoutTwoFiles,
     #[error("--inspect needs LEFT RIGHT")]
@@ -259,6 +267,21 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// The versions of a change across jj's evolog, newest first (jj only).
+    Evolog {
+        /// The commit whose change to list; default `@`.
+        #[arg(short = 'r', long = "revision", value_name = "REV")]
+        rev: Option<String>,
+        /// List at most N versions, the newest.
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+        /// Print the list instead of opening the window.
+        #[arg(long)]
+        list: bool,
+        /// Print the list as JSON instead of opening the window.
+        #[arg(long)]
+        json: bool,
+    },
     /// The working copy's hunks, each with the commit that wrote its lines, in a window to
     /// send them there; or listed, and moved with --apply (jj only).
     Absorb {
@@ -318,6 +341,7 @@ enum Command {
 }
 
 #[derive(Debug, clap::Args)]
+#[command(group(ArgGroup::new("dry_run_target").multiple(true).args(["revision", "reuse"])))]
 struct ResolveCli {
     #[arg(value_name = "PATH")]
     path: Option<PathBuf>,
@@ -331,9 +355,14 @@ struct ResolveCli {
     /// Resolve PATH in the commit REV names, without checking it out (jj only).
     #[arg(short = 'r', long = "revision", value_name = "REV", requires = "path")]
     revision: Option<String>,
-    /// With --headless and --revision: report what the save would do; write nothing.
-    #[arg(long, requires_all = ["headless", "revision"])]
+    /// With --headless, and --revision or --reuse: report what the save would do; write
+    /// nothing.
+    #[arg(long, requires = "headless", requires = "dry_run_target")]
     dry_run: bool,
+    /// With --headless and a PATH: take each conflict's newest earlier resolution from the
+    /// change's evolog, before any --commands (jj only).
+    #[arg(long, requires_all = ["headless", "path"])]
+    reuse: bool,
     #[command(flatten)]
     diff: DiffArgs,
     #[command(flatten)]
@@ -362,6 +391,7 @@ impl ResolveCli {
             semantics: self.semantics.flags(),
             rev: self.revision,
             dry_run: self.dry_run,
+            reuse: self.reuse,
         };
         Ok(if self.headless {
             Invocation::Batch(Batch::Resolve(resolve))
@@ -405,6 +435,17 @@ struct DiffCli {
     /// Compare PATH with its version in the working-copy commit at jj operation OP (jj only).
     #[arg(long, value_name = "OP", conflicts_with_all = ["rev", "inspect"])]
     op: Option<String>,
+    /// Compare the change with its earlier version OLD, rebased onto the change's parents
+    /// (jj only).
+    #[arg(
+        long,
+        value_name = "OLD",
+        conflicts_with_all = ["rev", "op", "readonly_left", "readonly_right"]
+    )]
+    since: Option<String>,
+    /// With --since: the commit holding the change; default `@`.
+    #[arg(short = 'r', long = "revision", value_name = "REV", requires = "since")]
+    revision: Option<String>,
     /// Print the regions; no window.
     #[arg(long, conflicts_with_all = ["title", "readonly_left", "readonly_right"])]
     inspect: bool,
@@ -525,6 +566,11 @@ impl Cli {
                     json,
                 })))
             }
+            Some(Command::Evolog { rev, limit, list, json }) => Ok(if list || json {
+                Invocation::Batch(Batch::Jj(JjBatch::Evolog { rev, limit, json }))
+            } else {
+                Invocation::Window(Window::Evolog(EvologForm { rev, limit }))
+            }),
             Some(Command::History { path, limit, list, json }) => Ok(if list || json {
                 Invocation::Batch(Batch::Jj(JjBatch::History { path, limit, json }))
             } else {
@@ -584,6 +630,30 @@ impl DiffCli {
         let mut files = self.files.into_iter();
         let paths = (files.next(), files.next(), files.next());
         let unified = self.unified.map(|n| n.unwrap_or(patch::DEFAULT_CONTEXT));
+        if let Some(since) = self.since {
+            return match (paths, self.inspect) {
+                (_, _) if unified.is_some() => Err(UsageError::UnifiedWithoutTwoFiles),
+                ((None, None, None), true) => {
+                    Ok(Invocation::Batch(Batch::Jj(JjBatch::Interdiff {
+                        since,
+                        rev: self.revision,
+                        json: self.json,
+                    })))
+                }
+                ((Some(_), None, None), true) => Err(UsageError::InspectNative),
+                ((path, None, None), false) => {
+                    Ok(Invocation::Window(Window::DiffSince(DiffSince {
+                        path,
+                        since,
+                        rev: self.revision,
+                        diff: self.diff.over(&settings.two_way()),
+                        title: self.title,
+                    })))
+                }
+                ((Some(_), Some(_), None), _) => Err(UsageError::SinceWithTwoFiles),
+                _ => Err(UsageError::DiffFiles(count)),
+            };
+        }
         match (paths, self.rev, self.inspect) {
             ((None, None, None), _, _) if unified.is_some() => {
                 Err(UsageError::UnifiedWithoutTwoFiles)
@@ -1165,6 +1235,7 @@ mod tests {
                 semantics: SemanticsFlags::default(),
                 rev: None,
                 dry_run: false,
+                reuse: false,
             }))
         );
         let args = [
@@ -1203,6 +1274,7 @@ mod tests {
                 },
                 rev: None,
                 dry_run: false,
+                reuse: false,
             }))
         );
     }
@@ -1358,6 +1430,67 @@ mod tests {
         };
         assert_eq!(stack.revset.as_deref(), Some("::@"));
         assert_eq!(clap_kind(&["stack", "a", "b"]), ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn resolve_reuse_needs_headless_and_a_path_and_allows_a_dry_run() {
+        let Invocation::Batch(Batch::Resolve(resolve)) =
+            ok(&["resolve", "a.txt", "--reuse", "--headless", "--dry-run"])
+        else {
+            panic!("a headless resolve");
+        };
+        assert_eq!((resolve.reuse, resolve.dry_run, resolve.rev), (true, true, None));
+        assert_eq!(clap_kind(&["resolve", "a.txt", "--reuse"]), ErrorKind::MissingRequiredArgument);
+        assert_eq!(
+            clap_kind(&["resolve", "--reuse", "--headless"]),
+            ErrorKind::MissingRequiredArgument
+        );
+        assert_eq!(
+            clap_kind(&["resolve", "a.txt", "--headless", "--dry-run"]),
+            ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn evolog_opens_a_window_without_list_or_json() {
+        assert_eq!(
+            ok(&["evolog"]),
+            Invocation::Window(Window::Evolog(EvologForm { rev: None, limit: None }))
+        );
+        assert_eq!(
+            ok(&["evolog", "-r", "x", "--limit", "3"]),
+            Invocation::Window(Window::Evolog(EvologForm {
+                rev: Some("x".to_owned()),
+                limit: Some(3)
+            }))
+        );
+    }
+
+    #[test]
+    fn diff_since_opens_the_directory_window_or_with_a_path_the_diff_window() {
+        let since = |path: Option<&str>, rev: Option<&str>| {
+            Invocation::Window(Window::DiffSince(DiffSince {
+                path: path.map(Into::into),
+                since: "old".to_owned(),
+                rev: rev.map(str::to_owned),
+                diff: Settings::default().two_way(),
+                title: None,
+            }))
+        };
+        assert_eq!(ok(&["diff", "--since", "old"]), since(None, None));
+        assert_eq!(ok(&["diff", "--since", "old", "-r", "x"]), since(None, Some("x")));
+        assert_eq!(ok(&["diff", "a.txt", "--since", "old"]), since(Some("a.txt"), None));
+    }
+
+    #[test]
+    fn diff_since_refuses_two_files_a_listed_path_and_a_revision_without_it() {
+        assert_eq!(usage(&["diff", "a", "b", "--since", "old"]), UsageError::SinceWithTwoFiles);
+        assert_eq!(usage(&["diff", "a", "--since", "old", "--inspect"]), UsageError::InspectNative);
+        assert_eq!(clap_kind(&["diff", "-r", "x"]), ErrorKind::MissingRequiredArgument);
+        assert_eq!(
+            clap_kind(&["diff", "--since", "old", "--rev", "x"]),
+            ErrorKind::ArgumentConflict
+        );
     }
 
     #[test]

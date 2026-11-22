@@ -5668,6 +5668,7 @@ dependencies = [
  "merge-core",
  "merge-session",
  "merge-syntax",
+ "merge-view",
  "serde",
  "serde_json",
  "tempfile",

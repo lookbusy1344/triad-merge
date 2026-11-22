@@ -14,6 +14,7 @@ mod editor_sync;
 mod editor_syntax;
 mod elevation;
 mod error_text;
+pub mod evolog_window;
 mod file_watch;
 mod go_to_line;
 pub mod history_window;

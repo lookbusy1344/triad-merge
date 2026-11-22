@@ -7,7 +7,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 use merge_core::text::{DecodeError, Text};
 use vcs::{CommitId, EntryKind, RepoKind, Repository, RevSpec, TermContent, Tree, VcsError};
 use vcs_git::GitRepository;
-use vcs_jj::JjRepository;
+use vcs_jj::{Interdiff, InterdiffSide, JjRepository};
 
 use crate::dir_diff::{self, Blob, Change, ChangedFile, Content, Difference};
 use crate::repository::{Discovery, RunRepository};
@@ -305,6 +305,139 @@ pub fn changed_files(repo: &mut RunRepository, rev: Option<&str>) -> Result<List
         }
     })?;
     Ok(Listing { against: Against { root, rev: rev.to_owned(), pinned }, files })
+}
+
+/// What `diff --since` lists: an earlier version of a change, rebased onto the change's
+/// parents, against the change (spec §7.5.4).
+#[derive(Debug, Clone)]
+pub struct InterdiffListing {
+    /// The repository's root, which the paths are relative to.
+    pub root: PathBuf,
+    pub interdiff: Interdiff,
+    pub files: Vec<ChangedFile>,
+}
+
+/// The files that differ between the version of a change `since` names, rebased onto the
+/// parents of the commit `rev` names (default `@`), and that commit, in the jj repository
+/// holding `cwd`, with renames and copies paired as [`changed_files`] pairs them. The
+/// working copy is snapshotted first.
+///
+/// # Errors
+///
+/// [`NativeError::NeedsJj`] in a git repository; [`NativeError::Vcs`] outside any
+/// repository, for a revision that names no commit or several, or when the trees cannot be
+/// read.
+pub fn interdiff(
+    cwd: &Path,
+    since: &str,
+    rev: Option<&str>,
+    discovery: &Discovery,
+) -> Result<InterdiffListing, NativeError> {
+    let mut repo =
+        crate::jj_native::jj_at(cwd, discovery)?.ok_or(NativeError::NeedsJj("diff --since"))?;
+    let interdiff = repo.interdiff(since, rev.unwrap_or(crate::jj_native::WORKING_COPY))?;
+    let side = |side: InterdiffSide| match side {
+        InterdiffSide::Absent => Side::Absent,
+        InterdiffSide::File(bytes) => Side::File(bytes),
+        InterdiffSide::Other => Side::Special,
+    };
+    let mut listed = Vec::new();
+    for path in repo.interdiff_paths(&interdiff)? {
+        let [old, new] = repo.interdiff_sides(&interdiff, &path)?;
+        if let Some((change, content, blob)) = compared(side(old), side(new))? {
+            listed.push((ChangedFile { path: path.into_std_path_buf(), change, content }, blob));
+        }
+    }
+    let files = dir_diff::with_rewrites(listed, |file| {
+        let path =
+            Utf8Path::from_path(&file.path).ok_or_else(|| VcsError::NotUtf8(file.path.clone()))?;
+        let [old, new] = repo.interdiff_sides(&interdiff, path)?;
+        match if file.change == Change::Deleted { old } else { new } {
+            InterdiffSide::File(bytes) => Ok(bytes),
+            InterdiffSide::Absent | InterdiffSide::Other => Err(NativeError::Find {
+                path: file.path.clone(),
+                source: io::ErrorKind::NotFound.into(),
+            }),
+        }
+    })?;
+    Ok(InterdiffListing { root: repo.root().as_std_path().to_owned(), interdiff, files })
+}
+
+/// The two sides of `from` and `to`, a file [`interdiff`] listed, relative to the
+/// repository's root `root`: `from` in the rebased earlier version, `to` in the change. The
+/// two differ for a rename. None for a side without the file.
+///
+/// # Errors
+///
+/// [`NativeError::NeedsJj`] when `root` holds no jj repository; [`NativeError::Vcs`] when a
+/// path is not UTF-8 or the trees cannot be read; [`NativeError::Decode`] when a side is not
+/// text.
+pub fn load_interdiff(
+    root: &Path,
+    interdiff: &Interdiff,
+    from: &Path,
+    to: &Path,
+    discovery: &Discovery,
+) -> Result<[Option<Text>; 2], NativeError> {
+    let repo =
+        crate::jj_native::jj_at(root, discovery)?.ok_or(NativeError::NeedsJj("diff --since"))?;
+    interdiff_texts(&repo, interdiff, utf8(from)?, utf8(to)?)
+}
+
+fn utf8(path: &Path) -> Result<&Utf8Path, VcsError> {
+    Utf8Path::from_path(path).ok_or_else(|| VcsError::NotUtf8(path.to_owned()))
+}
+
+/// `from` in the rebased earlier version and `to` in the change, as text.
+fn interdiff_texts(
+    repo: &JjRepository,
+    interdiff: &Interdiff,
+    from: &Utf8Path,
+    to: &Utf8Path,
+) -> Result<[Option<Text>; 2], NativeError> {
+    let [old, _] = repo.interdiff_sides(interdiff, from)?;
+    let [_, new] = repo.interdiff_sides(interdiff, to)?;
+    let text = |side: InterdiffSide, path: &Utf8Path, commit: &CommitId| match side {
+        InterdiffSide::File(bytes) => Text::decode(bytes).map(Some).map_err(|source| {
+            NativeError::Decode { path: path.to_owned(), rev: commit.to_string(), source }
+        }),
+        InterdiffSide::Absent | InterdiffSide::Other => Ok(None),
+    };
+    Ok([text(old, from, &interdiff.old)?, text(new, to, &interdiff.new)?])
+}
+
+/// One file of an interdiff: its path relative to the repository's root, and its two sides
+/// as [`load_interdiff`] gives them.
+#[derive(Debug, Clone)]
+pub struct InterdiffFile {
+    pub interdiff: Interdiff,
+    pub path: Utf8PathBuf,
+    pub texts: [Option<Text>; 2],
+}
+
+/// `diff PATH --since OLD [-r REV]` (spec §7.5.4): `path`, relative to `cwd`, in the
+/// interdiff of the jj repository holding `cwd`.
+///
+/// # Errors
+///
+/// [`NativeError::Vcs`] for a path outside the repository; and the errors of [`interdiff`] and [`load_interdiff`].
+pub fn interdiff_path(
+    cwd: &Path,
+    path: &Path,
+    since: &str,
+    rev: Option<&str>,
+    discovery: &Discovery,
+) -> Result<InterdiffFile, NativeError> {
+    let mut repo =
+        crate::jj_native::jj_at(cwd, discovery)?.ok_or(NativeError::NeedsJj("diff --since"))?;
+    let absolute = crate::resolve::absolute(&cwd.join(path))?;
+    let relative = absolute
+        .strip_prefix(repo.root())
+        .map_err(|_| VcsError::OutsideRepository(absolute.clone()))?
+        .to_owned();
+    let interdiff = repo.interdiff(since, rev.unwrap_or(crate::jj_native::WORKING_COPY))?;
+    let texts = interdiff_texts(&repo, &interdiff, &relative, &relative)?;
+    Ok(InterdiffFile { interdiff, path: relative, texts })
 }
 
 /// The revision of `commits`: the empty tree for none, else their full IDs.
