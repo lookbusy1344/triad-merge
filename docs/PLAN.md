@@ -31,6 +31,8 @@ The conformance suite runs on git, jj and internal jj repositories, and six of i
 
 CI: `triad.yml` tests on Linux, macOS and Windows; `bench.yml` and `audit.yml` run weekly. All three pass on GitHub's runners; Linux and macOS also under `act`. On the Windows runner, tests that build jj repositories run about 40 times slower than on Linux: `vcs-jj`'s jj tests take 292 s of test time there and 7 s on Linux, while `vcs-git`'s take 8 s. Defender is off in the runner image. The cause is open (§3). `release.yml` runs on a `v*` tag that matches the workspace version: it runs `triad.yml`'s checks and tests on all three platforms, and only when they pass builds `triad.app` for macOS ARM64, a zip of both binaries for Windows x64 and the smoke-tested Linux x64 packages, and publishes them as a release. v0.2.0 is the latest.
 
+The commit and push gates run on Windows under Git Bash, without a time limit: the quick profile takes 102 s there (§A13.5). Their script tests pass on Windows; on macOS and Linux CI runs `script/check-workspace`, and the next gate run there covers the rest.
+
 Build profiles (root `Cargo.toml`): `release` aborts on panic and strips symbols, 37.5 MB on macOS ARM64, 1 min clean; `script/macos-app`, `script/measure-app` and the benchmarks use it. `dist` adds fat LTO and one codegen unit, 35.4 MB, 3 min; `script/package`, `script/macos-app dist` and `release.yml` use it.
 
 ## 2. Next steps

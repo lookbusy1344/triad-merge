@@ -12,6 +12,9 @@
 #   dev-dependencies, so release builds flush jj's writes to disk (DESIGN.md §A13.5).
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# shellcheck source=platform.sh
+source script/platform.sh
+root=$(native_pwd)
 
 metadata=$(cargo metadata --format-version 1 --locked)
 status=0
@@ -30,8 +33,8 @@ if [[ "$gix_versions" == *,* ]]; then
 fi
 
 config_allowed='merge-core'
-config_deps=$(jq -r --arg root "$PWD/crates" '.packages[] | select(.name == "merge-config")
-  | .dependencies[] | select(.path != null and (.path | startswith($root))) | .name' <<<"$metadata" | sort -u)
+config_deps=$(jq -r --arg root "$root/crates" '.packages[] | select(.name == "merge-config")
+  | .dependencies[] | select(.path != null and (.path | gsub("\\\\"; "/") | startswith($root))) | .name' <<<"$metadata" | sort -u)
 for dep in $config_deps; do
   if [[ " $config_allowed " != *" $dep "* ]]; then
     echo "error: merge-config depends on $dep; it may depend on $config_allowed" >&2
@@ -50,8 +53,8 @@ done
 
 for dir in vendor/*/; do
   name=$(sed -n 's/^name = "\(.*\)"$/\1/p' "$dir/Cargo.toml" | head -1)
-  manifests=$(jq -r --arg name "$name" '.packages[] | select(.name == $name) | .manifest_path' <<<"$metadata")
-  if [[ "$manifests" != "$PWD/${dir}Cargo.toml" ]]; then
+  manifests=$(jq -r --arg name "$name" '.packages[] | select(.name == $name) | .manifest_path | gsub("\\\\"; "/")' <<<"$metadata")
+  if [[ "$manifests" != "$root/${dir}Cargo.toml" ]]; then
     echo "error: the build does not use ${dir%/} for $name: ${manifests:-not in the graph}" >&2
     status=1
   fi

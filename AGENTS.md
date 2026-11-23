@@ -60,6 +60,7 @@ cargo deny check                  # when a manifest, Cargo.lock or deny.toml cha
 - The `quick` profile (`.config/nextest.toml`) leaves out the tests that build jj repositories, the scrolling tests and the serial tests that compare against the editor's highlighter; git conformance stays in. A test that builds a jj repository sits in a `jj` module, and the profile names that module. A change to `vcs-jj`, to jj behaviour, to scrolling or to syntax highlighting runs the full suite before commit: `script/checks`.
 - Each crate links one integration-test binary, `tests/main.rs` (`autotests = false`). A new test file is a module there.
 - In a plain git checkout, install the gate once: `ln -sf ../../script/pre-commit .git/hooks/pre-commit`.
+- On Windows the gate and `script/pre-push` run under Git Bash, with `jq`, `cargo-deny` and Python 3 on `PATH`. The limits above do not apply there; nextest's per-test cap still names a hung test (`DESIGN.md` §A13.5).
 
 ## Tests
 

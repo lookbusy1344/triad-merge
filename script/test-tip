@@ -194,6 +194,16 @@ TOML
   expect "$(run_pre_push)" "$(jj_tip_line merge)"
 }
 
+# pre-push formats the tip with rustfmt, reading the rustfmt.toml beside its script directory.
+jj_pre_push_formats_the_tip() {
+  make_jj_fork jj-pre-push-format
+  : >rustfmt.toml
+  printf 'fn main(){let x=1;}\n' >main.rs
+  jj commit --quiet -m unformatted
+  run_pre_push >/dev/null
+  expect "$(jj file show -r @- main.rs)" $'fn main() {\n    let x = 1;\n}'
+}
+
 run_case jj_build_id_names_a_clean_merge_at_working_copy
 run_case jj_build_id_names_a_clean_merge_under_an_empty_working_copy
 run_case jj_build_id_names_the_parent_of_an_empty_working_copy
@@ -203,6 +213,7 @@ run_case git_build_id_names_no_change_for_a_dirty_tree
 run_case git_build_id_names_a_merge_commit
 run_case jj_pre_push_checks_a_clean_merge
 run_case jj_pre_push_checks_a_clean_merge_of_pushed_revisions
+run_case jj_pre_push_formats_the_tip
 
 if [[ $failures -gt 0 ]]; then
   echo "$failures case(s) failed" >&2

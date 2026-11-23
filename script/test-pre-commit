@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# test-pre-commit — check the paths script/pre-commit hands to script/checks, and the test
+# filter script/checks builds from them.
+#
+# jj on Windows prints paths with `\` and cargo prints `C:\…` manifest paths; the gate reads
+# them as it reads `/` paths on macOS and Linux. Each case runs the scripts copied from this
+# checkout in a temporary directory, with stubs for the steps that build.
+#
+# Usage: script/test-pre-commit
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+readonly ROOT
+
+work=$(mktemp -d "${TMPDIR:-/tmp}/triad-test-pre-commit.XXXXXX")
+trap 'rm -rf "$work"' EXIT
+
+export JJ_CONFIG="$work/jj-config.toml"
+cat >"$JJ_CONFIG" <<'EOF'
+user.name = "Fixture"
+user.email = "fixture@example.invalid"
+EOF
+
+failures=0
+
+# Compare output $1 with the expected $2.
+expect() {
+  [[ $1 == "$2" ]] && return
+  echo "    expected: ${2//$'\n'/\\n}" >&2
+  echo "    actual:   ${1//$'\n'/\\n}" >&2
+  return 1
+}
+
+# Run case function $1 in a subshell with errexit, so a failed setup step fails the case.
+run_case() {
+  local status=0
+  set +e
+  (set -e; "$1")
+  status=$?
+  set -e
+  if [[ $status -eq 0 ]]; then
+    echo "ok   $1"
+  else
+    echo "FAIL $1" >&2
+    failures=$((failures + 1))
+  fi
+}
+
+# A jj repository in $work/$1, entered, holding pre-commit and a stub script/checks that
+# writes its arguments to $work/$1/args, one per line.
+make_repo() {
+  mkdir -p "$work/$1/script"
+  cd "$work/$1"
+  jj git init --quiet
+  cp "$ROOT/script/pre-commit" "$ROOT/script/platform.sh" script/
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" >args\n' >script/checks
+  chmod +x script/checks
+  jj commit --quiet -m base
+}
+
+# Write file $1 in the working copy, run pre-commit, and expect checks to get $2 as its
+# arguments, or not to run when $2 is empty. Then drop the change.
+expect_checks_args() {
+  mkdir -p "$(dirname "$1")"
+  echo change >"$1"
+  rm -f args
+  script/pre-commit >/dev/null
+  if [[ -z $2 ]]; then
+    [[ ! -e args ]] || { echo "    checks ran with: $(<args)" >&2; return 1; }
+  else
+    expect "$(<args)" "$2"
+  fi
+  jj abandon --quiet @
+}
+
+# pre-commit hands checks each changed path with `/`, and runs it for every path that affects
+# the build, on every platform.
+pre_commit_passes_slash_paths() {
+  make_repo slash-paths
+  expect_checks_args script/tool $'--quick\nscript/tool'
+  expect_checks_args fixtures/core/case/base.txt $'--quick\nfixtures/core/case/base.txt'
+  expect_checks_args crates/x/Cargo.toml $'--quick\ncrates/x/Cargo.toml'
+  expect_checks_args crates/x/src/lib.rs $'--quick\ncrates/x/src/lib.rs'
+}
+
+# A change only to docs runs no checks.
+pre_commit_skips_docs() {
+  make_repo docs
+  expect_checks_args docs/notes/a.md ''
+}
+
+# checks --quick on a changed crate runs the tests of that crate and of its dependents, with
+# manifest paths in the form cargo prints them on this platform.
+checks_filters_changed_crate_and_dependents() {
+  local dir="$work/filter"
+  mkdir -p "$dir/script" "$dir/bin"
+  cd "$dir"
+  cp "$ROOT/script/checks" "$ROOT/script/platform.sh" script/
+  printf '#!/usr/bin/env bash\n' >script/check-workspace
+  chmod +x script/check-workspace
+
+  # cargo prints C:\dir\crates\b\Cargo.toml on Windows, /dir/crates/b/Cargo.toml elsewhere.
+  local native separator=/
+  if native=$(pwd -W 2>/dev/null); then
+    native=${native//\//\\}
+    separator=\\
+  else
+    native=$(pwd -P)
+  fi
+  manifest() { echo "${native}${separator}crates${separator}$1${separator}Cargo.toml"; }
+  jq -n --arg a "$(manifest a)" --arg b "$(manifest b)" --arg c "$(manifest c)" '{packages: [
+    {name: "a", manifest_path: $a, dependencies: []},
+    {name: "b", manifest_path: $b, dependencies: []},
+    {name: "c", manifest_path: $c, dependencies: [{name: "b"}]}
+  ]}' >metadata.json
+
+  cat >bin/cargo <<'EOF'
+#!/usr/bin/env bash
+dir=$(cd "$(dirname "$0")/.." && pwd)
+case $1 in
+  metadata) cat "$dir/metadata.json" ;;
+  nextest) [[ $3 == --no-run ]] || printf '%s\n' "$*" >"$dir/nextest" ;;
+esac
+EOF
+  chmod +x bin/cargo
+
+  PATH="$dir/bin:$PATH" script/checks --quick crates/b/src/lib.rs >/dev/null
+  expect "$(<nextest)" 'nextest run --workspace --profile quick -E package(b) | package(c)'
+}
+
+run_case pre_commit_passes_slash_paths
+run_case pre_commit_skips_docs
+run_case checks_filters_changed_crate_and_dependents
+
+if [[ $failures -gt 0 ]]; then
+  echo "$failures case(s) failed" >&2
+  exit 1
+fi

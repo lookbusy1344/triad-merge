@@ -14,8 +14,10 @@
 # the workspace root, it also runs only the tests of the changed crates and the crates that
 # depend on them, `cargo deny` only when a manifest or the lock file changed, and
 # gpui-base's own tests only when vendor/gpui-base changed, script/test-pre-push only
-# when script/pre-push or that test changed, script/test-agent-pre-push-hook only when
-# script/agent-pre-push-hook or that test changed, script/test-tip only when script/build-id,
+# when script/pre-push or that test changed, script/test-pre-commit only when
+# script/pre-commit, script/checks, script/platform.sh or that test changed,
+# script/test-agent-pre-push-hook only when script/agent-pre-push-hook,
+# script/platform.sh or that test changed, script/test-tip only when script/build-id,
 # script/pre-push or that test changed, and script/test-jj-repos only when script/gen-jj-repo,
 # that test or the directory demo it builds from changed. A change to a vendored crate
 # also runs the tests of the workspace crates that depend on the crate it reaches the
@@ -26,6 +28,8 @@
 # build cache, stays the same for every run.
 
 set -euo pipefail
+# shellcheck source=platform.sh
+source script/platform.sh
 
 # Each test run's limit: its time on a warm build (DESIGN.md §A13.5) plus nextest's 30 s
 # per-test cap (.config/nextest.toml), so nextest names a hung test before the run is stopped.
@@ -47,8 +51,11 @@ run() {
     "$@"
 }
 
-# gtimeout on macOS (coreutils), timeout on Linux.
-timeout_cmd="$(command -v gtimeout || command -v timeout || true)"
+# gtimeout on macOS (coreutils), timeout on Linux. Windows has no time limit: each test
+# process takes about 57 ms to start, and the quick profile takes 102 s against 9 s on macOS
+# (DESIGN.md §A13.5). nextest's per-test cap still names a hung test.
+timeout_cmd=""
+on_windows || timeout_cmd="$(command -v gtimeout || command -v timeout || true)"
 test_timeout="${FULL_TEST_TIMEOUT_SECONDS}"
 [[ "${quick}" == true ]] && test_timeout="${QUICK_TEST_TIMEOUT_SECONDS}"
 if [[ -n "${timeout_cmd}" ]]; then
@@ -62,6 +69,7 @@ all_tests=true
 deny=true
 gpui_base_tests=true
 pre_push=true
+pre_commit=true
 agent_hook=true
 tip=true
 jj_repos=true
@@ -73,6 +81,7 @@ if [[ "${quick}" == true && ${#changed[@]} -gt 0 ]]; then
     deny=false
     gpui_base_tests=false
     pre_push=false
+    pre_commit=false
     agent_hook=false
     tip=false
     jj_repos=false
@@ -99,6 +108,15 @@ if [[ "${quick}" == true && ${#changed[@]} -gt 0 ]]; then
                 all_tests=true
                 ;;
             script/agent-pre-push-hook | script/test-agent-pre-push-hook)
+                agent_hook=true
+                all_tests=true
+                ;;
+            script/pre-commit | script/checks | script/test-pre-commit)
+                pre_commit=true
+                all_tests=true
+                ;;
+            script/platform.sh)
+                pre_commit=true
                 agent_hook=true
                 all_tests=true
                 ;;
@@ -129,12 +147,12 @@ affected_filter() {
     local metadata
     metadata="$(cargo metadata --format-version 1 --no-deps --locked)"
     local root
-    root="$(pwd -P)"
+    root="$(native_pwd)"
     local names=()
     local dir
     for dir in "$@"; do
         names+=("$(jq -r --arg m "${root}/${dir}/Cargo.toml" \
-            '.packages[] | select(.manifest_path == $m) | .name' <<< "${metadata}")")
+            '.packages[] | select((.manifest_path | gsub("\\\\"; "/")) == $m) | .name' <<< "${metadata}")")
     done
     local entry
     for entry in ${vendor_entries[@]+"${vendor_entries[@]}"}; do
@@ -178,6 +196,7 @@ fi
 [[ "${quick}" == true ]] || run ${test_prefix[@]+"${test_prefix[@]}"} cargo test --doc --workspace
 [[ "${deny}" == true ]] && run cargo deny check
 [[ "${pre_push}" == true ]] && run script/test-pre-push
+[[ "${pre_commit}" == true ]] && run script/test-pre-commit
 [[ "${agent_hook}" == true ]] && run script/test-agent-pre-push-hook
 [[ "${tip}" == true ]] && run script/test-tip
 # Runs the binary that the build, or nextest's build of the integration tests, leaves.
