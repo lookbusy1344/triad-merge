@@ -5146,8 +5146,6 @@ dependencies = [
 [[package]]
 name = "jj-local-util"
 version = "0.47.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1d32a882ff2453e9becbbca1dee041d8162240aaf020e11994a4ab88643c2e9"
 dependencies = [
  "blake2",
  "futures",
@@ -9621,6 +9619,7 @@ dependencies = [
  "gix",
  "jiff",
  "jj-lib",
+ "jj-local-util",
  "pollster 1.0.1",
  "rand 0.10.4",
  "rand_chacha 0.10.0",

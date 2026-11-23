@@ -166,7 +166,7 @@ About 91,000 lines of Rust in `crates/`, blank lines and comments excluded, as `
 | Tests: `tests/`, `#[cfg(test)]` modules and test-support modules | 53,000 |
 | Benchmarks and examples | 2,000 |
 
-The GPUI shell, `merge-app`, holds 15,000 lines of product code; `merge-core` holds 5,000. `vendor/gpui-base` is left out.
+The GPUI shell, `merge-app`, holds 15,000 lines of product code; `merge-core` holds 5,000. `vendor/` is left out.
 
 ## Documents
 

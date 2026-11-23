@@ -13,13 +13,14 @@
 # tests need and clippy checks every target. Given the changed PATHs, relative to
 # the workspace root, it also runs only the tests of the changed crates and the crates that
 # depend on them, `cargo deny` only when a manifest or the lock file changed, and
-# the vendored crate's tests only when vendor/ changed, script/test-pre-push only
+# gpui-base's own tests only when vendor/gpui-base changed, script/test-pre-push only
 # when script/pre-push or that test changed, script/test-agent-pre-push-hook only when
 # script/agent-pre-push-hook or that test changed, script/test-tip only when script/build-id,
 # script/pre-push or that test changed, and script/test-jj-repos only when script/gen-jj-repo,
-# that test or the directory demo it builds from changed. A vendor/ change also runs
-# the tests of the crates that depend on gpui-kit, through which the vendored crate
-# reaches the workspace, and of their dependents. A change to docs/ or to a Markdown file
+# that test or the directory demo it builds from changed. A change to a vendored crate
+# also runs the tests of the workspace crates that depend on the crate it reaches the
+# workspace through, and of their dependents: gpui-kit for gpui-base, jj-lib for
+# jj-local-util. A change to docs/ or to a Markdown file
 # at the root runs no tests. Any other changed path outside crates/ runs every test.
 # Build and clippy always cover the workspace, so the feature set, and with it the
 # build cache, stays the same for every run.
@@ -54,16 +55,18 @@ fi
 # Every check runs unless the changed paths say otherwise.
 all_tests=true
 deny=true
-vendor=true
+gpui_base_tests=true
 pre_push=true
 agent_hook=true
 tip=true
 jj_repos=true
 crate_dirs=()
+# The crates through which a changed vendored crate reaches the workspace.
+vendor_entries=()
 if [[ "${quick}" == true && ${#changed[@]} -gt 0 ]]; then
     all_tests=false
     deny=false
-    vendor=false
+    gpui_base_tests=false
     pre_push=false
     agent_hook=false
     tip=false
@@ -75,7 +78,11 @@ if [[ "${quick}" == true && ${#changed[@]} -gt 0 ]]; then
                 crate_dirs+=("${path%/Cargo.toml}")
                 ;;
             crates/*/*) crate_dirs+=("$(cut -d/ -f1-2 <<< "${path}")") ;;
-            vendor/*) vendor=true ;;
+            vendor/gpui-base/*)
+                gpui_base_tests=true
+                vendor_entries+=(gpui-kit)
+                ;;
+            vendor/jj-local-util/*) vendor_entries+=(jj-lib) ;;
             docs/*) ;;
             script/pre-push)
                 pre_push=true
@@ -110,11 +117,8 @@ if [[ "${quick}" == true && ${#changed[@]} -gt 0 ]]; then
     done
 fi
 
-# The vendored crate's only way into the workspace.
-readonly VENDOR_ENTRY=gpui-kit
-
 # The nextest filter for the changed crates and every workspace crate that depends on
-# them, directly or not. With vendor=true, the crates that depend on VENDOR_ENTRY count
+# them, directly or not. The crates that depend on one of vendor_entries count
 # as changed.
 affected_filter() {
     local metadata
@@ -127,10 +131,11 @@ affected_filter() {
         names+=("$(jq -r --arg m "${root}/${dir}/Cargo.toml" \
             '.packages[] | select(.manifest_path == $m) | .name' <<< "${metadata}")")
     done
-    if [[ "${vendor}" == true ]]; then
-        while IFS= read -r name; do names+=("${name}"); done < <(jq -r --arg e "${VENDOR_ENTRY}" \
+    local entry
+    for entry in ${vendor_entries[@]+"${vendor_entries[@]}"}; do
+        while IFS= read -r name; do names+=("${name}"); done < <(jq -r --arg e "${entry}" \
             '.packages[] | select(any(.dependencies[]; .name == $e)) | .name' <<< "${metadata}")
-    fi
+    done
     jq -r --args '
         [.packages[] | {name, deps: [.dependencies[].name]}] as $graph
         | def dependents($set):
@@ -172,8 +177,8 @@ fi
 [[ "${tip}" == true ]] && run script/test-tip
 # Runs the binary that the build, or nextest's build of the integration tests, leaves.
 [[ "${jj_repos}" == true ]] && run script/test-jj-repos
-# The vendored crate sits outside the workspace; its own unit tests cover the patch.
-if [[ "${vendor}" == true ]]; then
+# gpui-base sits outside the workspace; its own unit tests cover the patch.
+if [[ "${gpui_base_tests}" == true ]]; then
     run ${test_prefix[@]+"${test_prefix[@]}"} env CARGO_TARGET_DIR=target/vendor \
         cargo nextest run --manifest-path vendor/gpui-base/Cargo.toml --features test-support --lib
 fi

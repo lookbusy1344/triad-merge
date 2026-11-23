@@ -147,7 +147,7 @@ The jj-native API (`DESIGN.md` part I) sits on `JjRepository` outside the trait:
 - `interdiff`: an earlier version of a change rebased onto the change's parents, as `jj interdiff` builds it; the paths that differ and what each side holds, conflicts written with jj's markers.
 - `absorb`: the working copy's hunks against its parents, each with the ancestor it goes into, and the moves the user chose.
 
-Every write follows jj's own order: snapshot, rewrite in one transaction, rebase descendants, check out a moved working-copy commit. `testing` (feature) builds jj repositories through jj-lib, in the default (colocated) layout unless a test names another. `examples/` generate the jj oracle corpora from jj-lib and from jj's CLI (`DESIGN.md` §B5.2, §I5).
+Every write follows jj's own order: snapshot, rewrite in one transaction, rebase descendants, check out a moved working-copy commit. `testing` (feature) builds jj repositories through jj-lib, in the default (colocated) layout unless a test names another, and turns on the vendored `jj-local-util`'s `skip-sync`, so jj-lib does not flush its writes to disk (`DESIGN.md` §A13.5). `examples/` generate the jj oracle corpora from jj-lib and from jj's CLI (`DESIGN.md` §B5.2, §I5).
 
 ## 5. `merge-syntax`
 

@@ -41,6 +41,7 @@ bundle() {
     cp packaging/linux/"$bin".desktop "$root/"
     cp images/triad-icon.svg "$root/$bin.svg"
     cp vendor/gpui-base/LICENSE-APACHE "$root/LICENSE-gpui-base"
+    cp vendor/jj-local-util/LICENSE "$root/LICENSE-jj-local-util"
 }
 
 bundle "$stage/$name" . lib '$ORIGIN/lib'

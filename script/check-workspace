@@ -6,6 +6,10 @@
 #   alone (DESIGN.md §A13.7).
 # - The front ends reach the VCS backends only through merge-session: merge-cli and merge-app
 #   take vcs-jj and vcs-git as dev-dependencies alone.
+# - Each crate under vendor/ is the one the build uses: a version bump that leaves its
+#   [patch.crates-io] entry unused fails here.
+# - jj-local-util's `skip-sync` stays out of the product: no crate turns it on outside
+#   dev-dependencies, so release builds flush jj's writes to disk (DESIGN.md §A13.5).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -43,5 +47,20 @@ for front in merge-cli merge-app; do
     status=1
   done
 done
+
+for dir in vendor/*/; do
+  name=$(sed -n 's/^name = "\(.*\)"$/\1/p' "$dir/Cargo.toml" | head -1)
+  manifests=$(jq -r --arg name "$name" '.packages[] | select(.name == $name) | .manifest_path' <<<"$metadata")
+  if [[ "$manifests" != "$PWD/${dir}Cargo.toml" ]]; then
+    echo "error: the build does not use ${dir%/} for $name: ${manifests:-not in the graph}" >&2
+    status=1
+  fi
+done
+
+if cargo tree --locked --workspace -e no-dev,features -i jj-local-util --prefix none \
+  | grep -q '^jj-local-util feature "skip-sync"'; then
+  echo "error: a non-dev dependency turns on jj-local-util/skip-sync; release builds would not flush jj's writes" >&2
+  status=1
+fi
 
 exit "$status"

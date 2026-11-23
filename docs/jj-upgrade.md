@@ -18,15 +18,17 @@ All in the root `Cargo.toml`:
 |---|---|---|
 | `jj-lib` | `=X.Y.Z` | The release. |
 | `jj-core` | `=X.Y.Z` | Moves with jj-lib. |
+| `jj-local-util` | `=X.Y.Z` | Moves with jj-lib; `[patch.crates-io]` points it at `vendor/jj-local-util`. |
 | `gix` | `=A.B.C` | The version jj's workspace `Cargo.toml` names at the release tag, so the build holds one gix (`DESIGN.md` §A3). |
 
 Then:
 
 ```sh
-cargo update -p jj-lib -p jj-core -p gix
+cargo update -p jj-lib -p jj-core -p jj-local-util -p gix
 cargo tree -d -e normal | rg 'gix|jj-'      # no second copy of either
 ```
 
+- Replace `vendor/jj-local-util` with the new release's `jj-local-util` and apply its patch again, as its `PATCHES.md` says; pin `jj-local-util` to the release in the root `Cargo.toml`. Until then the build fails: `vcs-jj` asks for a `skip-sync` feature the registry crate lacks.
 - Compare jj-lib's `rust-version` with `rust-toolchain.toml`. A newer one needs the toolchain raised; ask the owner.
 - Run `cargo deny check` and `cargo audit`, and check Dependabot (`gh api -X GET repos/{owner}/{repo}/dependabot/alerts -f state=open`), as for any dependency change.
 

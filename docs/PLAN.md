@@ -4,7 +4,7 @@ Where the project stands and what comes next. [SPEC.md](SPEC.md) sets the behavi
 
 ## 1. Status
 
-As of 2026-11-21.
+As of 2026-11-23.
 
 | Milestone | State | Part |
 |---|---|---|
@@ -27,7 +27,7 @@ As of 2026-11-21.
 | jj-native features | Done: conflicts across a stack (`stack`, `resolve -r`), operation-log history (`history`, `diff --op`) and absorb by hunk (`absorb`); the stack window, with a preview of a save's effect on the descendants, a confirmation before a save changes them, a banner in the merge window naming the listed commit an inherited conflict arises in, untouched inherited paths muted, and inherited conflict regions in the merge window grey (`color-inherited`); the history window; the absorb window, by hunk; these windows and the directory window share one frame after Zed's panels (`docs/STYLE.md`): a header with a count and the buttons, status icons with tooltips that name each state and file-name-first paths, keys for the lists, and Escape and Cancel to close; the conflict badge names the sides a conflict keeps; absorb, `resolve -r` and the default revset aliases checked against jj's CLI (§I5); `stack`, `resolve -r`, `history`, `absorb` and a three-sided save checked through the built binary in scenario repositories (`script/test-jj-repos`) | I |
 | Evolog: versions of a change, interdiff, earlier resolutions | Spec set (§7.5.4, §7.5.5); the evolog walk (§K1), `evolog` and `diff --since` on the command line (§K2) and in the evolog, directory and diff windows (§K3), the resolution index (§K4) and `resolve --reuse --headless` (§K5) done (§I6, §I7); reuse in the merge window dropped (§K5) | K |
 
-The conformance suite runs on git, jj and internal jj repositories, and six of its checks on jj's experimental simple store (§A7.1). Every spec §9 target is met (§A6.7). Toolchain: stable Rust 1.100, with `rust-version` 1.100. Dependencies: jj-lib and jj-core 0.47.1 on gix 0.90; gpui-kit 0.8.1 with the vendored `gpui-base` patch; gpui-kit 0.9 is not adopted (`docs/gpui-kit-issues.md`).
+The conformance suite runs on git, jj and internal jj repositories, and six of its checks on jj's experimental simple store (§A7.1). Every spec §9 target is met (§A6.7). Toolchain: stable Rust 1.100, with `rust-version` 1.100. Dependencies: jj-lib and jj-core 0.47.1 on gix 0.90; gpui-kit 0.8.1 with the vendored `gpui-base` patch; `jj-local-util` vendored with a test-only feature that leaves out jj's flush to disk, so the full suite takes 17 s on macOS (§A13.5); gpui-kit 0.9 is not adopted (`docs/gpui-kit-issues.md`).
 
 CI: `triad.yml` tests on Linux, macOS and Windows; `bench.yml` and `audit.yml` run weekly. All three pass on GitHub's runners; Linux and macOS also under `act`. On the Windows runner, tests that build jj repositories run about 40 times slower than on Linux: `vcs-jj`'s jj tests take 292 s of test time there and 7 s on Linux, while `vcs-git`'s take 8 s. Defender is off in the runner image. The cause is open (§3). `release.yml` runs on a `v*` tag that matches the workspace version: it runs `triad.yml`'s checks and tests on all three platforms, and only when they pass builds `triad.app` for macOS ARM64, a zip of both binaries for Windows x64 and the smoke-tested Linux x64 packages, and publishes them as a release. v0.2.0 is the latest.
 
@@ -54,7 +54,7 @@ In order. Each is one or more commits.
 | Linux packages: triad's MIT licence file and dependency notices | The release | §E7.1 |
 | Windows: tool runs from `git mergetool`, `git difftool`, `jj resolve` and `jj diff --tool` in a real console; MSI through `cargo-wix`, Authenticode signing, winget manifest; icon resource; rendering, IME and file watching on x64 and ARM64; release checklist and spec §9 | x64 and ARM64 machines, a certificate, permission to install `cargo-wix` | §E7.2 |
 | Windows ARM64 in CI (`windows-11-arm`), before version 1.0 | — | `.github/workflows/triad.yml` |
-| Windows CI: find why jj repository tests run about 40 times slower than on Linux. First check: fixtures on D: through `TMP` and `TEMP`; next, jj-lib's file lock under parallel tests | A CI run per check | §1, `.github/workflows/triad.yml` |
+| Windows CI: find why jj repository tests run about 40 times slower than on Linux. First check: the next `triad.yml` run, since jj-lib's flush to disk, `FlushFileBuffers` on Windows, is now off in tests (`DESIGN.md` §A13.5); next, fixtures on D: through `TMP` and `TEMP`, then jj-lib's file lock under parallel tests | A CI run per check | §1, `.github/workflows/triad.yml` |
 | Per-command scans in `MergeWindow::refresh`: bands, placeholders, status counts; a pick at 1M costs 4.4 / 6.3 ms mean / max | A measurement that calls for them | §A6.7 |
 | Whole-text copies: `Recompute::run`, `MergeDocument::output` (both off the UI thread), 8-byte line starts | A measurement that calls for them | §A6.7 |
 | A `script/measure-app` mode with the origin column shown, to time the result's labels after a pause at 1M lines | — | §C5.4 |

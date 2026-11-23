@@ -52,11 +52,11 @@ script/check-workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo nextest run --workspace --profile quick -E '<changed crates and their dependents>'
 cargo deny check                  # when a manifest, Cargo.lock or deny.toml changed
-<vendor/gpui-base unit tests>     # when vendor/ changed
+<vendor/gpui-base unit tests>     # when vendor/gpui-base changed
 ```
 
 - Every step passes with zero warnings. On a format failure, run `cargo fmt --all` and rerun.
-- A change to `docs/` or to a Markdown file at the root runs no tests. A change to `vendor/` runs the tests of the crates that depend on `gpui-kit` and their dependents. Any other path outside `crates/` runs the whole profile.
+- A change to `docs/` or to a Markdown file at the root runs no tests. A change to a vendored crate runs the tests of the crates that depend on the crate it reaches the workspace through, and their dependents: `gpui-kit` for `vendor/gpui-base`, `jj-lib` for `vendor/jj-local-util`. Any other path outside `crates/` runs the whole profile.
 - The `quick` profile (`.config/nextest.toml`) leaves out the tests that build jj repositories, the scrolling tests and the serial tests that compare against the editor's highlighter; git conformance stays in. A test that builds a jj repository sits in a `jj` module, and the profile names that module. A change to `vcs-jj`, to jj behaviour, to scrolling or to syntax highlighting runs the full suite before commit: `script/checks`.
 - Each crate links one integration-test binary, `tests/main.rs` (`autotests = false`). A new test file is a module there.
 - In a plain git checkout, install the gate once: `ln -sf ../../script/pre-commit .git/hooks/pre-commit`.
@@ -163,3 +163,4 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | `packaging/linux` | Desktop entry of the Linux packages. |
 | `docs` | The documents README § Documents lists. |
 | `vendor/gpui-base` | `gpui-base` 0.8.1 with triad's editor patch, through `[patch.crates-io]`. Outside the workspace: no workspace lints, `cargo fmt` or `jj fix`. See its `PATCHES.md`. |
+| `vendor/jj-local-util` | `jj-local-util` 0.47.1 with a test-only `skip-sync` feature, which leaves out jj's flush to disk, through `[patch.crates-io]`. Outside the workspace, as `vendor/gpui-base`. Each jj upgrade replaces it. See its `PATCHES.md`. |

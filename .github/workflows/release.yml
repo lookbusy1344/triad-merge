@@ -96,6 +96,7 @@ jobs:
           mkdir -p "$stage" dist
           cp target/dist/triad-merge.exe target/dist/triad-merge-gui.exe README.md "$stage/"
           cp vendor/gpui-base/LICENSE-APACHE "$stage/LICENSE-gpui-base"
+          cp vendor/jj-local-util/LICENSE "$stage/LICENSE-jj-local-util"
           (cd stage && 7z a -tzip "../dist/$NAME.zip" "$NAME")
       - uses: actions/upload-artifact@v4
         with:

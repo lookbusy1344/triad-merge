@@ -11,8 +11,10 @@ license.workspace = true
 workspace = true
 
 [features]
-# Repositories built through jj-lib, for tests here and in other crates.
-testing = ["dep:tempfile", "vcs/testing"]
+# Repositories built through jj-lib, for tests here and in other crates. jj-lib writes without
+# flushing to disk: on macOS each flush serialises on the disk (DESIGN.md §A13.5). Only
+# dev-dependencies turn this on; script/check-workspace keeps it out of the release build.
+testing = ["dep:tempfile", "dep:jj-local-util", "jj-local-util/skip-sync", "vcs/testing"]
 
 [dependencies]
 camino.workspace = true
@@ -23,6 +25,8 @@ futures.workspace = true
 # The git config's `core.excludesFile`, and the hash kind when the fixture creates a repository.
 gix.workspace = true
 jj-lib.workspace = true
+# Named only for `testing`'s `skip-sync`; the code reaches it through jj-lib.
+jj-local-util = { workspace = true, optional = true }
 pollster.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true

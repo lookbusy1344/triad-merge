@@ -327,6 +327,7 @@ Release 1 is for local use: no Developer ID signing, notarisation or Homebrew ca
 4. A repository with `.jj` is a jj repository and merges with jj's semantics (§B3) (owner, 2026-10-27).
 5. gix moves with jj-lib, exact-pinned together, so the build holds one gix (§A3).
 6. triad ships as release binaries and builds from source in its repository, never through crates.io (owner, 2026-11-18). crates.io takes no path or git dependencies and ignores `[patch.crates-io]`. A crates.io `triad-merge` would need all ten internal crates published under public names, plus the patched `gpui-base` (§A6.1) as a forked crate: twelve crates to version in lockstep, each a public API. The workspace keeps its crates for their layering (§A2), and the `triad-merge` crate on crates.io stays a placeholder that holds the name. A library crate that stands alone, such as `merge-core`, may be published later under a `triad-` name.
+7. `jj-local-util` is vendored with a test-only `skip-sync` feature, which leaves out jj's flush to disk (§A13.5) (owner, 2026-11-23).
 
 ### A13 Code structure
 
@@ -358,6 +359,9 @@ Limit: 35 s on a warm build (AGENTS.md). The gate takes 12 s after an edit to `m
 
 An edit under `vendor/` has a 60 s limit. It takes 45 s: the 107k-line `gpui-base` compiles three times, for clippy (7 s), for the workspace tests with `merge-app` and `triad-merge` (20 s), and for its own unit tests in `target/vendor`, with test features and debug info (8 s). The next run takes 10 s.
 
+The full suite, which `script/pre-push` runs, takes 17 s on a warm build; `script/checks` stops it after 125 s.
+
+- **No flush to disk in tests.** jj-lib persists every object, operation, view and index file through `jj-local-util`, which flushes each with `sync_data`: on macOS an `F_FULLFSYNC`, which this disk does about 700 times a second and serialises across processes, against 20,000 a second for `fsync`. With the flush, the tests that build jj repositories take 116 s of the full suite's 123 s, and more test threads do not shorten them. `vendor/jj-local-util` adds a `skip-sync` feature that leaves the flush out; `vcs-jj`'s `testing` feature turns it on. Only dev-dependencies turn `testing` on, so a release build (`cargo build --profile dist -p triad-merge`) keeps the flush; `script/check-workspace` fails when a non-dev dependency turns `skip-sync` on. A debug binary built with `--all-targets`, as `script/checks` builds it, skips the flush too.
 - **Object files.** With debug info, rustc on macOS keeps every build's `*.rcgu.o` beside its output under `target/debug/build`, and rustc lists the directories it links from: 1.26 million objects in one directory cost 10 s a listing. `[profile.dev] debug = false` stops them; panics keep their locations, and `CARGO_PROFILE_DEV_DEBUG=line-tables-only` turns debug info on. A `target/` built with debug info needs `find target/debug/build -name '*.rcgu.o' -delete` once.
 - **Optimised dependencies.** `[profile.dev.package."*"] opt-level = 1`: merge-app's tests take 75 s of CPU against 130 s at 0; the highlighter comparison 1.3 s against 4.6 s. A change to the setting rebuilds every dependency, 84 s cold.
 - **One integration-test binary per crate**, `tests/main.rs`.
