@@ -19,7 +19,7 @@
 # script/test-agent-pre-push-hook only when script/agent-pre-push-hook,
 # script/platform.sh or that test changed, script/test-tip only when script/build-id,
 # script/pre-push or that test changed, and script/test-jj-repos only when script/gen-jj-repo,
-# that test or the directory demo it builds from changed. A change to a vendored crate
+# script/platform.sh, that test or the directory demo it builds from changed. A change to a vendored crate
 # also runs the tests of the workspace crates that depend on the crate it reaches the
 # workspace through, and of their dependents: gpui-kit for gpui-base, jj-lib for
 # jj-local-util. A change to docs/ or to a Markdown file
@@ -118,6 +118,7 @@ if [[ "${quick}" == true && ${#changed[@]} -gt 0 ]]; then
             script/platform.sh)
                 pre_commit=true
                 agent_hook=true
+                jj_repos=true
                 all_tests=true
                 ;;
             script/build-id | script/test-tip)
