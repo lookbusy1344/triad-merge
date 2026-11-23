@@ -11,6 +11,7 @@ cargo nextest run --workspace -E 'package(merge-core) & test(merge3)'  # filtere
 script/pre-commit                                                      # the gate before each commit; under 35 s warm
 script/checks                                                          # everything CI runs, with the full suite
 script/macos-app dist                                                  # target/dist/triad.app, fat LTO, as a release builds it
+script/windows-app.ps1 dist                                            # target\dist\triad-merge*.exe, the same on Windows, in PowerShell
 ```
 
 `script/gen-conflict-repo` and `script/gen-jj-repo SCENARIO` build disposable jj repositories to try triad in; `script/test-jj-repos` checks triad in each (`docs/test-repos.md`). `docs/release.md` gives the steps of a release.
