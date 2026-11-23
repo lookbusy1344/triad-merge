@@ -132,6 +132,26 @@ git_build_id_names_head_without_a_change() {
   expect "$("$BUILD_ID")" "$(git_build_id)"
 }
 
+# A git clone of jj's revision `right`, as CI checks out a commit jj pushed. jj writes the
+# change ID into the commit's `change-id` header.
+git_build_id_names_the_change_jj_recorded_in_the_commit() {
+  make_jj_fork jj-for-clone
+  local expected
+  expected=$(jj_build_id right)
+  git clone --quiet --branch right "$work/jj-for-clone" "$work/git-clone-of-jj"
+  cd "$work/git-clone-of-jj"
+  expect "$("$BUILD_ID")" "$expected"
+}
+
+# The dirty tree is not the change's tree: no change ID.
+git_build_id_names_no_change_for_a_dirty_tree() {
+  make_jj_fork jj-for-dirty-clone
+  git clone --quiet --branch right "$work/jj-for-dirty-clone" "$work/git-dirty-clone-of-jj"
+  cd "$work/git-dirty-clone-of-jj"
+  echo edited >right.txt
+  expect "$("$BUILD_ID")" "$(git_build_id)-dirty"
+}
+
 git_build_id_names_a_merge_commit() {
   make_git git-merge
   git switch --quiet -c side
@@ -168,6 +188,8 @@ run_case jj_build_id_names_a_clean_merge_at_working_copy
 run_case jj_build_id_names_a_clean_merge_under_an_empty_working_copy
 run_case jj_build_id_names_the_parent_of_an_empty_working_copy
 run_case git_build_id_names_head_without_a_change
+run_case git_build_id_names_the_change_jj_recorded_in_the_commit
+run_case git_build_id_names_no_change_for_a_dirty_tree
 run_case git_build_id_names_a_merge_commit
 run_case jj_pre_push_checks_a_clean_merge
 run_case jj_pre_push_checks_a_clean_merge_of_pushed_revisions

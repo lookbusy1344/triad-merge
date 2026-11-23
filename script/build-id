@@ -6,8 +6,10 @@
 #
 # jj names the head of the non-empty revisions in ::@, so an empty @ after `jj commit` names its
 # parent. A merge counts as non-empty: a clean merge is empty, and its tree is the one built.
-# git names HEAD, with -dirty when the working tree has changes. Outside a repository it prints
-# nothing, and the build has no build line.
+# git names HEAD, with -dirty when the working tree has changes. A clean HEAD that jj wrote
+# carries its change in the commit's change-id header, as in CI's checkout of a pushed commit;
+# build-id names that change too. Outside a repository it prints nothing, and the build has no
+# build line.
 set -euo pipefail
 
 readonly ID_LENGTH=12
@@ -18,6 +20,11 @@ if jj --ignore-working-copy root > /dev/null 2>&1; then
         "export TRIAD_COMMIT=" ++ commit_id.short('"$ID_LENGTH"') ++ "\n" ++
         "export TRIAD_CHANGE=" ++ change_id.short('"$ID_LENGTH"') ++ "\n"'
 elif commit=$(git rev-parse --short="$ID_LENGTH" HEAD 2> /dev/null); then
-    [[ -z $(git status --porcelain) ]] || commit+=-dirty
-    echo "export TRIAD_COMMIT=$commit"
+    if [[ -n $(git status --porcelain) ]]; then
+        echo "export TRIAD_COMMIT=$commit-dirty"
+    else
+        echo "export TRIAD_COMMIT=$commit"
+        change=$(git cat-file commit HEAD | sed -n '/^$/q; s/^change-id //p')
+        [[ -z $change ]] || echo "export TRIAD_CHANGE=${change:0:ID_LENGTH}"
+    fi
 fi
