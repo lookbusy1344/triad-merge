@@ -39,3 +39,46 @@ fn the_mark_is_a_button_named_for_the_about_window(cx: &mut TestAppContext) {
         Some((Some(Role::Button), Some("About triad".to_owned())))
     );
 }
+
+/// Whether a left press at `at` propagates past the window's handlers. On Windows the title
+/// bar is the caption: a press nothing claims goes on to the system, which starts a window
+/// move and swallows the release.
+fn press_propagates(
+    cx: &mut TestAppContext,
+    window: gpui_kit::AnyWindowHandle,
+    at: gpui_kit::Point<gpui_kit::Pixels>,
+) -> bool {
+    use gpui_kit::{InputEvent as _, Modifiers, MouseButton, MouseDownEvent};
+
+    let mut propagates = None;
+    common::act(cx, window, |window, cx| {
+        let down = MouseDownEvent {
+            button: MouseButton::Left,
+            position: at,
+            modifiers: Modifiers::none(),
+            click_count: 1,
+            first_mouse: false,
+        };
+        propagates = Some(window.dispatch_event(down.to_platform_input(), cx).propagate);
+    });
+    propagates.expect("the window ran")
+}
+
+#[gpui_kit::test]
+fn the_mark_claims_a_press_and_the_rest_of_the_title_bar_leaves_it_to_the_system(
+    cx: &mut TestAppContext,
+) {
+    use gpui_kit::point;
+    use merge_app::toolbar::MARK_ID;
+
+    /// gpui-component's title bar.
+    const TITLE_BAR_ID: &str = "title-bar";
+
+    let (window, _) = open(cx, doc("a\n", "b\n", "c\n"));
+    let mark = common::bounds(cx, window, MARK_ID);
+    let bar = common::bounds(cx, window, TITLE_BAR_ID);
+    let empty = point(bar.center().x, bar.center().y);
+    assert!(empty.x > mark.right(), "the bar's middle {empty:?} lies past the mark {mark:?}");
+    assert!(!press_propagates(cx, window, mark.center()), "a press on the mark");
+    assert!(press_propagates(cx, window, empty), "a press on the empty title bar");
+}

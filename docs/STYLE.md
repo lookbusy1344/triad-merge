@@ -87,7 +87,7 @@ The current region's frame in an editor is 1 px (`blink::BORDER`), so it reads a
 
 ## Title bar
 
-The merge and diff windows draw their own title bar, gpui-component's `TitleBar`, as Zed does (`menu_bar::render`): 34 px tall over a 1 px border, the system's title hidden. On macOS it holds the toolbar beside the traffic lights, which sit 9 px in from the top left; it keeps 80 px for them, and 12 px in full screen, which hides them. A drag on its empty space moves the window, and a double click zooms it. On Linux and Windows it holds the mark and the menus over the toolbar. The tool windows keep the system's title bar.
+The merge and diff windows draw their own title bar, gpui-component's `TitleBar`, as Zed does (`menu_bar::render`): 34 px tall over a 1 px border, the system's title hidden. On macOS it holds the toolbar beside the traffic lights, which sit 9 px in from the top left; it keeps 80 px for them, and 12 px in full screen, which hides them. A drag on its empty space moves the window, and a double click zooms it. On Linux and Windows it holds the mark and the menus over the toolbar. A control in the title bar claims its left press (`stop_propagation`): on Windows the bar is the window's caption, and a press nothing claims starts the system's window move, which swallows the release and with it the click. The tool windows keep the system's title bar.
 
 ## Status bar
 
