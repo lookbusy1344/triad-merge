@@ -27,7 +27,10 @@
 
 set -euo pipefail
 
-readonly TEST_TIMEOUT_SECONDS=125
+# Each test run's limit: its time on a warm build (DESIGN.md §A13.5) plus nextest's 30 s
+# per-test cap (.config/nextest.toml), so nextest names a hung test before the run is stopped.
+readonly QUICK_TEST_TIMEOUT_SECONDS=45
+readonly FULL_TEST_TIMEOUT_SECONDS=60
 
 quick=false
 if [[ "${1:-}" == --quick ]]; then
@@ -46,8 +49,10 @@ run() {
 
 # gtimeout on macOS (coreutils), timeout on Linux.
 timeout_cmd="$(command -v gtimeout || command -v timeout || true)"
+test_timeout="${FULL_TEST_TIMEOUT_SECONDS}"
+[[ "${quick}" == true ]] && test_timeout="${QUICK_TEST_TIMEOUT_SECONDS}"
 if [[ -n "${timeout_cmd}" ]]; then
-    test_prefix=("${timeout_cmd}" "${TEST_TIMEOUT_SECONDS}")
+    test_prefix=("${timeout_cmd}" "${test_timeout}")
 else
     test_prefix=()
 fi
@@ -178,7 +183,10 @@ fi
 # Runs the binary that the build, or nextest's build of the integration tests, leaves.
 [[ "${jj_repos}" == true ]] && run script/test-jj-repos
 # gpui-base sits outside the workspace; its own unit tests cover the patch.
+# Built outside the timeout, as the workspace's tests are.
 if [[ "${gpui_base_tests}" == true ]]; then
+    gpui_base_tests_args=(--manifest-path vendor/gpui-base/Cargo.toml --features test-support --lib)
+    run env CARGO_TARGET_DIR=target/vendor cargo nextest run "${gpui_base_tests_args[@]}" --no-run
     run ${test_prefix[@]+"${test_prefix[@]}"} env CARGO_TARGET_DIR=target/vendor \
-        cargo nextest run --manifest-path vendor/gpui-base/Cargo.toml --features test-support --lib
+        cargo nextest run "${gpui_base_tests_args[@]}"
 fi
