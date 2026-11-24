@@ -8,6 +8,8 @@
 
 # Test inputs in other languages: keep them out of the language stats.
 fixtures/** linguist-vendored
+# Build, test and release scripts: keep shell, Python, Swift, PowerShell and the Dockerfile out of the stats.
+script/** linguist-detectable=false
 
 # General text files
 *.txt text eol=lf
