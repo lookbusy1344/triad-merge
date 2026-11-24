@@ -361,7 +361,7 @@ An edit under `vendor/` has a 60 s limit. It takes 45 s: the 107k-line `gpui-bas
 
 The full suite, which `script/pre-push` runs, takes 17 s on a warm build; the quick profile, which `script/pre-commit` runs, takes 9 s. `script/checks` stops a full run after 60 s and a quick one after 45 s: each run's time plus nextest's 30 s per-test cap, so nextest names a hung test first. Every test build happens before the limit starts, `gpui-base`'s included.
 
-On Windows the gate has no time limit. Each test process takes 57 ms to start, even alone, and the quick profile takes 102 s on an 8-core machine. The gate scripts run there under Git Bash. `script/platform.sh` covers what differs: jj prints paths with `\`, cargo prints `C:\…` manifest paths, native `jq` and `python` write CRLF, and native programs such as rustfmt take `C:/…` paths. `script/test-pre-commit` checks the path handling.
+On Windows the gate has no time limit. Each test process takes 57 ms to start, even alone, and the quick profile takes 102 s on an 8-core machine. The gate scripts run there under Git Bash. `script/platform.sh` covers what differs: jj prints paths with `\`, cargo prints `C:\…` manifest paths, native `jq` and `python` write CRLF, and native programs such as rustfmt take `C:/…` paths. `script/test-pre-commit` checks the path handling. A script written there has no executable bit; `script/check-workspace` fails on macOS and Linux when a file under `script/` has a `#!` line and no executable bit.
 
 - **No flush to disk in tests.** jj-lib persists every object, operation, view and index file through `jj-local-util`, which flushes each with `sync_data`: on macOS an `F_FULLFSYNC`, which this disk does about 700 times a second and serialises across processes, against 20,000 a second for `fsync`. With the flush, the tests that build jj repositories take 116 s of the full suite's 123 s, and more test threads do not shorten them. `vendor/jj-local-util` adds a `skip-sync` feature that leaves the flush out; `vcs-jj`'s `testing` feature turns it on. Only dev-dependencies turn `testing` on, so a release build (`cargo build --profile dist -p triad-merge`) keeps the flush; `script/check-workspace` fails when a non-dev dependency turns `skip-sync` on. A debug binary built with `--all-targets`, as `script/checks` builds it, skips the flush too.
 - **Object files.** With debug info, rustc on macOS keeps every build's `*.rcgu.o` beside its output under `target/debug/build`, and rustc lists the directories it links from: 1.26 million objects in one directory cost 10 s a listing. `[profile.dev] debug = false` stops them; panics keep their locations, and `CARGO_PROFILE_DEV_DEBUG=line-tables-only` turns debug info on. A `target/` built with debug info needs `find target/debug/build -name '*.rcgu.o' -delete` once.
@@ -774,7 +774,7 @@ A strip at the right edge of the result pane and the diff window's right pane ma
 
 #### E7.2 Windows
 
-The console and GUI binaries forward as §A4.13 gives. `images/triad.ico` goes in both binaries as icon resource 1, which GPUI's window class loads, through a build script with a resource crate.
+The console and GUI binaries forward as §A4.13 gives. `script/windows-app.ps1` builds both with the build line `script/build-id` names; `script/platform.sh` runs the gate scripts under Git Bash (§A13.5).
 
 ### E9 Key bindings
 
