@@ -15,8 +15,8 @@
 # depend on them, `cargo deny` only when a manifest or the lock file changed, and
 # gpui-base's own tests only when vendor/gpui-base changed, script/test-pre-push only
 # when script/pre-push or that test changed, script/test-pre-commit only when
-# script/pre-commit, script/checks, script/platform.sh or that test changed,
-# script/test-agent-pre-push-hook only when script/agent-pre-push-hook,
+# script/pre-commit, script/checks, script/check-workspace, script/platform.sh or that test
+# changed, script/test-agent-pre-push-hook only when script/agent-pre-push-hook,
 # script/platform.sh or that test changed, script/test-tip only when script/build-id,
 # script/pre-push or that test changed, and script/test-jj-repos only when script/gen-jj-repo,
 # script/platform.sh, that test or the directory demo it builds from changed. A change to a vendored crate
@@ -111,7 +111,7 @@ if [[ "${quick}" == true && ${#changed[@]} -gt 0 ]]; then
                 agent_hook=true
                 all_tests=true
                 ;;
-            script/pre-commit | script/checks | script/test-pre-commit)
+            script/pre-commit | script/checks | script/check-workspace | script/test-pre-commit)
                 pre_commit=true
                 all_tests=true
                 ;;
