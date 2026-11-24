@@ -225,35 +225,35 @@ A change to the alignment options re-aligns the open merge while every region ke
 
 `merge_app::measure`: `TRIAD_MEASURE=open|scroll-rows|scroll-result|type|pick|syntax` makes the window act once a frame for 300 frames, reports frame intervals and each action's time on stderr, and exits with 2 without writing. `script/measure-app` runs every mode at 100k and 1M lines and fails on a missed spec §9 target. A window in the background gets 41.7 ms frames and keystrokes three to four times slower, from macOS; keep it frontmost. `script/ax-tree.swift` prints and presses the accessibility tree; GPUI builds it on the first query, so that query can return an empty window.
 
-`script/measure-app 120`, 2026-11-08:
+`script/measure-app 120`, 2026-11-24:
 
 | Lines | Load and merge | First frame | Scroll p95, rows / result | Keystroke work, mean / max | Pick work, mean / max | Peak RSS |
 |---|---|---|---|---|---|---|
-| 100k | 46–50 ms | 210–223 ms | 8.4 / 8.4 ms | 0.3 / 0.5 ms | 0.4 / 0.6 ms | 221 MB |
-| 1M | 521–548 ms | 727–754 ms | 8.4 / 8.4 ms | 1.9 / 5.2 ms | 4.4 / 6.3 ms | 869 MB |
+| 100k | 48–52 ms | 196–257 ms | 8.4 / 8.4 ms | 0.3 / 1.1 ms | 0.5 / 1.0 ms | 211 MB |
+| 1M | 537–547 ms | 743–763 ms | 8.4 / 8.4 ms | 2.3 / 5.5 ms | 4.9 / 6.7 ms | 873 MB |
 
-`script/check-bench`, 2026-11-18:
+`script/check-bench`, 2026-11-24:
 
 | Benchmark | 100k | 1M |
 |---|---|---|
-| `load` | 25 ms | 464 ms |
-| `load-jj` | 42 ms | 505 ms |
-| `load-word-small` | 57 ms | 657 ms |
-| `load-word-large` | 1.61 s | 16.1 s |
-| `load-word-small-rust-bounded` | 50 ms | 541 ms |
-| `load-deep-rust-bounded` | 49 ms | 510 ms |
-| `toggle`, `keystroke` | 0.7 / 0.8 µs | 0.9 / 0.8 µs |
+| `load` | 26 ms | 456 ms |
+| `load-jj` | 45 ms | 535 ms |
+| `load-word-small` | 56 ms | 668 ms |
+| `load-word-large` | 1.59 s | 16.0 s |
+| `load-word-small-rust-bounded` | 50 ms | 542 ms |
+| `load-deep-rust-bounded` | 48 ms | 503 ms |
+| `toggle`, `keystroke` | 0.8 / 0.8 µs | 0.9 / 0.9 µs |
 | Session heap, git / jj | 32 / 56 MB | 363 / 607 MB |
 
 `cargo bench -p merge-cli --bench memory` measures the session's peak heap through a counting allocator (`cap`); `script/check-bench` holds it below spec §9's memory row in git and jj mode. Saving is the peak: `MergeDocument::output` copies the rope into a `String`.
 
 What sets these figures:
 
-- **First frame.** Interval 0 holds the editor's line layout; the vendored editor reads the lines in one pass. Interval 1 (45–53 ms) fills the glyph atlas and builds Metal pipelines, once.
+- **First frame.** Interval 0 holds the editor's line layout; the vendored editor reads the lines in one pass. Interval 1 (44–53 ms) fills the glyph atlas and builds Metal pipelines, once.
 - **Journal hashing** runs once per input on its own thread, so the window shows first.
 - **Incremental refresh.** The editor moves its decorations with each edit; `refresh` compares the new bands with the moved ranges (`marks::bands_unchanged`) and rebuilds only when a range or look differs. The keystroke maximum at 1M is the first key into a region, which changes its look. A pick always rebuilds. Bands, placeholders and status counts still scan every region per command.
 - **Ruler.** `ruler::painted` gives each whole pixel the style of the last mark on it and joins equal neighbours, so a long file paints no more runs than the strip has pixels. One quad per mark took a third of the main thread at 1M.
-- **Alignment** is 368 of load's 464 ms at 1M and grows faster than linear (17 ms at 100k): the first place to look if load nears 1 s.
+- **Alignment** is 381 of load's 456 ms at 1M and grows faster than linear (17 ms at 100k): the first place to look if load nears 1 s.
 - **Known whole-text copies**, each a few milliseconds and one file's size at 1M: `Recompute::run` copies both diff texts twice; `MergeDocument::output` copies the rope to save; `Text` keeps an 8-byte line start per line where `u32` would do under 4 GiB.
 
 **Idle memory.** The caret's blink draws every 500 ms, which keeps the Metal driver's reclaimable blocks in use: a bare GPUI window takes 52 MB idle and 185 MB blinking. The vendored caret rests, shown, after 10 s without a key, click or focus. At rest the demo diff of `fixtures/demo/code_a.py` and `code_b.py` takes 98 MB of physical footprint (p4merge: 121 MB): 37 MB of drawables, 33 MB of heap, and the binary. GPUI counts a window losing the front as a blur, which stops the blink. GPUI's per-window path texture and the drawables remain.

@@ -82,12 +82,12 @@ Release build on a Mac M4 Pro, 120 Hz display, plain text. [Spec](docs/SPEC.md) 
 
 | Operation | 100k lines | 1M lines | Target, 100k / 1M |
 |---|---|---|---|
-| Load and merge | 46–50 ms | 521–548 ms | 100 ms / 1 s |
-| Command to first frame | 210–223 ms | 727–754 ms | 300 ms / 1.5 s |
+| Load and merge | 48–52 ms | 537–547 ms | 100 ms / 1 s |
+| Command to first frame | 196–257 ms | 743–763 ms | 300 ms / 1.5 s |
 | Scrolling, frame interval p95 | 8.4 ms | 8.4 ms | refresh rate |
-| Pick a side, max | 0.6 ms | 6.3 ms | 16 ms |
-| Keystroke, max | 0.5 ms | 5.2 ms | 8 ms |
-| Peak resident memory | 221 MB | 869 MB | 300 MB / 2 GB |
+| Pick a side, max | 1.0 ms | 6.7 ms | 16 ms |
+| Keystroke, max | 1.1 ms | 5.5 ms | 8 ms |
+| Peak resident memory | 211 MB | 873 MB | 300 MB / 2 GB |
 
 An idle window draws nothing.
 
@@ -97,9 +97,9 @@ The same merges in VS Code 1.147's merge editor, with extensions off, on the sam
 
 | | 100k lines, 261 conflicts | 1M lines, 2537 conflicts |
 |---|---|---|
-| triad, open | 0.3–1.4 s | 1.3 s |
-| VS Code, open | 4.4–5.8 s | 13–24 s |
-| triad, memory | 296 MB | 890 MB |
+| triad, open | 0.4 s | 1.3 s |
+| VS Code, open | 4.2–8.1 s | 13–17 s |
+| triad, memory | 303–315 MB | 889–891 MB |
 | VS Code, memory | 1.2 GB | 2.2–2.3 GB |
 
 At 1M lines VS Code turns off syntax highlighting to cope; triad keeps it on.
