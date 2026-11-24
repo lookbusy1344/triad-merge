@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Drives the real window in the Linux test machine. Run through script/linux/run, on a build of
 # triad-merge. Each session starts sway without a display, opens a one-conflict merge, takes a
-# screenshot to /out, picks the left side, saves and checks the exit code and the output.
+# screenshot to /out, picks the left side, saves and exits, and checks the exit code and the output.
 #
 #   script/linux/run script/linux/smoke wayland|x11
 #
@@ -104,16 +104,17 @@ done
 cp "$frame" "/out/$session.png"
 
 if [[ $session == wayland ]]; then
-    # The unresolved prompt, left with Escape. The window takes the next keys only if it closed.
+    # Save & Exit's unresolved prompt, left with Escape. The window takes the next keys only if
+    # it closed.
     deadline=$((SECONDS + wait_seconds))
     before=$(screen_hash)
-    press ctrl s
+    press ctrl q
     await_change "$before"
     grim "/out/$session-prompt.png"
     wtype -k Escape
     press ctrl Down
     press ctrl 1
-    press ctrl s
+    press ctrl q
 else
     pick "$menu_go" "$first_item"
     pick "$menu_merge" "$first_item"
