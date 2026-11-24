@@ -20,7 +20,7 @@ triad is a **fast** native 3-way merge and 2-way diff tool, written in Rust and 
 
 ## Status
 
-triad 0.2 is a beta. [Releases](https://github.com/lookbusy1344/triad-merge/releases) carry builds for macOS on Apple Silicon, and for Linux and Windows on x64 and ARM64. triad is tested by hand on macOS and Windows 11 x64; on Linux, CI and a test container run it.
+triad 0.3 is a beta. [Releases](https://github.com/lookbusy1344/triad-merge/releases) carry builds for macOS on Apple Silicon, and for Linux and Windows on x64 and ARM64. triad is tested by hand on macOS and Windows 11 x64; on Linux, CI and a test container run it.
 
 ## Why triad
 
@@ -174,15 +174,15 @@ Exit codes: 0 all conflicts resolved, 1 conflicts left, 2 cancelled, 3 error.
 
 ## Code size
 
-About 91,000 lines of Rust in `crates/`, blank lines and comments excluded, as `script/code-size` counts them. Tests make up more than half.
+About 96,000 lines of Rust in `crates/`, blank lines and comments excluded, as `script/code-size` counts them. Tests make up more than half.
 
 | Part | Lines |
 |---|---|
-| Product code | 36,000 |
-| Tests: `tests/`, `#[cfg(test)]` modules and test-support modules | 53,000 |
+| Product code | 38,000 |
+| Tests: `tests/`, `#[cfg(test)]` modules and test-support modules | 56,000 |
 | Benchmarks and examples | 2,000 |
 
-The GPUI shell, `merge-app`, holds 15,000 lines of product code; `merge-core` holds 5,000. `vendor/` is left out.
+The GPUI shell, `merge-app`, holds 16,000 lines of product code; `merge-core` holds 5,000. `vendor/` is left out.
 
 ## Documents
 

@@ -2,6 +2,24 @@
 
 What changed for users in each release, newest first. [docs/release.md](docs/release.md) says how to write a section.
 
+## 0.3.0 — 2026-11-24
+
+- Builds for Linux ARM64 and Windows ARM64.
+- `evolog`: a window of the versions of a jj change; `diff --since` shows what the change edited since an earlier version, with the rebase taken out.
+- `resolve --reuse` takes a conflict's earlier resolution from its change's evolog, in the window or with `--headless`.
+- ⌘S (Ctrl+S) saves in place; ⌘Q (Ctrl+Q) saves and exits.
+- The stack window names where an inherited conflict arises, draws inherited conflicts in their own colour and mutes untouched paths.
+- UTF-16 text without a byte order mark is read.
+- The right side's default colour is indigo.
+- Unlike line pairs get no intra-line marks.
+
+Fixes:
+
+- About opens from the mark in the Windows title bar.
+- Each diff pane scrolls on both axes.
+- A conflict in a commit gets no temporary file.
+- A release built from a git checkout of a jj commit names the jj change.
+
 ## 0.2.0 — 2026-11-19
 
 - jj-only commands, each with its own window: `stack` and `resolve -r` for conflicts in any commit, with a preview of a save's effect on the descendants and a confirmation before a save changes them; `history` over the operation log, with `diff --op`; `absorb`, by hunk. triad also merges two sides of a conflict of more than two and the copies of a divergent change.

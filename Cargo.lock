@@ -5623,7 +5623,7 @@ dependencies = [
 
 [[package]]
 name = "merge-app"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -5652,7 +5652,7 @@ dependencies = [
 
 [[package]]
 name = "merge-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "camino",
  "cap",
@@ -5682,7 +5682,7 @@ dependencies = [
 
 [[package]]
 name = "merge-config"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "directories",
  "dunce",
@@ -5695,7 +5695,7 @@ dependencies = [
 
 [[package]]
 name = "merge-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "criterion",
  "encoding_rs",
@@ -5715,7 +5715,7 @@ dependencies = [
 
 [[package]]
 name = "merge-session"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "camino",
  "directories",
@@ -5736,7 +5736,7 @@ dependencies = [
 
 [[package]]
 name = "merge-syntax"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "criterion",
  "merge-core",
@@ -5766,7 +5766,7 @@ dependencies = [
 
 [[package]]
 name = "merge-view"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aho-corasick",
  "jiff",
@@ -9245,7 +9245,7 @@ dependencies = [
 
 [[package]]
 name = "triad-merge"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "camino",
  "dunce",
@@ -9590,7 +9590,7 @@ dependencies = [
 
 [[package]]
 name = "vcs"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "camino",
  "thiserror 2.0.21",
@@ -9598,7 +9598,7 @@ dependencies = [
 
 [[package]]
 name = "vcs-git"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "camino",
  "gix",
@@ -9610,7 +9610,7 @@ dependencies = [
 
 [[package]]
 name = "vcs-jj"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "camino",
  "dunce",
