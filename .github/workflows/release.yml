@@ -3,11 +3,11 @@ name: release
 permissions:
   contents: read
 
-# A tag vX.Y.Z runs the test suite of triad.yml on every platform, then builds the packages of
-# each target and publishes them as a release, with notes GitHub generates from the commits
-# since the last tag. The tag must match the workspace version. A failure on any platform
-# builds and publishes nothing. A manual run tests and builds the packages as workflow
-# artifacts only.
+# A tag vX.Y.Z runs the test suite of triad.yml on every platform, ARM64 Linux and Windows
+# included, then builds the packages of each target and publishes them as a release, with
+# notes GitHub generates from the commits since the last tag. The tag must match the workspace
+# version. A failure on any platform builds and publishes nothing. A manual run tests and
+# builds the packages as workflow artifacts only.
 on:
   push:
     tags: [ 'v*' ]
@@ -76,11 +76,16 @@ jobs:
           path: dist/
 
   windows:
-    name: Windows x64
+    name: Windows ${{ matrix.name }}
     needs: [ version, test ]
-    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - { name: x64, arch: x86_64, runner: windows-latest }
+          - { name: ARM64, arch: aarch64, runner: windows-11-arm }
+    runs-on: ${{ matrix.runner }}
     env:
-      NAME: triad-merge-${{ needs.version.outputs.version }}-x86_64-pc-windows-msvc
+      NAME: triad-merge-${{ needs.version.outputs.version }}-${{ matrix.arch }}-pc-windows-msvc
     steps:
       - uses: actions/checkout@v5
       - run: rustup update --no-self-update stable && rustup toolchain install
@@ -100,28 +105,34 @@ jobs:
           (cd stage && 7z a -tzip "../dist/$NAME.zip" "$NAME")
       - uses: actions/upload-artifact@v4
         with:
-          name: triad-windows
+          name: triad-windows-${{ matrix.arch }}
           path: dist/
 
   linux:
-    name: Linux x64
+    name: Linux ${{ matrix.name }}
     needs: [ version, test ]
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { name: x64, arch: x86_64, runner: ubuntu-latest }
+          - { name: ARM64, arch: aarch64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
     env:
-      APPIMAGE: /out/dist/triad-merge-${{ needs.version.outputs.version }}-x86_64-unknown-linux-gnu.AppImage
+      TRIAD_LINUX_ARCH: ${{ matrix.arch }}
+      APPIMAGE: /out/dist/triad-merge-${{ needs.version.outputs.version }}-${{ matrix.arch }}-unknown-linux-gnu.AppImage
     steps:
       - uses: actions/checkout@v5
       - name: Let the Linux test machine write its results
         run: mkdir -p target/linux && chmod a+w target/linux
       - run: script/linux/run image
-      - run: script/linux/run script/package x86_64-unknown-linux-gnu
+      - run: script/linux/run script/package ${{ matrix.arch }}-unknown-linux-gnu
       - name: Smoke test the AppImage on Wayland
         run: script/linux/run env APPIMAGE_EXTRACT_AND_RUN=1 "TRIAD_APP=$APPIMAGE" script/linux/smoke wayland
       - name: Smoke test the AppImage on X11
         run: script/linux/run env APPIMAGE_EXTRACT_AND_RUN=1 "TRIAD_APP=$APPIMAGE" script/linux/smoke x11
       - uses: actions/upload-artifact@v4
         with:
-          name: triad-linux
+          name: triad-linux-${{ matrix.arch }}
           path: target/linux/dist/
 
   release:

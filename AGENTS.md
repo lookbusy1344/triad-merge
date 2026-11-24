@@ -140,8 +140,8 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | Linux test machine in OrbStack (`DESIGN.md` §E7.1) | `script/linux/run image` once and after each new stable Rust; then `script/linux/run cargo build -p triad-merge`, `script/linux/run cargo nextest run --workspace --profile linux-emulated`, `script/linux/run script/linux/smoke wayland` or `x11` |
 | Linux CI locally (needs OrbStack running) | `act workflow_dispatch -W .github/workflows/<triad\|bench\|audit>.yml [-j <job>] -P ubuntu-latest=catthehacker/ubuntu:act-latest --container-architecture linux/arm64`; `triad.yml` runs only its Linux matrix entry under act. act runs as root, so the tests of unreadable or unwritable paths fail there; GitHub's runners do not run as root |
 | Windows release build with the About window's build line, in PowerShell | `script/windows-app.ps1 [release\|dist]` |
-| Linux packages into `target/linux/dist` | `script/linux/run script/package x86_64-unknown-linux-gnu` |
-| Release: macOS ARM64, Windows x64 and Linux x64 packages as a published GitHub release; only on the owner's request | `docs/release.md`: update dependencies, bump the version, push `main`, then tag and push the tag; the tag must match the workspace version. `.github/workflows/release.yml` runs `triad.yml`'s tests on all three platforms, then builds and publishes |
+| Linux packages into `target/linux/dist` | `script/linux/run script/package x86_64-unknown-linux-gnu`; for ARM64, `TRIAD_LINUX_ARCH=aarch64 script/linux/run image` once, then `TRIAD_LINUX_ARCH=aarch64 script/linux/run script/package aarch64-unknown-linux-gnu` |
+| Release: macOS ARM64 and Linux and Windows x64 and ARM64 packages as a published GitHub release; only on the owner's request | `docs/release.md`: update dependencies, bump the version, push `main`, then tag and push the tag; the tag must match the workspace version. `.github/workflows/release.yml` runs `triad.yml`'s tests on all five platforms, then builds and publishes |
 
 ## Layout
 

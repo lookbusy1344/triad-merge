@@ -6,8 +6,8 @@
 # triad-merge
 
 [![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-blue)](https://github.com/lookbusy1344/triad-merge/releases)
-[![Linux](https://img.shields.io/badge/Linux-x64-blue)](https://github.com/lookbusy1344/triad-merge/releases)
-[![Windows](https://img.shields.io/badge/Windows-x64-blue)](https://github.com/lookbusy1344/triad-merge/releases)
+[![Linux](https://img.shields.io/badge/Linux-x64%20%7C%20ARM64-blue)](https://github.com/lookbusy1344/triad-merge/releases)
+[![Windows](https://img.shields.io/badge/Windows-x64%20%7C%20ARM64-blue)](https://github.com/lookbusy1344/triad-merge/releases)
 [![Release](https://img.shields.io/github/v/release/lookbusy1344/triad-merge?include_prereleases)](https://github.com/lookbusy1344/triad-merge/releases)
 
 [![Build & test](https://github.com/lookbusy1344/triad-merge/actions/workflows/triad.yml/badge.svg)](https://github.com/lookbusy1344/triad-merge/actions/workflows/triad.yml)
@@ -20,7 +20,7 @@ triad is a **fast** native 3-way merge and 2-way diff tool, written in Rust and 
 
 ## Status
 
-triad 0.2 is a beta. [Releases](https://github.com/lookbusy1344/triad-merge/releases) carry builds for macOS on Apple Silicon, Linux x64 and Windows x64. triad is tested by hand on macOS and Windows 11 x64; on Linux, CI and a test container run it.
+triad 0.2 is a beta. [Releases](https://github.com/lookbusy1344/triad-merge/releases) carry builds for macOS on Apple Silicon, and for Linux and Windows on x64 and ARM64. triad is tested by hand on macOS and Windows 11 x64; on Linux, CI and a test container run it.
 
 ## Why triad
 

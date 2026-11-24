@@ -82,7 +82,7 @@ The push hook runs `script/pre-push` again, but main is now immutable, so its st
 
 ## 6. Watch the release build
 
-The tag starts `.github/workflows/release.yml`. It runs `triad.yml`'s checks and tests on Linux, macOS and Windows first; a failure on any platform builds and publishes nothing. Then it builds `triad.app` for macOS ARM64, the zip for Windows x64 and the Linux x64 packages, and publishes them with notes GitHub writes from the commits.
+The tag starts `.github/workflows/release.yml`. It runs `triad.yml`'s checks and tests on macOS ARM64 and on Linux and Windows, x64 and ARM64, first; a failure on any platform builds and publishes nothing. Then it builds `triad.app` for macOS ARM64, and the Windows zips and Linux packages for x64 and ARM64, and publishes them with notes GitHub writes from the commits.
 
 ```sh
 gh run watch "$(gh run list --workflow release.yml --limit 1 --json databaseId -q '.[0].databaseId')"

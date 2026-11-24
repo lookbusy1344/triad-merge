@@ -3,17 +3,26 @@
 # machine, whose glibc is the oldest triad supports:
 #
 #   script/linux/run script/package x86_64-unknown-linux-gnu
+#   TRIAD_LINUX_ARCH=aarch64 script/linux/run script/package aarch64-unknown-linux-gnu
 set -euo pipefail
 
 readonly target=${1:?usage: script/package <target>}
-readonly linux=x86_64-unknown-linux-gnu
+readonly arch=${target%%-*}
 readonly bin=triad-merge
 readonly dist=/out/dist
 # Not on every desktop. libxcb stays out: the system's must match its graphics drivers.
 readonly bundled=(libxkbcommon.so.0 libxkbcommon-x11.so.0 libxcb-xkb.so.1)
-readonly lib_dir=/lib/x86_64-linux-gnu
+readonly lib_dir=/lib/$arch-linux-gnu
 
-[[ $target == "$linux" ]] || { echo "script/package: no packaging for $target yet" >&2; exit 2; }
+case $target in
+    x86_64-unknown-linux-gnu | aarch64-unknown-linux-gnu) ;;
+    *) echo "script/package: no packaging for $target yet" >&2; exit 2 ;;
+esac
+# The build is native: the machine's architecture is the target's.
+[[ $(uname -m) == "$arch" ]] || {
+    echo "script/package: $target needs an $arch machine, not $(uname -m)" >&2
+    exit 2
+}
 
 version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
 readonly name=$bin-$version-$target
@@ -52,7 +61,7 @@ app_dir=$stage/AppDir
 bundle "$app_dir" usr/bin usr/lib '$ORIGIN/../lib'
 ln -s "$bin".svg "$app_dir/.DirIcon"
 ln -s "usr/bin/$bin" "$app_dir/AppRun"
-ARCH=x86_64 /opt/appimage/squashfs-root/AppRun --no-appstream \
+ARCH=$arch /opt/appimage/squashfs-root/AppRun --no-appstream \
     --runtime-file /opt/appimage/runtime "$app_dir" "$dist/$name.AppImage"
 
 (cd "$dist" && sha256sum "$name".* > "$name.sha256")

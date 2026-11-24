@@ -59,6 +59,7 @@ Later:
 |---|---|---|---|---|
 | macOS, Apple Silicon | `aarch64-apple-darwin` | macOS 27 | Metal | None: a local build, `cargo install --path crates/triad-merge`, or `script/macos-app` for a local `triad.app` with the Dock icon. Release 1 is for local use; a signed package comes later |
 | Linux x64 | `x86_64-unknown-linux-gnu` | glibc 2.35 (Ubuntu 22.04 era); Wayland and X11 | Vulkan | AppImage and `.tar.gz`; Flatpak later |
+| Linux ARM64 | `aarch64-unknown-linux-gnu` | Same as x64 | Vulkan | Same as x64 |
 | Windows x64 | `x86_64-pc-windows-msvc` | Windows 11 | DirectX 11 | Authenticode-signed MSI and winget manifest |
 | Windows ARM64 | `aarch64-pc-windows-msvc` | Windows 11 | DirectX 11 | Same as x64 |
 
@@ -74,7 +75,7 @@ macOS is outside the App Store. The App Store sandbox blocks access to the arbit
 - Prompts: the platform's alert on macOS and Windows, and triad's own on Linux. There, Enter takes the first button. Escape takes Keep Editing, Keep Mine or Cancel, or the only button, and otherwise does nothing, so it never discards a recovery journal.
 - A prompt that can lose work puts the answer that keeps it first, so the default button (Enter) never loses it: Save & Exit or Save when a window closes with changes, Keep Mine when a file with edits changes on disk, Restore for a recovery journal, Try Again after a failed save.
 - Paths use `std::path` and `camino`. No code assumes `/` separators, case-sensitive file systems or POSIX permissions.
-- CI builds, lints and tests on Linux x64, macOS ARM64 and Windows x64 for each push to `main` and each pull request, and weekly. Windows ARM64 joins CI, on native ARM64 runners, before version 1.0. Linux ARM64 is not a target.
+- CI builds, lints and tests on Linux x64, macOS ARM64 and Windows x64 for each push to `main` and each pull request, and weekly. Each release tag also tests and builds on Linux ARM64 and Windows ARM64, on native ARM64 runners. Windows ARM64 joins the per-push CI before version 1.0.
 
 ### 2.3 No unsafe code
 
