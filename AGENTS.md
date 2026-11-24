@@ -36,7 +36,7 @@ Before the first VCS command, run `jj --ignore-working-copy root` on its own. Th
 
 ## Commit gate
 
-jj has no commit hooks: run the gate by hand before `jj commit`, `jj describe` (finalising) and `jj squash`. In a git checkout with the hook installed, `git commit` runs it; do not run it by hand first.
+jj has no commit hooks: run the gate by hand before `jj commit`, `jj describe` (finalising) and `jj squash`. In a plain git checkout, install it once as the `pre-commit` hook (`ln -sf ../../script/pre-commit .git/hooks/pre-commit`); `git commit` then runs it, so do not run it by hand first.
 
 ```sh
 script/pre-commit              # from the repo root
@@ -59,10 +59,9 @@ cargo deny check                  # when a manifest, Cargo.lock or deny.toml cha
 - A change to `docs/` or to a Markdown file at the root runs no tests. A change to a vendored crate runs the tests of the crates that depend on the crate it reaches the workspace through, and their dependents: `gpui-kit` for `vendor/gpui-base`, `jj-lib` for `vendor/jj-local-util`. Any other path outside `crates/` runs the whole profile.
 - The `quick` profile (`.config/nextest.toml`) leaves out the tests that build jj repositories, the scrolling tests and the serial tests that compare against the editor's highlighter; git conformance stays in. A test that builds a jj repository sits in a `jj` module, and the profile names that module. A change to `vcs-jj`, to jj behaviour, to scrolling or to syntax highlighting runs the full suite before commit: `script/checks`.
 - Each crate links one integration-test binary, `tests/main.rs` (`autotests = false`). A new test file is a module there.
-- In a plain git checkout, install the gate once: `ln -sf ../../script/pre-commit .git/hooks/pre-commit`.
 - On Windows the gate and `script/pre-push` run under Git Bash, with `jq`, `cargo-deny` and Python 3 on `PATH`. The limits above do not apply there; nextest's per-test cap still names a hung test (`DESIGN.md` §A13.5).
 
-## Tests
+## Running tests
 
 - Run tests with `cargo nextest run`, never `cargo test`. The exception is doctests, which nextest cannot run: `cargo test --doc --workspace`. `script/checks` and CI run them.
 - Build and test separately: `cargo nextest run --workspace --no-run`, then targeted tests while iterating: `cargo nextest run --workspace -E 'package(<crate>) & test(<filter>)'`. A filtered run takes seconds once built. nextest stops a test after 30 s.
@@ -141,7 +140,7 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | Linux CI locally (needs OrbStack running) | `act workflow_dispatch -W .github/workflows/<triad\|bench\|audit>.yml [-j <job>] -P ubuntu-latest=catthehacker/ubuntu:act-latest --container-architecture linux/arm64`; `triad.yml` runs only its Linux matrix entry under act. act runs as root, so the tests of unreadable or unwritable paths fail there; GitHub's runners do not run as root |
 | Windows release build with the About window's build line, in PowerShell | `script/windows-app.ps1 [release\|dist]` |
 | Linux packages into `target/linux/dist` | `script/linux/run script/package x86_64-unknown-linux-gnu`; for ARM64, `TRIAD_LINUX_ARCH=aarch64 script/linux/run image` once, then `TRIAD_LINUX_ARCH=aarch64 script/linux/run script/package aarch64-unknown-linux-gnu` |
-| Release: macOS ARM64 and Linux and Windows x64 and ARM64 packages as a published GitHub release; only on the owner's request | `docs/release.md`: update dependencies, bump the version, push `main`, then tag and push the tag; the tag must match the workspace version. `.github/workflows/release.yml` runs `triad.yml`'s tests on all five platforms, then builds and publishes |
+| Release, only on the owner's request | `docs/release.md`. The tag must match the workspace version |
 
 ## Layout
 
@@ -158,7 +157,7 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | `crates/vcs`, `vcs-jj`, `vcs-git` | Repository trait and its jj-lib and gix backends. |
 | `fixtures/core` | Hand-written triples with expected outputs, named for the case they cover. |
 | `fixtures/syntax` | One sample file per highlighted language, for the highlighting tests. |
-| `fixtures/oracle` | `jj-corpus.jsonl`: jj-lib merges with jj seeds, from `script/gen-jj-oracle`. `corpus.jsonl`: `git merge-file` triples, from `script/gen-oracle`. `patch-corpus.jsonl`: `git diff --no-index` hunks of those triples, from `script/gen-patch-oracle`. `jj-cli-aliases.json`, `jj-cli-absorb.json`, `jj-cli-resolve.json` and `jj-cli-renames.json`: jj's default revset aliases, `jj absorb` results, repositories after `jj resolve -r` and the changes `jj diff` names between two trees, from `script/gen-jj-cli-oracle`. |
+| `fixtures/oracle` | Generated oracles: jj-lib merges (`script/gen-jj-oracle`), `git merge-file` triples (`script/gen-oracle`) and their `git diff --no-index` hunks (`script/gen-patch-oracle`), and jj-cli results for revset aliases, absorb, `resolve -r` and renames (`script/gen-jj-cli-oracle`). `docs/jj-upgrade.md` §4 lists the jj files. |
 | `fixtures/conflict-repo` | Sources of a disposable jj repository with two conflicted Rust files, for `script/gen-conflict-repo`. |
 | `fixtures/demo` | Inputs to try by hand: a 980-line Rust merge with 20 conflicts, one of unusual characters, one of moved and duplicated blocks, and two directories for the directory diff (`fixtures/demo/README.md`). |
 | `images` | Mark, logo and app icon as SVG, PNG, ICNS and ICO, from `script/gen-images.swift`. |

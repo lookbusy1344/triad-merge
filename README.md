@@ -20,12 +20,12 @@ triad is a **fast** native 3-way merge and 2-way diff tool, written in Rust and 
 
 ## Status
 
-triad 0.3 is a beta. [Releases](https://github.com/lookbusy1344/triad-merge/releases) carry builds for macOS on Apple Silicon, and for Linux and Windows on x64 and ARM64. triad is tested by hand on macOS and Windows 11 x64; on Linux, CI and a test container run it.
+triad 0.3 is a beta. It is tested by hand on macOS and Windows 11 x64; on Linux, CI and a test container run it.
 
 ## Why triad
 
 - **Jujutsu first.** In a Jujutsu (jj) repository triad merges with jj's rules. It also resolves conflicts in any commit, walks a file through the operation log and absorbs edits into the commits that wrote the lines (§ Jujutsu-enabled features).
-- **Fast.** triad opens a 1M-line merge in 1.3 s. VS Code takes 13–24 s, and turns off highlighting and folding to do it. triad uses a quarter of VS Code's memory at 100k lines and under half at 1M. Scrolling stays smooth at 1M lines (§ Performance).
+- **Fast.** A 1M-line merge opens in 1.3 s, against 13–24 s in VS Code, in under half the memory, with highlighting on and smooth scrolling (§ Performance).
 - **Git parity.** In a git repository triad merges as `git merge-file` does, byte for byte. Every feature git can support works in both.
 - **Checked semantics.** Two oracle corpora pin the engine: about 1,970 merges from jj-lib and 1,950 triples from `git merge-file`.
 - **No jj or git binaries.** triad reads and writes repositories in-process through jj-lib and gix.
@@ -39,8 +39,6 @@ triad 0.3 is a beta. [Releases](https://github.com/lookbusy1344/triad-merge/rele
 **Moved and duplicated code.** A block a side moved shows teal at both ends, with a pill that jumps to the other end. When both sides add the same block in different places, the merge holds it twice without a conflict; triad counts and outlines both copies and offers to drop one.
 
 **File diff.** Two editable, aligned panes with copy to the other side. Moved blocks show at both ends. `triad-merge diff PATH` compares a working-copy file with its parent revision and saves edits to the working copy.
-
-The diff window below shows a block moved between the files, with a pill at each end that jumps to the other.
 
 ![The triad diff window: two Python files side by side, with a moved function marked at both ends](images/diff.png)
 
@@ -189,26 +187,26 @@ The GPUI shell, `merge-app`, holds 16,000 lines of product code; `merge-core` ho
 | File | Contents |
 |---|---|
 | [`docs/USER-GUIDE.md`](docs/USER-GUIDE.md) | How to use triad, jj then git |
-| [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | How to build and test triad |
-| [`docs/SPEC.md`](docs/SPEC.md) | Behaviour |
-| [`docs/PLAN.md`](docs/PLAN.md) | Status, next steps and open work |
-| [`docs/DESIGN.md`](docs/DESIGN.md) | Design: reasons, decisions, measurements |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | The crates, their main types, and how a run moves through them |
-| [`AGENTS.md`](AGENTS.md) | Rules for changes, the commit gate and commands |
-| [`docs/STYLE.md`](docs/STYLE.md) | UI style |
 | [`docs/json-schema.md`](docs/json-schema.md) | JSON output and merge commands |
-| [`docs/PLAN-diff-editor.md`](docs/PLAN-diff-editor.md) | The diff editor plan, part H |
 | [`CHANGELOG.md`](CHANGELOG.md) | What changed in each release |
-| [`docs/release.md`](docs/release.md) | The steps of a release |
-| [`docs/release-checklist.md`](docs/release-checklist.md) | Manual checks before a release |
-| [`docs/jj-upgrade.md`](docs/jj-upgrade.md) | The steps of a jj upgrade |
-| [`docs/gpui-kit-issues.md`](docs/gpui-kit-issues.md), [`docs/gix-issues.md`](docs/gix-issues.md) | UI toolkit and gix problems, and triad's answers |
-| [`docs/mark-colours.md`](docs/mark-colours.md) | The mark's colour schemes and geometry |
-| [`docs/scroll-debugging.md`](docs/scroll-debugging.md) | Trackpad scrolling: failure modes and how to reproduce them |
-| [`docs/residue.md`](docs/residue.md) | Files triad and its scripts leave behind |
-| [`docs/test-repos.md`](docs/test-repos.md) | Scripts that build test repositories, and what they check |
 | [`docs/human-testing.md`](docs/human-testing.md) | Testing by hand, step by step: diff, merge and the jj features, with the output to expect |
 | [`fixtures/demo/README.md`](fixtures/demo/README.md), [`fixtures/conflict-repo/README.md`](fixtures/conflict-repo/README.md) | Inputs for trying triad by hand |
+| [`docs/SPEC.md`](docs/SPEC.md) | Behaviour |
+| [`docs/PLAN.md`](docs/PLAN.md) | Status, next steps and open work |
+| [`docs/PLAN-diff-editor.md`](docs/PLAN-diff-editor.md) | The diff editor plan, part H |
+| [`docs/DESIGN.md`](docs/DESIGN.md) | Design: reasons, decisions, measurements |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | The crates, their main types, and how a run moves through them |
+| [`docs/STYLE.md`](docs/STYLE.md) | UI style |
+| [`docs/mark-colours.md`](docs/mark-colours.md) | The mark's colour schemes and geometry |
+| [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | How to build and test triad |
+| [`AGENTS.md`](AGENTS.md) | Rules for changes, the commit gate and commands |
+| [`docs/test-repos.md`](docs/test-repos.md) | Scripts that build test repositories, and what they check |
+| [`docs/scroll-debugging.md`](docs/scroll-debugging.md) | Trackpad scrolling: failure modes and how to reproduce them |
+| [`docs/residue.md`](docs/residue.md) | Files triad and its scripts leave behind |
+| [`docs/gpui-kit-issues.md`](docs/gpui-kit-issues.md), [`docs/gix-issues.md`](docs/gix-issues.md) | UI toolkit and gix problems, and triad's answers |
+| [`docs/jj-upgrade.md`](docs/jj-upgrade.md) | The steps of a jj upgrade |
+| [`docs/release.md`](docs/release.md) | The steps of a release |
+| [`docs/release-checklist.md`](docs/release-checklist.md) | Manual checks before a release |
 
 ## Licence
 

@@ -67,7 +67,7 @@ A block a side moved from one place to another shows teal at both ends in that s
 
 ### The diff window
 
-Two aligned, editable panes, each with copy to the other side. A block deleted in one place and inserted once in another shows teal at both ends, with an `M` beside it and a pill naming the other end's line, such as `R5 →`; click the `M` or the pill, or press ⇧⌘M with the caret in the block, to go to the other end. ⌘S writes each edited side to its own file and keeps the window open. Each side has its own undo. A file changed on disk reloads, or asks first when the pane has unsaved edits; the caret and the view stay on their lines. When one side is a past revision, that side is read-only. Edit → Copy as Patch copies the whole diff as a unified patch, as `git diff` prints it; Copy Difference as Patch copies the difference at the caret alone. View → Unified shows the diff in one read-only pane, each change's deleted lines above its inserted lines, with both sides' line numbers; choose it again to edit side by side. `diff-layout = unified` opens every diff window that way.
+Two aligned, editable panes, each with copy to the other side. A block deleted in one place and inserted once in another shows teal at both ends, with an `M` beside it and a pill naming the other end's line, such as `R5 →`; click the `M` or the pill, or press ⇧⌘M with the caret in the block, to go to the other end. Each side has its own undo. A file changed on disk reloads, or asks first when the pane has unsaved edits; the caret and the view stay on their lines. When one side is a past revision, that side is read-only. Edit → Copy as Patch copies the whole diff as a unified patch, as `git diff` prints it; Copy Difference as Patch copies the difference at the caret alone. View → Unified shows the diff in one read-only pane, each change's deleted lines above its inserted lines, with both sides' line numbers; choose it again to edit side by side. `diff-layout = unified` opens every diff window that way.
 
 ⌘S saves each edited side and keeps the window open; ⌘Q saves and exits; ⌘W closes, asking first about unsaved edits. Under `triad-merge diff PATH`, the `diff` listing and `history` in a jj repository, each save is snapshotted at once, so jj sees it without another command. If jj cannot take the snapshot, a banner says why and the file stays saved. When jj or git runs triad as its diff tool, that command takes the files in.
 
@@ -89,7 +89,7 @@ Both windows show each character that draws nothing, or changes how the text aro
 
 ## 3. jj
 
-Sections without a mark work the same in git (§4). Those marked *jj-enabled* rest on what jj records: conflicts in commits, the operation log and the commits that wrote each line. git has no form of them.
+Sections without a mark work the same in git (§4). Those marked *jj-enabled* rest on what jj records: conflicts in commits, the operation log, the evolog and the commits that wrote each line. git has no form of them.
 
 ### From jj's own commands
 
@@ -201,18 +201,18 @@ triad-merge diff --since 0123abcd -r '@-'    # the change below @ since version 
 
 `evolog -r`, `diff --since` and its `-r` each take a revset that names one commit, with your revset aliases. A revset that names no commit, or several, is an error. `--since` also takes the commit ID of a hidden version, as `evolog` lists it.
 
-`evolog` opens a window that lists each version: its commit, the time and description of the operation that wrote it, and `(conflict)` when the version holds one. Click a version, or select it with ↑ and ↓ and press Enter, to open the directory window on what the change edited since that version, as `diff --since COMMIT` does. A version that differs in nothing opens no window and says `No difference from the current version.` One directory window is open at a time; another version brings it forward. Closing the evolog window, or Escape or ⌘W, ends the run with 0.
+`evolog` opens a window that lists each version: its commit, the time and description of the operation that wrote it, and `(conflict)` when the version holds one. Click a version, or select it with ↑ and ↓ and press Enter, to open the directory window on what the change edited since that version, as `diff --since COMMIT` does. A version that differs in nothing opens no window and says `No difference from the current version.` One directory window is open at a time; another version brings it forward. Closing the evolog window, or Escape or ⌘W, exits 0.
 
 The directory window of `diff --since` is titled `CHANGE since SHORT`. A file opens in the diff window with the earlier version, rebased, on the left and the change on the right. Both sides are read-only: the comparison is of two commits, not of files on disk.
 
-`evolog --list` prints one line per version: the commit, the operation that wrote it, its time and description, and `(conflict)` when the version holds one.
+`evolog --list` prints the same list, one line per version, with the operation's ID after the commit:
 
 ```
 5c0e9a3b71d2 6f1d0a27c94e 2026-11-22T10:04:11+01:00 rebase commit
 0123abcd8e9f 3a9c55e1b0d7 2026-11-22T09:58:40+01:00 snapshot working copy
 ```
 
-`--since` takes any revision that names one commit; an earlier version's commit ID works though the commit is hidden. The `--inspect` listing exits 0 when nothing differs, as after a rebase alone, and 1 when files differ. A file the rebase leaves conflicted shows with jj's conflict markers.
+The `--inspect` listing exits 0 when nothing differs, as after a rebase alone, and 1 when files differ. A file the rebase leaves conflicted shows with jj's conflict markers.
 
 ### Reuse an earlier resolution (jj-enabled)
 
@@ -311,7 +311,7 @@ In a jj repository triad merges as jj does: jj's diff, `merge.same-change` and `
 
 ## 4. git
 
-The features of §3 that rest on what jj records have no git form: conflicts in commits (`stack`, `resolve -r`), the operation log (`history`, `diff --op`) and `absorb`. In a git repository each says `COMMAND needs a jj repository` and exits 3. Everything else works the same in git.
+The jj-enabled features of §3 have no git form: conflicts in commits (`stack`, `resolve -r`), the operation log (`history`, `diff --op`), the evolog (`evolog`, `diff --since`, `resolve --reuse`) and `absorb`. In a git repository each says `COMMAND needs a jj repository` and exits 3. Everything else works the same in git.
 
 ### From git's own commands
 
@@ -417,6 +417,8 @@ triad-merge stack --list
 triad-merge stack --json
 triad-merge history PATH --list
 triad-merge history PATH --json
+triad-merge evolog --list
+triad-merge evolog --json
 triad-merge absorb --list
 triad-merge absorb --json
 ```
@@ -436,7 +438,7 @@ triad-merge show-config                    # the settings in effect
 
 Bind a key with `keybind = CHORD=ACTION`, for example `keybind = cmd+j=next-conflict`.
 
-The windows follow the system's language. `ui-language = ja` holds them to Japanese; the others are `en`, `es`, `zh-CN`, `zh-TW`, `ko`, `de`, `fr`, `pt-BR`, `ru`, `uk`, `pl`, `nl` and `sv`. The command line stays in English.
+The windows follow the system's language. `ui-language = ja` holds them to Japanese; the others are `en`, `es`, `zh-CN`, `zh-TW`, `ko`, `de`, `fr`, `pt-BR`, `uk`, `pl`, `nl`, `sv` and `ru`. The command line stays in English.
 
 ## 8. Exit codes
 
