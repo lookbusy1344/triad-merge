@@ -22,7 +22,7 @@ affects_build() {
 
 changed_paths() {
     if jj --ignore-working-copy root > /dev/null 2>&1; then
-        jj diff --name-only -r @
+        jj diff --name-only -r @ | slash_paths
     else
         git diff HEAD --name-only -z | tr '\0' '\n'
     fi
@@ -31,6 +31,8 @@ changed_paths() {
 # Run from the repo root; works when invoked via the .git/hooks symlink.
 root="$(jj --ignore-working-copy root 2> /dev/null || git rev-parse --show-toplevel)"
 cd "${root}"
+# shellcheck source=platform.sh
+source script/platform.sh
 
 should_run=false
 paths=()

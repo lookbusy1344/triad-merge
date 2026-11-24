@@ -8,8 +8,9 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{Selectable as _, Sizable as _, Theme, h_flex};
 use gpui_kit::{
     Action, AnyElement, ClickEvent, Div, ElementId, InteractiveElement as _, IntoElement,
-    ParentElement, Pixels, Role, SharedString, Stateful, StatefulInteractiveElement as _, Styled,
-    TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px,
+    MouseButton, ParentElement, Pixels, Role, SharedString, Stateful,
+    StatefulInteractiveElement as _, Styled, TestSupportExt as _, Window, div,
+    prelude::FluentBuilder as _, px,
 };
 use merge_core::merge3::{LEFT, RIGHT, Source};
 use merge_view::nav::Sides;
@@ -227,13 +228,19 @@ pub(crate) fn tools(groups: &[&[Control]]) -> impl Iterator<Item = Tool> {
     groups.iter().flat_map(|group| group.iter()).flat_map(|&control| control.tools())
 }
 
-/// The mark, as the button that opens the About window.
+/// The mark, as the button that opens the About window. It claims the press: in the title
+/// bar of Windows, a press nothing claims starts the system's window move, which swallows
+/// the release and with it the click.
 pub(crate) fn mark(dark: bool) -> Stateful<Div> {
     let button = Button::new(MARK_ID)
         .ghost()
         .small()
         .child(logo::mark(dark))
         .accessibility_label(strings::about_title())
+        .on_mouse_down(MouseButton::Left, |_, window, cx| {
+            window.prevent_default();
+            cx.stop_propagation();
+        })
         .on_click(|_: &ClickEvent, window, cx| window.dispatch_action(Box::new(About), cx));
     tooltip::wrap(MARK_ID, button, tooltip::build(strings::about_title()))
 }

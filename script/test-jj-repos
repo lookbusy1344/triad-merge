@@ -11,6 +11,8 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+# shellcheck source=platform.sh
+source "$ROOT/script/platform.sh"
 TRIAD="$ROOT/target/debug/triad-merge"
 # triad prints IDs at this length (`vcs::ChangeInfo`).
 SHORT_ID=8
@@ -20,7 +22,9 @@ EXIT_CONFLICTS=1
 # The checks compare triad with jj's CLI, so jj must be the release jj-lib is pinned to.
 pinned=$(sed -n 's/^jj-lib = { version = "=\([^"]*\)".*/\1/p' "$ROOT/Cargo.toml")
 found=$(jj --version 2>/dev/null | awk '{print $2}') || true
-if [[ -z "$pinned" || "$found" != "$pinned" ]]; then
+# Release builds add the commit they were built from: 0.47.1-d16ee1fc….
+version_pattern="^${pinned//./[.]}(-[0-9a-f]+)?\$"
+if [[ -z "$pinned" || ! "$found" =~ $version_pattern ]]; then
   echo "error: jj on PATH is '${found:-missing}'; the pinned jj-lib is '${pinned:-unknown}'" >&2
   exit 2
 fi
@@ -62,7 +66,7 @@ same() {
 jjr() { (cd "$repo" && jj --quiet "$@"); }
 change() { jjr log --no-graph -r "$1" -T "change_id.short($SHORT_ID)"; }
 commit() { jjr log --no-graph -r "$1" -T "commit_id.short($SHORT_ID)"; }
-conflicts() { { jjr resolve --list -r "$1" 2>/dev/null || true; } | awk '{print $1}' | sort | paste -sd, -; }
+conflicts() { { jjr resolve --list -r "$1" 2>/dev/null || true; } | slash_paths | awk '{print $1}' | sort | paste -sd, -; }
 # The descriptions of the operations after operation $1, newest first, snapshots left out.
 ops_since() {
   jjr op log --no-graph -T 'id.short() ++ " " ++ description.first_line() ++ "\n"' |
@@ -224,7 +228,7 @@ absorbed 3 hunks into 2 commits
     "$(jjr file show -r A f.txt | paste -sd' ' -)"
   same "B's f.txt" "f1 f2 f3 A fixed f4 f5 f6 A fixed f7 f8 f9 B fixed f10 f11 f12 A f13 f14" \
     "$(jjr file show -r B f.txt | paste -sd' ' -)"
-  same "what @ keeps" "M f.txt,A new.txt" "$(jjr diff --summary -r @ | paste -sd, -)"
+  same "what @ keeps" "M f.txt,A new.txt" "$(jjr diff --summary -r @ | slash_paths | paste -sd, -)"
   same "@'s f.txt changes" "-f1,+f1 fixed,-f12 A,+f12 A fixed" \
     "$(jjr diff --git -r @ f.txt | grep -E '^[-+][^-+]' | paste -sd, -)"
   same "operations after the apply" "absorb in triad" "$(ops_since "$before")"
@@ -255,7 +259,7 @@ files: 12"
   same "diff --inspect --rev base" "$want" "$out"
   same "renames and copies jj names" \
     "R invoice/{util.py => helpers.py},R invoice/{ => io}/parser.py,C invoice/{totals.py => summary.py}" \
-    "$(jjr diff --summary | grep '^[RC]' | paste -sd, -)"
+    "$(jjr diff --summary | slash_paths | grep '^[RC]' | paste -sd, -)"
   # jj's dir mode: two directories of the changed files, as `install --jj` sets it up.
   local got
   got=$(jjr diff --tool triad \

@@ -20,7 +20,7 @@ triad is a **fast** native 3-way merge and 2-way diff tool, written in Rust and 
 
 ## Status
 
-triad 0.2 is a beta. [Releases](https://github.com/lookbusy1344/triad-merge/releases) carry builds for macOS on Apple Silicon, Linux x64 and Windows x64.
+triad 0.2 is a beta. [Releases](https://github.com/lookbusy1344/triad-merge/releases) carry builds for macOS on Apple Silicon, Linux x64 and Windows x64. triad is tested by hand on macOS and Windows 11 x64; on Linux, CI and a test container run it.
 
 ## Why triad
 
@@ -131,7 +131,23 @@ cp -R target/release/triad.app /Applications/
 ln -sf /Applications/triad.app/Contents/MacOS/triad-merge ~/.local/bin/triad-merge
 ```
 
-`install` registers the binary it runs from in jj's user config or git's global config, and leaves other settings alone; `--config FILE` writes elsewhere. Rerun it after moving the binary. The link puts `triad-merge` on your `PATH` and follows each new copy of the app. To update, pull and repeat the first three commands. If an old `triad-merge` shadows the link, `which -a triad-merge` finds it.
+The link puts `triad-merge` on your `PATH` and follows each new copy of the app. To update, pull and repeat the first three commands. If an old `triad-merge` shadows the link, `which -a triad-merge` finds it.
+
+### From source (Windows)
+
+You need Windows 11 x64, the Visual Studio Build Tools with the C++ workload, `rustup` and PowerShell 7. From the repository root, in PowerShell:
+
+```powershell
+script/windows-app.ps1                                # builds target\release\triad-merge.exe and triad-merge-gui.exe
+target\release\triad-merge.exe install --jj           # jj resolve, jj diff --tool triad
+target\release\triad-merge.exe install --git          # git mergetool, git difftool
+```
+
+`script/windows-app.ps1 dist` builds with fat LTO into `target\dist`, as a release does. Both put the commit, and the jj change in a jj repository, in the About window.
+
+### Register with jj and git
+
+`install` registers the binary it runs from in jj's user config or git's global config, and leaves other settings alone; `--config FILE` writes elsewhere. Rerun it after moving the binary.
 
 ## Use
 

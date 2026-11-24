@@ -4,7 +4,7 @@ Where the project stands and what comes next. [SPEC.md](SPEC.md) sets the behavi
 
 ## 1. Status
 
-As of 2026-11-23.
+As of 2026-11-24.
 
 | Milestone | State | Part |
 |---|---|---|
@@ -13,7 +13,7 @@ As of 2026-11-23.
 | M3 GUI release 1, macOS | Done, except the spoken VoiceOver steps of the release checklist | §A6 |
 | M4 tool integration, local macOS release | Done; release checklist step 6 needs a rerun on jj, since `jj diff --tool` saves the right side to the working copy (§A6.5) | §A7 |
 | Beta, macOS | Open: testers build `triad.app` and install it in `/Applications` | §A7.4 |
-| M4b Linux and Windows | Linux test machine and packages build; final checks need hardware, Windows a certificate | §E7, §3 |
+| M4b Linux and Windows | Linux test machine and packages build. Windows 11 x64 checked on a real machine: the windows on screen, and tool runs from `git mergetool`, `git difftool`, `jj resolve` and `jj diff --tool`. Final checks need hardware, Windows a certificate | §E7, §3 |
 | Merge semantics | Done: jj's merge, word level, refinements, syntax-aware boundaries | B |
 | M5 chunk origin | Done, with revision chips | C |
 | M6 native resolution | Done: git stages a resolved save; jj snapshots before the read and after each save. ⌘S saves and keeps the merge open, each save recorded; ⌘Q saves and exits. A diff-window save in triad's own jj runs snapshots the working copy | D |
@@ -30,6 +30,8 @@ As of 2026-11-23.
 The conformance suite runs on git, jj and internal jj repositories, and six of its checks on jj's experimental simple store (§A7.1). Every spec §9 target is met (§A6.7). Toolchain: stable Rust 1.100, with `rust-version` 1.100. Dependencies: jj-lib and jj-core 0.47.1 on gix 0.90; gpui-kit 0.8.1 with the vendored `gpui-base` patch; `jj-local-util` vendored with a test-only feature that leaves out jj's flush to disk, so the full suite takes 17 s on macOS (§A13.5); gpui-kit 0.9 is not adopted (`docs/gpui-kit-issues.md`).
 
 CI: `triad.yml` tests on Linux, macOS and Windows; `bench.yml` and `audit.yml` run weekly. All three pass on GitHub's runners; Linux and macOS also under `act`. On the Windows runner, tests that build jj repositories run about 40 times slower than on Linux: `vcs-jj`'s jj tests take 292 s of test time there and 7 s on Linux, while `vcs-git`'s take 8 s. Defender is off in the runner image. The cause is open (§3). `release.yml` runs on a `v*` tag that matches the workspace version: it runs `triad.yml`'s checks and tests on all three platforms, and only when they pass builds `triad.app` for macOS ARM64, a zip of both binaries for Windows x64 and the smoke-tested Linux x64 packages, and publishes them as a release. v0.2.0 is the latest.
+
+The commit and push gates run on Windows under Git Bash, without a time limit: the quick profile takes 102 s there (§A13.5). Their script tests pass on Windows and macOS; on Linux CI runs `script/check-workspace`.
 
 Build profiles (root `Cargo.toml`): `release` aborts on panic and strips symbols, 37.5 MB on macOS ARM64, 1 min clean; `script/macos-app`, `script/measure-app` and the benchmarks use it. `dist` adds fat LTO and one codegen unit, 35.4 MB, 3 min; `script/package`, `script/macos-app dist` and `release.yml` use it.
 
@@ -52,7 +54,7 @@ In order. Each is one or more commits.
 | git `resolve`: a Save that writes markers after an earlier Save staged the path resolved leaves the stage-0 entry; put the conflict stages back | — | spec §7.4 |
 | Linux: rendering, input and the accessibility tree on real GNOME Wayland and X11; the config path and file watcher there; release checklist and spec §9 on the Linux reference machine | A Linux desktop or a VM with GPU access | §E7.1 |
 | Linux packages: triad's MIT licence file and dependency notices | The release | §E7.1 |
-| Windows: tool runs from `git mergetool`, `git difftool`, `jj resolve` and `jj diff --tool` in a real console; MSI through `cargo-wix`, Authenticode signing, winget manifest; icon resource; rendering, IME and file watching on x64 and ARM64; release checklist and spec §9 | x64 and ARM64 machines, a certificate, permission to install `cargo-wix` | §E7.2 |
+| Windows: MSI through `cargo-wix`, Authenticode signing, winget manifest; `images/triad.ico` in both binaries as icon resource 1, which GPUI's window class loads, through a build script with a resource crate; IME and file watching on x64 and ARM64; rendering and tool runs on ARM64; release checklist and spec §9 | An ARM64 machine, a certificate, permission to install `cargo-wix` | §E7.2 |
 | Windows ARM64 in CI (`windows-11-arm`), before version 1.0 | — | `.github/workflows/triad.yml` |
 | Windows CI: find why jj repository tests run about 40 times slower than on Linux. First check: the next `triad.yml` run, since jj-lib's flush to disk, `FlushFileBuffers` on Windows, is now off in tests (`DESIGN.md` §A13.5); next, fixtures on D: through `TMP` and `TEMP`, then jj-lib's file lock under parallel tests | A CI run per check | §1, `.github/workflows/triad.yml` |
 | Per-command scans in `MergeWindow::refresh`: bands, placeholders, status counts; a pick at 1M costs 4.4 / 6.3 ms mean / max | A measurement that calls for them | §A6.7 |

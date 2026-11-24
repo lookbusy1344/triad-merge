@@ -28,8 +28,8 @@ readonly TIP="heads(${STACK})"
 # rustfmt on stdin finds neither Cargo.toml nor rustfmt.toml, so the edition and
 # the config file are passed explicitly.
 # The pattern keeps `jj fix` away from vendored code, which keeps its upstream
-# formatting.
-RUSTFMT_TOML="$(cd "$(dirname "$0")/.." && pwd)/rustfmt.toml"
+# formatting. rustfmt is a native program: on Windows it takes C:/… paths (pwd -W).
+RUSTFMT_TOML="$(cd "$(dirname "$0")/.." && { pwd -W 2> /dev/null || pwd; })/rustfmt.toml"
 readonly RUSTFMT_TOML
 readonly RUSTFMT_CONFIG=(
     --config "fix.tools.rustfmt.command=[\"rustfmt\", \"--emit\", \"stdout\", \"--edition\", \"2024\", \"--config-path\", \"${RUSTFMT_TOML}\"]"

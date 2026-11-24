@@ -60,6 +60,7 @@ cargo deny check                  # when a manifest, Cargo.lock or deny.toml cha
 - The `quick` profile (`.config/nextest.toml`) leaves out the tests that build jj repositories, the scrolling tests and the serial tests that compare against the editor's highlighter; git conformance stays in. A test that builds a jj repository sits in a `jj` module, and the profile names that module. A change to `vcs-jj`, to jj behaviour, to scrolling or to syntax highlighting runs the full suite before commit: `script/checks`.
 - Each crate links one integration-test binary, `tests/main.rs` (`autotests = false`). A new test file is a module there.
 - In a plain git checkout, install the gate once: `ln -sf ../../script/pre-commit .git/hooks/pre-commit`.
+- On Windows the gate and `script/pre-push` run under Git Bash, with `jq`, `cargo-deny` and Python 3 on `PATH`. The limits above do not apply there; nextest's per-test cap still names a hung test (`DESIGN.md` §A13.5).
 
 ## Tests
 
@@ -135,9 +136,10 @@ Push only on explicit request. Before `jj git push` or moving a shared bookmark,
 | Costs spec §9 sets no target for: `resolve`'s repository steps on 10k and 100k files (`DESIGN.md` §D5.5), `annotate` against history length (§C5.5) | `cargo bench -p merge-cli --bench resolve`, `--bench annotate` |
 | Measure the running app against spec §9 (`DESIGN.md` §A6.7) | `script/measure-app` (`docs/release-checklist.md`) |
 | Compare open time and memory with VS Code's merge editor, for README § Performance (`DESIGN.md` §A6.7) | `script/compare-vscode [runs]` |
-| Tests of the push scripts: `pre-push` removes its clone on every exit; the agent hook runs once per push; `build-id` and `pre-push` name the right tip, merges included. `script/checks` runs each when its scripts change | `script/test-pre-push`, `script/test-agent-pre-push-hook`, `script/test-tip` |
+| Tests of the push scripts: `pre-push` removes its clone on every exit; the agent hook runs once per push; `build-id`, `windows-app.ps1` and `pre-push` name the right tip, merges included. `script/checks` runs each when its scripts change | `script/test-pre-push`, `script/test-agent-pre-push-hook`, `script/test-tip` |
 | Linux test machine in OrbStack (`DESIGN.md` §E7.1) | `script/linux/run image` once and after each new stable Rust; then `script/linux/run cargo build -p triad-merge`, `script/linux/run cargo nextest run --workspace --profile linux-emulated`, `script/linux/run script/linux/smoke wayland` or `x11` |
 | Linux CI locally (needs OrbStack running) | `act workflow_dispatch -W .github/workflows/<triad\|bench\|audit>.yml [-j <job>] -P ubuntu-latest=catthehacker/ubuntu:act-latest --container-architecture linux/arm64`; `triad.yml` runs only its Linux matrix entry under act. act runs as root, so the tests of unreadable or unwritable paths fail there; GitHub's runners do not run as root |
+| Windows release build with the About window's build line, in PowerShell | `script/windows-app.ps1 [release\|dist]` |
 | Linux packages into `target/linux/dist` | `script/linux/run script/package x86_64-unknown-linux-gnu` |
 | Release: macOS ARM64, Windows x64 and Linux x64 packages as a published GitHub release; only on the owner's request | `docs/release.md`: update dependencies, bump the version, push `main`, then tag and push the tag; the tag must match the workspace version. `.github/workflows/release.yml` runs `triad.yml`'s tests on all three platforms, then builds and publishes |
 

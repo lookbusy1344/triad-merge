@@ -21,6 +21,8 @@ readonly LOG_TAIL_LINES=60
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly PROJECT_DIR
+# shellcheck source=platform.sh
+source "${PROJECT_DIR}/script/platform.sh"
 
 # Prints `jj` or `git` for each push in the command $1, one per line.
 pushes() {
@@ -133,7 +135,7 @@ PYTHON
 git_runs_check() {
     local hook
     hook="$(git -C "${PROJECT_DIR}" rev-parse --git-path hooks/pre-push 2> /dev/null)" || return 1
-    [[ "${hook}" == /* ]] || hook="${PROJECT_DIR}/${hook}"
+    [[ "${hook}" == /* || "${hook}" == [A-Za-z]:/* ]] || hook="${PROJECT_DIR}/${hook}"
     [[ -x "${hook}" ]] && cmp -s "${hook}" "${PROJECT_DIR}/script/pre-push"
 }
 
@@ -145,7 +147,14 @@ report() {
 }
 
 command="$(jq -r '.tool_input.command // empty')"
-kinds="$(pushes "${command}")"
+# Without Python the command cannot be parsed: block any command that mentions a push.
+if ! kinds="$(pushes "${command}")"; then
+    if grep -q push <<< "${command}"; then
+        echo "Push blocked: script/agent-pre-push-hook needs Python 3 on PATH." >&2
+        exit "${BLOCK_EXIT_CODE}"
+    fi
+    exit 0
+fi
 [[ -n "${kinds}" ]] || exit 0
 
 if ! grep -qx jj <<< "${kinds}" && git_runs_check; then

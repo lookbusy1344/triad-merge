@@ -14,7 +14,7 @@ jj new main
 gh run list --workflow triad.yml --branch main --limit 1    # the last CI run on main passed
 ```
 
-CI covers Linux and Windows, which the local gates do not.
+CI covers Linux, macOS and Windows; a local gate covers only the platform it runs on.
 
 ## 2. Update dependencies
 

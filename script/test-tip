@@ -11,6 +11,7 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 readonly BUILD_ID="$ROOT/script/build-id"
+readonly WINDOWS_APP="$ROOT/script/windows-app.ps1"
 readonly PRE_PUSH="$ROOT/script/pre-push"
 readonly ID_LENGTH=12
 
@@ -34,6 +35,15 @@ expect() {
   echo "    expected: ${2//$'\n'/\\n}" >&2
   echo "    actual:   ${1//$'\n'/\\n}" >&2
   return 1
+}
+
+# Check that build-id prints $1 in the current directory, and so does windows-app.ps1 where
+# PowerShell runs.
+expect_build_id() {
+  expect "$("$BUILD_ID")" "$1"
+  if command -v pwsh >/dev/null; then
+    expect "$(pwsh -NoProfile -NonInteractive -File "$WINDOWS_APP" -BuildId | tr -d '\r')" "$1"
+  fi
 }
 
 # Run case function $1 in a subshell with errexit, so a failed setup step fails the case.
@@ -113,23 +123,43 @@ run_pre_push() {
 
 jj_build_id_names_a_clean_merge_at_working_copy() {
   make_jj_merge jj-merge-at-working-copy
-  expect "$("$BUILD_ID")" "$(jj_build_id merge)"
+  expect_build_id "$(jj_build_id merge)"
 }
 
 jj_build_id_names_a_clean_merge_under_an_empty_working_copy() {
   make_jj_merge jj-merge-under-empty
   jj new --quiet
-  expect "$("$BUILD_ID")" "$(jj_build_id merge)"
+  expect_build_id "$(jj_build_id merge)"
 }
 
 jj_build_id_names_the_parent_of_an_empty_working_copy() {
   make_jj_fork jj-linear
-  expect "$("$BUILD_ID")" "$(jj_build_id right)"
+  expect_build_id "$(jj_build_id right)"
 }
 
 git_build_id_names_head_without_a_change() {
   make_git git-linear
-  expect "$("$BUILD_ID")" "$(git_build_id)"
+  expect_build_id "$(git_build_id)"
+}
+
+# A git clone of jj's revision `right`, as CI checks out a commit jj pushed. jj writes the
+# change ID into the commit's `change-id` header.
+git_build_id_names_the_change_jj_recorded_in_the_commit() {
+  make_jj_fork jj-for-clone
+  local expected
+  expected=$(jj_build_id right)
+  git clone --quiet --branch right "$work/jj-for-clone" "$work/git-clone-of-jj"
+  cd "$work/git-clone-of-jj"
+  expect_build_id "$expected"
+}
+
+# The dirty tree is not the change's tree: no change ID.
+git_build_id_names_no_change_for_a_dirty_tree() {
+  make_jj_fork jj-for-dirty-clone
+  git clone --quiet --branch right "$work/jj-for-dirty-clone" "$work/git-dirty-clone-of-jj"
+  cd "$work/git-dirty-clone-of-jj"
+  echo edited >right.txt
+  expect_build_id "$(git_build_id)-dirty"
 }
 
 git_build_id_names_a_merge_commit() {
@@ -143,7 +173,7 @@ git_build_id_names_a_merge_commit() {
   git add .
   git commit --quiet -m main
   git merge --quiet --no-edit side
-  expect "$("$BUILD_ID")" "$(git_build_id)"
+  expect_build_id "$(git_build_id)"
 }
 
 jj_pre_push_checks_a_clean_merge() {
@@ -164,13 +194,26 @@ TOML
   expect "$(run_pre_push)" "$(jj_tip_line merge)"
 }
 
+# pre-push formats the tip with rustfmt, reading the rustfmt.toml beside its script directory.
+jj_pre_push_formats_the_tip() {
+  make_jj_fork jj-pre-push-format
+  : >rustfmt.toml
+  printf 'fn main(){let x=1;}\n' >main.rs
+  jj commit --quiet -m unformatted
+  run_pre_push >/dev/null
+  expect "$(jj file show -r @- main.rs)" $'fn main() {\n    let x = 1;\n}'
+}
+
 run_case jj_build_id_names_a_clean_merge_at_working_copy
 run_case jj_build_id_names_a_clean_merge_under_an_empty_working_copy
 run_case jj_build_id_names_the_parent_of_an_empty_working_copy
 run_case git_build_id_names_head_without_a_change
+run_case git_build_id_names_the_change_jj_recorded_in_the_commit
+run_case git_build_id_names_no_change_for_a_dirty_tree
 run_case git_build_id_names_a_merge_commit
 run_case jj_pre_push_checks_a_clean_merge
 run_case jj_pre_push_checks_a_clean_merge_of_pushed_revisions
+run_case jj_pre_push_formats_the_tip
 
 if [[ $failures -gt 0 ]]; then
   echo "$failures case(s) failed" >&2

@@ -11,6 +11,8 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 readonly HOOK="$ROOT/script/agent-pre-push-hook"
+# shellcheck source=platform.sh
+source "$ROOT/script/platform.sh"
 readonly PASS=0
 readonly BLOCKED=2
 
@@ -27,7 +29,7 @@ case_number=0
 make_repo() {
   local repo=$1
   mkdir -p "$repo/script"
-  cp "$HOOK" "$repo/script/agent-pre-push-hook"
+  cp "$HOOK" "$ROOT/script/platform.sh" "$repo/script/"
   cat >"$repo/script/pre-push" <<'EOF'
 #!/usr/bin/env bash
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -131,6 +133,18 @@ grep -q '^Push blocked: script/pre-push failed' "$repo/err" \
   || { echo "FAIL: no block reason on stderr" >&2; failures=$((failures + 1)); }
 rm "$repo/fail"
 
+# Without a working Python the hook cannot parse the command: it blocks any command that
+# mentions a push and lets the rest through.
+stubs="$work/no-python"
+mkdir -p "$stubs"
+printf '#!/bin/sh\nexit 127\n' >"$stubs/python3"
+cp "$stubs/python3" "$stubs/python"
+chmod +x "$stubs/python3" "$stubs/python"
+PATH="$stubs:$PATH" expect 'jj git push' "$BLOCKED" 0
+grep -q 'needs Python 3' "$repo/err" \
+  || { echo "FAIL: no Python reason on stderr" >&2; failures=$((failures + 1)); }
+PATH="$stubs:$PATH" expect 'jj log' "$PASS" 0
+
 # git's own pre-push hook, when it is triad's, runs the check on git push.
 new_repo
 ln -s ../../script/pre-push "$repo/.git/hooks/pre-push"
@@ -149,11 +163,14 @@ printf '#!/bin/sh\nexit 0\n' >"$repo/.git/hooks/pre-push"
 chmod +x "$repo/.git/hooks/pre-push"
 expect 'git push origin main' "$PASS" 1
 
-# Nor does triad's hook when git cannot run it.
-new_repo
-cp "$repo/script/pre-push" "$repo/.git/hooks/pre-push"
-chmod -x "$repo/.git/hooks/pre-push"
-expect 'git push origin main' "$PASS" 1
+# Nor does triad's hook when git cannot run it. Git for Windows runs any hook that starts
+# with #!, whatever its mode, so the case holds on macOS and Linux alone.
+if ! on_windows; then
+  new_repo
+  cp "$repo/script/pre-push" "$repo/.git/hooks/pre-push"
+  chmod -x "$repo/.git/hooks/pre-push"
+  expect 'git push origin main' "$PASS" 1
+fi
 
 if [[ "$failures" -gt 0 ]]; then
   echo "$failures case(s) failed" >&2
