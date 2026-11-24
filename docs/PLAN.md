@@ -85,7 +85,6 @@ In order. Each is one or more commits.
 | A `fallback-encoding` setting to turn the Windows-1252 fallback off | Someone who needs it off | §G17 |
 | Review and diff features: blank lines in a merge (§G4), §G7, §G12–§G14 | Owner's choice on §G15's open point for §G4 | G |
 | Diff editor, §H4–§H10 | Owner's choices on §H13's open points | `PLAN-diff-editor.md` |
-| RUSTSEC-2026-0592 in `url` 2.5.8, through GPUI: `cargo update -p url` to 2.5.9, then `cargo audit` and `cargo deny check`. `script/checks` and so `script/pre-push` fail until then | 2.5.9 reaching the 3-day publish age: try again after 24 Nov 2026, not before | `.cargo/config.toml` |
 | An oracle for `diff --since` from `jj interdiff --git`, through `script/gen-jj-cli-oracle` | — | §K2 |
 | The absorb oracle's generator builds text files only: no renames, executable bits, symlinks, conflicted inputs or immutable commits | — | §I5 |
 | jj-cli's config defaults other than the revset aliases: none checked for whether triad depends on one | — | §I5 |

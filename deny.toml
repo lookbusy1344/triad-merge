@@ -7,12 +7,7 @@ all-features = true
 yanked = "deny"
 # Unmaintained crates deep in the GPUI and jj-lib trees are outside our control; flag only direct dependencies.
 unmaintained = "workspace"
-ignore = [
-    # url 2.5.8, through gpui-pre: stack overflow in `Url::origin()` on nested `blob:` URLs.
-    # Nothing in triad or the GPUI tree calls `Url::origin()`. Remove once the publish-age
-    # rule admits url 2.5.9 (`cargo update -p url`).
-    { id = "RUSTSEC-2026-0592", reason = "Url::origin() is never called; url 2.5.9 is under the publish-age limit" },
-]
+ignore = []
 
 [licenses]
 # triad is MIT. GPL and AGPL are rejected by omission: Zed's editor crates are GPL-3.0.
