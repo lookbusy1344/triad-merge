@@ -88,10 +88,11 @@ The tag starts `.github/workflows/release.yml`. It runs `triad.yml`'s checks and
 gh run watch "$(gh run list --workflow release.yml --limit 1 --json databaseId -q '.[0].databaseId')"
 ```
 
-Then replace the generated notes with the release's section of `CHANGELOG.md`:
+Then replace the generated notes with the release's section of `CHANGELOG.md`, followed by the link to the commits since the last release, vW.W.W:
 
 ```sh
 awk '/^## /{p = ($2 == "X.Y.Z"); next} p' CHANGELOG.md > "${TMPDIR:-/tmp}/notes.md"
+printf '\n**Full Changelog**: https://github.com/lookbusy1344/triad-merge/compare/vW.W.W...vX.Y.Z\n' >> "${TMPDIR:-/tmp}/notes.md"
 gh release edit vX.Y.Z --notes-file "${TMPDIR:-/tmp}/notes.md"
 ```
 
