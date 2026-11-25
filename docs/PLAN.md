@@ -4,7 +4,7 @@ Where the project stands and what comes next. [SPEC.md](SPEC.md) sets the behavi
 
 ## 1. Status
 
-As of 2026-11-24.
+As of 2026-11-25.
 
 | Milestone | State | Part |
 |---|---|---|

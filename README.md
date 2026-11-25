@@ -20,7 +20,7 @@ triad is a **fast** native 3-way merge and 2-way diff tool, written in Rust and 
 
 ## Status
 
-triad 0.3 is a beta. It is tested by hand on macOS and Windows 11 x64; on Linux, CI and a test container run it.
+triad 0.3 is a beta. It is tested by hand on macOS, Windows and Linux.
 
 ## Why triad
 
