@@ -13,7 +13,7 @@ As of 2026-11-24.
 | M3 GUI release 1, macOS | Done, except the spoken VoiceOver steps of the release checklist | §A6 |
 | M4 tool integration, local macOS release | Done; release checklist step 6 needs a rerun on jj, since `jj diff --tool` saves the right side to the working copy (§A6.5) | §A7 |
 | Beta, macOS | Open: testers build `triad.app` and install it in `/Applications` | §A7.4 |
-| M4b Linux and Windows | Linux test machine and packages build. Ubuntu 24.04 ARM64 on GNOME Wayland, in a VM on software Vulkan: the tests pass and merges work; every window fits gpui-component's client-side frame, and the plain windows draw their own title bar there (`STYLE.md` § Window sizes). Windows 11 x64 checked on a real machine: the windows on screen, and tool runs from `git mergetool`, `git difftool`, `jj resolve` and `jj diff --tool`. Final checks need hardware, Windows a certificate | §E7, §3 |
+| M4b Linux and Windows | Linux test machine and packages build. Linux checked on screen on GNOME Wayland, in an Ubuntu 24.04 ARM64 VM on software Vulkan (§E7.1): the full test suite passes, and the merge, diff, directory, open and About windows draw, size and take input correctly. The stack, history, absorb and evolog windows share the directory window's frame (`tool_window`). Windows 11 x64 checked on a real machine: the windows on screen, and tool runs from `git mergetool`, `git difftool`, `jj resolve` and `jj diff --tool`. Final checks need hardware, Windows a certificate | §E7, §3 |
 | Merge semantics | Done: jj's merge, word level, refinements, syntax-aware boundaries | B |
 | M5 chunk origin | Done, with revision chips | C |
 | M6 native resolution | Done: git stages a resolved save; jj snapshots before the read and after each save. ⌘S saves and keeps the merge open, each save recorded; ⌘Q saves and exits. A diff-window save in triad's own jj runs snapshots the working copy | D |
@@ -52,7 +52,7 @@ In order. Each is one or more commits.
 |---|---|---|
 | Release checklist: spoken VoiceOver steps | The owner | §2 |
 | git `resolve`: a Save that writes markers after an earlier Save staged the path resolved leaves the stage-0 entry; put the conflict stages back | — | spec §7.4 |
-| Linux: rendering, input and the accessibility tree on real GNOME Wayland and X11; the config path and file watcher there; release checklist and spec §9 on the Linux reference machine | A Linux desktop or a VM with GPU access | §E7.1 |
+| Linux: the windows on GNOME X11; the accessibility tree; the config path and file watcher; release checklist and spec §9 on the Linux reference machine | A Linux desktop with a GPU for spec §9 | §E7.1 |
 | Linux packages: triad's MIT licence file and dependency notices | The release | §E7.1 |
 | Windows: MSI through `cargo-wix`, Authenticode signing, winget manifest; `images/triad.ico` in both binaries as icon resource 1, which GPUI's window class loads, through a build script with a resource crate; IME and file watching on x64 and ARM64; rendering and tool runs on ARM64; release checklist and spec §9 | An ARM64 machine, a certificate, permission to install `cargo-wix` | §E7.2 |
 | Windows ARM64 in per-push CI (`windows-11-arm`), before version 1.0; a release tests on it already | — | `.github/workflows/triad.yml` |
@@ -110,7 +110,7 @@ In order. Each is one or more commits.
 | `vcs-jj` re-implements jj-cli behaviour: the end of a transaction in `JjRepository::rewrite`, the default revset aliases, absorb's hunk split | A jj upgrade changes jj's behaviour and triad's silently departs from it | Oracles from jj's CLI, pinned to the jj-lib version in `Cargo.lock`, cover the aliases, absorb and `resolve -r` (§I5); regenerating them needs the pinned jj on `PATH` |
 | gix and jj-lib disagree on gix version | Two gix copies | `vcs-git` pinned to jj-lib's gix; `script/check-workspace` fails on two |
 | Windows GUI and console split surprises git or jj | Lost exit codes or stderr | §A4.13 tests in CI; manual check in M4b |
-| Linux desktop rendering | Poor Linux experience | Real-desktop check in M4b; record in `gpui-kit-issues.md` |
+| Linux desktop rendering | Poor Linux experience | GNOME Wayland checked on screen in a VM (§E7.1); X11 and GPU hardware remain; record in `gpui-kit-issues.md` |
 | Build time and disk use grow with the dependency tree | Slow iteration | §A13.5; the quick pre-commit profile |
 
 ## G. Review and diff features
