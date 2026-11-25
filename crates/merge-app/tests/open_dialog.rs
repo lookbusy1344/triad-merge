@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use common::act;
 use gpui_kit::base::Root;
 use gpui_kit::test::TestWindowExt;
-use gpui_kit::{AnyView, AnyWindowHandle, App, Entity, TestAppContext, VisualTestContext};
+use gpui_kit::{AnyView, AnyWindowHandle, App, Entity, TestAppContext, VisualTestContext, px};
 use merge_app::diff_window::DiffWindow;
 use merge_app::open_dialog::{Mode, OpenDialog, START_ID, Slot};
 use merge_app::{ExitCode, MergeWindow, WindowSettings};
@@ -379,7 +379,7 @@ fn every_slot_names_its_field_and_choose_button(cx: &mut TestAppContext) {
 
 #[gpui_kit::test]
 fn the_mark_heads_the_dialog_beside_the_tabs_as_the_about_button(cx: &mut TestAppContext) {
-    use gpui_kit::{Role, px};
+    use gpui_kit::Role;
     use merge_app::open_dialog::MARK_ID;
 
     /// STYLE.md: a small control is 24 px tall.
@@ -757,4 +757,29 @@ fn every_control_fits_the_window_in_both_tabs(cx: &mut TestAppContext) {
         });
         assert_eq!(fits, Some(true), "{mode:?}");
     }
+}
+
+/// `docs/STYLE.md` § Window sizes.
+const DIALOG_SIZE: (f32, f32) = (440., 236.);
+
+#[gpui_kit::test]
+fn the_dialog_opens_at_its_size_with_no_title_bar_where_the_system_draws_the_frame(
+    cx: &mut TestAppContext,
+) {
+    let (window, _) = opened(cx);
+    act(cx, window, |window, _| {
+        let (width, height) = DIALOG_SIZE;
+        assert_eq!(window.window_bounds().get_bounds().size, gpui_kit::size(px(width), px(height)));
+        assert!(window.try_find(merge_app::decorations::TITLE_BAR_ID).is_none());
+    });
+}
+
+#[gpui_kit::test]
+fn a_dialog_size_the_user_picks_stays(cx: &mut TestAppContext) {
+    let (window, _) = opened(cx);
+    let picked = gpui_kit::size(px(400.), px(300.));
+    cx.simulate_window_resize(window, picked);
+    act(cx, window, TestWindowExt::render_frame);
+    cx.run_until_parked();
+    act(cx, window, |window, _| assert_eq!(window.window_bounds().get_bounds().size, picked));
 }

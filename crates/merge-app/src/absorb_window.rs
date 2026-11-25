@@ -20,6 +20,7 @@ use merge_session::repository::Discovery;
 use merge_session::resolve::ResolveError;
 use merge_view::diff::tone;
 
+use crate::decorations::Fit;
 use crate::pick_list::{self, Activate, Leave, SelectNext, SelectPrevious, State};
 use crate::tones::Palette;
 use crate::tool_window::{self, Note};
@@ -83,6 +84,7 @@ pub struct AbsorbStart {
 pub struct AbsorbWindow {
     start: AbsorbStart,
     exit: Rc<ExitFn>,
+    fit: Fit,
     /// The last listing; none before the first lands.
     listed: Option<Absorbed>,
     /// Each hunk's destination, by index into the listing's destinations; none to keep it.
@@ -135,6 +137,7 @@ pub fn start(
         let view = cx.new(|cx| AbsorbWindow {
             start,
             exit,
+            fit: Fit::default(),
             listed: None,
             chosen: Vec::new(),
             selected: None,
@@ -460,7 +463,7 @@ impl AbsorbWindow {
 }
 
 impl Render for AbsorbWindow {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let (muted, border) = (theme.muted_foreground, theme.border);
         let summary =
@@ -483,7 +486,7 @@ impl Render for AbsorbWindow {
         )
         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.apply(cx)));
         let this = cx.entity().downgrade();
-        tool_window::frame(cx, move |_, cx| {
+        tool_window::frame(&self.fit, strings::absorb_title(), window, cx, move |_, cx| {
             this.update(cx, AbsorbWindow::close_requested).unwrap_or(true)
         })
         .child(tool_window::header(SUMMARY_ID, summary, [refresh, apply], cx))

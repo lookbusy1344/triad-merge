@@ -23,10 +23,12 @@ use merge_session::repository::{Discovery, Handoff};
 use merge_syntax::language::Language;
 use merge_view::status::FileNames;
 
+use crate::decorations::{self, Fit};
 use crate::diff_window::{self, DiffFile, DiffLookup, Origin};
 use crate::window::{OpenError, WindowSettings};
 use crate::{ExitCode, alert, finish, ignore_closed_view, run, strings, toolbar};
 
+const ROOT_ID: &str = "open-dialog";
 const WINDOW_WIDTH: Pixels = px(440.);
 /// Tall enough for the four merge slots, the start button and `ERROR_LINES` of error.
 const WINDOW_HEIGHT: Pixels = px(236.);
@@ -127,6 +129,7 @@ impl Mode {
 
 pub struct OpenDialog {
     fields: [Entity<InputState>; 4],
+    fit: Fit,
     mode: Mode,
     error: Option<SharedString>,
     settings: WindowSettings,
@@ -263,6 +266,7 @@ impl OpenDialog {
             .collect();
         Self {
             fields,
+            fit: Fit::default(),
             mode: Mode::default(),
             error: None,
             settings,
@@ -482,42 +486,55 @@ impl Render for OpenDialog {
         let label_width = label_width(window);
         let danger = cx.theme().danger;
         let dark = cx.theme().is_dark();
-        v_flex()
-            .size_full()
-            .bg(cx.theme().background)
-            .text_sm()
-            .p_3()
-            .gap_2()
-            .child(
-                h_flex()
-                    .flex_none()
-                    .gap_2()
-                    .mb_1()
-                    .child(toolbar::mark(dark))
-                    .child(self.render_tabs(cx)),
-            )
-            .children(self.mode.slots().iter().map(|&slot| self.render_slot(slot, label_width, cx)))
-            // The error keeps `ERROR_LINES` and takes any height left over; a longer one
-            // scrolls, so the start button stays in view.
-            .child(
-                alert::style(div(), danger)
-                    .id(ERROR_ID)
-                    .test_support()
-                    .when_some(self.error.clone(), |d, error| d.role(Role::Alert).aria_label(error))
-                    .flex_1()
-                    .min_h(alert::LINE_HEIGHT * ERROR_LINES)
-                    .overflow_y_scroll()
-                    .children(self.error.clone()),
-            )
-            .child(
-                h_flex().w_full().flex_none().justify_end().child(
-                    crate::button::default_action(START_ID, strings::start(self.mode), cx)
-                        .loading(self.loading.is_some())
-                        .accessibility_label(strings::start(self.mode))
-                        .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
-                            this.start(window, cx);
-                        })),
+        // As the platform's close request does: cancel, writing nothing.
+        let close = |window: &mut Window, cx: &mut App| {
+            finish(ExitCode::Cancelled, cx);
+            window.remove_window();
+        };
+        let title = strings::open_title(self.mode);
+        let root = decorations::plain_root(ROOT_ID, &self.fit, title, close, window, cx);
+        root.bg(cx.theme().background).child(
+            v_flex()
+                .flex_1()
+                .min_h_0()
+                .text_sm()
+                .p_3()
+                .gap_2()
+                .child(
+                    h_flex()
+                        .flex_none()
+                        .gap_2()
+                        .mb_1()
+                        .child(toolbar::mark(dark))
+                        .child(self.render_tabs(cx)),
+                )
+                .children(
+                    self.mode.slots().iter().map(|&slot| self.render_slot(slot, label_width, cx)),
+                )
+                // The error keeps `ERROR_LINES` and takes any height left over; a longer one
+                // scrolls, so the start button stays in view.
+                .child(
+                    alert::style(div(), danger)
+                        .id(ERROR_ID)
+                        .test_support()
+                        .when_some(self.error.clone(), |d, error| {
+                            d.role(Role::Alert).aria_label(error)
+                        })
+                        .flex_1()
+                        .min_h(alert::LINE_HEIGHT * ERROR_LINES)
+                        .overflow_y_scroll()
+                        .children(self.error.clone()),
+                )
+                .child(
+                    h_flex().w_full().flex_none().justify_end().child(
+                        crate::button::default_action(START_ID, strings::start(self.mode), cx)
+                            .loading(self.loading.is_some())
+                            .accessibility_label(strings::start(self.mode))
+                            .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                                this.start(window, cx);
+                            })),
+                    ),
                 ),
-            )
+        )
     }
 }

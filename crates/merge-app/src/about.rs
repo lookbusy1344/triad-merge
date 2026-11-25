@@ -9,6 +9,7 @@ use gpui_kit::{
     WindowBounds, WindowOptions, div, px, size,
 };
 
+use crate::decorations::{self, Fit};
 use crate::{logo, strings};
 
 const WINDOW_WIDTH: Pixels = px(360.);
@@ -28,6 +29,7 @@ pub const VERSION_ID: &str = "about-version";
 pub const BUILD_ID: &str = "about-build";
 pub const DESCRIPTION_ID: &str = "about-description";
 pub const VCS_ID: &str = "about-vcs";
+const ROOT_ID: &str = "about";
 
 /// The window, while one was opened. Its handle fails once the window has closed.
 struct Opened(AnyWindowHandle);
@@ -52,12 +54,9 @@ pub(crate) fn show(cx: &mut App) {
 fn open(cx: &mut App) -> anyhow::Result<AnyWindowHandle> {
     let build = strings::build_of_this_binary();
     let height = if build.is_some() { WINDOW_HEIGHT + BUILD_LINE_HEIGHT } else { WINDOW_HEIGHT };
+    let content = size(WINDOW_WIDTH, height);
     let options = WindowOptions {
-        window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
-            None,
-            size(WINDOW_WIDTH, height),
-            cx,
-        ))),
+        window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, content, cx))),
         is_resizable: false,
         is_minimizable: false,
         ..crate::menu_bar::plain_options()
@@ -66,7 +65,7 @@ fn open(cx: &mut App) -> anyhow::Result<AnyWindowHandle> {
         window.set_window_title(&strings::about_title());
         let focus = cx.focus_handle();
         focus.focus(window, cx);
-        cx.new(|_| AboutWindow { focus, build })
+        cx.new(|_| AboutWindow { focus, build, fit: Fit::default() })
     })?;
     Ok(window)
 }
@@ -74,6 +73,7 @@ fn open(cx: &mut App) -> anyhow::Result<AnyWindowHandle> {
 struct AboutWindow {
     focus: FocusHandle,
     build: Option<SharedString>,
+    fit: Fit,
 }
 
 fn close_on_escape(event: &KeyDownEvent, window: &mut Window, _: &mut App) {
@@ -83,46 +83,51 @@ fn close_on_escape(event: &KeyDownEvent, window: &mut Window, _: &mut App) {
 }
 
 impl Render for AboutWindow {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let version = strings::version();
+        let close = |window: &mut Window, _: &mut App| window.remove_window();
+        let root =
+            decorations::plain_root(ROOT_ID, &self.fit, strings::about_title(), close, window, cx);
         let theme = cx.theme();
-        v_flex()
-            .track_focus(&self.focus)
-            .on_key_down(close_on_escape)
-            .size_full()
-            .p_4()
-            .gap_2()
-            .items_center()
-            .justify_center()
-            .child(
-                div()
-                    .id(LOGO_ID)
-                    .test_support()
-                    .role(Role::Image)
-                    .aria_label(strings::APP_NAME)
-                    .flex_none()
-                    .mb_2()
-                    .w(logo::ABOUT_LOGO_WIDTH)
-                    .h(logo::ABOUT_LOGO_HEIGHT)
-                    .child(logo::logo(theme.is_dark())),
-            )
-            .child(
-                div()
-                    .id(VERSION_ID)
-                    .test_support()
-                    .role(Role::Label)
-                    .aria_label(version.clone())
-                    .child(version),
-            )
-            .children(
-                self.build.clone().map(|build| small_line(BUILD_ID, build, theme.muted_foreground)),
-            )
-            .child(
-                v_flex()
-                    .items_center()
-                    .child(small_line(DESCRIPTION_ID, strings::description(), theme.foreground))
-                    .child(small_line(VCS_ID, strings::vcs_support(), theme.foreground)),
-            )
+        root.track_focus(&self.focus).on_key_down(close_on_escape).child(
+            v_flex()
+                .flex_1()
+                .p_4()
+                .gap_2()
+                .items_center()
+                .justify_center()
+                .child(
+                    div()
+                        .id(LOGO_ID)
+                        .test_support()
+                        .role(Role::Image)
+                        .aria_label(strings::APP_NAME)
+                        .flex_none()
+                        .mb_2()
+                        .w(logo::ABOUT_LOGO_WIDTH)
+                        .h(logo::ABOUT_LOGO_HEIGHT)
+                        .child(logo::logo(theme.is_dark())),
+                )
+                .child(
+                    div()
+                        .id(VERSION_ID)
+                        .test_support()
+                        .role(Role::Label)
+                        .aria_label(version.clone())
+                        .child(version),
+                )
+                .children(
+                    self.build
+                        .clone()
+                        .map(|build| small_line(BUILD_ID, build, theme.muted_foreground)),
+                )
+                .child(
+                    v_flex()
+                        .items_center()
+                        .child(small_line(DESCRIPTION_ID, strings::description(), theme.foreground))
+                        .child(small_line(VCS_ID, strings::vcs_support(), theme.foreground)),
+                ),
+        )
     }
 }
 

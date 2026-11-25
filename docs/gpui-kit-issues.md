@@ -113,6 +113,10 @@ gpui-component 0.8.1 gives each injection parse 20 ms (`INJECTION_PARSE_TIMEOUT`
 
 `gpui-pre-linux` 0.3.10 unwraps `keymap_state` on `wl_keyboard::Event::Modifiers` (`src/linux/wayland/client.rs:2124`). A virtual keyboard without a keymap, as `wtype -s` holds open, sends modifiers first. Desktop compositors send the keymap first, so this shows only in test setups.
 
+## Linux: the client-side frame takes part of the window
+
+Under client-side decorations, as on GNOME Wayland, gpui-component 0.8.1 wraps every window in `window_border` (`src/root.rs`), which pads it by a 20 px shadow and a 1 px border on each side. The frame comes out of the size the window opens at, and GNOME draws no title bar: a fixed-size window clips its content, and a window that relies on the system's title bar has no close button. Every window measures what the frame takes and grows by it, and a window without a toolbar draws its own title bar there (`decorations`, `docs/STYLE.md` § Window sizes).
+
 ## Linux: the fallback prompt
 
 GPUI's `FallbackPromptRenderer` cuts off a detail wider than its card, draws a white card in every theme and takes no keys. `merge_app::prompt_view` replaces it through `App::set_prompt_builder`.

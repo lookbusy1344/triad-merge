@@ -20,11 +20,13 @@ use merge_session::repository::{Handoff, RunRepository};
 use merge_session::resolve::ResolveError;
 use vcs::RepoKind;
 
+use crate::decorations::Fit;
 use crate::diff_window::{self, DiffFile, DiffLookup, DiffSettings};
 use crate::pick_list::{self, Activate, SelectNext, SelectPrevious, State};
 use crate::tool_window::{self, Note};
 use crate::window::WindowSettings;
 use crate::{ExitCode, Finish, ignore_closed_view, strings};
+use gpui_kit::SharedString;
 
 /// The element ids tests look up.
 pub const REFRESH_ID: &str = "history-refresh";
@@ -74,6 +76,8 @@ struct Loaded {
 pub struct HistoryWindow {
     start: HistoryStart,
     exit: Rc<ExitFn>,
+    fit: Fit,
+    title: SharedString,
     /// The file's absolute path; none before the first list lands.
     file: Option<PathBuf>,
     versions: Vec<FileVersion>,
@@ -114,12 +118,15 @@ pub fn start(
     };
     let exit: Rc<ExitFn> = Rc::new(exit);
     let (window, view) = gpui_kit::open_window(options, cx, |window, cx| {
-        window.set_window_title(&strings::history_title(&start.path.to_string_lossy()));
+        let title = SharedString::from(strings::history_title(&start.path.to_string_lossy()));
+        window.set_window_title(&title);
         let focus = cx.focus_handle();
         focus.focus(window, cx);
         let view = cx.new(|_| HistoryWindow {
             start,
             exit,
+            fit: Fit::default(),
+            title,
             file: None,
             versions: Vec::new(),
             listing: false,
@@ -350,7 +357,7 @@ impl HistoryWindow {
 }
 
 impl Render for HistoryWindow {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let muted = cx.theme().muted_foreground;
         let listed = self.file.is_some() && !self.listing;
         let summary = listed.then(|| strings::history_summary(self.versions.len()).into());
@@ -359,7 +366,7 @@ impl Render for HistoryWindow {
         let refresh = tool_window::refresh_button(REFRESH_ID, self.listing, cx)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.refresh(cx)));
         let this = cx.entity().downgrade();
-        tool_window::frame(cx, move |_, cx| {
+        tool_window::frame(&self.fit, self.title.clone(), window, cx, move |_, cx| {
             this.update(cx, HistoryWindow::close_requested).unwrap_or(true)
         })
         .child(tool_window::header(SUMMARY_ID, summary, [refresh], cx))

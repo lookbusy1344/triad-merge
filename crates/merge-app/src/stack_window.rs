@@ -22,6 +22,7 @@ use merge_session::repository::RunRepository;
 use merge_session::resolve::{Opened, ResolveError};
 use vcs::IdKind;
 
+use crate::decorations::Fit;
 use crate::pick_list::{self, Activate, SelectNext, SelectPrevious, State};
 use crate::tool_window::{self, Note};
 use crate::window::{MergeWindow, WindowSettings};
@@ -88,6 +89,7 @@ pub enum Preview {
 pub struct StackWindow {
     start: StackStart,
     exit: Rc<ExitFn>,
+    fit: Fit,
     /// The repository's root, which the listed paths are relative to; none before the first
     /// list lands.
     root: Option<PathBuf>,
@@ -136,6 +138,7 @@ pub fn start(
         let view = cx.new(|_| StackWindow {
             start,
             exit,
+            fit: Fit::default(),
             root: None,
             commits: Vec::new(),
             listing: false,
@@ -470,7 +473,7 @@ impl StackWindow {
 }
 
 impl Render for StackWindow {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let muted = cx.theme().muted_foreground;
         let summary = (!self.listing).then(|| strings::stack_summary(self.commits.len()).into());
         let empty = (self.commits.is_empty() && !self.listing)
@@ -486,7 +489,7 @@ impl Render for StackWindow {
         )
         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_preview(cx)));
         let this = cx.entity().downgrade();
-        tool_window::frame(cx, move |_, cx| {
+        tool_window::frame(&self.fit, strings::stack_title(), window, cx, move |_, cx| {
             this.update(cx, StackWindow::close_requested).unwrap_or(true)
         })
         .child(tool_window::header(SUMMARY_ID, summary, [refresh, preview], cx))

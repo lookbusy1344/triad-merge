@@ -13,7 +13,7 @@ As of 2026-11-24.
 | M3 GUI release 1, macOS | Done, except the spoken VoiceOver steps of the release checklist | §A6 |
 | M4 tool integration, local macOS release | Done; release checklist step 6 needs a rerun on jj, since `jj diff --tool` saves the right side to the working copy (§A6.5) | §A7 |
 | Beta, macOS | Open: testers build `triad.app` and install it in `/Applications` | §A7.4 |
-| M4b Linux and Windows | Linux test machine and packages build. Windows 11 x64 checked on a real machine: the windows on screen, and tool runs from `git mergetool`, `git difftool`, `jj resolve` and `jj diff --tool`. Final checks need hardware, Windows a certificate | §E7, §3 |
+| M4b Linux and Windows | Linux test machine and packages build. Ubuntu 24.04 ARM64 on GNOME Wayland, in a VM on software Vulkan: the tests pass and merges work; every window fits gpui-component's client-side frame, and the plain windows draw their own title bar there (`STYLE.md` § Window sizes). Windows 11 x64 checked on a real machine: the windows on screen, and tool runs from `git mergetool`, `git difftool`, `jj resolve` and `jj diff --tool`. Final checks need hardware, Windows a certificate | §E7, §3 |
 | Merge semantics | Done: jj's merge, word level, refinements, syntax-aware boundaries | B |
 | M5 chunk origin | Done, with revision chips | C |
 | M6 native resolution | Done: git stages a resolved save; jj snapshots before the read and after each save. ⌘S saves and keeps the merge open, each save recorded; ⌘Q saves and exits. A diff-window save in triad's own jj runs snapshots the working copy | D |

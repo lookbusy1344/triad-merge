@@ -4,9 +4,10 @@ use crate::common;
 
 use common::{act, doc, open};
 use gpui_kit::test::TestWindowExt;
-use gpui_kit::{AnyWindowHandle, Role, TestAppContext, px};
+use gpui_kit::{AnyWindowHandle, Role, TestAppContext, px, size};
 use merge_app::About;
 use merge_app::about::{BUILD_ID, DESCRIPTION_ID, LOGO_ID, VCS_ID, VERSION_ID};
+use merge_app::decorations::TITLE_BAR_ID;
 
 /// 56 units high at the logo's ratio of 734.68 to 186, rounded.
 const LOGO_WIDTH: f32 = 221.;
@@ -122,6 +123,33 @@ fn the_content_sits_centred_in_a_window_with_no_close_button(cx: &mut TestAppCon
         assert_eq!(px(WINDOW_HEIGHT + BUILD_LINE) - bottom, px(PADDING));
         assert!(window.try_find("about-close").is_none());
     });
+}
+
+/// `docs/STYLE.md` § Window sizes.
+const WINDOW_WIDTH: f32 = 360.;
+
+#[gpui_kit::test]
+fn the_window_opens_at_its_size_with_no_title_bar_where_the_system_draws_the_frame(
+    cx: &mut TestAppContext,
+) {
+    let (_, about) = shown(cx);
+    act(cx, about, |window, _| {
+        assert_eq!(
+            window.window_bounds().get_bounds().size,
+            size(px(WINDOW_WIDTH), px(WINDOW_HEIGHT + BUILD_LINE))
+        );
+        assert!(window.try_find(TITLE_BAR_ID).is_none());
+    });
+}
+
+#[gpui_kit::test]
+fn a_size_the_user_picks_stays(cx: &mut TestAppContext) {
+    let (_, about) = shown(cx);
+    let picked = size(px(300.), px(150.));
+    cx.simulate_window_resize(about, picked);
+    act(cx, about, TestWindowExt::render_frame);
+    cx.run_until_parked();
+    act(cx, about, |window, _| assert_eq!(window.window_bounds().get_bounds().size, picked));
 }
 
 #[gpui_kit::test]
