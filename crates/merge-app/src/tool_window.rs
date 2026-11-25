@@ -7,8 +7,9 @@
 use gpui_kit::base::ObservedElement;
 
 use crate::alert;
+use crate::decorations::{self, Fit};
 use gpui_kit::component::button::Button;
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, h_flex};
 use gpui_kit::{
     App, Div, ElementId, InteractiveElement as _, ParentElement as _, Pixels, Role, SharedString,
     Stateful, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div, px,
@@ -25,19 +26,23 @@ const SUMMARY_HEIGHT: Pixels = crate::button::HEIGHT;
 const SIDE: Pixels = px(12.);
 
 /// A tool window's root: it fills the window in the theme's colours at the chrome's text
-/// size, holds the key context, and closes the window on Cancel, Save & Exit or a list's
-/// Escape when `close` allows it.
+/// size, holds the key context and, where triad draws the frame, the title bar, and closes
+/// the window on Cancel, Save & Exit, a list's Escape or the title bar's close button when
+/// `close` allows it.
 pub(crate) fn frame(
+    fit: &Fit,
+    title: SharedString,
+    window: &Window,
     cx: &App,
     close: impl Fn(&mut Window, &mut App) -> bool + Clone + 'static,
 ) -> Stateful<Div> {
     let theme = cx.theme();
     let leave = close.clone();
     let quit = close.clone();
-    v_flex()
-        .id("tool-window")
+    let bar = close.clone();
+    let bar = move |window: &mut Window, cx: &mut App| close_if(&bar, window, cx);
+    decorations::plain_root("tool-window", fit, title, bar, window, cx)
         .key_context(CONTEXT)
-        .size_full()
         .bg(theme.background)
         .text_color(theme.foreground)
         .text_xs()

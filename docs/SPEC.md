@@ -1,6 +1,6 @@
 # triad — specification
 
-triad is a native three-way merge and two-way diff tool for single text files. It is built for jj, with parity for git wherever git has the capability, and features of its own that only jj's model allows. It takes base, left and right, and writes a merged output file, with p4merge's merge workflow. It runs as the merge and diff tool of jj and git, and reads repositories through jj-lib and gix to resolve conflicts in place and show where each line came from. macOS 27 on Apple Silicon ships first; Windows 11 and Linux follow the macOS beta.
+triad is a native three-way merge and two-way diff tool for single text files. It is built for jj, with parity for git wherever git has the capability, and features of its own that only jj's model allows. It takes base, left and right, and writes a merged output file, with p4merge's merge workflow. It runs as the merge and diff tool of jj and git, and reads repositories through jj-lib and gix to resolve conflicts in place and show where each line came from. It runs on macOS, Windows and Linux.
 
 ## 1. Scope
 
@@ -40,7 +40,7 @@ Later:
 
 - Binary and image merging.
 - Modify/delete and rename conflicts. git and jj resolve these themselves and never pass them to a merge tool. Add/add conflicts are in scope: the base is empty.
-- Intel Macs, 32-bit targets and Linux on ARM.
+- Intel Macs and 32-bit targets.
 - Running the `git` or `jj` executables. All VCS access goes through gix and jj-lib.
 
 ## 2. Platform and tooling
@@ -938,12 +938,12 @@ The UI runs on GPUI, through `gpui-component` and its editor crate `gpui-base`, 
 | M2 | `merge-view` | §8.4 passes |
 | M3 | GUI release 1 | §5–6 complete, §8.5 passes, §9 targets met |
 | M4 | Merge and diff tool integration, macOS release | Works end to end from `git mergetool`, `git difftool`, `jj resolve` and `jj diff --tool` on macOS. Native `triad-merge diff PATH` works in git, jj and internal jj repos. §8.8 passes for repo detection and reading a file at a revision. `install` subcommand done. Installed from a local build. |
-| M4b | Linux and Windows release | Release 1 behaviour on Linux x64, Windows x64 and Windows ARM64. Packages from §2.1 signed. The four git and jj tool integrations work end to end on each target. §9 targets met on each reference machine. |
+| M4b | Linux and Windows release | Release 1 behaviour on Linux and Windows, x64 and ARM64. Packages from §2.1 signed. The four git and jj tool integrations work end to end on each target. §9 targets met on each reference machine. |
 | M5 | Chunk origin | §7.3 for git and jj. §8.8 annotation tests pass on both backends. |
 | M6 | Native resolution | §7.4 for git and jj, including jj conflicts with more than two sides. §8.8 passes on both backends. |
 | M7 | Syntax highlighting | tree-sitter for the main languages |
 
-Version 1.0 needs M4 and M4b: macOS, Linux x64, and Windows x64 and ARM64, with the same features.
+Version 1.0 needs M4 and M4b: macOS, Windows and Linux, with the same features.
 
 ## 13. Decisions
 

@@ -23,12 +23,14 @@ use merge_session::jj_native::Interdiff;
 use merge_session::native::{self, Against, InterdiffListing, Listing};
 use merge_session::repository::{Discovery, Handoff};
 
+use crate::decorations::Fit;
 use crate::diff_window::{self, DiffFile, DiffLookup, DiffSettings};
 use crate::pick_list::{self, Activate, SelectNext, SelectPrevious, State};
 use crate::run::ToolDiff;
 use crate::tool_window::{self, Note};
 use crate::window::WindowSettings;
 use crate::{ExitCode, Finish, ignore_closed_view, strings};
+use gpui_kit::SharedString;
 use merge_session::diff_tool::ToolPair;
 
 /// The element ids tests look up.
@@ -94,6 +96,8 @@ pub struct DirStart {
 pub struct DirWindow {
     start: DirStart,
     exit: Rc<ExitFn>,
+    fit: Fit,
+    title: SharedString,
     /// The files listed; none before a listing lands.
     files: Option<Vec<ChangedFile>>,
     /// For a repository's listing: what the last listing compared.
@@ -136,12 +140,15 @@ pub fn start(
     let exit: Rc<ExitFn> = Rc::new(exit);
     let (window, view) = gpui_kit::open_window(options, cx, |window, cx| {
         let title = start.title.as_deref().filter(|title| !title.is_empty());
-        window.set_window_title(title.unwrap_or(&strings::dirs_title()));
+        let title = title.map_or_else(strings::dirs_title, SharedString::from);
+        window.set_window_title(&title);
         let focus = cx.focus_handle();
         focus.focus(window, cx);
         let view = cx.new(|_| DirWindow {
             start,
             exit,
+            fit: Fit::default(),
+            title,
             files: None,
             compared: None,
             listing: ListJob::Idle,
@@ -535,7 +542,7 @@ impl DirWindow {
 }
 
 impl Render for DirWindow {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let muted = cx.theme().muted_foreground;
         let summary = self.files.as_ref().map(|files| {
             match &self.compared {
@@ -555,7 +562,7 @@ impl Render for DirWindow {
         let refresh = tool_window::refresh_button(REFRESH_ID, self.listing != ListJob::Idle, cx)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.refresh(cx)));
         let this = cx.entity().downgrade();
-        tool_window::frame(cx, move |_, cx| {
+        tool_window::frame(&self.fit, self.title.clone(), window, cx, move |_, cx| {
             this.update(cx, DirWindow::close_requested).unwrap_or(true)
         })
         .child(tool_window::header(SUMMARY_ID, summary, [refresh], cx))

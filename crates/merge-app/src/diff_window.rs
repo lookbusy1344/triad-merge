@@ -415,6 +415,8 @@ impl ScrollTarget {
 
 pub struct DiffWindow {
     menu_bar: crate::menu_bar::WindowMenu,
+    /// Keeps the window at `window_size` across a frame triad draws.
+    fit: crate::decorations::Fit,
     doc: DiffDocument,
     /// Whether the panes colour a chunk at a time, past `syntax-whole-file-max-lines`.
     chunked: bool,
@@ -701,6 +703,7 @@ impl DiffWindow {
             .then(|| watch(&panes.each_ref().map(|p| p.origin.path()), cwd, window, cx));
         Self {
             menu_bar: crate::menu_bar::WindowMenu::new(cx),
+            fit: crate::decorations::Fit::default(),
             colouring,
             chunked: look.chunked.is_some(),
             status: strings::diff_status(settings.repo, differences(&doc), &comparison).into(),
@@ -2633,6 +2636,7 @@ impl Render for DiffWindow {
             .child(status_bar::item(STATUS_TEXT_ID, self.status.clone()));
         Self::on_go_actions(self.on_view_actions(v_flex(), cx), cx)
             .size_full()
+            .child(self.fit.probe(Pixels::ZERO))
             .key_context(DIFF_CONTEXT)
             .on_action(cx.listener(Self::find))
             .on_action(cx.listener(|this, _: &CopyAsPatch, window, cx| {

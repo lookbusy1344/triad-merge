@@ -87,7 +87,22 @@ The current region's frame in an editor is 1 px (`blink::BORDER`), so it reads a
 
 ## Title bar
 
-The merge and diff windows draw their own title bar, gpui-component's `TitleBar`, as Zed does (`menu_bar::render`): 34 px tall over a 1 px border, the system's title hidden. On macOS it holds the toolbar beside the traffic lights, which sit 9 px in from the top left; it keeps 80 px for them, and 12 px in full screen, which hides them. A drag on its empty space moves the window, and a double click zooms it. On Linux and Windows it holds the mark and the menus over the toolbar. A control in the title bar claims its left press (`stop_propagation`): on Windows the bar is the window's caption, and a press nothing claims starts the system's window move, which swallows the release and with it the click. The tool windows keep the system's title bar.
+The merge and diff windows draw their own title bar, gpui-component's `TitleBar`, as Zed does (`menu_bar::render`): 34 px tall over a 1 px border, the system's title hidden. On macOS it holds the toolbar beside the traffic lights, which sit 9 px in from the top left; it keeps 80 px for them, and 12 px in full screen, which hides them. A drag on its empty space moves the window, and a double click zooms it. On Linux and Windows it holds the mark and the menus over the toolbar. A control in the title bar claims its left press (`stop_propagation`): on Windows the bar is the window's caption, and a press nothing claims starts the system's window move, which swallows the release and with it the click. The other windows keep the system's title bar where the system draws one. On Linux under client-side decorations, as GNOME on Wayland, no system draws one: those windows take a title bar of the same parts holding the window's title and its controls, whose close button runs the window's own close check (`decorations::title_bar`).
+
+## Window sizes
+
+A window opens at the size its content needs, where the system draws the frame:
+
+| Window | Size (px) |
+|---|---|
+| Merge, two-way diff | the `window-size` setting |
+| Open dialog | 440 × 236 |
+| About | 360 × 170, and 24 more with a build line |
+| Directory, history, evolog | 520 × 560 |
+| Stack | 420 × 560 |
+| Absorb | 900 × 600 |
+
+Where triad draws the frame, gpui-component's frame (a 20 px shadow and a 1 px border on each side) and a plain window's title bar come on top, so the content keeps its size (`decorations::Fit`). The window grows or shrinks again when the frame changes hands; a size the user picks stays.
 
 ## Status bar
 

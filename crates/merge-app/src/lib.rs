@@ -8,6 +8,7 @@ mod blink;
 mod button;
 mod choice;
 mod corners;
+pub mod decorations;
 pub mod diff_window;
 pub mod dir_window;
 mod editor_sync;

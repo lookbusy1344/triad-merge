@@ -508,3 +508,13 @@ fn the_result_bands_follow_edits_picks_and_undo(cx: &mut TestAppContext) {
     });
     check(cx, "a pick");
 }
+
+#[gpui_kit::test]
+fn a_window_size_the_user_picks_stays(cx: &mut TestAppContext) {
+    let (window, _) = open(cx, doc("a\n", "b\n", "c\n"));
+    let picked = size(px(900.), px(600.));
+    cx.simulate_window_resize(window, picked);
+    act(cx, window, TestWindowExt::render_frame);
+    cx.run_until_parked();
+    act(cx, window, |window, _| assert_eq!(window.window_bounds().get_bounds().size, picked));
+}

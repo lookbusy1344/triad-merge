@@ -748,3 +748,36 @@ mod jj {
         assert!(banner.starts_with("Saved, but jj did not record the save: "), "{banner}");
     }
 }
+
+/// `docs/STYLE.md` § Window sizes.
+const WINDOW_SIZE: (f32, f32) = (520., 560.);
+
+#[gpui_kit::test]
+fn the_window_opens_at_its_size_with_no_title_bar_where_the_system_draws_the_frame(
+    cx: &mut TestAppContext,
+) {
+    let dirs = Dirs::new(&[("a.rs", b"a\n")], &[("a.rs", b"b\n")]);
+    let started = open(cx, dirs.start());
+    act(cx, started.window, TestWindowExt::render_frame);
+    act(cx, started.window, |window, _| {
+        let (width, height) = WINDOW_SIZE;
+        assert_eq!(
+            window.window_bounds().get_bounds().size,
+            gpui_kit::size(gpui_kit::px(width), gpui_kit::px(height))
+        );
+        assert!(window.try_find(merge_app::decorations::TITLE_BAR_ID).is_none());
+    });
+}
+
+#[gpui_kit::test]
+fn a_size_the_user_picks_stays(cx: &mut TestAppContext) {
+    let dirs = Dirs::new(&[("a.rs", b"a\n")], &[("a.rs", b"b\n")]);
+    let started = open(cx, dirs.start());
+    let picked = gpui_kit::size(gpui_kit::px(400.), gpui_kit::px(300.));
+    cx.simulate_window_resize(started.window, picked);
+    act(cx, started.window, TestWindowExt::render_frame);
+    cx.run_until_parked();
+    act(cx, started.window, |window, _| {
+        assert_eq!(window.window_bounds().get_bounds().size, picked);
+    });
+}

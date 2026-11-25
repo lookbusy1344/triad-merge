@@ -292,6 +292,7 @@ The top panes are rows, not editors: `pane_scroll`, `row_wrap` and `sideways` sc
 - `dir_window`, `stack_window`, `history_window`, `absorb_window`: tool windows that list things and open a merge or diff window per item. `dir_window` lists two directories, the working copy's changes, or a jj change's edits since an earlier version (`diff --since`). All share `tool_window` (frame) and `pick_list` (rows).
 - `evolog_window`: a jj change's versions; each opens `dir_window` on the change's edits since that version.
 - `open_dialog`, `about`, `prompt_view` (Linux alerts), `menu_bar` (Linux and Windows in-window menus).
+- `decorations`: what a window draws of its frame under client-side decorations on Linux. `Fit` grows every window by what gpui-component's frame and a title bar take, so the content keeps the size the window opened at; `plain_root` gives a window without a toolbar its title bar there. `tool_window`, `open_dialog` and `about` build on `plain_root`; the merge and diff windows hold a `Fit`.
 
 ### 10.4 Shared parts
 

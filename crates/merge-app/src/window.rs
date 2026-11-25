@@ -523,6 +523,8 @@ enum Highlighter {
 
 pub struct MergeWindow {
     menu_bar: crate::menu_bar::WindowMenu,
+    /// Keeps the window at `window_size` across a frame triad draws.
+    fit: crate::decorations::Fit,
     /// The document, its journal and its save: the source of truth.
     session: Session,
     palette: Palette,
@@ -813,6 +815,7 @@ impl MergeWindow {
             // Before `doc` and `rows` move into the window.
             move_ends: moves::move_ends(&doc, &rows),
             menu_bar: crate::menu_bar::WindowMenu::new(cx),
+            fit: crate::decorations::Fit::default(),
             status: strings::status(settings.repo, &counts).into(),
             repo: settings.repo,
             counts,
@@ -3087,6 +3090,7 @@ impl Render for MergeWindow {
         let (input_headings, result_heading) = self.render_headings(theme, controls);
         Self::on_merge_actions(v_flex(), cx)
             .size_full()
+            .child(self.fit.probe(Pixels::ZERO))
             .key_context(WINDOW_CONTEXT)
             .on_action(cx.listener(Self::undo))
             .on_action(cx.listener(Self::redo))

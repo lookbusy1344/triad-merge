@@ -18,11 +18,13 @@ use merge_session::jj_native::Evolog;
 use merge_session::native::InterdiffListing;
 use merge_session::repository::Discovery;
 
+use crate::decorations::Fit;
 use crate::dir_window::{self, DirStart, Source};
 use crate::pick_list::{self, Activate, SelectNext, SelectPrevious, State};
 use crate::tool_window::{self, Note};
 use crate::window::WindowSettings;
 use crate::{ExitCode, ignore_closed_view, strings};
+use gpui_kit::SharedString;
 
 /// The element ids tests look up.
 pub const REFRESH_ID: &str = "evolog-refresh";
@@ -64,6 +66,7 @@ pub struct EvologStart {
 pub struct EvologWindow {
     start: EvologStart,
     exit: Rc<ExitFn>,
+    fit: Fit,
     /// The versions listed; none before the first list lands.
     evolog: Option<Evolog>,
     listing: bool,
@@ -105,6 +108,7 @@ pub fn start(
         let view = cx.new(|_| EvologWindow {
             start,
             exit,
+            fit: Fit::default(),
             evolog: None,
             listing: false,
             open: None,
@@ -335,8 +339,13 @@ impl EvologWindow {
 
 impl Render for EvologWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if let Some(evolog) = &self.evolog {
-            window.set_window_title(&strings::evolog_title(&evolog.short_change_id));
+        // The title names the change, which the first listing gives.
+        let title: SharedString =
+            self.evolog.as_ref().map_or_else(SharedString::default, |evolog| {
+                strings::evolog_title(&evolog.short_change_id).into()
+            });
+        if !title.is_empty() {
+            window.set_window_title(&title);
         }
         let muted = cx.theme().muted_foreground;
         let listed = self.evolog.is_some() && !self.listing;
@@ -346,7 +355,7 @@ impl Render for EvologWindow {
         let refresh = tool_window::refresh_button(REFRESH_ID, self.listing, cx)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.refresh(cx)));
         let this = cx.entity().downgrade();
-        tool_window::frame(cx, move |_, cx| {
+        tool_window::frame(&self.fit, title, window, cx, move |_, cx| {
             this.update(cx, EvologWindow::close_requested).unwrap_or(true)
         })
         .child(tool_window::header(SUMMARY_ID, summary, [refresh], cx))
