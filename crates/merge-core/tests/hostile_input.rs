@@ -98,7 +98,8 @@ fn error_line(error: &MarkerError) -> Option<usize> {
         | MarkerError::NoSeparator { line }
         | MarkerError::BadDiffLine { line }
         | MarkerError::Shape { line, .. }
-        | MarkerError::MixedArity { line, .. } => Some(line),
+        | MarkerError::MixedArity { line, .. }
+        | MarkerError::TooManySides { line, .. } => Some(line),
     }
 }
 

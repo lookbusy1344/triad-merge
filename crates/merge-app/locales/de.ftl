@@ -477,6 +477,7 @@ err-no-separator = Zeile { $line }: der Konflikt endet vor seinem =======
 err-bad-diff-line = Zeile { $line }: eine Diff-Zeile beginnt weder mit ' ' noch mit '-' oder '+'
 err-marker-shape = Zeile { $line }: ein Konflikt braucht mindestens zwei Seiten und eine Basis weniger, gefunden { $sides } Seiten und { $bases } Basen
 err-mixed-arity = Zeile { $line }: ein Konflikt mit { $found } Seiten nach Konflikten mit { $expected }
+err-too-many-sides = Zeile { $line }: ein Konflikt mit { $sides } Seiten; höchstens { $max } werden gelesen
 err-shape = eine Zusammenführung braucht mindestens zwei Seiten und eine Basis weniger als Seiten, gefunden { $sides } Seiten und { $bases } Basen
 err-journal-header = das Journal hat keine vollständige Kopfzeile
 err-journal-line = Zeile { $index } des Journals lässt sich nicht lesen: { $detail }

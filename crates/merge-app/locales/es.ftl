@@ -477,6 +477,7 @@ err-no-separator = línea { $line }: el conflicto termina antes de su =======
 err-bad-diff-line = línea { $line }: una línea de diff no empieza ni por ' ', ni por '-' ni por '+'
 err-marker-shape = línea { $line }: un conflicto necesita al menos dos lados y una base menos, hay { $sides } lados y { $bases } bases
 err-mixed-arity = línea { $line }: un conflicto de { $found } lados tras conflictos de { $expected }
+err-too-many-sides = línea { $line }: un conflicto de { $sides } lados; se leen como máximo { $max }
 err-shape = una fusión necesita al menos dos lados y una base menos que lados, hay { $sides } lados y { $bases } bases
 err-journal-header = el diario no tiene una línea de cabecera completa
 err-journal-line = la línea { $index } del diario no se puede analizar: { $detail }

@@ -484,6 +484,7 @@ err-no-separator = line { $line }: the conflict ends before its =======
 err-bad-diff-line = line { $line }: a diff line starts with neither ' ', '-' nor '+'
 err-marker-shape = line { $line }: a conflict needs at least two sides and one base fewer, got { $sides } sides and { $bases } bases
 err-mixed-arity = line { $line }: a conflict of { $found } sides after conflicts of { $expected }
+err-too-many-sides = line { $line }: a conflict of { $sides } sides; at most { $max } are read
 err-shape = a merge needs at least two sides and one base fewer than sides, got { $sides } sides and { $bases } bases
 err-journal-header = the journal has no whole header line
 err-journal-line = line { $index } of the journal does not parse: { $detail }

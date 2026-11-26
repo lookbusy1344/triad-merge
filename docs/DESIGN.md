@@ -681,8 +681,8 @@ A `resolve` window looks origins up as a merge does, from the working-tree file.
 | jj snapshot | jj, triad with more than two sides | `<<<<<<<`, `+++++++` before each side and `-------` before each base, `>>>>>>>` |
 | jj diff | jj's default | `<<<<<<<`, `%%%%%%%` (with `\\\\\\\` notes) before a diff from a base to a side, `+++++++` before a plain side, `>>>>>>>` |
 
-- A marker is a run of one marker character, then whitespace or the line's end. The marker length is the longest run of `<`, at least 7, at which the markers parse; a longer run that does not parse falls back to the next length.
-- Every conflict has the same number of sides. A start without an end, sections out of order, a bad diff line or mixed arity is an error naming the line.
+- A marker is a run of one marker character, then whitespace or the line's end. The marker length is the longest run of `<`, at least 7, at which the markers parse; a longer run that does not parse falls back to the next length. `MAX_LENGTHS_TRIED` (8) bounds the tries, so a crafted file of many run lengths costs at most eight passes over the file. jj, and triad with `--marker-length`, make markers longer than any marker-like line, so their markers are the longest run. git keeps its markers at 7 (or `conflict-marker-size`) whatever the text holds: a git file whose text holds eight longer runs of `<` of distinct lengths does not parse.
+- Every conflict has the same number of sides, at most `MAX_SIDES` (16). Each side and base copies the text outside the conflicts, so a file of a few kilobytes of markers with thousands of sides would rebuild thousands of copies of the rest. A start without an end, sections out of order, a bad diff line, mixed arity or too many sides is an error naming the line.
 - Each input's text is the text outside the conflicts plus its section in each conflict. A conflict without a base section opens as add/add.
 - A section's last line keeps its newline unless the end marker's line has none, as jj reads it.
 - Labels come from the first conflict's marker lines; jj's numbered defaults count as none.

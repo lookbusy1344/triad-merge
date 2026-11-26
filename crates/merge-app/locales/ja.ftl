@@ -420,6 +420,7 @@ err-no-separator = { $line } 行目: 競合が ======= の前に終わってい�
 err-bad-diff-line = { $line } 行目: diff の行が ' '、'-'、'+' のいずれでも始まっていません
 err-marker-shape = { $line } 行目: 競合には 2 つ以上の面と、それより 1 つ少ないベースが必要ですが、面が { $sides }、ベースが { $bases } です
 err-mixed-arity = { $line } 行目: { $expected } 面の競合の後に { $found } 面の競合があります
+err-too-many-sides = { $line } 行目: { $sides } 面の競合です。読み込めるのは最大 { $max } 面です
 err-shape = マージには 2 つ以上の面と、それより 1 つ少ないベースが必要ですが、面が { $sides }、ベースが { $bases } です
 err-journal-header = ジャーナルに完全なヘッダー行がありません
 err-journal-line = ジャーナルの { $index } 行目を解析できません: { $detail }

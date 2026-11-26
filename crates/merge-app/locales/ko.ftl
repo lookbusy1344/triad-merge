@@ -420,6 +420,7 @@ err-no-separator = { $line }번째 줄: 충돌이 ======= 앞에서 끝납니다
 err-bad-diff-line = { $line }번째 줄: diff 줄이 ' ', '-', '+' 중 어느 것으로도 시작하지 않습니다
 err-marker-shape = { $line }번째 줄: 충돌에는 둘 이상의 면과 그보다 하나 적은 기준이 필요하지만 면 { $sides }개, 기준 { $bases }개입니다
 err-mixed-arity = { $line }번째 줄: { $expected }면 충돌 뒤에 { $found }면 충돌이 있습니다
+err-too-many-sides = { $line }번째 줄: { $sides }면 충돌입니다. 최대 { $max }면까지 읽습니다
 err-shape = 병합에는 둘 이상의 면과 그보다 하나 적은 기준이 필요하지만 면 { $sides }개, 기준 { $bases }개입니다
 err-journal-header = 저널에 온전한 헤더 줄이 없습니다
 err-journal-line = 저널의 { $index }번째 줄을 해석할 수 없습니다: { $detail }

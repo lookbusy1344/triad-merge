@@ -420,6 +420,7 @@ err-no-separator = 第 { $line } 行：衝突在其 ======= 之前結束
 err-bad-diff-line = 第 { $line } 行：diff 行不以 ' '、'-' 或 '+' 開頭
 err-marker-shape = 第 { $line } 行：衝突至少需要兩方，且基礎比方數少一個，實際為 { $sides } 方、{ $bases } 個基礎
 err-mixed-arity = 第 { $line } 行：在 { $expected } 方的衝突之後出現 { $found } 方的衝突
+err-too-many-sides = 第 { $line } 行：衝突有 { $sides } 方；最多讀取 { $max } 方
 err-shape = 合併至少需要兩方，且基礎比方數少一個，實際為 { $sides } 方、{ $bases } 個基礎
 err-journal-header = 日誌沒有完整的標頭行
 err-journal-line = 無法解析日誌第 { $index } 行：{ $detail }

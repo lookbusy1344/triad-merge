@@ -414,6 +414,10 @@ impl Namer {
                 "err-mixed-arity",
                 &[("line", line.into()), ("expected", expected.into()), ("found", found.into())],
             ),
+            MarkerError::TooManySides { line, sides, max } => self.say(
+                "err-too-many-sides",
+                &[("line", line.into()), ("sides", sides.into()), ("max", max.into())],
+            ),
         }
     }
 
@@ -512,6 +516,7 @@ mod tests {
         vec![
             Box::new(MarkerError::Unclosed { line: 7 }),
             Box::new(MarkerError::MixedArity { line: 9, expected: 2, found: 3 }),
+            Box::new(MarkerError::TooManySides { line: 3, sides: 17, max: 16 }),
             Box::new(MarkerError::Shape { line: 4, sides: 1, bases: 1 }),
             Box::new(DecodeError::Binary),
             Box::new(DecodeError::InvalidUtf8 { offset: 12 }),

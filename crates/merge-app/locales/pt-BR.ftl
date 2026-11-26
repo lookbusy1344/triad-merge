@@ -486,6 +486,7 @@ err-no-separator = linha { $line }: o conflito termina antes do seu =======
 err-bad-diff-line = linha { $line }: uma linha de diff não começa com ' ', '-' nem '+'
 err-marker-shape = linha { $line }: um conflito precisa de pelo menos dois lados e uma base a menos, encontrados { $sides } lados e { $bases } bases
 err-mixed-arity = linha { $line }: um conflito de { $found } lados após conflitos de { $expected }
+err-too-many-sides = linha { $line }: um conflito de { $sides } lados; no máximo { $max } são lidos
 err-shape = uma mesclagem precisa de pelo menos dois lados e uma base a menos que os lados, encontrados { $sides } lados e { $bases } bases
 err-journal-header = o diário não tem uma linha de cabeçalho completa
 err-journal-line = a linha { $index } do diário não pode ser analisada: { $detail }
