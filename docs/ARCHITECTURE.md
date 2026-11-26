@@ -92,6 +92,8 @@ Typed edits that cross region boundaries merge regions; `Edited` marks text that
 - `edit`: `TextPatch` and `EditBatch`, shared by the merge result and the diff buffers.
 - `index`: newtypes `RegionIx`, `Line`, `ByteOffset`, so a swapped argument does not compile (`DESIGN.md` §A13.1).
 - `line_map`: where old lines land after a reload from disk, to keep the caret.
+- `earlier`: the conflict regions an earlier version of the conflict was resolved in, and the lines each was resolved to, for `resolve --reuse`.
+- `inherited`: the conflict regions a commit inherits from a parent's conflict, which the merge window's bands and ruler mark.
 - `rename`: content-based rename and copy detection, as jj's git backend does it.
 - `unusual`: characters that draw as nothing or as a plain space.
 - `testing` (feature): a seeded generator of large triples for benchmarks and app measurement.
@@ -191,8 +193,7 @@ The view model: everything the windows compute that is not drawing. It turns a `
 - **`marks`**, **`ruler`**, **`placeholder`**, **`merge_fold`**: each region's gutter label and tone, the overview ruler's marks, the hatched row that stands for an empty region in the result, and folded unchanged regions.
 - **`status`**: `Status` counts conflicts, unresolved regions and differences for the status bar; `pane_headings` and `result_heading` title the panes.
 - **`origin`**: line origins per row and per result line, the gutter label at the start of each run, and the hover text.
-- **`earlier`**: the conflict regions an earlier version of the conflict was resolved in, and the lines each was resolved to.
-- **`inherited`**, **`moves`**, **`line_pick`**, **`selection`**, **`search`**: conflicts inherited from a parent commit, moved-block ends, which lines a press picks, selection in a read-only pane, and literal search over every visible input with Aho-Corasick.
+- **`moves`**, **`line_pick`**, **`selection`**, **`search`**: moved-block ends, which lines a press picks, selection in a read-only pane, and literal search over every visible input with Aho-Corasick.
 
 ### 7.2 The diff window
 
@@ -256,7 +257,7 @@ The command line and every form that runs without a window. A library with no GU
   - `ShowConfig`.
 
   `parse_with` takes the loaded `Settings`, so a flag's default is the config file's value. Flag names and values come from `merge-config::named`.
-- **`lib`**: `run(args, settings_path, stdout, stderr) -> Outcome` is the entry point. It loads the settings, parses, and either runs a batch form to an `ExitCode` or settles a window form (repository, semantics, `resolve` target) and returns `Outcome::Window(WindowForm)`. stdout and stderr are parameters, so the tests capture them. `headless` writes the automatic merge, with replayed commands, without a window. `resolve --reuse` matches earlier resolutions with `merge-view::earlier`, the one use `merge-cli` makes of `merge-view`.
+- **`lib`**: `run(args, settings_path, stdout, stderr) -> Outcome` is the entry point. It loads the settings, parses, and either runs a batch form to an `ExitCode` or settles a window form (repository, semantics, `resolve` target) and returns `Outcome::Window(WindowForm)`. stdout and stderr are parameters, so the tests capture them. `headless` writes the automatic merge, with replayed commands, without a window. `resolve --reuse` matches earlier resolutions with `merge_core::earlier`.
 - **`inspect`** prints a merge's regions, or a two-way diff, as text or as the JSON of `docs/json-schema.md`, or a unified patch.
 - **`jj_native`** formats the reports of the jj-native batch forms as text or JSON.
 - **`install`** names this program and reports what `merge_session::install` wrote.

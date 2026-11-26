@@ -36,6 +36,7 @@ use merge_core::document::{
     PickScope, Resolution, TextPatch,
 };
 use merge_core::index::{ByteOffset, Line, RegionIx};
+use merge_core::inherited::Inherited;
 use merge_core::journal::RestoreError;
 use merge_core::merge3::{Inputs, Kind, LEFT, RIGHT, Source};
 use merge_core::suggest::{self, EditSuggestion};
@@ -51,7 +52,6 @@ use merge_view::chunks::Limits;
 use merge_view::diff::MOVE_TONE;
 use merge_view::heights::Heights;
 use merge_view::highlight::{CellSpans, Highlights};
-use merge_view::inherited::Inherited;
 use merge_view::line_pick::{self, LineTarget};
 use merge_view::marks::{self, Band, Tone};
 use merge_view::merge_fold::{self, MergeFold, MergeOpened};

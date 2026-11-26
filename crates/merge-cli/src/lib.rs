@@ -648,7 +648,7 @@ fn reuse(opened: &mut resolve::Opened) -> Result<usize, CliError> {
     let found = source.find()?;
     let pairs = found.iter().map(|earlier| (&earlier.conflict, &earlier.resolved));
     let Some((take, taken)) =
-        merge_view::earlier::Earlier::find(&opened.doc, pairs).take_all(&opened.doc)
+        merge_core::earlier::Earlier::find(&opened.doc, pairs).take_all(&opened.doc)
     else {
         return Ok(0);
     };

@@ -7,7 +7,7 @@ use merge_core::document::{MergeDocument, Resolution};
 use merge_core::index::{Line, RegionIx};
 use merge_core::merge3::{Kind, Source};
 
-use crate::inherited::Inherited;
+use merge_core::inherited::Inherited;
 
 /// The colour family of a mark, which also colours its band in the result pane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
