@@ -123,6 +123,15 @@ pub fn escaped(text: &str) -> Cow<'_, str> {
     Cow::Owned(out)
 }
 
+/// [`escaped`] for an owned `text`, without a copy when it holds nothing to escape.
+#[must_use]
+pub fn escaped_owned(text: String) -> String {
+    match escaped(&text) {
+        Cow::Borrowed(_) => text,
+        Cow::Owned(escaped) => escaped,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

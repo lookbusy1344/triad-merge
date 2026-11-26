@@ -11,6 +11,8 @@
 //! in the same background step as each recompute.
 
 use std::borrow::Cow;
+
+use merge_core::unusual::escaped;
 use std::ops::Range;
 
 use std::path::{Path, PathBuf};
@@ -599,7 +601,7 @@ pub fn open(
         window_bounds: Some(crate::window_bounds(settings.window_size, cx)),
         ..crate::menu_bar::window_options()
     };
-    let title = settings.title.clone().unwrap_or_else(|| strings::APP_NAME.to_owned());
+    let title = settings.title.as_deref().map_or(Cow::Borrowed(strings::APP_NAME), escaped);
     Ok(gpui_kit::open_window(options, cx, |window, cx| {
         window.set_window_title(&title);
         let view = cx.new(|cx| DiffWindow::new([left, right], settings, window, cx));
@@ -2398,8 +2400,8 @@ fn index(side: Side) -> usize {
 }
 
 fn title(origin: &Origin, modified: bool) -> SharedString {
-    let name = origin.name();
-    if modified { format!("{name}{}", strings::MODIFIED).into() } else { name.into_owned().into() }
+    let name = escaped(&origin.name()).into_owned();
+    if modified { format!("{name}{}", strings::MODIFIED).into() } else { name.into() }
 }
 
 /// How a new pane's editor looks.

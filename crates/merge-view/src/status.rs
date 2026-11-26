@@ -7,6 +7,7 @@ use merge_core::diff::{CaseRule, LineEndingRule, Whitespace};
 use merge_core::document::{MergeDocument, OutputEnding};
 use merge_core::merge3::{HunkLevel, Kind, Refine, SameChange, Semantics, Source};
 use merge_core::text::{Encoding, LineEnding, LineEndings, Text, output_encoding};
+use merge_core::unusual::{escaped, escaped_owned};
 use smallvec::SmallVec;
 
 use crate::marks::{self, Tone};
@@ -189,11 +190,10 @@ pub fn pane_headings<'a>(
                 Source::Base(i) => labels.base(i),
             };
             let role = name(Role::of(doc, source));
+            // A label or file name comes from outside: its hidden characters show (spec §5).
             let (title, role) = match label.or_else(|| names.of(source)) {
-                Some(title) if !title.eq_ignore_ascii_case(&role) => {
-                    (Cow::Borrowed(title), Some(role))
-                }
-                Some(title) => (Cow::Borrowed(title), None),
+                Some(title) if !title.eq_ignore_ascii_case(&role) => (escaped(title), Some(role)),
+                Some(title) => (escaped(title), None),
                 None => (role, None),
             };
             PaneHeading { title, role, tone: marks::pane_tone(source) }
@@ -209,7 +209,7 @@ pub fn result_heading(
     name: impl Fn(Role) -> Cow<'static, str>,
 ) -> PaneHeading<'static> {
     let role = name(Role::Result);
-    let (title, role) = match output.map(file_name) {
+    let (title, role) = match output.map(file_name).map(escaped_owned) {
         Some(title) if !title.eq_ignore_ascii_case(&role) => (Cow::Owned(title), Some(role)),
         Some(title) => (Cow::Owned(title), None),
         None => (role, None),
@@ -723,6 +723,24 @@ mod tests {
             result_heading(Some(Path::new("out/Result")), german).role.as_deref(),
             Some("Ergebnis")
         );
+    }
+
+    #[test]
+    fn hidden_characters_in_a_title_show_as_escapes() {
+        // RLO would draw `txt.cba` backwards; the escape shows it is there.
+        let labelled = with(
+            b"a\n",
+            b"a\n",
+            b"a\n",
+            MergeOptions::default(),
+            Labels::three_way("ours\u{202E}", "", "\u{200B}x"),
+        );
+        let names = FileNames::default();
+        let headings = pane_headings(&labelled, PaneSet::LeftBaseRight, &names, Role::english);
+        let titles: Vec<_> = headings.iter().map(|h| h.title.as_ref()).collect();
+        assert_eq!(titles, [r"ours\u202e", "Base", r"\u200bx"]);
+        let heading = result_heading(Some(Path::new("/repo/abc\u{202E}txt.exe")), Role::english);
+        assert_eq!(heading.title, r"abc\u202etxt.exe");
     }
 
     #[test]

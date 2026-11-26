@@ -5,6 +5,7 @@
 //! them to the core and applies the core's corrections. Picks, undo and redo come from the
 //! core as patches, which the window applies to the editor with recording muted.
 
+use std::borrow::Cow;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -39,7 +40,7 @@ use merge_core::journal::RestoreError;
 use merge_core::merge3::{Inputs, Kind, LEFT, RIGHT, Source};
 use merge_core::suggest::{self, EditSuggestion};
 use merge_core::text::Text;
-use merge_core::unusual::Unusual;
+use merge_core::unusual::{Unusual, escaped};
 use merge_session::ending::{Closing, SaveFailed, Undone, UnresolvedSave};
 use merge_session::origin::{self, find_merge};
 use merge_session::repository::Handoff;
@@ -679,7 +680,7 @@ pub fn open(
         window_bounds: Some(crate::window_bounds(settings.window_size, cx)),
         ..crate::menu_bar::window_options()
     };
-    let title = settings.title.clone().unwrap_or_else(|| strings::APP_NAME.to_owned());
+    let title = settings.title.as_deref().map_or(Cow::Borrowed(strings::APP_NAME), escaped);
     Ok(gpui_kit::open_window(options, cx, |window, cx| {
         window.set_window_title(&title);
         let view = cx.new(|cx| MergeWindow::new(doc, panes, rows, settings, window, cx));

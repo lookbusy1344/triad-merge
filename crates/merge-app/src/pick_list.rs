@@ -144,16 +144,17 @@ impl Row {
     /// The row's accessible name: its label, else its parts, space-separated.
     pub(crate) fn label(&self) -> SharedString {
         if let Some(label) = &self.label {
-            return label.clone();
+            return strings::visible(label);
         }
-        [self.lead.as_ref(), Some(&self.text), self.trail.as_ref()]
+        let joined: SharedString = [self.lead.as_ref(), Some(&self.text), self.trail.as_ref()]
             .into_iter()
             .flatten()
             .filter(|part| !part.is_empty())
             .map(SharedString::as_ref)
             .collect::<Vec<&str>>()
             .join(" ")
-            .into()
+            .into();
+        strings::visible(&joined)
     }
 }
 
@@ -170,7 +171,8 @@ pub(crate) struct State {
 pub(crate) fn row(id: impl Into<ElementId>, content: &Row, state: State, cx: &App) -> ListItem {
     let theme = cx.theme();
     let muted = theme.muted_foreground;
-    let part = |text: &SharedString| div().flex_none().text_color(muted).child(text.clone());
+    let part =
+        |text: &SharedString| div().flex_none().text_color(muted).child(strings::visible(text));
     let left = if state.indented { ROW_PADDING + INDENT } else { ROW_PADDING };
     let icon = content.status.map(|status| {
         let colour = if content.quiet { muted } else { status.colour(theme) };
@@ -215,9 +217,10 @@ pub(crate) fn row(id: impl Into<ElementId>, content: &Row, state: State, cx: &Ap
 fn main_text(content: &Row, muted: Hsla) -> Div {
     let text = div().flex_1().min_w_0();
     match content.shown {
-        Shown::Text => text.truncate().child(content.text.clone()),
+        Shown::Text => text.truncate().child(strings::visible(&content.text)),
         Shown::Path | Shown::Deleted => {
-            let (name, dir) = split_path(&content.text);
+            let shown = strings::visible(&content.text);
+            let (name, dir) = split_path(&shown);
             let deleted = content.shown == Shown::Deleted;
             let styled = |part: Div| {
                 if deleted { part.line_through().text_color(muted) } else { part }
@@ -242,8 +245,9 @@ pub(crate) fn heading(
     cx: &App,
 ) -> ObservedElement<Stateful<Div>> {
     let muted = cx.theme().muted_foreground;
-    let part = |text: &SharedString| div().flex_none().text_color(muted).child(text.clone());
-    let hover = content.hover.clone();
+    let part =
+        |text: &SharedString| div().flex_none().text_color(muted).child(strings::visible(text));
+    let hover = content.hover.as_ref().map(strings::visible);
     div()
         .id(id)
         .when_some(hover, |heading, text| heading.tooltip(crate::tooltip::build(text)))
@@ -279,7 +283,7 @@ pub(crate) fn heading(
                         text.font_weight(FontWeight::SEMIBOLD)
                     }
                 })
-                .child(content.text.clone()),
+                .child(strings::visible(&content.text)),
         )
         .children(content.trail.as_ref().map(part))
 }
@@ -367,6 +371,19 @@ mod tests {
             ..Row::default()
         };
         assert_eq!(row.label(), "a.rs renamed from b.rs");
+    }
+
+    #[test]
+    fn hidden_characters_in_a_row_show_as_escapes() {
+        let row = Row {
+            lead: Some("a\u{1B}[31m".into()),
+            text: "src/x\u{202E}y.rs".into(),
+            trail: Some("\u{2066}t".into()),
+            ..Row::default()
+        };
+        assert_eq!(row.label(), r"a\u001b[31m src/x\u202ey.rs \u2066t");
+        let row = Row { text: "a".into(), label: Some("b\u{200B}".into()), ..Row::default() };
+        assert_eq!(row.label(), r"b\u200b");
     }
 
     #[test]
