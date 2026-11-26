@@ -282,7 +282,7 @@ fn load_changed(
     let path = loaded.right.clone();
     let (left, right) = match file.change {
         Change::Deleted => {
-            let empty = Text::decode(Vec::new()).map_err(to_string)?;
+            let empty = Text::from_utf8(String::new());
             let left = DiffFile::revision(loaded.left, strings::revision_title(&loaded.left_at));
             (left, DiffFile::revision(empty, strings::no_file(&shown)))
         }
