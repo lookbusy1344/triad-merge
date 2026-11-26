@@ -365,6 +365,7 @@ mode-jj-word = слияние jj по словам
 encoding-utf8-bom = UTF-8 с BOM
 encoding-utf16le-bom = UTF-16 LE с BOM
 encoding-utf16be-bom = UTF-16 BE с BOM
+encoding-utf8-as-windows-1252 = UTF-8, прочитанный как Windows-1252
 inputs-differ = { $encoding } (входы различаются)
 word-merged = Слито по словам: { $count }
 unresolved = Не разрешено: { $count }

@@ -390,6 +390,7 @@ fn encoding_name(encoding: Encoding) -> &'static str {
         Encoding::Utf16Be => "utf-16be",
         Encoding::Utf16BeBom => "utf-16be-bom",
         Encoding::Windows1252 => "windows-1252",
+        Encoding::Utf8AsWindows1252 => "utf-8-as-windows-1252",
     }
 }
 

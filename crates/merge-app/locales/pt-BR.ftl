@@ -351,6 +351,7 @@ mode-jj-word = mesclagem jj por palavra
 encoding-utf8-bom = UTF-8 com BOM
 encoding-utf16le-bom = UTF-16 LE com BOM
 encoding-utf16be-bom = UTF-16 BE com BOM
+encoding-utf8-as-windows-1252 = UTF-8 lido como Windows-1252
 inputs-differ = { $encoding } (as entradas diferem)
 word-merged =
     { $count ->

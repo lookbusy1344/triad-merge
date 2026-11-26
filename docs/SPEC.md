@@ -158,6 +158,8 @@ Each input is checked in this order:
 3. UTF-8: with no BOM, a file of valid UTF-8 is UTF-8.
 4. Windows-1252: with no BOM, a file that is not valid UTF-8 is Windows-1252, a superset of Latin-1's printable characters. Each byte is one character, by WHATWG's index; the five bytes the code page leaves unassigned, 0x81, 0x8D, 0x8F, 0x90 and 0x9D, are the C1 controls of the same value. Every byte decodes and encodes back to itself, so the step never fails, and a line-level merge gives the bytes git and jj give. A file in another legacy encoding, such as Windows-1251 or Shift-JIS, decodes too and shows garbled; its bytes still come back unchanged where no one edits them.
 
+The inputs of one merge share the fallback: when any input reads as Windows-1252, each input that reads as UTF-8 without a BOM reads as Windows-1252 too. Every input then encodes back to its own bytes, so one stray byte in one input changes no byte of another. A UTF-8 character in such an input shows as the Windows-1252 characters of its bytes: `é` as `Ã©`. Inputs with a BOM and UTF-16 inputs keep their encoding. The status bar shows the inputs' encodings as differing (§5), and `inspect` warns `encoding-mismatch`. The merge's output is Windows-1252, since it holds the bytes of every input: a character typed into the result saves as its Windows-1252 byte, so a typed `é` is the byte E9, which is not UTF-8.
+
 With no BOM, UTF-8 and UTF-16 each read with or without one. After a BOM, text that does not decode in the BOM's encoding is an error (exit code 3): invalid UTF-8, an unpaired UTF-16 surrogate or an odd UTF-16 length.
 
 All inputs are decoded to Rust strings before diffing.

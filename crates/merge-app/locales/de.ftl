@@ -350,6 +350,7 @@ mode-jj-word = jj-Merge nach Wörtern
 encoding-utf8-bom = UTF-8 mit BOM
 encoding-utf16le-bom = UTF-16 LE mit BOM
 encoding-utf16be-bom = UTF-16 BE mit BOM
+encoding-utf8-as-windows-1252 = UTF-8, gelesen als Windows-1252
 inputs-differ = { $encoding } (Eingaben unterscheiden sich)
 word-merged = { $count } nach Wörtern gemergt
 unresolved = { $count } ungelöst

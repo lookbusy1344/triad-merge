@@ -21,6 +21,10 @@ pub enum Encoding {
     /// The fallback for text that is not UTF-8 and has no byte order mark: one byte per
     /// character, each of the 256 bytes mapping to one character and back (spec §4.1).
     Windows1252,
+    /// A UTF-8 file without a byte order mark read as Windows-1252, one character per byte,
+    /// beside a Windows-1252 input (spec §4.1). Its bytes encode as Windows-1252's do, and it
+    /// holds only text whose bytes are UTF-8, so the file stays UTF-8.
+    Utf8AsWindows1252,
 }
 
 /// A character `encoding` cannot hold, on the 1-based `line` of the text being encoded.
@@ -44,6 +48,7 @@ impl Encoding {
             Encoding::Utf16Be => "UTF-16 BE",
             Encoding::Utf16BeBom => "UTF-16 BE with BOM",
             Encoding::Windows1252 => "Windows-1252",
+            Encoding::Utf8AsWindows1252 => "UTF-8 read as Windows-1252",
         }
     }
 
@@ -52,7 +57,11 @@ impl Encoding {
     #[must_use]
     pub fn bom(self) -> &'static [u8] {
         match self {
-            Encoding::Utf8 | Encoding::Utf16Le | Encoding::Utf16Be | Encoding::Windows1252 => &[],
+            Encoding::Utf8
+            | Encoding::Utf16Le
+            | Encoding::Utf16Be
+            | Encoding::Windows1252
+            | Encoding::Utf8AsWindows1252 => &[],
             Encoding::Utf8Bom => &UTF8_BOM,
             Encoding::Utf16LeBom => &UTF16LE_BOM,
             Encoding::Utf16BeBom => &UTF16BE_BOM,
@@ -60,7 +69,9 @@ impl Encoding {
     }
 
     /// `text` in this encoding without the byte order mark, so a text split at `char`
-    /// boundaries encodes piece by piece. UTF-8 borrows it.
+    /// boundaries encodes piece by piece. UTF-8 borrows it. A UTF-8 sequence may span two
+    /// pieces of [`Encoding::Utf8AsWindows1252`], so [`Encoding::holds`] checks the whole
+    /// text's bytes are UTF-8.
     ///
     /// # Errors
     ///
@@ -75,7 +86,7 @@ impl Encoding {
             Encoding::Utf16Be | Encoding::Utf16BeBom => {
                 text.encode_utf16().flat_map(u16::to_be_bytes).collect::<Vec<u8>>().into()
             }
-            Encoding::Windows1252 => text
+            Encoding::Windows1252 | Encoding::Utf8AsWindows1252 => text
                 .char_indices()
                 .map(|(at, c)| {
                     windows_1252_byte(c).ok_or_else(|| EncodeError {
@@ -97,9 +108,15 @@ impl Encoding {
     /// [`EncodeError`] for the first character it cannot hold, its line counted over all
     /// the pieces.
     pub fn holds<'t>(self, chunks: impl IntoIterator<Item = &'t str>) -> Result<(), EncodeError> {
-        if self != Encoding::Windows1252 {
-            return Ok(());
+        match self {
+            Encoding::Windows1252 => self.holds_bytes(chunks),
+            Encoding::Utf8AsWindows1252 => utf8_bytes_hold(chunks),
+            _ => Ok(()),
         }
+    }
+
+    /// Whether this one-byte encoding has a byte for every character of `chunks`.
+    fn holds_bytes<'t>(self, chunks: impl IntoIterator<Item = &'t str>) -> Result<(), EncodeError> {
         let mut lines_before = 0;
         for chunk in chunks {
             if let Some((at, c)) =
@@ -119,10 +136,53 @@ impl Encoding {
     ///
     /// [`EncodeError`] for the first character the encoding cannot hold.
     pub fn encode(self, text: &str) -> Result<Cow<'_, [u8]>, EncodeError> {
+        if self == Encoding::Utf8AsWindows1252 {
+            utf8_bytes_hold([text])?;
+        }
         let bom = self.bom();
         let body = self.encode_chunk(text)?;
         Ok(if bom.is_empty() { body } else { Cow::Owned([bom, &body].concat()) })
     }
+}
+
+/// Whether `chunks`, pieces of one text in order, hold one character per byte, each with a
+/// Windows-1252 byte, and those bytes are UTF-8 ([`Encoding::Utf8AsWindows1252`]). A UTF-8
+/// sequence may span two pieces. The error names the character whose byte breaks the UTF-8,
+/// or the first character of a sequence the text leaves open.
+fn utf8_bytes_hold<'t>(chunks: impl IntoIterator<Item = &'t str>) -> Result<(), EncodeError> {
+    let encoding = Encoding::Utf8AsWindows1252;
+    let error = |byte: u8, line| EncodeError { encoding, character: windows_1252_char(byte), line };
+    // The bytes of a sequence the piece before leaves open. They hold no line feed, so they
+    // lie on the last line of the pieces before.
+    let mut open = Vec::new();
+    let mut lines_before = 0;
+    for chunk in chunks {
+        let bytes = encoding
+            .encode_chunk(chunk)
+            .map_err(|e| EncodeError { line: lines_before + e.line, ..e })?;
+        let joined = [open.as_slice(), &bytes].concat();
+        open = match std::str::from_utf8(&joined) {
+            Ok(_) => Vec::new(),
+            Err(e) => {
+                let at = e.valid_up_to();
+                if e.error_len().is_some() {
+                    let line = lines_before + line_number_of_bytes(&joined, at);
+                    return Err(error(joined[at], line));
+                }
+                joined[at..].to_vec()
+            }
+        };
+        lines_before += chunk.bytes().filter(|&byte| byte == b'\n').count();
+    }
+    match open.first() {
+        Some(&byte) => Err(error(byte, lines_before + 1)),
+        None => Ok(()),
+    }
+}
+
+/// The 1-based line of `bytes` that byte `at` lies on.
+fn line_number_of_bytes(bytes: &[u8], at: usize) -> usize {
+    bytes[..at].split(|&byte| byte == b'\n').count()
 }
 
 /// The 1-based line of `text` that byte `at` lies on.
@@ -317,6 +377,17 @@ impl Text {
             reason = "invariant: decoding gave every character of the content, so its encoding holds each"
         )]
         self.encoding.encode(self.content()).expect("a decoded text encodes in its own encoding")
+    }
+
+    /// This text read as Windows-1252 from its UTF-8 bytes, in
+    /// [`Encoding::Utf8AsWindows1252`], when it is UTF-8 without a byte order mark; none for
+    /// any other encoding. Each byte becomes one character, so the text encodes back to the
+    /// same bytes.
+    #[must_use]
+    pub fn to_windows_1252(&self) -> Option<Text> {
+        (self.encoding == Encoding::Utf8).then(|| {
+            Text::new(Encoding::Utf8AsWindows1252, decode_windows_1252(self.content().as_bytes()))
+        })
     }
 
     #[must_use]
@@ -522,7 +593,9 @@ fn check_utf16(bytes: &[u8], unit: fn([u8; 2]) -> u16, offset: usize) -> Result<
 /// The output's encoding: base's, or left's when base is empty (spec §4.1).
 #[must_use]
 pub fn output_encoding(base: &Text, left: &Text) -> Encoding {
-    if base.content().is_empty() { left.encoding() } else { base.encoding() }
+    let encoding = if base.content().is_empty() { left.encoding() } else { base.encoding() };
+    // The output holds the bytes of every input, a Windows-1252 one's included.
+    if encoding == Encoding::Utf8AsWindows1252 { Encoding::Windows1252 } else { encoding }
 }
 
 /// The ending for newlines typed into the result: base's dominant ending, then left's, then LF.
@@ -1055,6 +1128,58 @@ mod tests {
     }
 
     #[test]
+    fn utf8_read_as_windows_1252_saves_its_own_bytes() {
+        // `café` in UTF-8 is 63 61 66 C3 A9; read byte by byte it is `cafÃ©`.
+        let text = decoded(b"caf\xC3\xA9\n").to_windows_1252().unwrap();
+        assert_eq!(text.encoding(), Encoding::Utf8AsWindows1252);
+        assert_eq!(text.content(), "caf\u{C3}\u{A9}\n");
+        assert_eq!(text.bytes().as_ref(), b"caf\xC3\xA9\n");
+        assert_eq!(Encoding::Utf8AsWindows1252.holds(["caf\u{C3}\u{A9}\n"]), Ok(()));
+    }
+
+    #[test]
+    fn utf8_read_as_windows_1252_refuses_bytes_that_are_not_utf8() {
+        let encoding = Encoding::Utf8AsWindows1252;
+        // A typed `é` is the byte E9, which starts no UTF-8 sequence here.
+        let error = encoding.encode("ok\ncaf\u{E9}\n").unwrap_err();
+        assert_eq!(error, EncodeError { encoding, character: '\u{E9}', line: 2 });
+        assert_eq!(
+            error.to_string(),
+            "UTF-8 read as Windows-1252 cannot hold 'é' (U+00E9) on line 2"
+        );
+        // A character Windows-1252 has no byte for.
+        let error = encoding.encode("a\n\u{2192}").unwrap_err();
+        assert_eq!(error, EncodeError { encoding, character: '\u{2192}', line: 2 });
+        // A sequence cut short at the end of the text.
+        let error = encoding.encode("a\n\u{C3}").unwrap_err();
+        assert_eq!(error, EncodeError { encoding, character: '\u{C3}', line: 2 });
+        // Windows-1252 itself takes any of its characters.
+        assert_eq!(Encoding::Windows1252.holds(["caf\u{E9}\n"]), Ok(()));
+    }
+
+    #[test]
+    fn utf8_read_as_windows_1252_checks_sequences_across_chunks() {
+        let encoding = Encoding::Utf8AsWindows1252;
+        // C3 A9 split between two chunks is one sequence.
+        assert_eq!(encoding.holds(["a\ncaf\u{C3}", "\u{A9}\n"]), Ok(()));
+        // C3 at a chunk's end, then a byte that cannot follow it: the C3 is named, on its line.
+        assert_eq!(
+            encoding.holds(["a\nb\u{C3}", "x\n"]),
+            Err(EncodeError { encoding, character: '\u{C3}', line: 2 })
+        );
+        // A sequence still open after the last chunk: E2 86, the first two bytes of `→`.
+        assert_eq!(
+            encoding.holds(["a\n", "b\n\u{E2}\u{2020}", ""]),
+            Err(EncodeError { encoding, character: '\u{E2}', line: 3 })
+        );
+        // A bad byte in a later chunk counts the lines before it.
+        assert_eq!(
+            encoding.holds(["a\n", "b\n", "c\u{E9}"]),
+            Err(EncodeError { encoding, character: '\u{E9}', line: 3 })
+        );
+    }
+
+    #[test]
     fn utf_encodings_hold_every_character() {
         for encoding in [
             Encoding::Utf8,
@@ -1220,6 +1345,15 @@ mod tests {
         let left = decoded(with_prefix(&UTF8_BOM, b"a"));
         assert_eq!(output_encoding(&decoded(b""), &left), Encoding::Utf8Bom);
         assert_eq!(output_encoding(&decoded(UTF16LE_BOM), &decoded(b"a")), Encoding::Utf8);
+    }
+
+    #[test]
+    fn a_merge_of_utf8_read_as_windows_1252_writes_windows_1252() {
+        // The output holds the bytes of every input, the Windows-1252 one's included.
+        let base = decoded(b"caf\xC3\xA9\n").to_windows_1252().unwrap();
+        assert_eq!(output_encoding(&base, &decoded(b"\xFF")), Encoding::Windows1252);
+        let empty = decoded(b"").to_windows_1252().unwrap();
+        assert_eq!(output_encoding(&empty, &base), Encoding::Windows1252);
     }
 
     // Encoding output

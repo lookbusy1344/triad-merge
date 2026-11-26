@@ -295,6 +295,7 @@ mode-jj-word = jj 単語単位マージ
 encoding-utf8-bom = UTF-8 BOM 付き
 encoding-utf16le-bom = UTF-16 LE BOM 付き
 encoding-utf16be-bom = UTF-16 BE BOM 付き
+encoding-utf8-as-windows-1252 = Windows-1252 として読んだ UTF-8
 inputs-differ = { $encoding }（入力が異なる）
 word-merged = { $count } 件を単語単位でマージ
 unresolved = { $count } 件未解決

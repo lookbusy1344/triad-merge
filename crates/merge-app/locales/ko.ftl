@@ -295,6 +295,7 @@ mode-jj-word = jj 단어 단위 병합
 encoding-utf8-bom = UTF-8 BOM 포함
 encoding-utf16le-bom = UTF-16 LE BOM 포함
 encoding-utf16be-bom = UTF-16 BE BOM 포함
+encoding-utf8-as-windows-1252 = Windows-1252로 읽은 UTF-8
 inputs-differ = { $encoding }(입력이 다름)
 word-merged = { $count }개 단어 단위로 병합
 unresolved = { $count }개 해결되지 않음

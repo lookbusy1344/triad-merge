@@ -295,6 +295,7 @@ mode-jj-word = jj 逐詞合併
 encoding-utf8-bom = UTF-8 含 BOM
 encoding-utf16le-bom = UTF-16 LE 含 BOM
 encoding-utf16be-bom = UTF-16 BE 含 BOM
+encoding-utf8-as-windows-1252 = 以 Windows-1252 讀取的 UTF-8
 inputs-differ = { $encoding }（輸入不同）
 word-merged = { $count } 處逐詞合併
 unresolved = { $count } 個未解決

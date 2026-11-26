@@ -552,6 +552,22 @@ mod tests {
     }
 
     #[test]
+    fn utf8_inputs_read_as_windows_1252_are_flagged() {
+        // Right's FF makes it Windows-1252; base and left are UTF-8 on disk.
+        let stray = with(
+            b"caf\xC3\xA9\n",
+            b"caf\xC3\xA9\n",
+            b"\xFF\n",
+            MergeOptions::default(),
+            Labels::none(),
+        );
+        assert_eq!(
+            (status(&stray).encoding, status(&stray).encoding_mismatch),
+            (Encoding::Windows1252, true)
+        );
+    }
+
+    #[test]
     fn the_line_ending_and_whitespace_mode_are_shown() {
         let options = MergeOptions {
             diff: DiffOptions { whitespace: Whitespace::Amount, ..DiffOptions::default() },

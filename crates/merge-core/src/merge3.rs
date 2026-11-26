@@ -18,7 +18,7 @@ use crate::diff::{
     Comparison, DiffOptions, Hunk, diff_line_ranges, diff_lines_for_merge, line_key,
 };
 use crate::jj::{self, HunkKind, LineDiff};
-use crate::text::Text;
+use crate::text::{Encoding, Text};
 
 mod moves;
 pub use moves::{Duplicate, SideMove, duplicates, side_moves};
@@ -144,7 +144,7 @@ impl Inputs {
     /// [`ShapeError`] unless there are at least two sides and one base fewer than sides.
     pub fn new(sides: Vec<Text>, bases: Vec<Text>) -> Result<Self, ShapeError> {
         if sides.len() >= MIN_SIDES && sides.len() == bases.len() + 1 {
-            Ok(Self { sides, bases })
+            Ok(Self { sides, bases }.sharing_fallback())
         } else {
             Err(ShapeError { sides: sides.len(), bases: bases.len() })
         }
@@ -152,7 +152,23 @@ impl Inputs {
 
     #[must_use]
     pub fn three_way(base: Text, left: Text, right: Text) -> Self {
-        Self { sides: vec![left, right], bases: vec![base] }
+        Self { sides: vec![left, right], bases: vec![base] }.sharing_fallback()
+    }
+
+    /// The inputs with one 8-bit fallback (spec §4.1): when any input is Windows-1252, each
+    /// input that is UTF-8 without a byte order mark reads as Windows-1252 too. Every input
+    /// then encodes back to its own bytes in the output encoding, as git's byte-level merge
+    /// keeps them.
+    fn sharing_fallback(mut self) -> Self {
+        let texts = || self.sides.iter().chain(&self.bases);
+        if texts().any(|text| text.encoding() == Encoding::Windows1252) {
+            for text in self.sides.iter_mut().chain(&mut self.bases) {
+                if let Some(fallback) = text.to_windows_1252() {
+                    *text = fallback;
+                }
+            }
+        }
+        self
     }
 
     #[must_use]
@@ -725,6 +741,50 @@ mod tests {
 
     fn three(base: &str, left: &str, right: &str) -> Inputs {
         Inputs::three_way(text(base), text(left), text(right))
+    }
+
+    fn decoded(bytes: &[u8]) -> Text {
+        Text::decode(bytes).expect("decodes")
+    }
+
+    fn encodings(inputs: &Inputs) -> Vec<Encoding> {
+        inputs.sides().iter().chain(inputs.bases()).map(Text::encoding).collect()
+    }
+
+    #[test]
+    fn one_windows_1252_input_makes_every_plain_utf8_input_read_as_windows_1252() {
+        // `café` in UTF-8 is 63 61 66 C3 A9; the stray FF makes left Windows-1252.
+        let (w, u) = (Encoding::Windows1252, Encoding::Utf8AsWindows1252);
+        let utf8 = b"caf\xC3\xA9\n";
+        let inputs =
+            Inputs::three_way(decoded(utf8), decoded(b"caf\xC3\xA9\n\xFF\n"), decoded(utf8));
+        // Sides, then bases.
+        assert_eq!(encodings(&inputs), [w, u, u]);
+        assert_eq!(inputs.bases()[0].content(), "caf\u{C3}\u{A9}\n");
+        assert_eq!(inputs.sides()[0].content(), "caf\u{C3}\u{A9}\n\u{FF}\n");
+        assert_eq!(inputs.bases()[0].bytes().as_ref(), utf8);
+        let sides = vec![decoded(utf8), decoded(b"\xFF\n"), decoded(utf8)];
+        let inputs = Inputs::new(sides, vec![decoded(utf8), decoded(utf8)]).expect("shape");
+        assert_eq!(encodings(&inputs), [u, w, u, u, u]);
+    }
+
+    #[test]
+    fn a_declared_encoding_stays_beside_a_windows_1252_input() {
+        let bom = b"\xEF\xBB\xBFcaf\xC3\xA9\n";
+        let utf16 = b"\xFF\xFEa\x00\n\x00";
+        let inputs = Inputs::three_way(decoded(bom), decoded(b"\xFF\n"), decoded(utf16));
+        assert_eq!(
+            encodings(&inputs),
+            [Encoding::Windows1252, Encoding::Utf16LeBom, Encoding::Utf8Bom]
+        );
+        assert_eq!(inputs.bases()[0].content(), "café\n");
+    }
+
+    #[test]
+    fn utf8_inputs_stay_utf8_without_a_windows_1252_input() {
+        let inputs = Inputs::three_way(decoded(b"caf\xC3\xA9\n"), decoded(b"a\n"), decoded(b""));
+        assert_eq!(encodings(&inputs), [Encoding::Utf8; 3]);
+        assert_eq!(inputs.bases()[0].content(), "café\n");
     }
 
     fn git(diff: DiffOptions, refine: bool) -> Alignment {

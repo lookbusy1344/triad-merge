@@ -365,6 +365,7 @@ mode-jj-word = злиття jj за словами
 encoding-utf8-bom = UTF-8 з BOM
 encoding-utf16le-bom = UTF-16 LE з BOM
 encoding-utf16be-bom = UTF-16 BE з BOM
+encoding-utf8-as-windows-1252 = UTF-8, прочитаний як Windows-1252
 inputs-differ = { $encoding } (входи відрізняються)
 word-merged = Злито за словами: { $count }
 unresolved = Не розв’язано: { $count }
