@@ -42,7 +42,7 @@ use merge_core::index::RegionIx;
 use merge_core::line_map::LineMap;
 use merge_core::merge3::Source;
 use merge_core::patch::{DEFAULT_CONTEXT, Scope, Titles};
-use merge_core::text::{Encoding, Text};
+use merge_core::text::{Encoding, Text, share_fallback, windows_1252_offset};
 use merge_session::SessionError;
 use merge_session::diff_tool::{self, Saved, SideSave};
 use merge_session::origin::carry;
@@ -650,11 +650,13 @@ impl DiffWindow {
     }
 
     fn new(
-        files: [DiffFile; 2],
+        mut files: [DiffFile; 2],
         settings: &DiffSettings,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let [left, right] = &mut files;
+        share_fallback(&mut [&mut left.text, &mut right.text]);
         let [left, right] = &files;
         let mut doc = DiffDocument::new(&left.text, &right.text, settings.options.clone());
         Self::load_marks(doc.marking(), window, cx);
@@ -1909,6 +1911,10 @@ impl DiffWindow {
                 return None;
             }
         };
+        // A pane that reads one character per byte keeps the two sides' one fallback
+        // (spec §4.1).
+        let fallback = SIDES.iter().any(|&side| self.pane(side).encoding.one_byte_per_char());
+        let text = if fallback { text.to_windows_1252().unwrap_or(text) } else { text };
         let pane = self.pane(side);
         let same = text.encoding() == pane.encoding && self.doc.text(side) == text.content();
         let own_save = pane.writes.holds(text.content(), text.encoding());
@@ -1938,6 +1944,9 @@ impl DiffWindow {
         let caret =
             map.map_or(caret, |map| map.offset(before.slice(..), self.doc.text(side), caret));
         self.reload(side, caret, window, cx);
+        if text.encoding() == Encoding::Windows1252 {
+            self.read_bytewise(side.other(), window, cx);
+        }
         self.held_top = top.map(|anchor| HeldTop {
             side,
             anchor: map.map_or(anchor, |map| anchor.on(map.line(anchor.line))),
@@ -1948,6 +1957,26 @@ impl DiffWindow {
         self.schedule_recompute(window, cx);
         self.refresh_bands(side, cx);
         tracing::info!(path = %self.pane(side).origin.name(), "reloaded");
+    }
+
+    /// Read `side`'s pane, if UTF-8 without a byte order mark, one character per byte beside
+    /// the other side's Windows-1252 text (spec §4.1). Its edits and the caret's place in the
+    /// bytes stay; its undo history goes, as a reload's does.
+    fn read_bytewise(&mut self, side: Side, window: &mut Window, cx: &mut Context<Self>) {
+        if self.pane(side).encoding != Encoding::Utf8 {
+            return;
+        }
+        let utf8 = self.doc.text(side).to_string();
+        let caret = windows_1252_offset(&utf8, self.editor(side).read(cx).cursor().min(utf8.len()));
+        let Some(text) = Text::from_utf8(utf8).to_windows_1252() else {
+            return;
+        };
+        self.doc.reload(side, &text);
+        let pane = self.pane_mut(side);
+        pane.encoding = text.encoding();
+        pane.changes += 1;
+        self.reload(side, caret, window, cx);
+        self.refresh_bands(side, cx);
     }
 
     /// Show `errors`, the config file's bad lines, in the settings banner; no errors close it.

@@ -52,6 +52,10 @@ struct Files {
 
 impl Files {
     fn new(left: &str, right: &str) -> Self {
+        Self::bytes(left.as_bytes(), right.as_bytes())
+    }
+
+    fn bytes(left: &[u8], right: &[u8]) -> Self {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(dir.path().join("left.txt"), left).expect("left");
         std::fs::write(dir.path().join("right.txt"), right).expect("right");
@@ -2059,6 +2063,78 @@ fn toolbar_undo_and_redo_act_on_the_focused_pane(cx: &mut TestAppContext) {
     });
     assert_eq!(texts(cx, &o.view, Side::Right).0, "za\nB\nc\nD\ne\n");
     assert_eq!(texts(cx, &o.view, Side::Left).0, SHRINK_LEFT);
+}
+
+#[gpui_kit::test]
+fn a_stray_byte_on_one_side_reads_both_sides_alike(cx: &mut TestAppContext) {
+    use merge_app::diff_window::STATUS_ID;
+    // Right's FF makes it Windows-1252; left's `café` reads the same way, so line 1 matches.
+    let o = open(cx, &Files::bytes(b"caf\xC3\xA9\nm\nx\n", b"caf\xC3\xA9\nm\ny\xFF\n"));
+    assert_eq!(
+        named(cx, &o, STATUS_ID),
+        (Some(Role::Status), Some("no repo · 1 difference · whitespace significant".to_owned()))
+    );
+}
+
+#[gpui_kit::test]
+fn a_reload_keeps_the_sides_one_fallback(cx: &mut TestAppContext) {
+    // Left is plain UTF-8 on disk, but reads as Windows-1252 beside right; so does its reload.
+    let files = Files::bytes(b"caf\xC3\xA9\nm\nx\n", b"caf\xC3\xA9\nm\ny\xFF\n");
+    let o = open(cx, &files);
+    // Line 1 matches; x against y-FF and the added z are one difference.
+    std::fs::write(files.path(Side::Left), b"caf\xC3\xA9\nm\nx\nz\n").expect("left");
+    disk_changed(cx, &o, Side::Left);
+    assert_eq!(texts(cx, &o.view, Side::Left).0, "caf\u{C3}\u{A9}\nm\nx\nz\n");
+    wait(cx, DIFF_DEBOUNCE);
+    assert_eq!(status(cx, &o.view), "no repo · 1 difference · whitespace significant");
+}
+
+#[gpui_kit::test]
+fn a_side_that_turns_windows_1252_on_a_reload_reads_the_other_alike(cx: &mut TestAppContext) {
+    // Both sides open as UTF-8; left has an unsaved edit.
+    let files = Files::bytes(b"caf\xC3\xA9\nm\nx\n", b"caf\xC3\xA9\nm\ny\n");
+    let o = open(cx, &files);
+    // `café\nm\n` is 8 bytes in UTF-8: the edit goes before `x`.
+    type_at(cx, &o, Side::Left, 8, "q");
+    // Right gains an FF, so it reads as Windows-1252; left must read byte by byte too.
+    std::fs::write(files.path(Side::Right), b"caf\xC3\xA9\nm\ny\xFF\n").expect("right");
+    disk_changed(cx, &o, Side::Right);
+    assert_eq!(texts(cx, &o.view, Side::Left).0, "caf\u{C3}\u{A9}\nm\nqx\n");
+    wait(cx, DIFF_DEBOUNCE);
+    // Line 1 matches; only line 3 differs.
+    assert_eq!(status(cx, &o.view), "no repo · 1 difference · whitespace significant");
+    let expected = files.path(Side::Left).display().to_string() + MODIFIED;
+    assert_eq!(title(cx, &o.view, Side::Left), expected, "the edit is kept");
+    // The edit saves as UTF-8, `é` as C3 A9.
+    save(cx, &o);
+    assert!(!cx.has_pending_prompt());
+    assert_eq!(std::fs::read(files.path(Side::Left)).unwrap(), b"caf\xC3\xA9\nm\nqx\n");
+}
+
+#[gpui_kit::test]
+fn a_utf8_side_read_as_windows_1252_refuses_a_save_that_is_not_utf8(cx: &mut TestAppContext) {
+    let files = Files::bytes(b"caf\xC3\xA9\n", b"x\xFF\n");
+    let o = open(cx, &files);
+    // Left shows `cafÃ©`; `Ã` and `©` take two bytes each in the pane, so its `\n` is at 7.
+    // A typed `é` is the byte E9, which would leave the file no longer UTF-8.
+    type_at(cx, &o, Side::Left, 7, "é");
+    save(cx, &o);
+    assert!(cx.has_pending_prompt(), "an alert says why");
+    cx.simulate_prompt_answer("OK");
+    cx.run_until_parked();
+    assert_eq!(std::fs::read(files.path(Side::Left)).unwrap(), b"caf\xC3\xA9\n");
+    let expected = files.path(Side::Left).display().to_string() + MODIFIED;
+    assert_eq!(title(cx, &o.view, Side::Left), expected);
+}
+
+#[gpui_kit::test]
+fn a_utf8_side_read_as_windows_1252_saves_its_own_bytes(cx: &mut TestAppContext) {
+    let files = Files::bytes(b"caf\xC3\xA9\n", b"x\xFF\n");
+    let o = open(cx, &files);
+    type_at(cx, &o, Side::Left, 0, "z");
+    save(cx, &o);
+    assert!(!cx.has_pending_prompt());
+    assert_eq!(std::fs::read(files.path(Side::Left)).unwrap(), b"zcaf\xC3\xA9\n");
 }
 
 #[gpui_kit::test]

@@ -18,7 +18,7 @@ use crate::diff::{
     Comparison, DiffOptions, Hunk, diff_line_ranges, diff_lines_for_merge, line_key,
 };
 use crate::jj::{self, HunkKind, LineDiff};
-use crate::text::{Encoding, Text};
+use crate::text::{Text, share_fallback};
 
 mod moves;
 pub use moves::{Duplicate, SideMove, duplicates, side_moves};
@@ -160,14 +160,7 @@ impl Inputs {
     /// then encodes back to its own bytes in the output encoding, as git's byte-level merge
     /// keeps them.
     fn sharing_fallback(mut self) -> Self {
-        let texts = || self.sides.iter().chain(&self.bases);
-        if texts().any(|text| text.encoding() == Encoding::Windows1252) {
-            for text in self.sides.iter_mut().chain(&mut self.bases) {
-                if let Some(fallback) = text.to_windows_1252() {
-                    *text = fallback;
-                }
-            }
-        }
+        share_fallback(&mut self.sides.iter_mut().chain(&mut self.bases).collect::<Vec<_>>());
         self
     }
 
@@ -732,6 +725,7 @@ mod tests {
     use crate::boundaries::{Marked, node};
     use crate::diff::Whitespace;
     use crate::testing::text;
+    use crate::text::Encoding;
     use proptest::prelude::*;
     use proptest::test_runner::{Config, RngSeed};
 

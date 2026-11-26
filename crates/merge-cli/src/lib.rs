@@ -427,10 +427,10 @@ fn batch_form(
                 (Pair::Files, Some(context)) => {
                     let (patch, code) = inspect::diff_unified(&left, &right, &diff, context)?;
                     if run.reader == Reader::Terminal {
-                        return Ok(report(stdout, &patch, code));
+                        return Ok(report(stdout, &patch.text(), code));
                     }
                     // Nothing is left to tell the user if stdout is closed.
-                    let _ = stdout.write_all(patch.as_bytes());
+                    let _ = stdout.write_all(&patch.bytes());
                     return Ok(code);
                 }
             };

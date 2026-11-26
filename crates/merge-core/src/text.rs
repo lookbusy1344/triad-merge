@@ -52,6 +52,12 @@ impl Encoding {
         }
     }
 
+    /// Whether each character is one byte of the file: Windows-1252, or UTF-8 read as it.
+    #[must_use]
+    pub fn one_byte_per_char(self) -> bool {
+        matches!(self, Encoding::Windows1252 | Encoding::Utf8AsWindows1252)
+    }
+
     /// The byte order mark a file in this encoding starts with; empty for an encoding
     /// without one.
     #[must_use]
@@ -497,6 +503,12 @@ fn decode_windows_1252(bytes: &[u8]) -> String {
     bytes.iter().copied().map(windows_1252_char).collect()
 }
 
+/// Where byte `at` of `utf8` lands in [`Text::to_windows_1252`]'s content.
+#[must_use]
+pub fn windows_1252_offset(utf8: &str, at: usize) -> usize {
+    utf8.as_bytes()[..at].iter().map(|&byte| windows_1252_char(byte).len_utf8()).sum()
+}
+
 /// git's binary test: a NUL byte within the first [`BINARY_SNIFF_BYTES`].
 fn has_nul(bytes: &[u8]) -> bool {
     bytes.iter().take(BINARY_SNIFF_BYTES).any(|&byte| byte == 0)
@@ -596,6 +608,19 @@ pub fn output_encoding(base: &Text, left: &Text) -> Encoding {
     let encoding = if base.content().is_empty() { left.encoding() } else { base.encoding() };
     // The output holds the bytes of every input, a Windows-1252 one's included.
     if encoding == Encoding::Utf8AsWindows1252 { Encoding::Windows1252 } else { encoding }
+}
+
+/// Give texts compared or merged together one 8-bit fallback (spec §4.1): when any is
+/// Windows-1252, each that is UTF-8 without a byte order mark reads as Windows-1252 too. Each
+/// then keeps its own bytes and compares with the others byte by byte, as git compares them.
+pub fn share_fallback(texts: &mut [&mut Text]) {
+    if texts.iter().any(|text| text.encoding() == Encoding::Windows1252) {
+        for text in texts {
+            if let Some(fallback) = text.to_windows_1252() {
+                **text = fallback;
+            }
+        }
+    }
 }
 
 /// The ending for newlines typed into the result: base's dominant ending, then left's, then LF.

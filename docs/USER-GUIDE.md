@@ -409,7 +409,7 @@ triad-merge --headless BASE LEFT RIGHT -o OUTPUT                   # the automat
 triad-merge --headless BASE LEFT RIGHT -o OUTPUT --commands FILE   # then FILE's picks and edits
 triad-merge inspect --json BASE LEFT RIGHT                         # the merge's regions
 triad-merge diff --inspect --json LEFT RIGHT                       # the diff's regions
-triad-merge diff --inspect --unified LEFT RIGHT                    # the diff as a patch, 3 lines of context; --unified=N for N; > a file keeps every byte, so git apply takes it
+triad-merge diff --inspect --unified LEFT RIGHT                    # the diff as a patch, 3 lines of context; --unified=N for N; > a file keeps each line's bytes, so git apply takes it
 triad-merge diff --inspect --json LEFT_DIR RIGHT_DIR               # the files that differ between two directories
 triad-merge diff --inspect --json [--rev REV]                      # the working copy's changed files
 triad-merge resolve PATH -r REV --headless --commands FILE --dry-run   # jj: picks applied in a commit, reported, not written

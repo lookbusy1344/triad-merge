@@ -660,6 +660,28 @@ fn diff_inspect_unified_into_a_pipe_keeps_every_byte_so_the_patch_applies() {
 }
 
 #[test]
+fn diff_inspect_unified_of_a_stray_byte_keeps_both_sides_bytes() {
+    // Right's FF is not UTF-8, so right reads as Windows-1252; left's `café` must read the
+    // same way, or line 1 would differ and the patch would rewrite C3 A9.
+    let root = tempfile::tempdir().expect("tempdir");
+    let (left, right) = (root.path().join("l"), root.path().join("r"));
+    std::fs::write(&left, b"caf\xC3\xA9\nx\n").expect("left");
+    std::fs::write(&right, b"caf\xC3\xA9\ny\xFF\n").expect("right");
+    let out = triad(&[
+        "diff".as_ref(),
+        "--inspect".as_ref(),
+        "--unified".as_ref(),
+        left.as_os_str(),
+        right.as_os_str(),
+    ]);
+    assert_eq!(out.status.code(), Some(1));
+    let mut expected = format!("--- {}\n+++ {}\n", left.display(), right.display()).into_bytes();
+    expected.extend_from_slice(b"@@ -1,2 +1,2 @@\n caf\xC3\xA9\n-x\n+y\xFF\n");
+    assert_eq!(String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&expected));
+    assert_eq!(out.stdout, expected);
+}
+
+#[test]
 fn diff_inspect_unified_of_two_directories_exits_3() {
     let root = tempfile::tempdir().expect("tempdir");
     let (left, right) = (root.path().join("l"), root.path().join("r"));
