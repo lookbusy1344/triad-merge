@@ -383,7 +383,7 @@ jj config: `vcs_jj::config` loads jj-cli's layers (jj-lib's defaults, jj-cli's s
 Each crate depends only on crates in earlier layers:
 
 1. `merge-core`, `vcs`
-2. `merge-syntax` (on `merge-core`); `merge-config` (on `merge-core`, `vcs`); `vcs-git`, `vcs-jj` (on `vcs`)
+2. `merge-syntax` (on `merge-core`); `merge-config` (on `merge-core`); `vcs-git`, `vcs-jj` (on `vcs`)
 3. `merge-view` (on `merge-core`, `merge-syntax`, `vcs`); `merge-session` (on the above and both backends)
 4. `merge-cli`, `merge-app` (on `merge-session`, `merge-config`; `merge-app` also on `merge-view`)
 5. `triad-merge`

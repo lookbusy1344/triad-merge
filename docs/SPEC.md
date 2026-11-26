@@ -137,7 +137,7 @@ A Cargo workspace. Each crate depends only on the crates above it in this list.
 | `vcs-jj` | `Repository` for jj, through jj-lib. | `vcs`, `jj-lib` |
 | `merge-syntax` | Languages from file names and `#!` lines, tree-sitter grammars, highlight spans, and the syntax boundaries syntax-aware merging keeps its cuts out of. No UI. | `merge-core`, `tree-sitter` |
 | `merge-view` | View model: aligned rows for each pane, scroll mapping between panes, navigation, highlight spans, commands. Pure Rust, no GPUI. | `merge-core`, `merge-syntax`, `vcs` |
-| `merge-config` | The config file's format, the settings, key bindings, and the names of their values. No repository and no file writes. | `merge-core`, `vcs` |
+| `merge-config` | The config file's format, the settings, key bindings, and the names of their values. No repository and no file writes. | `merge-core` |
 | `merge-session` | The layer under both front ends: the merge session (the document, its recovery journal, its save target and whether a save runs), the merge semantics, repository discovery, conflict loading, line origins, the recovery journal, reading and writing a merge's files, exit codes, and the window forms. The only crate that picks a VCS backend. | `merge-config`, `merge-core`, `merge-syntax`, `vcs-git`, `vcs-jj` |
 | `merge-cli` | Argument parsing, headless merge, JSON inspection, `install`. A library with no GUI dependency. | `merge-config`, `merge-session` |
 | `merge-app` | GPUI shell: windows, panes, toolbar, menus, keyboard shortcuts. A thin renderer over `merge-view`. | `merge-view`, `merge-config`, `merge-session`, `gpui-component` |

@@ -4,34 +4,46 @@ How the code is laid out: what each crate does, its main types, and how a run mo
 
 ## 1. Crates and layers
 
-triad is a Cargo workspace of eleven crates. Each crate depends only on crates in earlier layers (`DESIGN.md` §A13.7):
+triad is a Cargo workspace of eleven crates in five layers. Layer 1 at the bottom holds the engine and the VCS contract, which know nothing of the crates above them. Layer 5 at the top holds the binaries, which tie everything together. A crate depends only on crates in lower layers (`DESIGN.md` §A13.7).
 
-| Layer | Crate | Role |
-|---|---|---|
-| 1 | `merge-core` | The engine: text decoding, line diff, n-way alignment, resolution, undo, output. No I/O, no VCS, no UI. |
-| 1 | `vcs` | The `Repository` trait and the types both backends fill. |
-| 2 | `merge-syntax` | Languages, tree-sitter grammars, highlight spans, syntax boundaries for the merge. |
-| 2 | `merge-config` | The config file's format, the settings, the key bindings. |
-| 2 | `vcs-git` | `Repository` over gix. |
-| 2 | `vcs-jj` | `Repository` over jj-lib, plus the jj-native operations. |
-| 3 | `merge-view` | The view model: rows, scroll sync, navigation, status, origins. No GPUI. |
-| 3 | `merge-session` | The layer under both front ends: semantics, repository discovery, loading, saving, recovery, exit codes. |
-| 4 | `merge-cli` | Argument parsing and every form that runs without a window. No GPUI. |
-| 4 | `merge-app` | The GPUI shell: windows, panes, toolbar, menus, keys. |
-| 5 | `triad-merge` | The binaries `triad-merge` and `triad-merge-gui`. |
+| Layer | Crate | Role | Depends on |
+|---|---|---|---|
+| 5 | `triad-merge` | The binaries `triad-merge` and `triad-merge-gui`. | `merge-cli`, `merge-app`, `merge-session`, `merge-config` |
+| 4 | `merge-cli` | Argument parsing and every form that runs without a window. No GPUI. | `merge-session`, `merge-config`, `merge-syntax`, `merge-core`, `vcs` |
+| 4 | `merge-app` | The GPUI shell: windows, panes, toolbar, menus, keys. | `merge-session`, `merge-view`, `merge-config`, `merge-syntax`, `merge-core`, `vcs` |
+| 3 | `merge-session` | The layer under both front ends: semantics, repository discovery, loading, saving, recovery, exit codes. | `merge-config`, `merge-syntax`, `vcs-git`, `vcs-jj`, `merge-core`, `vcs` |
+| 3 | `merge-view` | The view model: rows, scroll sync, navigation, status, origins. No GPUI. | `merge-syntax`, `merge-core`, `vcs` |
+| 2 | `merge-config` | The config file's format, the settings, the key bindings. | `merge-core` |
+| 2 | `merge-syntax` | Languages, tree-sitter grammars, highlight spans, syntax boundaries for the merge. | `merge-core` |
+| 2 | `vcs-git` | `Repository` over gix. | `vcs` |
+| 2 | `vcs-jj` | `Repository` over jj-lib, plus the jj-native operations. | `vcs` |
+| 1 | `merge-core` | The engine: text decoding, line diff, n-way alignment, resolution, undo, output. No I/O, no VCS, no UI. | none |
+| 1 | `vcs` | The `Repository` trait and the types both backends fill. | none |
+
+The diagram reads from the top down. The binaries sit at the top; the engine and the VCS contract, which know no other crate, sit at the bottom. Each arrow points from a crate to a crate it uses. The diagram draws the main uses; the table lists every dependency.
 
 ```
-                        triad-merge
-                       /           \
-               merge-cli            merge-app
-                    \              /    |
-                     merge-session   merge-view
-                    /   |    |    \      |    \
-          merge-config  |  vcs-jj vcs-git |  merge-syntax
-                 |      |      \   /      |   /
-                 |      |       vcs       |  /
-                 +------+----- merge-core +-+
+5 binaries                  triad-merge
+                                 │
+                    ┌────────────┴──────────────┐
+                    ▼                           ▼
+4 front ends    merge-app                   merge-cli
+                    │                           │
+                    ├───────────────────┬───────┘
+                    ▼                   ▼
+3 view model,   merge-view        merge-session
+  session           │                   │
+                    │              ┌────┴──────┬──────┐
+                    ▼              ▼           ▼      ▼
+2 grammars,     merge-syntax  merge-config  vcs-git vcs-jj
+  config,           │              │           │      │
+  backends          └──────┬───────┘           └───┬──┘
+                           ▼                       ▼
+1 engine,             merge-core                  vcs
+  VCS contract
 ```
+
+`merge-cli` and `merge-app` both stand on `merge-session`; only `merge-app` uses `merge-view`. `merge-core` and `vcs` know nothing of each other.
 
 Three boundaries carry the design:
 
@@ -257,7 +269,7 @@ The command line and every form that runs without a window. A library with no GU
   - `ShowConfig`.
 
   `parse_with` takes the loaded `Settings`, so a flag's default is the config file's value. Flag names and values come from `merge-config::named`.
-- **`lib`**: `run(args, settings_path, stdout, stderr) -> Outcome` is the entry point. It loads the settings, parses, and either runs a batch form to an `ExitCode` or settles a window form (repository, semantics, `resolve` target) and returns `Outcome::Window(WindowForm)`. stdout and stderr are parameters, so the tests capture them. `headless` writes the automatic merge, with replayed commands, without a window. `resolve --reuse` matches earlier resolutions with `merge_core::earlier`.
+- **`lib`**: `run(args, settings_path, stdout, reader, stderr) -> Outcome` is the entry point. It loads the settings, parses, and either runs a batch form to an `ExitCode` or settles a window form (repository, semantics, `resolve` target) and returns `Outcome::Window(WindowForm)`. stdout and stderr are parameters, so the tests capture them. `Reader` says whether a terminal or a program reads stdout: a `--unified` patch goes to a terminal escaped and to a program byte for byte. `headless` writes the automatic merge, with replayed commands, without a window. `resolve --reuse` matches earlier resolutions with `merge_core::earlier`.
 - **`inspect`** prints a merge's regions, or a two-way diff, as text or as the JSON of `docs/json-schema.md`, or a unified patch.
 - **`jj_native`** formats the reports of the jj-native batch forms as text or JSON.
 - **`install`** names this program and reports what `merge_session::install` wrote.
@@ -303,6 +315,10 @@ The top panes are rows, not editors: `pane_scroll`, `row_wrap` and `sideways` sc
 - Files: `file_watch` and `output_watch` notice changes another program makes; `own_writes` tells the window's own writes apart.
 - Text: `strings` holds every string a window shows, each a Fluent message from `locales/` formatted by `i18n`; `error_text` names each error in the run's language.
 - `keys` turns `merge-config`'s `KeyBindings` into GPUI's.
+- `choice`: the ways to fill a region from the two sides, for the result pane's right-click menu.
+- `recovery`: the tasks that write the session's recovery journal on the background executor.
+- `settings_file`: Settings… opens the config file in the default editor, writing the template first when the file is missing.
+- `assets` and `logo`: the icons and the logo, in the tones that read on the theme.
 - `measure`: `TRIAD_MEASURE=<mode>` makes the merge window drive itself and report frame times (`DESIGN.md` §A6.7).
 
 ### 10.5 Threads
