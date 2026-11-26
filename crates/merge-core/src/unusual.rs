@@ -29,6 +29,7 @@ const INVISIBLE: &[(char, char)] = &[
     ('\u{2028}', '\u{202E}'),   // line and paragraph separators; LRE, RLE, PDF, LRO, RLO
     ('\u{2060}', '\u{2064}'),   // word joiner and invisible operators
     ('\u{2066}', '\u{206F}'),   // LRI, RLI, FSI, PDI; deprecated format characters
+    ('\u{2800}', '\u{2800}'),   // braille pattern blank
     ('\u{3164}', '\u{3164}'),   // Hangul filler
     ('\u{FE00}', '\u{FE0D}'),   // variation selectors 1–14
     ('\u{FEFF}', '\u{FEFF}'),   // zero-width no-break space, byte order mark
@@ -216,6 +217,7 @@ mod tests {
             '\u{E01EF}',
             '\u{2028}',
             '\u{2029}',
+            '\u{2800}',
         ];
         assert_eq!(all(&hidden), vec![Some(Unusual::Invisible); hidden.len()]);
     }
@@ -244,6 +246,8 @@ mod tests {
             '\u{3163}',
             '\u{3165}',
             '\u{1FFF}',
+            '\u{27FF}',
+            '\u{2801}',
         ];
         assert_eq!(all(&usual), vec![None; usual.len()]);
     }
