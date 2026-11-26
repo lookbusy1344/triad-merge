@@ -50,6 +50,16 @@ pub(crate) const MEASURE: &str = "triad-merge measure";
 /// Between the items of a status bar, a badge or a list row.
 const ITEMS: &str = " · ";
 
+/// `text` from a file, a path or a repository as the chrome shows it: each unusual character
+/// as its escape, `\u202e`, as terminal output writes it (spec §5). A text without one is
+/// shared, not copied.
+pub(crate) fn visible(text: &SharedString) -> SharedString {
+    match merge_core::unusual::escaped(text) {
+        Cow::Borrowed(_) => text.clone(),
+        Cow::Owned(escaped) => escaped.into(),
+    }
+}
+
 texts! {
     /// The About window's title and its menu item.
     about_title = "about-title";
@@ -951,6 +961,7 @@ pub(crate) fn encoding(encoding: Encoding) -> SharedString {
         Encoding::Utf16Be => "UTF-16 BE".into(),
         Encoding::Utf16BeBom => t!("encoding-utf16be-bom"),
         Encoding::Windows1252 => "Windows-1252".into(),
+        Encoding::Utf8AsWindows1252 => t!("encoding-utf8-as-windows-1252"),
     }
 }
 

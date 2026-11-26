@@ -33,9 +33,10 @@ pub(crate) fn describe(error: &(dyn Error + 'static)) -> String {
     describe_in(i18n::current(), error)
 }
 
-/// `error` and its sources in `locale`.
+/// `error` and its sources in `locale`. A path, a label or a library's message may hold any
+/// character: each hidden one shows as its escape (spec §5), whichever message names it.
 pub(crate) fn describe_in(locale: Locale, error: &(dyn Error + 'static)) -> String {
-    Namer { locale }.name(error)
+    merge_core::unusual::escaped_owned(Namer { locale }.name(error))
 }
 
 struct Namer {
@@ -414,6 +415,10 @@ impl Namer {
                 "err-mixed-arity",
                 &[("line", line.into()), ("expected", expected.into()), ("found", found.into())],
             ),
+            MarkerError::TooManySides { line, sides, max } => self.say(
+                "err-too-many-sides",
+                &[("line", line.into()), ("sides", sides.into()), ("max", max.into())],
+            ),
         }
     }
 
@@ -512,6 +517,7 @@ mod tests {
         vec![
             Box::new(MarkerError::Unclosed { line: 7 }),
             Box::new(MarkerError::MixedArity { line: 9, expected: 2, found: 3 }),
+            Box::new(MarkerError::TooManySides { line: 3, sides: 17, max: 16 }),
             Box::new(MarkerError::Shape { line: 4, sides: 1, bases: 1 }),
             Box::new(DecodeError::Binary),
             Box::new(DecodeError::InvalidUtf8 { offset: 12 }),
@@ -538,6 +544,16 @@ mod tests {
                 line: 3,
             })),
         ]
+    }
+
+    /// An error no message names, such as a library's, that quotes outside text.
+    #[derive(Debug, thiserror::Error)]
+    #[error("bad revset `a\u{202E}b`")]
+    struct Quoting;
+
+    #[test]
+    fn hidden_characters_in_an_unnamed_error_show_as_escapes() {
+        assert_eq!(describe_in(Locale::En, &Quoting), r"bad revset `a\u202eb`");
     }
 
     #[test]

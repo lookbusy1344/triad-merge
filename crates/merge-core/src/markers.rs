@@ -35,6 +35,10 @@ pub enum MarkerError {
     Shape { line: usize, sides: usize, bases: usize },
     #[error("line {line}: a conflict of {found} sides after conflicts of {expected}")]
     MixedArity { line: usize, expected: usize, found: usize },
+    /// Each side and base holds a copy of the text outside the conflicts, so the sides are
+    /// capped.
+    #[error("line {line}: a conflict of {sides} sides; at most {max} are read")]
+    TooManySides { line: usize, sides: usize, max: usize },
 }
 
 /// The shortest conflict marker git and jj write or read.
@@ -42,6 +46,17 @@ pub const MIN_MARKER_LENGTH: usize = 7;
 
 /// The fewest sides a conflict has.
 const MIN_SIDES: usize = 2;
+
+/// The most sides a conflict read from markers has. Each side and base holds its own copy of
+/// the text outside the conflicts, so a file's markers rebuild at most `2 × MAX_SIDES - 1`
+/// copies of it.
+pub const MAX_SIDES: usize = 16;
+
+/// The most marker lengths [`parse`] tries, longest first; each try reads the whole file.
+/// jj and `--marker-length` make markers longer than any marker-like line, so the longest
+/// length parses their files. git keeps its markers at 7 whatever the text holds, so a git
+/// file whose text holds this many longer runs of `<` does not parse.
+const MAX_LENGTHS_TRIED: usize = 8;
 
 /// jj's note on a section whose last line has no newline.
 const NO_EOL_NOTE: &str = "(no terminating newline)";
@@ -69,7 +84,7 @@ pub fn parse(text: &Text) -> Result<Parsed, MarkerError> {
     lengths.sort_unstable_by(|a, b| b.cmp(a));
     lengths.dedup();
     let mut first_error = None;
-    for len in lengths {
+    for len in lengths.into_iter().take(MAX_LENGTHS_TRIED) {
         match parse_at(content, len) {
             Ok((sides, bases, labels)) => {
                 let texts = |texts: Vec<String>| -> Vec<Text> {
@@ -193,6 +208,13 @@ fn parse_at(content: &str, len: usize) -> Result<Sections, MarkerError> {
             (Some(_), Some(Kind::Start)) => return Err(MarkerError::Nested { line: number }),
             (Some(conflict), Some(Kind::End)) => {
                 let hunk = hunk(conflict, (number, line), len)?;
+                if hunk.sides.len() > MAX_SIDES {
+                    return Err(MarkerError::TooManySides {
+                        line: conflict.start,
+                        sides: hunk.sides.len(),
+                        max: MAX_SIDES,
+                    });
+                }
                 let plain = &content[plain_start..conflict.offset];
                 if labels.is_none() {
                     let count = hunk.sides.len();
@@ -665,8 +687,49 @@ mod tests {
         );
     }
 
+    /// A jj snapshot-style conflict of `sides` sides on its first line, after `before`.
+    fn jj_conflict(before: &str, sides: usize) -> String {
+        let rest: String =
+            (1..sides).map(|i| ["-------\nb\n+++++++\ns", &i.to_string(), "\n"].concat()).collect();
+        format!("{before}<<<<<<<\n+++++++\ns0\n{rest}>>>>>>>\n")
+    }
+
+    /// One line of `len` `<` for each of `lengths`, longest first.
+    fn runs(lengths: std::ops::RangeInclusive<usize>) -> String {
+        lengths.rev().map(|len| "<".repeat(len) + "\n").collect()
+    }
+
+    #[test]
+    fn a_conflict_of_the_most_sides_parses() {
+        let p = parsed(&jj_conflict("", MAX_SIDES));
+        assert_eq!(p.inputs.sides().len(), 16);
+        assert_eq!(p.inputs.bases().len(), 15);
+    }
+
+    #[test]
+    fn a_conflict_of_more_sides_is_refused_before_its_text_is_copied() {
+        // The text before the conflict would go into each of 33 inputs.
+        let file = jj_conflict("a\nb\n", MAX_SIDES + 1);
+        assert_eq!(error(&file), MarkerError::TooManySides { line: 3, sides: 17, max: 16 });
+    }
+
+    #[test]
+    fn only_the_longest_marker_lengths_are_tried() {
+        // Nine unclosed runs longer than the markers: the eight longest fail, and the
+        // conflict at seven is never reached.
+        let file = runs(8..=16) + "<<<<<<<\nL\n=======\nR\n>>>>>>>\n";
+        assert_eq!(error(&file), MarkerError::Unclosed { line: 1 });
+        // Within the limit, the shorter markers parse.
+        let p = parsed(&(runs(8..=14) + "<<<<<<<\nL\n=======\nR\n>>>>>>>\n"));
+        assert_eq!(p.marker_length, 7);
+    }
+
     #[test]
     fn errors_name_the_line() {
+        assert_eq!(
+            MarkerError::TooManySides { line: 3, sides: 17, max: 16 }.to_string(),
+            "line 3: a conflict of 17 sides; at most 16 are read"
+        );
         assert_eq!(
             MarkerError::Unclosed { line: 4 }.to_string(),
             "line 4: the conflict is not closed"

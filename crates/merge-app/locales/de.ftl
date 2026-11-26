@@ -350,6 +350,7 @@ mode-jj-word = jj-Merge nach Wörtern
 encoding-utf8-bom = UTF-8 mit BOM
 encoding-utf16le-bom = UTF-16 LE mit BOM
 encoding-utf16be-bom = UTF-16 BE mit BOM
+encoding-utf8-as-windows-1252 = UTF-8, gelesen als Windows-1252
 inputs-differ = { $encoding } (Eingaben unterscheiden sich)
 word-merged = { $count } nach Wörtern gemergt
 unresolved = { $count } ungelöst
@@ -476,6 +477,7 @@ err-no-separator = Zeile { $line }: der Konflikt endet vor seinem =======
 err-bad-diff-line = Zeile { $line }: eine Diff-Zeile beginnt weder mit ' ' noch mit '-' oder '+'
 err-marker-shape = Zeile { $line }: ein Konflikt braucht mindestens zwei Seiten und eine Basis weniger, gefunden { $sides } Seiten und { $bases } Basen
 err-mixed-arity = Zeile { $line }: ein Konflikt mit { $found } Seiten nach Konflikten mit { $expected }
+err-too-many-sides = Zeile { $line }: ein Konflikt mit { $sides } Seiten; höchstens { $max } werden gelesen
 err-shape = eine Zusammenführung braucht mindestens zwei Seiten und eine Basis weniger als Seiten, gefunden { $sides } Seiten und { $bases } Basen
 err-journal-header = das Journal hat keine vollständige Kopfzeile
 err-journal-line = Zeile { $index } des Journals lässt sich nicht lesen: { $detail }

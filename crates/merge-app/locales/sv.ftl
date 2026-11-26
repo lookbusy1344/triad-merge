@@ -350,6 +350,7 @@ mode-jj-word = jj-sammanslagning per ord
 encoding-utf8-bom = UTF-8 med BOM
 encoding-utf16le-bom = UTF-16 LE med BOM
 encoding-utf16be-bom = UTF-16 BE med BOM
+encoding-utf8-as-windows-1252 = UTF-8 läst som Windows-1252
 inputs-differ = { $encoding } (indata skiljer sig)
 word-merged = { $count } sammanslagna per ord
 unresolved = { $count } olösta
@@ -476,6 +477,7 @@ err-no-separator = rad { $line }: konflikten slutar före sin =======
 err-bad-diff-line = rad { $line }: en diff-rad börjar varken med ' ', '-' eller '+'
 err-marker-shape = rad { $line }: en konflikt behöver minst två sidor och en bas färre, fann { $sides } sidor och { $bases } baser
 err-mixed-arity = rad { $line }: en konflikt med { $found } sidor efter konflikter med { $expected }
+err-too-many-sides = rad { $line }: en konflikt med { $sides } sidor; högst { $max } läses
 err-shape = en sammanslagning behöver minst två sidor och en bas färre än sidor, fann { $sides } sidor och { $bases } baser
 err-journal-header = journalen saknar en hel rubrikrad
 err-journal-line = rad { $index } i journalen kan inte tolkas: { $detail }

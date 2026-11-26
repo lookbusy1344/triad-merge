@@ -622,6 +622,27 @@ mod tests {
     }
 
     #[test]
+    fn a_stray_byte_in_one_input_leaves_the_others_bytes_unchanged() {
+        // Left adds a line holding the byte FF, which is not UTF-8; right changes line 1.
+        // `café` stays C3 A9 in the output, as git's byte-level merge keeps it.
+        let dir = tempfile::tempdir().unwrap();
+        let write = |name: &str, bytes: &[u8]| {
+            let path = dir.path().join(name);
+            std::fs::write(&path, bytes).unwrap();
+            path
+        };
+        let files = MergeFiles {
+            base: write("base", b"a\nb\ncaf\xC3\xA9\nz\n"),
+            left: write("left", b"a\nb\ncaf\xC3\xA9\nz\n\xFF\n"),
+            right: write("right", b"A\nb\ncaf\xC3\xA9\nz\n"),
+        };
+        let doc = load(&files, MergeOptions::default(), Labels::none(), None).unwrap();
+        let encoded = EncodedOutput::new(&doc, OutputEnding::Keep).unwrap();
+        assert_eq!(encoded.code(), ExitCode::Resolved);
+        assert_eq!(encoded.bytes(), b"A\nb\ncaf\xC3\xA9\nz\n\xFF\n");
+    }
+
+    #[test]
     fn an_encoded_resolved_output_gives_exit_0() {
         let doc = fixture_doc("clean-merge");
         let tmp = tempfile::tempdir().expect("tempdir");

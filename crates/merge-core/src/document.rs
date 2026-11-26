@@ -125,9 +125,13 @@ impl Labels {
         Self::default()
     }
 
+    /// Each label ends at its first line break, `\n` or `\r`: a marker line holds one line,
+    /// and a break inside a label would write marker lines of its own.
     #[must_use]
     pub fn new(sides: Vec<String>, bases: Vec<String>) -> Self {
-        Self { sides, bases }
+        let first_lines =
+            |labels: Vec<String>| labels.into_iter().map(first_line).collect::<Vec<_>>();
+        Self { sides: first_lines(sides), bases: first_lines(bases) }
     }
 
     /// Side `i`'s label, if it has a non-empty one.
@@ -146,6 +150,14 @@ impl Labels {
     pub fn three_way(left: &str, base: &str, right: &str) -> Self {
         Self::new(vec![left.to_owned(), right.to_owned()], vec![base.to_owned()])
     }
+}
+
+/// `label` up to its first `\n` or `\r`.
+fn first_line(mut label: String) -> String {
+    if let Some(at) = label.find(['\n', '\r']) {
+        label.truncate(at);
+    }
+    label
 }
 
 /// How a region's text is chosen (spec §4.4).
@@ -2289,6 +2301,19 @@ mod tests {
             MergeDocument::new(inputs, MergeOptions::default(), Labels::three_way("ours", "", ""))
                 .expect("three labels fit");
         assert_eq!(d.output().into_text(), "<<<<<<< ours\nL\n|||||||\nb\n=======\nR\n>>>>>>>\n");
+    }
+
+    #[test]
+    fn a_label_ends_at_its_first_line_break() {
+        // Without the cut, the label would write a separator and an end marker of its own.
+        let inputs = three("b\n", "L\n", "R\n");
+        let labels = Labels::three_way("ours\n=======\nx\n>>>>>>>", "base\r\nmore", "\rtheirs");
+        let d = MergeDocument::new(inputs, MergeOptions::default(), labels).expect("labels fit");
+        assert_eq!(
+            d.output().into_text(),
+            "<<<<<<< ours\nL\n||||||| base\nb\n=======\nR\n>>>>>>>\n"
+        );
+        assert_eq!(d.labels(), &Labels::three_way("ours", "base", ""));
     }
 
     #[test]

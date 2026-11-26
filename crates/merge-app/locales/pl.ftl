@@ -365,6 +365,7 @@ mode-jj-word = scalanie jj po słowach
 encoding-utf8-bom = UTF-8 z BOM
 encoding-utf16le-bom = UTF-16 LE z BOM
 encoding-utf16be-bom = UTF-16 BE z BOM
+encoding-utf8-as-windows-1252 = UTF-8 odczytany jako Windows-1252
 inputs-differ = { $encoding } (wejścia się różnią)
 word-merged = Scalone po słowach: { $count }
 unresolved = Nierozwiązane: { $count }
@@ -491,6 +492,7 @@ err-no-separator = wiersz { $line }: konflikt kończy się przed swoim =======
 err-bad-diff-line = wiersz { $line }: wiersz diff nie zaczyna się od ' ', '-' ani '+'
 err-marker-shape = wiersz { $line }: konflikt wymaga co najmniej dwóch stron i o jedną bazę mniej, stron: { $sides }, baz: { $bases }
 err-mixed-arity = wiersz { $line }: konflikt o liczbie stron { $found } po konfliktach o liczbie stron { $expected }
+err-too-many-sides = wiersz { $line }: konflikt o liczbie stron { $sides }; odczytywanych jest najwyżej { $max }
 err-shape = scalenie wymaga co najmniej dwóch stron i o jedną bazę mniej niż stron, stron: { $sides }, baz: { $bases }
 err-journal-header = dziennik nie ma pełnego wiersza nagłówka
 err-journal-line = nie można przetworzyć wiersza { $index } dziennika: { $detail }

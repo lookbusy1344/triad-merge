@@ -5,9 +5,9 @@
 
 use std::collections::HashSet;
 
-use merge_core::document::MergeDocument;
-use merge_core::index::RegionIx;
-use merge_core::merge3::{self, Inputs, Kind, Region};
+use crate::document::MergeDocument;
+use crate::index::RegionIx;
+use crate::merge3::{self, Inputs, Kind, Region};
 
 /// The inherited conflict regions of one document, in region order.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -70,9 +70,9 @@ pub(crate) fn key<'a>(inputs: &'a Inputs, region: &Region) -> Vec<&'a str> {
 
 #[cfg(test)]
 mod tests {
-    use merge_core::document::{Labels, MergeOptions};
-    use merge_core::merge3::Inputs;
-    use merge_core::testing::{text, three};
+    use crate::document::{Labels, MergeOptions};
+    use crate::merge3::Inputs;
+    use crate::testing::{text, three};
 
     use super::*;
 

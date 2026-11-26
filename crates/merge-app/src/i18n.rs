@@ -343,7 +343,9 @@ fn try_format(locale: Locale, id: &str, args: &[(&str, Arg<'_>)]) -> Option<Cow<
         args.iter()
             .map(|&(name, arg)| {
                 let value = match arg {
-                    Arg::Text(text) => FluentValue::from(text),
+                    // A path, a label or a commit description: its hidden characters show
+                    // as escapes (spec §5). The catalogues hold none of their own.
+                    Arg::Text(text) => FluentValue::String(merge_core::unusual::escaped(text)),
                     Arg::Count(count) => FluentValue::from(count),
                 };
                 (name, value)
@@ -374,6 +376,20 @@ mod tests {
     use fluent_syntax::ast::{Entry, Expression, InlineExpression, Pattern, PatternElement};
 
     use super::*;
+
+    #[test]
+    fn hidden_characters_in_a_text_argument_show_as_escapes() {
+        // A path or a commit description goes into titles, banners and errors this way.
+        let path = Arg::Text("a\u{202E}b\u{00A0}c");
+        assert_eq!(
+            format_in(Locale::En, "history-title", &[("path", path)]),
+            r"History of a\u202eb\u00a0c"
+        );
+        assert_eq!(
+            format_in(Locale::En, "history-title", &[("path", Arg::Text("src/a.rs"))]),
+            "History of src/a.rs"
+        );
+    }
 
     #[test]
     fn gpui_component_reads_the_windows_text_for_the_keys_triad_lends() {

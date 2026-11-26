@@ -11,6 +11,7 @@ fn main() -> std::process::ExitCode {
         std::env::args_os(),
         settings.as_deref(),
         &mut io::stdout().lock(),
+        merge_cli::Reader::of_stdout(),
         &mut io::stderr().lock(),
     );
     let code = match outcome {

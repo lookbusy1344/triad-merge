@@ -8,8 +8,8 @@ use merge_core::diff::DiffOptions;
 use merge_core::diff2::{self, Kind2};
 use merge_core::document::{Labels, MergeOptions, OutputEnding};
 use merge_core::merge3::{Kind, LEFT, RIGHT, word_merge};
-use merge_core::patch::{self, Scope, Titles};
-use merge_core::text::{Encoding, output_encoding};
+use merge_core::patch::{self, Scope, Titles, Unified};
+use merge_core::text::{Encoding, Text, output_encoding, share_fallback};
 use serde::Serialize;
 
 use merge_session::dir_diff::{self, Change, ChangedFile, Content};
@@ -287,8 +287,7 @@ pub fn diff_inspect(
     diff: &DiffOptions,
     json: bool,
 ) -> Result<(String, ExitCode), CliError> {
-    let left = read_text(left)?;
-    let right = read_text(right)?;
+    let (left, right) = read_pair(left, right)?;
     let encodings = [left.encoding(), right.encoding()];
     let found = diff2::regions(&left, &right, diff);
     let moves = diff2::moves(&left, &right, &found, diff)
@@ -358,13 +357,20 @@ pub fn diff_unified(
     right: &Path,
     diff: &DiffOptions,
     context: usize,
-) -> Result<(String, ExitCode), CliError> {
-    let (left_text, right_text) = (read_text(left)?, read_text(right)?);
+) -> Result<(Unified, ExitCode), CliError> {
+    let (left_text, right_text) = read_pair(left, right)?;
     let found = diff2::regions(&left_text, &right_text, diff);
     let titles = Titles { left: &left.to_string_lossy(), right: &right.to_string_lossy() };
-    let text = patch::unified(&left_text, &right_text, &found, context, Scope::File, titles);
+    let patch = patch::unified_patch(&left_text, &right_text, &found, context, Scope::File, titles);
     let changes = found.iter().filter(|r| r.kind == Kind2::Changed).count();
-    Ok((text, exit_code(changes)))
+    Ok((patch, exit_code(changes)))
+}
+
+/// Two files read for a two-way diff, with one 8-bit fallback between them.
+fn read_pair(left: &Path, right: &Path) -> Result<(Text, Text), CliError> {
+    let (mut left, mut right) = (read_text(left)?, read_text(right)?);
+    share_fallback(&mut [&mut left, &mut right]);
+    Ok((left, right))
 }
 
 const CONFLICT: &str = "conflict";
@@ -390,6 +396,7 @@ fn encoding_name(encoding: Encoding) -> &'static str {
         Encoding::Utf16Be => "utf-16be",
         Encoding::Utf16BeBom => "utf-16be-bom",
         Encoding::Windows1252 => "windows-1252",
+        Encoding::Utf8AsWindows1252 => "utf-8-as-windows-1252",
     }
 }
 
@@ -779,7 +786,7 @@ mod tests {
         let (out, code) = diff_unified(&left, &right, &DiffOptions::default(), 0).expect("ok");
         assert_eq!(code, ExitCode::Conflicts);
         assert_eq!(
-            out,
+            out.text(),
             format!("--- {}\n+++ {}\n@@ -2 +2 @@ a\n-b\n+B\n", left.display(), right.display())
         );
     }
@@ -790,12 +797,14 @@ mod tests {
         let (left, right) = (files.path("left"), files.path("right"));
         let trailing = DiffOptions { whitespace: Whitespace::Trailing, ..DiffOptions::default() };
         assert_eq!(
-            diff_unified(&left, &right, &trailing, 3).expect("ok"),
+            diff_unified(&left, &right, &trailing, 3)
+                .map(|(out, code)| (out.text(), code))
+                .expect("ok"),
             (String::new(), ExitCode::Resolved)
         );
         let (out, code) = diff_unified(&left, &right, &DiffOptions::default(), 3).expect("ok");
         assert_eq!(code, ExitCode::Conflicts);
-        assert!(out.ends_with("@@ -1,2 +1,2 @@\n-a \n+a\n b\n"), "{out}");
+        assert!(out.text().ends_with("@@ -1,2 +1,2 @@\n-a \n+a\n b\n"), "{out:?}");
     }
 
     #[test]
@@ -804,7 +813,9 @@ mod tests {
         let (left, right) = (files.path("left"), files.path("right"));
         let blank = DiffOptions { blank_lines: BlankLineRule::Ignore, ..DiffOptions::default() };
         assert_eq!(
-            diff_unified(&left, &right, &blank, 3).expect("ok"),
+            diff_unified(&left, &right, &blank, 3)
+                .map(|(out, code)| (out.text(), code))
+                .expect("ok"),
             (String::new(), ExitCode::Resolved)
         );
     }
@@ -814,7 +825,7 @@ mod tests {
         let files = two(&utf16le("x\n"), b"y\n");
         let (left, right) = (files.path("left"), files.path("right"));
         let (out, _) = diff_unified(&left, &right, &DiffOptions::default(), 3).expect("ok");
-        assert!(out.ends_with("@@ -1 +1 @@\n-x\n+y\n"), "{out}");
+        assert!(out.bytes().ends_with(b"@@ -1 +1 @@\n-x\n+y\n"), "{out:?}");
     }
 
     #[test]

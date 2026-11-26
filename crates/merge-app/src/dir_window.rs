@@ -6,6 +6,7 @@
 //! special files are listed and do not open. Closing the window, or Escape or Cancel,
 //! ends the run with 0.
 
+use merge_core::unusual::escaped;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -140,7 +141,8 @@ pub fn start(
     let exit: Rc<ExitFn> = Rc::new(exit);
     let (window, view) = gpui_kit::open_window(options, cx, |window, cx| {
         let title = start.title.as_deref().filter(|title| !title.is_empty());
-        let title = title.map_or_else(strings::dirs_title, SharedString::from);
+        let title =
+            title.map_or_else(strings::dirs_title, |title| escaped(title).into_owned().into());
         window.set_window_title(&title);
         let focus = cx.focus_handle();
         focus.focus(window, cx);
@@ -280,7 +282,7 @@ fn load_changed(
     let path = loaded.right.clone();
     let (left, right) = match file.change {
         Change::Deleted => {
-            let empty = Text::decode(Vec::new()).map_err(to_string)?;
+            let empty = Text::from_utf8(String::new());
             let left = DiffFile::revision(loaded.left, strings::revision_title(&loaded.left_at));
             (left, DiffFile::revision(empty, strings::no_file(&shown)))
         }

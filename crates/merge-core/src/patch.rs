@@ -10,7 +10,7 @@ use std::ops::Range;
 
 use crate::diff2::{Kind2, Region2};
 use crate::index::RegionIx;
-use crate::text::Text;
+use crate::text::{Encoding, Text};
 
 /// `git diff`'s context size.
 pub const DEFAULT_CONTEXT: usize = 3;
@@ -47,20 +47,74 @@ pub fn unified(
     scope: Scope,
     titles: Titles<'_>,
 ) -> String {
+    let Unified { mut head, hunks, .. } =
+        unified_patch(left, right, regions, context, scope, titles);
+    head.push_str(&hunks);
+    head
+}
+
+/// A unified diff in two parts: the `---` and `+++` lines, which name files, and the hunks,
+/// which hold the texts' lines.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unified {
+    head: String,
+    hunks: String,
+    /// The encoding the hunks' bytes take: Windows-1252 when both texts read one character
+    /// per byte.
+    encoding: Encoding,
+}
+
+impl Unified {
+    /// The patch as `git apply` reads it: the head in UTF-8, the hunks in the texts' shared
+    /// 8-bit encoding, so each line holds the bytes of its file.
+    ///
+    /// # Panics
+    ///
+    /// Never: the hunks hold ASCII and the two texts' characters, which their shared
+    /// encoding holds.
+    #[must_use]
+    pub fn bytes(&self) -> Vec<u8> {
+        #[expect(clippy::expect_used, reason = "invariant: see the message")]
+        let hunks = self.encoding.encode_chunk(&self.hunks).expect(
+            "the hunks hold ASCII and the texts' characters, which their shared encoding holds",
+        );
+        [self.head.as_bytes(), &hunks].concat()
+    }
+
+    /// The patch as text.
+    #[must_use]
+    pub fn text(&self) -> String {
+        [self.head.as_str(), &self.hunks].concat()
+    }
+}
+
+/// [`unified`] in its two parts.
+#[must_use]
+pub fn unified_patch(
+    left: &Text,
+    right: &Text,
+    regions: &[Region2],
+    context: usize,
+    scope: Scope,
+    titles: Titles<'_>,
+) -> Unified {
+    let byte_per_char = left.encoding().one_byte_per_char() && right.encoding().one_byte_per_char();
+    let encoding = if byte_per_char { Encoding::Windows1252 } else { Encoding::Utf8 };
     let hunks = hunks(regions, context, scope);
     if hunks.is_empty() {
-        return String::new();
+        return Unified { head: String::new(), hunks: String::new(), encoding };
+    }
+    let mut head = String::new();
+    for (sign, title) in [("--- ", titles.left), ("+++ ", titles.right)] {
+        head.push_str(sign);
+        head.push_str(title);
+        head.push('\n');
     }
     let mut out = String::new();
-    for (sign, title) in [("--- ", titles.left), ("+++ ", titles.right)] {
-        out.push_str(sign);
-        out.push_str(title);
-        out.push('\n');
-    }
     for hunk in &hunks {
         write_hunk(&mut out, left, right, &regions[hunk.regions.clone()], hunk);
     }
-    out
+    Unified { head, hunks: out, encoding }
 }
 
 /// One hunk: the regions it spans, and the context it takes from the unchanged regions at

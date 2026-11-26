@@ -355,6 +355,7 @@ mode-jj-word = jj merge by word
 encoding-utf8-bom = UTF-8 with BOM
 encoding-utf16le-bom = UTF-16 LE with BOM
 encoding-utf16be-bom = UTF-16 BE with BOM
+encoding-utf8-as-windows-1252 = UTF-8 read as Windows-1252
 inputs-differ = { $encoding } (inputs differ)
 word-merged = { $count } word-merged
 unresolved = { $count } unresolved
@@ -483,6 +484,7 @@ err-no-separator = line { $line }: the conflict ends before its =======
 err-bad-diff-line = line { $line }: a diff line starts with neither ' ', '-' nor '+'
 err-marker-shape = line { $line }: a conflict needs at least two sides and one base fewer, got { $sides } sides and { $bases } bases
 err-mixed-arity = line { $line }: a conflict of { $found } sides after conflicts of { $expected }
+err-too-many-sides = line { $line }: a conflict of { $sides } sides; at most { $max } are read
 err-shape = a merge needs at least two sides and one base fewer than sides, got { $sides } sides and { $bases } bases
 err-journal-header = the journal has no whole header line
 err-journal-line = line { $index } of the journal does not parse: { $detail }

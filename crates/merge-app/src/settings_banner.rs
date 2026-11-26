@@ -18,7 +18,8 @@ pub const CLOSE_ID: &str = "settings-banner-close";
 
 /// The banner's text for `errors`, one per line; none for no errors.
 pub(crate) fn text(errors: &[String]) -> Option<SharedString> {
-    (!errors.is_empty()).then(|| errors.join("\n").into())
+    // An error may quote a config line, which may hold any character (spec §5).
+    (!errors.is_empty()).then(|| merge_core::unusual::escaped_owned(errors.join("\n")).into())
 }
 
 /// The banner showing `text`, if any, in a view that keeps it in `field`. Its close button
@@ -62,6 +63,15 @@ pub(crate) fn render<V: 'static>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hidden_characters_in_an_error_show_as_escapes() {
+        // A config line quoted in an error may hold any character.
+        assert_eq!(
+            text(&["a:1: `k\u{202E}`".to_owned(), "b:2: y".to_owned()]),
+            Some(concat!(r"a:1: `k\u202e`", "\nb:2: y").into())
+        );
+    }
 
     #[test]
     fn errors_go_one_per_line_and_none_give_no_banner() {

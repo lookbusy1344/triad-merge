@@ -350,6 +350,7 @@ mode-jj-word = jj-samenvoeging per woord
 encoding-utf8-bom = UTF-8 met BOM
 encoding-utf16le-bom = UTF-16 LE met BOM
 encoding-utf16be-bom = UTF-16 BE met BOM
+encoding-utf8-as-windows-1252 = UTF-8 gelezen als Windows-1252
 inputs-differ = { $encoding } (invoer verschilt)
 word-merged = { $count } per woord samengevoegd
 unresolved = { $count } onopgelost
@@ -476,6 +477,7 @@ err-no-separator = regel { $line }: het conflict eindigt vóór zijn =======
 err-bad-diff-line = regel { $line }: een diff-regel begint niet met ' ', '-' of '+'
 err-marker-shape = regel { $line }: een conflict heeft minstens twee kanten en één basis minder nodig, gevonden { $sides } kanten en { $bases } bases
 err-mixed-arity = regel { $line }: een conflict van { $found } kanten na conflicten van { $expected }
+err-too-many-sides = regel { $line }: een conflict van { $sides } kanten; hoogstens { $max } worden gelezen
 err-shape = een samenvoeging heeft minstens twee kanten en één basis minder dan kanten nodig, gevonden { $sides } kanten en { $bases } bases
 err-journal-header = het journaal heeft geen volledige kopregel
 err-journal-line = regel { $index } van het journaal is niet te lezen: { $detail }

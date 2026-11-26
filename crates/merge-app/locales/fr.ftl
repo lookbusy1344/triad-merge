@@ -351,6 +351,7 @@ mode-jj-word = fusion jj par mot
 encoding-utf8-bom = UTF-8 avec BOM
 encoding-utf16le-bom = UTF-16 LE avec BOM
 encoding-utf16be-bom = UTF-16 BE avec BOM
+encoding-utf8-as-windows-1252 = UTF-8 lu comme Windows-1252
 inputs-differ = { $encoding } (les entrées diffèrent)
 word-merged =
     { $count ->
@@ -485,6 +486,7 @@ err-no-separator = ligne { $line } : le conflit se termine avant son =======
 err-bad-diff-line = ligne { $line } : une ligne de diff ne commence ni par ' ', ni par '-', ni par '+'
 err-marker-shape = ligne { $line } : un conflit exige au moins deux côtés et une base de moins, trouvé { $sides } côtés et { $bases } bases
 err-mixed-arity = ligne { $line } : un conflit de { $found } côtés après des conflits de { $expected }
+err-too-many-sides = ligne { $line } : un conflit de { $sides } côtés ; au plus { $max } sont lus
 err-shape = une fusion exige au moins deux côtés et une base de moins que de côtés, trouvé { $sides } côtés et { $bases } bases
 err-journal-header = le journal n’a pas de ligne d’en-tête complète
 err-journal-line = la ligne { $index } du journal ne s’analyse pas : { $detail }

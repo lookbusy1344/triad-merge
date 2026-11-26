@@ -6,12 +6,12 @@
 use std::collections::HashMap;
 use std::ops::Range;
 
-use merge_core::diff::{DiffOptions, Hunk, diff_lines};
-use merge_core::document::{Command, Labels, MergeDocument, MergeOptions, Resolution};
-use merge_core::edit::{EditBatch, TextPatch};
-use merge_core::index::RegionIx;
-use merge_core::merge3::{Inputs, Kind};
-use merge_core::text::Text;
+use crate::diff::{DiffOptions, Hunk, diff_lines};
+use crate::document::{Command, Labels, MergeDocument, MergeOptions, Resolution};
+use crate::edit::{EditBatch, TextPatch};
+use crate::index::RegionIx;
+use crate::merge3::{Inputs, Kind};
+use crate::text::Text;
 
 use crate::inherited::key;
 
@@ -167,9 +167,9 @@ fn image(hunks: &[Hunk], line: usize) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use merge_core::document::Resolution;
-    use merge_core::merge3::Source;
-    use merge_core::testing::{text, three};
+    use crate::document::Resolution;
+    use crate::merge3::Source;
+    use crate::testing::{text, three};
 
     use super::*;
 

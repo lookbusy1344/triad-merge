@@ -25,7 +25,8 @@ pub(crate) const MAX_WIDTH: Pixels = px(384.);
 
 /// A tooltip showing `text`, which may hold several lines.
 pub(crate) fn tooltip(text: impl Into<SharedString>) -> Tooltip {
-    let text: SharedString = text.into();
+    // A tooltip shows commit descriptions and paths: their hidden characters show (spec §5).
+    let text = crate::strings::visible(&text.into());
     Tooltip::new(text)
         .text_size(TEXT_SIZE)
         .line_height(LINE_HEIGHT)

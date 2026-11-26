@@ -295,6 +295,7 @@ mode-jj-word = jj 単語単位マージ
 encoding-utf8-bom = UTF-8 BOM 付き
 encoding-utf16le-bom = UTF-16 LE BOM 付き
 encoding-utf16be-bom = UTF-16 BE BOM 付き
+encoding-utf8-as-windows-1252 = Windows-1252 として読んだ UTF-8
 inputs-differ = { $encoding }（入力が異なる）
 word-merged = { $count } 件を単語単位でマージ
 unresolved = { $count } 件未解決
@@ -419,6 +420,7 @@ err-no-separator = { $line } 行目: 競合が ======= の前に終わってい�
 err-bad-diff-line = { $line } 行目: diff の行が ' '、'-'、'+' のいずれでも始まっていません
 err-marker-shape = { $line } 行目: 競合には 2 つ以上の面と、それより 1 つ少ないベースが必要ですが、面が { $sides }、ベースが { $bases } です
 err-mixed-arity = { $line } 行目: { $expected } 面の競合の後に { $found } 面の競合があります
+err-too-many-sides = { $line } 行目: { $sides } 面の競合です。読み込めるのは最大 { $max } 面です
 err-shape = マージには 2 つ以上の面と、それより 1 つ少ないベースが必要ですが、面が { $sides }、ベースが { $bases } です
 err-journal-header = ジャーナルに完全なヘッダー行がありません
 err-journal-line = ジャーナルの { $index } 行目を解析できません: { $detail }

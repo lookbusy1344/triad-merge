@@ -11,8 +11,8 @@ use merge_core::index::{Line, RegionIx};
 use merge_core::merge3::Kind;
 
 use crate::diff::pieces;
-use crate::inherited::Inherited;
 use crate::marks::{Tone, mark};
+use merge_core::inherited::Inherited;
 
 /// How a mark paints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
