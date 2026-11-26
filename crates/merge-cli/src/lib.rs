@@ -9,7 +9,7 @@ pub mod jj_native;
 pub mod logging;
 
 use std::ffi::OsString;
-use std::io::Write;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use merge_config::settings::{self, Settings};
@@ -108,11 +108,12 @@ const PROGRAM: &str = "triad-merge";
 
 /// Run the command line, program name first, with the settings file at `settings`
 /// ([`settings::path`]; none for the defaults). Help and version go to `stdout`; errors go
-/// to `stderr` and give [`ExitCode::Error`].
+/// to `stderr` and give [`ExitCode::Error`]. `reader` says what reads `stdout`.
 pub fn run<I, T>(
     args: I,
     settings: Option<&Path>,
     stdout: &mut impl Write,
+    reader: Reader,
     stderr: &mut impl Write,
 ) -> Outcome
 where
@@ -151,11 +152,11 @@ where
             Outcome::Exit(report(stdout, &settings::render(shown, docs), code))
         }
         Invocation::Window(window) => {
-            let run = Run { env: &env, discovery: &discovery };
+            let run = Run { env: &env, discovery: &discovery, reader };
             window_form(window, settings, settings_errors, cwd(), run, stdout, stderr)
         }
         Invocation::Batch(batch) => {
-            let run = Run { env: &env, discovery: &discovery };
+            let run = Run { env: &env, discovery: &discovery, reader };
             let result = batch_form(batch, &settings, cwd().as_deref(), run, stdout, stderr);
             Outcome::Exit(
                 result.unwrap_or_else(|e| {
@@ -171,6 +172,24 @@ where
 struct Run<'a> {
     env: &'a Env,
     discovery: &'a Discovery,
+    reader: Reader,
+}
+
+/// What reads stdout. A patch goes to a terminal escaped, as all output does, and to a
+/// program or a file byte for byte, so it applies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reader {
+    Terminal,
+    /// A pipe or a file.
+    Program,
+}
+
+impl Reader {
+    /// What reads this process's stdout.
+    #[must_use]
+    pub fn of_stdout() -> Self {
+        if io::IsTerminal::is_terminal(&io::stdout()) { Self::Terminal } else { Self::Program }
+    }
 }
 
 /// Settle a window form's repository, and for a merge its semantics, before the window
@@ -406,7 +425,13 @@ fn batch_form(
                 (Pair::Directories, Some(_)) => return Err(CliError::UnifiedDirectories),
                 (Pair::Files, None) => inspect::diff_inspect(&left, &right, &diff, json)?,
                 (Pair::Files, Some(context)) => {
-                    inspect::diff_unified(&left, &right, &diff, context)?
+                    let (patch, code) = inspect::diff_unified(&left, &right, &diff, context)?;
+                    if run.reader == Reader::Terminal {
+                        return Ok(report(stdout, &patch, code));
+                    }
+                    // Nothing is left to tell the user if stdout is closed.
+                    let _ = stdout.write_all(patch.as_bytes());
+                    return Ok(code);
                 }
             };
             Ok(report(stdout, &text, code))
@@ -730,10 +755,35 @@ mod tests {
 
     fn run_args(args: &[&str]) -> (Outcome, String, String) {
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        let outcome =
-            run(std::iter::once(PROGRAM).chain(args.iter().copied()), None, &mut out, &mut err);
+        let outcome = run(
+            std::iter::once(PROGRAM).chain(args.iter().copied()),
+            None,
+            &mut out,
+            Reader::Program,
+            &mut err,
+        );
         let text = |b: Vec<u8>| String::from_utf8(b).expect("utf-8");
         (outcome, text(out), text(err))
+    }
+
+    #[test]
+    fn a_patch_shown_in_a_terminal_escapes_its_hidden_characters() {
+        let dir = tempfile::tempdir().unwrap();
+        let (left, right) = (dir.path().join("l"), dir.path().join("r"));
+        std::fs::write(&left, "a\r\n").unwrap();
+        std::fs::write(&right, "b\u{202E}\r\n").unwrap();
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let args = [PROGRAM.as_ref(), "diff".as_ref(), "--inspect".as_ref(), "--unified".as_ref()]
+            .into_iter()
+            .chain([left.as_os_str(), right.as_os_str()]);
+        let outcome = run(args, None, &mut out, Reader::Terminal, &mut err);
+        assert!(matches!(outcome, Outcome::Exit(ExitCode::Conflicts)));
+        let expected = format!(
+            "--- {}\n+++ {}\n@@ -1 +1 @@\n-a\\u000d\n+b\\u202e\\u000d\n",
+            left.display(),
+            right.display()
+        );
+        assert_eq!(String::from_utf8(out).unwrap(), expected);
     }
 
     #[test]
@@ -756,7 +806,7 @@ mod tests {
         };
         let (mut out, mut err) = (Vec::new(), Vec::new());
         let (env, discovery) = (Env::default(), Discovery::default());
-        let run = Run { env: &env, discovery: &discovery };
+        let run = Run { env: &env, discovery: &discovery, reader: Reader::Program };
         let result = batch_form(batch, &Settings::default(), None, run, &mut out, &mut err);
         assert!(matches!(result, Err(CliError::NoWorkingDirectory)), "{result:?}");
         assert_eq!((out, err), (Vec::new(), Vec::new()), "the caller reports the error");
@@ -915,7 +965,7 @@ mod tests {
         let path = dir.path().join("config.triad");
         std::fs::write(&path, "font-size = 14\nscroll-sync = false\n").expect("written");
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        let outcome = run([PROGRAM], Some(&path), &mut out, &mut err);
+        let outcome = run([PROGRAM], Some(&path), &mut out, Reader::Program, &mut err);
         let Outcome::Window(form) = outcome else {
             panic!("{outcome:?}");
         };
@@ -933,7 +983,8 @@ mod tests {
         std::fs::write(&path, text).expect("written");
         let (mut out, mut err) = (Vec::new(), Vec::new());
         let args = [PROGRAM, "show-config"].into_iter().chain(extra.iter().copied());
-        let Outcome::Exit(code) = run(args, Some(&path), &mut out, &mut err) else {
+        let Outcome::Exit(code) = run(args, Some(&path), &mut out, Reader::Program, &mut err)
+        else {
             panic!("show-config opens no window");
         };
         let text = |bytes| String::from_utf8(bytes).expect("UTF-8");
@@ -976,7 +1027,9 @@ mod tests {
         let path = dir.path().join("config.triad");
         std::fs::write(&path, "nonsense\nfont-size = 14\nshade = red\n").expect("written");
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        let Outcome::Window(form) = run([PROGRAM], Some(&path), &mut out, &mut err) else {
+        let Outcome::Window(form) =
+            run([PROGRAM], Some(&path), &mut out, Reader::Program, &mut err)
+        else {
             panic!("{}", String::from_utf8_lossy(&err));
         };
         let shown = path.display();
@@ -993,7 +1046,8 @@ mod tests {
     #[test]
     fn a_window_form_from_a_clean_config_file_has_no_bad_lines() {
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        let Outcome::Window(form) = run([PROGRAM], None, &mut out, &mut err) else {
+        let Outcome::Window(form) = run([PROGRAM], None, &mut out, Reader::Program, &mut err)
+        else {
             panic!("{}", String::from_utf8_lossy(&err));
         };
         assert_eq!(form.settings_errors, Vec::<String>::new());

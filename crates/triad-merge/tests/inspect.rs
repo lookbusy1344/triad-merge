@@ -635,6 +635,31 @@ fn diff_inspect_unified_prints_a_patch_and_follows_diff_exit_codes() {
 }
 
 #[test]
+fn diff_inspect_unified_into_a_pipe_keeps_every_byte_so_the_patch_applies() {
+    // CRLF endings and a no-break space: escaped, `git apply` would find no such lines.
+    let root = tempfile::tempdir().expect("tempdir");
+    let (left, right) = (root.path().join("l"), root.path().join("r"));
+    std::fs::write(&left, "a\u{A0}b\r\nc\r\n").expect("left");
+    std::fs::write(&right, "a\u{A0}b\r\nC\r\n").expect("right");
+    let out = triad(&[
+        "diff".as_ref(),
+        "--inspect".as_ref(),
+        "--unified".as_ref(),
+        left.as_os_str(),
+        right.as_os_str(),
+    ]);
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        format!(
+            "--- {}\n+++ {}\n@@ -1,2 +1,2 @@\n a\u{A0}b\r\n-c\r\n+C\r\n",
+            left.display(),
+            right.display()
+        )
+    );
+}
+
+#[test]
 fn diff_inspect_unified_of_two_directories_exits_3() {
     let root = tempfile::tempdir().expect("tempdir");
     let (left, right) = (root.path().join("l"), root.path().join("r"));

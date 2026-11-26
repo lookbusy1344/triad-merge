@@ -15,6 +15,7 @@ mod command_line {
             std::iter::once("triad-merge").chain(args.iter().copied()),
             None,
             &mut stdout,
+            merge_cli::Reader::Program,
             &mut stderr,
         );
         let text = |bytes| String::from_utf8(bytes).expect("UTF-8");

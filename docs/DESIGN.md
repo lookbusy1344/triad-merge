@@ -119,7 +119,7 @@ Proptest suites for spec §8.2, with a fixed seed and checked-in regressions: al
 
 #### A4.10 Headless CLI
 
-`--headless`, `inspect --json` and `diff --inspect --json` (schema in `docs/json-schema.md`). Every report and error passes through `merge_core::unusual::escaped` (§A6.8). Logging goes to stderr and a rotating file in the cache directory, filtered by `TRIAD_LOG`; `TRIAD_LOG_DIR` moves it, which the binary tests use. Each `fixtures/core/<case>/` holds `base`, `left`, `right`, the `expected` bytes, the `exit` code, and optionally `args` and `config`.
+`--headless`, `inspect --json` and `diff --inspect --json` (schema in `docs/json-schema.md`). Every report and error passes through `merge_core::unusual::escaped` (§A6.8), except a `--unified` patch when stdout is no terminal: `run` takes a `merge_cli::Reader`, which the binaries set from `IsTerminal` on stdout, and a patch a program reads goes out byte for byte so it applies. Logging goes to stderr and a rotating file in the cache directory, filtered by `TRIAD_LOG`; `TRIAD_LOG_DIR` moves it, which the binary tests use. Each `fixtures/core/<case>/` holds `base`, `left`, `right`, the `expected` bytes, the `exit` code, and optionally `args` and `config`.
 
 #### A4.11 Atomic write
 
