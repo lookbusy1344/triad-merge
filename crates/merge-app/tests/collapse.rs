@@ -8,9 +8,9 @@ use crate::common;
 use common::{act, doc, open_with, set_caret};
 use gpui_kit::test::TestWindowExt;
 use gpui_kit::{AnyWindowHandle, Entity, Pixels, ScrollDelta, TestAppContext, point, px};
-use merge_app::diff_window::Collapsing;
 use merge_app::window::{RESULT_ID, ROW_HEIGHT, fold_row_id, input_match_next_id};
 use merge_app::{MergeWindow, WindowSettings};
+use merge_config::settings::Collapsing;
 use merge_core::document::MergeDocument;
 use merge_view::rows::RowIx;
 

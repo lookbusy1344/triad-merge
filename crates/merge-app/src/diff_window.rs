@@ -34,7 +34,7 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, Subscription, Task, TestSupportExt as _, Window,
     WindowOptions, canvas, div, point, prelude::FluentBuilder as _, px,
 };
-use merge_config::settings::{Colours, DEFAULT_COLOURS, DiffLayout, Scrollbars};
+use merge_config::settings::{Collapsing, Colours, DEFAULT_COLOURS, DiffLayout, Scrollbars};
 use merge_core::diff::DiffOptions;
 use merge_core::diff2::{DiffDocument, Edited, Kind2, Marking, Region2, Side};
 use merge_core::edit::TextPatch;
@@ -492,21 +492,6 @@ pub struct DiffWindow {
     colouring: Colouring,
     _watch: Option<Watch>,
     _subscriptions: Vec<Subscription>,
-}
-
-/// How the diff window collapses unchanged regions when it opens (spec §5, §6.4).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Collapsing {
-    /// The window opens with its unchanged regions collapsed.
-    pub on: bool,
-    /// The lines a collapsed region keeps at each end that faces a change.
-    pub context_lines: usize,
-}
-
-impl Default for Collapsing {
-    fn default() -> Self {
-        Self { on: false, context_lines: merge_config::settings::DEFAULT_CONTEXT_LINES }
-    }
 }
 
 /// The diff window's collapsed unchanged regions (spec §5).

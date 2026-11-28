@@ -20,12 +20,13 @@ use gpui_kit::{
 };
 use merge_app::ExitCode;
 use merge_app::diff_window::{
-    Collapsing, DIFF_DEBOUNCE, DIFF_RULER_ID, DiffFile, DiffSettings, DiffWindow, Origin, copy_id,
+    DIFF_DEBOUNCE, DIFF_RULER_ID, DiffFile, DiffSettings, DiffWindow, Origin, copy_id,
     move_pill_id, pane_id,
 };
 use merge_app::toolbar::Tool;
 use merge_app::window::TOOLBAR_ID;
 use merge_config::keybind::{KeyBindings, Keybind, Platform};
+use merge_config::settings::Collapsing;
 use merge_core::diff2::{Kind2, Region2, Side};
 use merge_core::text::Text;
 use tempfile::TempDir;
