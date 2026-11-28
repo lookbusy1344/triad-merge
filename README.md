@@ -18,10 +18,6 @@ triad is a **fast** native 3-way merge and 2-way diff tool, written in Rust and 
 
 ![The triad merge window: left and right inputs above, the result below, with conflict 1 of 20 selected](images/merge.png)
 
-## Status
-
-triad 0.3 is a beta. It is tested by hand on macOS, Windows and Linux.
-
 ## Why triad
 
 - **Jujutsu first.** In a Jujutsu (jj) repository triad merges with jj's rules. It also resolves conflicts in any commit, walks a file through the operation log and absorbs edits into the commits that wrote the lines (§ Jujutsu-enabled features).
