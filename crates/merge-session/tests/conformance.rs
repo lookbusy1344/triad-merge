@@ -416,6 +416,57 @@ fn the_empty_tree_holds_nothing_and_every_file_differs_from_it(fixture: &Fixture
     assert_eq!(changed(repo.as_ref(), &RevSpec::Empty), ["a.txt", "sub/b.txt"]);
 }
 
+fn a_pinned_revision_keeps_its_commit_when_the_revision_moves(fixture: &Fixture) {
+    let (first, _) = fixture.commit_ids("one", &[("a.txt", b"1\n")]);
+    let repo = fixture.open();
+    let pinned = repo.pin(&fixture.expr(0)).expect("the revision resolves");
+    assert_eq!(pinned.name, fixture.expr(0));
+    assert_eq!(pinned.rev, RevSpec::Commit(CommitId::new(first)));
+    fixture.commit("two", &[("a.txt", b"2\n")]);
+    assert_eq!(read(fixture.open().as_ref(), "a.txt", &pinned.rev).as_deref(), Some(&b"1\n"[..]));
+}
+
+fn pinning_an_unknown_revision_names_it(fixture: &Fixture) {
+    fixture.commit("one", &[("a.txt", b"a\n")]);
+    match fixture.open().pin("nope") {
+        Err(VcsError::UnknownRevision(rev)) => assert_eq!(rev, "nope"),
+        other => panic!("expected UnknownRevision, got {other:?}"),
+    }
+}
+
+fn the_default_base_is_the_working_copy_s_parent_by_its_name(fixture: &Fixture) {
+    fixture.commit("one", &[("a.txt", b"1\n")]);
+    let (second, _) = fixture.commit_ids("two", &[("a.txt", b"2\n")]);
+    let base = fixture.open().default_base().expect("the base resolves");
+    let RevSpec::Expr(name) = fixture.parent() else { panic!("the parent is an expression") };
+    assert_eq!(base.name, name);
+    assert_eq!(base.rev, RevSpec::Commit(CommitId::new(second)));
+}
+
+fn a_new_repository_s_default_base_holds_no_file(fixture: &Fixture) {
+    let repo = fixture.open();
+    let base = repo.default_base().expect("the base resolves");
+    let tree = repo.tree(&base.rev).expect("the tree is taken");
+    assert_eq!(tree.entry(Utf8Path::new("a.txt")).expect("read"), TermContent::Absent);
+    if let Fixture::Git(_) = fixture {
+        // `HEAD` names no commit before the first.
+        assert_eq!(base.rev, RevSpec::Empty);
+    }
+}
+
+fn the_working_tree_is_the_vcs_s_own_record_of_the_working_copy(fixture: &Fixture) {
+    fixture.change_on_disk(&[("a.txt", b"1\n")], &[("a.txt", b"2\n")], &[("a.txt", b"3\n")]);
+    let repo = fixture.open();
+    let tree = repo.working_tree().expect("the working tree is taken");
+    let expected: &[u8] = match fixture {
+        // git's index holds the staged file.
+        Fixture::Git(_) => b"2\n",
+        // jj's working-copy commit holds the file on disk, as the snapshot took it.
+        Fixture::Jj(_) => b"3\n",
+    };
+    assert_eq!(tree.entry(Utf8Path::new("a.txt")).expect("read"), file(expected));
+}
+
 fn read(repo: &dyn Repository, path: &str, rev: &RevSpec) -> Option<Vec<u8>> {
     repo.file_at(Utf8Path::new(path), rev).expect("the read succeeds")
 }
@@ -1003,6 +1054,11 @@ macro_rules! suite {
                 a_tree_reads_its_revision_as_it_was_when_taken,
                 a_tree_at_an_unknown_revision_is_refused,
                 the_empty_tree_holds_nothing_and_every_file_differs_from_it,
+                a_pinned_revision_keeps_its_commit_when_the_revision_moves,
+                pinning_an_unknown_revision_names_it,
+                the_default_base_is_the_working_copy_s_parent_by_its_name,
+                a_new_repository_s_default_base_holds_no_file,
+                the_working_tree_is_the_vcs_s_own_record_of_the_working_copy,
             ]);
         )*
     };

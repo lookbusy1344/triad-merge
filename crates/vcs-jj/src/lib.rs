@@ -53,7 +53,7 @@ use jj_lib::workspace::{DefaultWorkspaceLoaderFactory, Workspace, WorkspaceLoade
 use pollster::FutureExt as _;
 use vcs::{
     Annotation, ChangeInfo, Conflict, ConflictStyle, ConflictTerm, EntryKind, LineOrigin, Parent,
-    Recorded, RepoKind, Repository, RevSpec, Term, TermContent, Timestamp, VcsError,
+    Pinned, Recorded, RepoKind, Repository, RevSpec, Term, TermContent, Timestamp, VcsError,
 };
 
 /// The directory that marks a jj workspace's root.
@@ -73,6 +73,8 @@ const GIT_IMPORT_EXPORT_LOCK: &str = "git_import_export.lock";
 const IMMUTABLE: &str = "::(immutable_heads() | root())";
 /// The working copy's parents, in revset syntax.
 const PARENT: &str = "@-";
+/// Joins commit IDs into one revset: their union.
+const UNION: &str = " | ";
 /// jj shows commit and change IDs with at least this many characters, more when shorter
 /// prefixes are ambiguous.
 const MIN_SHORT_ID: usize = 8;
@@ -803,6 +805,25 @@ impl Repository for JjRepository {
 
     fn index_base(&self) -> Result<Option<vcs::CommitId>, VcsError> {
         Ok(None)
+    }
+
+    /// A revset may name several commits: the pin is their union, which reads as the merge
+    /// of their trees.
+    fn pin(&self, rev: &str) -> Result<Pinned, VcsError> {
+        let ids: Vec<String> = self.resolve(rev)?.iter().map(|commit| commit.id().hex()).collect();
+        let pinned = match <[String; 1]>::try_from(ids) {
+            Ok([id]) => RevSpec::Commit(vcs::CommitId::new(id)),
+            Err(ids) => RevSpec::Expr(ids.join(UNION)),
+        };
+        Ok(Pinned { name: rev.to_owned(), rev: pinned })
+    }
+
+    fn default_base(&self) -> Result<Pinned, VcsError> {
+        self.pin(PARENT)
+    }
+
+    fn working_tree(&self) -> Result<Box<dyn vcs::Tree + '_>, VcsError> {
+        self.tree(&RevSpec::Commit(commit_id(self.working_copy_commit()?.id())))
     }
 
     fn conflict_style(&self) -> Result<Option<ConflictStyle>, VcsError> {

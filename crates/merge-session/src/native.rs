@@ -264,15 +264,13 @@ pub fn changed_files(repo: &mut RunRepository, rev: Option<&str>) -> Result<List
     let repo = repo.require_mut()?;
     repo.snapshot()?;
     let repo: &dyn Repository = repo;
-    let (rev, commits) = match (rev, repo.kind()) {
-        (Some(rev), _) => (rev, repo.commits(rev)?),
-        (None, RepoKind::Jj) => (JJ_PARENT, repo.commits(JJ_PARENT)?),
-        (None, RepoKind::Git) => (GIT_PARENT, repo.index_base()?.into_iter().collect()),
+    let vcs::Pinned { name: rev, rev: pinned } = match rev {
+        Some(rev) => repo.pin(rev)?,
+        None => repo.default_base()?,
     };
-    let pinned = pinned(&commits);
     let root = repo.root().as_std_path().to_owned();
     let before = repo.tree(&pinned)?;
-    let working = working_tree(repo)?;
+    let working = repo.working_tree()?;
     let mut listed = Vec::new();
     for path in repo.changed_paths(&pinned)? {
         let at = match before.entry(&path) {
@@ -283,7 +281,7 @@ pub fn changed_files(repo: &mut RunRepository, rev: Option<&str>) -> Result<List
             Err(error) => return Err(error.into()),
         };
         let now = match on_disk(&root.join(&path))? {
-            Side::Absent if holds_submodule(working.as_deref(), &path)? => Side::Special,
+            Side::Absent if holds_submodule(working.as_ref(), &path)? => Side::Special,
             side => side,
         };
         if let Some((change, content, blob)) = compared(at, now)? {
@@ -304,7 +302,7 @@ pub fn changed_files(repo: &mut RunRepository, rev: Option<&str>) -> Result<List
             }
         }
     })?;
-    Ok(Listing { against: Against { root, rev: rev.to_owned(), pinned }, files })
+    Ok(Listing { against: Against { root, rev, pinned }, files })
 }
 
 /// What `diff --since` lists: an earlier version of a change, rebased onto the change's
@@ -440,33 +438,8 @@ pub fn interdiff_path(
     Ok(InterdiffFile { interdiff, path: relative, texts })
 }
 
-/// The revision of `commits`: the empty tree for none, else their full IDs.
-fn pinned(commits: &[CommitId]) -> RevSpec {
-    match commits {
-        [] => RevSpec::Empty,
-        [commit] => RevSpec::Commit(commit.clone()),
-        _ => RevSpec::Expr(commits.iter().map(CommitId::as_str).collect::<Vec<_>>().join(UNION)),
-    }
-}
-
-/// The working copy's own tree, which says where a submodule sits: git's index, jj's
-/// working-copy commit. None for a jj workspace without a working-copy commit.
-fn working_tree(repo: &dyn Repository) -> Result<Option<Box<dyn Tree + '_>>, VcsError> {
-    let rev = match repo.kind() {
-        RepoKind::Git => RevSpec::Index,
-        RepoKind::Jj => match repo.working_copy_id()? {
-            Some(id) => RevSpec::Commit(id),
-            None => return Ok(None),
-        },
-    };
-    repo.tree(&rev).map(Some)
-}
-
 /// Whether `working` holds a submodule at `path`. A conflict there holds none.
-fn holds_submodule(working: Option<&dyn Tree>, path: &Utf8Path) -> Result<bool, VcsError> {
-    let Some(working) = working else {
-        return Ok(false);
-    };
+fn holds_submodule(working: &dyn Tree, path: &Utf8Path) -> Result<bool, VcsError> {
     match working.entry(path) {
         Ok(entry) => Ok(entry == TermContent::Other(EntryKind::Submodule)),
         Err(VcsError::Conflicted { .. }) => Ok(false),
@@ -492,14 +465,6 @@ pub fn load_listed(
     let revision = Revision::Named(against.rev.clone());
     read_left(repo.require()?, path, &against.pinned, revision, &against.root.join(right))
 }
-
-/// The parent revisions [`changed_files`] compares with by default.
-const JJ_PARENT: &str = "@-";
-const GIT_PARENT: &str = "HEAD";
-
-/// Joins commit IDs into one revision expression: jj's revset union. A git revision names
-/// one commit, so git never sees it.
-const UNION: &str = " | ";
 
 /// What a path holds on one side of a listing.
 enum Side {

@@ -11,8 +11,8 @@ use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
 use gix::bstr::BString;
 use vcs::{
     Annotation, ChangeInfo, CommitId, Conflict, ConflictStyle, ConflictTerm, EntryKind, LineOrigin,
-    MergeCandidates, Parent, Recorded, RepoKind, Repository, RevSpec, Term, TermContent, Timestamp,
-    VcsError,
+    MergeCandidates, Parent, Pinned, Recorded, RepoKind, Repository, RevSpec, Term, TermContent,
+    Timestamp, VcsError,
 };
 
 const HEAD: &str = "HEAD";
@@ -633,6 +633,22 @@ impl Repository for GitRepository {
 
     fn index_base(&self) -> Result<Option<CommitId>, VcsError> {
         Ok(self.head_id()?.as_ref().map(commit_id))
+    }
+
+    /// A git revision names one commit.
+    fn pin(&self, rev: &str) -> Result<Pinned, VcsError> {
+        let commit = vcs::CommitId::new(self.commit(rev)?.to_string());
+        Ok(Pinned { name: rev.to_owned(), rev: RevSpec::Commit(commit) })
+    }
+
+    fn default_base(&self) -> Result<Pinned, VcsError> {
+        let rev =
+            self.head_id()?.as_ref().map_or(RevSpec::Empty, |id| RevSpec::Commit(commit_id(id)));
+        Ok(Pinned { name: HEAD.to_owned(), rev })
+    }
+
+    fn working_tree(&self) -> Result<Box<dyn vcs::Tree + '_>, VcsError> {
+        self.tree(&RevSpec::Index)
     }
 
     /// gix's status: `rev`'s tree against the index, and the index against the files on disk,

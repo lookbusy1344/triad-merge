@@ -119,7 +119,7 @@ The types follow jj's model (spec §1.2): a `Conflict` has n `sides` and n − 1
 `Repository` (object-safe, `Send`) groups its methods by job:
 
 - **Identity:** `kind() -> RepoKind`, `root()`.
-- **Reading trees:** `file_at(path, &RevSpec)`, `entry_at`, `tree(rev) -> Box<dyn Tree>`, `changed_paths(rev)`, `default_parent(path)`.
+- **Reading trees:** `file_at(path, &RevSpec)`, `entry_at`, `tree(rev) -> Box<dyn Tree>`, `working_tree()`, `changed_paths(rev)`, `default_parent(path)`, and `pin(rev)` and `default_base()`, which resolve a revision once to a `Pinned` name and `RevSpec`.
 - **Conflicts:** `conflicts()` lists conflicted paths; `read_conflict(path)` gives the terms; `recorded(path)`; `conflict_style()` reads the user's marker style.
 - **Line origins** (spec §7.3): `annotate(path, commit) -> Annotation`, `describe(commit) -> LineOrigin`, `merge_candidates()`, `copy_candidates()`, `working_copy_id()`, `index_base()`, `commits(revset)`, `merge_base`. Each backend says which commits an input may come from; `merge-session` matches them by content.
 - **Writing:** `snapshot()` takes the working copy in; `record_save(path, resolved)` records a save.
