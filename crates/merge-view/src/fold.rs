@@ -9,6 +9,7 @@
 use std::ops::Range;
 
 use merge_core::diff2::{DiffDocument, Kind2, Region2, Side};
+use merge_core::edit::TextPatch;
 
 /// The fewest lines a fold hides: one hidden line takes no less room than its fold row.
 pub const MIN_FOLDED_LINES: usize = 2;
@@ -86,6 +87,32 @@ impl Opened {
         }
     }
 
+    /// Open the folds of `folds` that `patches` to `side` touch, and move the opened lines
+    /// past them. The patches' offsets are in the text before any of them: `line_start` gives
+    /// the line of one of its bytes and the byte that line starts at, and `slice` a run of its
+    /// bytes.
+    pub fn note_patches<S: AsRef<str>>(
+        &mut self,
+        folds: &[Fold],
+        side: Side,
+        patches: &[TextPatch],
+        line_start: impl Fn(usize) -> (usize, usize),
+        slice: impl Fn(Range<usize>) -> S,
+    ) {
+        // The last patch first, so the lines of the ones before it stay put.
+        for patch in patches.iter().rev() {
+            let (line, head) = line_start(patch.range.start);
+            // From the start of the patch's first line, so a replace-all that keeps most of
+            // the text names only the lines that differ.
+            let old = slice(head..patch.range.end);
+            let edit = LineEdit::spliced(old.as_ref(), patch.range.start - head, &patch.text, line);
+            for touched in folds_over(folds, side, edit.lines.clone()) {
+                self.open(touched);
+            }
+            self.shift(side, &edit);
+        }
+    }
+
     /// Keep only the regions `doc` still has, by their current lines: after a recompute.
     pub fn renew(&mut self, doc: &DiffDocument) {
         let regions = doc
@@ -112,14 +139,17 @@ impl LineEdit {
     /// The edit that replaces `old` with `new`. Both start at the start of line `line`.
     #[must_use]
     pub fn new(old: &str, new: &str, line: usize) -> Self {
-        let (old, new) = (old.as_bytes(), new.as_bytes());
-        let prefix = old.iter().zip(new).take_while(|(a, b)| a == b).count();
-        let suffix = old[prefix..]
-            .iter()
-            .rev()
-            .zip(new[prefix..].iter().rev())
-            .take_while(|(a, b)| a == b)
-            .count();
+        Self::spliced(old, 0, new, line)
+    }
+
+    /// The edit that replaces `old` with `old[..kept]` then `insert`, as a patch does that
+    /// starts `kept` bytes into its first line. `old` starts at the start of line `line`.
+    #[must_use]
+    pub fn spliced(old: &str, kept: usize, insert: &str, line: usize) -> Self {
+        let (old, insert) = (old.as_bytes(), insert.as_bytes());
+        // The new text starts with `old[..kept]`, so it shares at least those bytes.
+        let prefix = kept + common(old[kept..].iter(), insert.iter());
+        let suffix = common(old[prefix..].iter().rev(), insert[prefix - kept..].iter().rev());
         let changed = &old[prefix..old.len() - suffix];
         let start = line + breaks(&old[..prefix]);
         let end = match changed.split_last() {
@@ -129,8 +159,14 @@ impl LineEdit {
             None if prefix == 0 || old[prefix - 1] == b'\n' => start,
             None => start + 1,
         };
-        Self { lines: start..end, delta: breaks(new).cast_signed() - breaks(old).cast_signed() }
+        let new_breaks = breaks(&old[..kept]) + breaks(insert);
+        Self { lines: start..end, delta: new_breaks.cast_signed() - breaks(old).cast_signed() }
     }
+}
+
+/// The number of leading items `a` and `b` share.
+fn common<'a>(a: impl Iterator<Item = &'a u8>, b: impl Iterator<Item = &'a u8>) -> usize {
+    a.zip(b).take_while(|(a, b)| a == b).count()
 }
 
 #[expect(
@@ -409,6 +445,79 @@ mod tests {
         );
         // No change at all.
         assert_eq!(edit("a\n", "a\n", 4), LineEdit { lines: 5..5, delta: 0 });
+    }
+
+    #[test]
+    fn a_spliced_edit_matches_the_edit_of_the_whole_new_text() {
+        // `new` is `old[..kept]` then `insert`.
+        let spliced = |old, kept, insert, line| LineEdit::spliced(old, kept, insert, line);
+        // Line 7's "b" typed over with "B".
+        assert_eq!(spliced("ab", 1, "B", 7), LineEdit { lines: 7..8, delta: 0 });
+        // The "b" after a line break deleted: line 1 changes, nothing moves.
+        assert_eq!(spliced("a\nb", 2, "", 0), LineEdit { lines: 1..2, delta: 0 });
+        // A line put in at the start of line 1, keeping line 0.
+        assert_eq!(spliced("a\nb\n", 2, "x\nb\n", 0), LineEdit { lines: 1..1, delta: 1 });
+        // The kept text and the insert give the old text back.
+        assert_eq!(spliced("a\nb\n", 2, "b\n", 3), LineEdit { lines: 5..5, delta: 0 });
+    }
+
+    /// The line of `byte` in `text`, and the byte its line starts at.
+    fn line_start(text: &str, byte: usize) -> (usize, usize) {
+        let before = &text[..byte];
+        (before.matches('\n').count(), before.rfind('\n').map_or(0, |at| at + 1))
+    }
+
+    fn patch(range: Range<usize>, text: &str) -> TextPatch {
+        TextPatch { range, text: text.to_owned() }
+    }
+
+    /// `patches` to the left side of `text`, with `fold` hidden and `opened` open.
+    fn note(text: &str, fold: &Fold, opened: &mut Opened, patches: &[TextPatch]) {
+        opened.note_patches(
+            std::slice::from_ref(fold),
+            Side::Left,
+            patches,
+            |byte| line_start(text, byte),
+            |bytes| &text[bytes],
+        );
+    }
+
+    const FIVE: &str = "a\nb\nc\nd\ne\n";
+
+    #[test]
+    fn a_patch_inside_a_fold_opens_it() {
+        let fold = Fold { left: 1..4, right: 1..4 };
+        let mut opened = Opened::default();
+        // "c", line 2, to "C".
+        note(FIVE, &fold, &mut opened, &[patch(4..5, "C")]);
+        assert_eq!(opened.regions, [fold]);
+    }
+
+    #[test]
+    fn a_patch_that_writes_the_same_text_opens_nothing() {
+        // A replace-all with the text it replaces changes no line.
+        let fold = Fold { left: 1..4, right: 1..4 };
+        let mut opened = Opened::default();
+        note(FIVE, &fold, &mut opened, &[patch(0..FIVE.len(), FIVE)]);
+        assert_eq!(opened, Opened::default());
+    }
+
+    #[test]
+    fn a_line_put_in_above_moves_an_opened_region_and_opens_nothing() {
+        let fold = Fold { left: 1..4, right: 1..4 };
+        let mut opened = Opened { regions: vec![fold.clone()] };
+        note(FIVE, &fold, &mut opened, &[patch(0..0, "x\n")]);
+        assert_eq!(opened.regions, [Fold { left: 2..5, right: 1..4 }]);
+    }
+
+    #[test]
+    fn patches_apply_from_the_last_so_earlier_lines_stay_put() {
+        // Both patches' offsets are in the text before either. The change on line 2 opens the
+        // fold at its old lines; the line put in at the top then moves it down one.
+        let fold = Fold { left: 1..4, right: 1..4 };
+        let mut opened = Opened::default();
+        note(FIVE, &fold, &mut opened, &[patch(0..0, "x\n"), patch(4..5, "C")]);
+        assert_eq!(opened.regions, [Fold { left: 2..5, right: 1..4 }]);
     }
 
     #[test]

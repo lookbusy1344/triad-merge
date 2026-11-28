@@ -52,7 +52,7 @@ use merge_view::diff::{
     self, MOVE_MARK, Pin, differences, first_change, held_region, move_ends, move_target,
     next_change, previous_change, region_bytes, spacers, spacers_by, tone,
 };
-use merge_view::fold::{self, Fold, FoldRow, LineEdit, Opened};
+use merge_view::fold::{self, Fold, FoldRow, Opened};
 use merge_view::scroll::{Follow, ScrollSync, TopAnchor};
 use vcs::{Annotation, IdKind, RepoKind, VcsError};
 
@@ -518,31 +518,17 @@ impl Collapse {
         }
     }
 
-    /// Move the opened regions past `patches` to `side`, and open the folds they touch.
-    /// `line_start` gives the line of a byte of the text the patches apply to and the byte
-    /// where that line starts; `slice` gives a run of its bytes.
-    fn note_edits(
+    /// Open the folds `patches` to `side` touch, and move the opened regions past them, as
+    /// [`Opened::note_patches`] does.
+    fn note_edits<S: AsRef<str>>(
         &mut self,
         side: Side,
         patches: &[TextPatch],
         line_start: impl Fn(usize) -> (usize, usize),
-        slice: impl Fn(Range<usize>) -> String,
+        slice: impl Fn(Range<usize>) -> S,
     ) {
-        if !self.on {
-            return;
-        }
-        // The last patch first, so the lines of the ones before it stay put.
-        for patch in patches.iter().rev() {
-            let (line, head) = line_start(patch.range.start);
-            // A copy of the patched lines, from the start of the first, to find the lines
-            // that differ: a replace-all patches the whole text at once.
-            let old = slice(head..patch.range.end);
-            let new = [&old[..patch.range.start - head], patch.text.as_str()].concat();
-            let edit = LineEdit::new(&old, &new, line);
-            for touched in fold::folds_over(&self.folds, side, edit.lines.clone()) {
-                self.opened.open(touched);
-            }
-            self.opened.shift(side, &edit);
+        if self.on {
+            self.opened.note_patches(&self.folds, side, patches, line_start, slice);
         }
     }
 }
@@ -927,7 +913,7 @@ impl DiffWindow {
                 let line = text.byte_to_line(byte);
                 (line, text.line_to_byte(line))
             },
-            |bytes| text.byte_slice(bytes).to_string(),
+            |bytes| Cow::from(text.byte_slice(bytes)),
         );
         let before = self.doc.version();
         match self.doc.edit(side, batch) {
@@ -959,7 +945,7 @@ impl DiffWindow {
                 let line = text.offset_to_point(byte).row;
                 (line, text.line_start_offset(line))
             },
-            |bytes| text.slice(bytes).to_string(),
+            |bytes| Cow::from(text.slice(bytes)),
         );
         let pane = self.pane(side);
         editor_sync::apply_patches(
