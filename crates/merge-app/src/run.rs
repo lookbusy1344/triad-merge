@@ -527,10 +527,7 @@ fn window_settings(stored: &Stored) -> WindowSettings {
         syntax_max_lines: stored.syntax_max_lines,
         soft_wrap: stored.soft_wrap,
         whitespace: stored.show_whitespace.into(),
-        collapsing: crate::diff_window::Collapsing {
-            on: stored.collapse_unchanged,
-            context_lines: stored.context_lines,
-        },
+        collapsing: stored.collapsing(),
         diff_layout: stored.diff_layout,
         scroll_sync: stored.scroll_sync,
         scrollbars: stored.scrollbars,
@@ -582,6 +579,7 @@ fn exit(code: ExitCode) -> ! {
 
 #[cfg(test)]
 mod tests {
+    use merge_config::settings::Collapsing;
     use merge_core::diff::{
         Algorithm, BlankLineRule, CaseRule, DiffOptions, LineEndingRule, Whitespace,
     };
@@ -644,7 +642,7 @@ mod tests {
             revision_id: vcs::IdKind::Commit,
             soft_wrap: true,
             whitespace: Visibility::Shown,
-            collapsing: crate::diff_window::Collapsing { on: true, context_lines: 0 },
+            collapsing: Collapsing { on: true, context_lines: 0 },
             diff_layout: merge_config::settings::DiffLayout::Unified,
             scrollbars: merge_config::settings::Scrollbars::WhenScrolling,
             window_size: gpui_kit::size(px(1024.), px(768.)),
@@ -663,7 +661,7 @@ mod tests {
         assert_eq!(diff.revision_id, vcs::IdKind::Commit);
         assert!(diff.soft_wrap);
         assert_eq!(diff.whitespace, Visibility::Shown);
-        assert_eq!(diff.collapsing, crate::diff_window::Collapsing { on: true, context_lines: 0 });
+        assert_eq!(diff.collapsing, Collapsing { on: true, context_lines: 0 });
         assert_eq!(diff.layout, merge_config::settings::DiffLayout::Unified);
         assert_eq!(diff.scrollbars, merge_config::settings::Scrollbars::WhenScrolling);
         assert_eq!(diff.window_size, gpui_kit::size(px(1024.), px(768.)));
@@ -740,10 +738,7 @@ mod tests {
         assert_eq!(settings.syntax_max_lines, 7);
         assert!(settings.soft_wrap);
         assert_eq!(settings.whitespace, Visibility::Shown);
-        assert_eq!(
-            settings.collapsing,
-            crate::diff_window::Collapsing { on: true, context_lines: 9 }
-        );
+        assert_eq!(settings.collapsing, Collapsing { on: true, context_lines: 9 });
         assert_eq!(settings.diff_layout, merge_config::settings::DiffLayout::Unified);
         assert!(settings.base_pane);
         assert_eq!(settings.origin_column, Visibility::Shown);

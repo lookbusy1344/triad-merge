@@ -148,6 +148,16 @@ impl Term {
     }
 }
 
+/// A revision resolved once to the commits it names, so every later read sees the same tree
+/// though the revision moves on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pinned {
+    /// The revision as given, or the default's name: what titles show.
+    pub name: String,
+    /// The commits, by full ID; the empty tree when the revision names none yet.
+    pub rev: RevSpec,
+}
+
 /// The revision a working-copy file is compared with by default, and what the VCS knows
 /// about it. git: the index when the file has staged changes, otherwise `HEAD`. jj: `@-`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -451,6 +461,29 @@ pub trait Repository: Send {
     ///
     /// [`VcsError::Backend`] when `HEAD` cannot be read.
     fn index_base(&self) -> Result<Option<CommitId>, VcsError>;
+
+    /// `rev`, in the backend's syntax, pinned to the commits it names now.
+    ///
+    /// # Errors
+    ///
+    /// As [`Repository::commits`].
+    fn pin(&self, rev: &str) -> Result<Pinned, VcsError>;
+
+    /// The revision the working copy's changed files are listed against by default, pinned:
+    /// jj's `@-`; git's `HEAD`, the empty tree before the first commit.
+    ///
+    /// # Errors
+    ///
+    /// [`VcsError::Backend`] when the revision cannot be read.
+    fn default_base(&self) -> Result<Pinned, VcsError>;
+
+    /// The VCS's own record of the working copy, which says where a submodule sits: git's
+    /// index, jj's working-copy commit.
+    ///
+    /// # Errors
+    ///
+    /// [`VcsError::Backend`] when the working copy cannot be read.
+    fn working_tree(&self) -> Result<Box<dyn Tree + '_>, VcsError>;
 
     /// The conflict marker style the VCS's config asks for: git's `merge.conflictStyle`.
     /// `None` when no config sets it, and for jj, whose merges always write diff3 markers.

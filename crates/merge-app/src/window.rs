@@ -29,7 +29,7 @@ use gpui_kit::{
     Styled as _, StyledText, Subscription, Task, TestSupportExt as _, Toggled, Window,
     WindowOptions, canvas, div, point, prelude::FluentBuilder as _, px, uniform_list,
 };
-use merge_config::settings::{Colours, DEFAULT_COLOURS, Scrollbars};
+use merge_config::settings::{Collapsing, Colours, DEFAULT_COLOURS, Scrollbars};
 use merge_core::diff::DiffOptions;
 use merge_core::document::{
     Applied, Command, EditBatch, LabelCountError, MergeDocument, MergeOptions, OutputEnding,
@@ -349,7 +349,7 @@ pub struct WindowSettings {
     /// Whether every pane opens with its whitespace shown (spec §5).
     pub whitespace: Visibility,
     /// Whether the diff window opens with its unchanged regions collapsed (spec §5).
-    pub collapsing: crate::diff_window::Collapsing,
+    pub collapsing: Collapsing,
     /// How the diff window lays out the two sides (spec §5).
     pub diff_layout: merge_config::settings::DiffLayout,
     /// Where Save & Exit saves (spec §6.2), with the VCS conflict each save is recorded in
@@ -438,7 +438,7 @@ impl Default for WindowSettings {
             title: None,
             soft_wrap: false,
             whitespace: Visibility::Hidden,
-            collapsing: crate::diff_window::Collapsing::default(),
+            collapsing: Collapsing::default(),
             diff_layout: merge_config::settings::DiffLayout::SideBySide,
             destination: None,
             journal_dir: None,
@@ -637,7 +637,7 @@ struct Collapse {
 }
 
 impl Collapse {
-    fn new(collapsing: crate::diff_window::Collapsing) -> Self {
+    fn new(collapsing: Collapsing) -> Self {
         Self {
             on: collapsing.on,
             context: collapsing.context_lines,

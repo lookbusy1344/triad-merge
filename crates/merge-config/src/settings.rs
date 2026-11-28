@@ -381,7 +381,28 @@ pub enum Scrollbars {
     WhenScrolling,
 }
 
+/// How a window collapses unchanged regions when it opens (spec §5, §6.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Collapsing {
+    /// The window opens with its unchanged regions collapsed.
+    pub on: bool,
+    /// The lines a collapsed region keeps at each end that faces a change.
+    pub context_lines: usize,
+}
+
+impl Default for Collapsing {
+    fn default() -> Self {
+        Self { on: false, context_lines: DEFAULT_CONTEXT_LINES }
+    }
+}
+
 impl Settings {
+    /// How the windows collapse unchanged regions when they open.
+    #[must_use]
+    pub fn collapsing(&self) -> Collapsing {
+        Collapsing { on: self.collapse_unchanged, context_lines: self.context_lines }
+    }
+
     /// The two-way diff's options: the merge's, with the diff window's line-ending and
     /// blank-line rules.
     #[must_use]

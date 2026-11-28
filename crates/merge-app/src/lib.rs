@@ -31,7 +31,6 @@ mod move_pill;
 pub mod open_dialog;
 pub mod origin_column;
 mod output_watch;
-mod own_writes;
 mod pane_scroll;
 mod patches;
 mod pick_list;

@@ -119,7 +119,7 @@ The types follow jj's model (spec §1.2): a `Conflict` has n `sides` and n − 1
 `Repository` (object-safe, `Send`) groups its methods by job:
 
 - **Identity:** `kind() -> RepoKind`, `root()`.
-- **Reading trees:** `file_at(path, &RevSpec)`, `entry_at`, `tree(rev) -> Box<dyn Tree>`, `changed_paths(rev)`, `default_parent(path)`.
+- **Reading trees:** `file_at(path, &RevSpec)`, `entry_at`, `tree(rev) -> Box<dyn Tree>`, `working_tree()`, `changed_paths(rev)`, `default_parent(path)`, and `pin(rev)` and `default_base()`, which resolve a revision once to a `Pinned` name and `RevSpec`.
 - **Conflicts:** `conflicts()` lists conflicted paths; `read_conflict(path)` gives the terms; `recorded(path)`; `conflict_style()` reads the user's marker style.
 - **Line origins** (spec §7.3): `annotate(path, commit) -> Annotation`, `describe(commit) -> LineOrigin`, `merge_candidates()`, `copy_candidates()`, `working_copy_id()`, `index_base()`, `commits(revset)`, `merge_base`. Each backend says which commits an input may come from; `merge-session` matches them by content.
 - **Writing:** `snapshot()` takes the working copy in; `record_save(path, resolved)` records a save.
@@ -229,7 +229,7 @@ The layer under both front ends. It owns everything a merge does outside the eng
 
 `repository::RunRepository` is the one repository of a run. It holds the directories the repository may lie in, in order, and opens the first match on first use; semantics, marker style, `resolve`, origins and saves all read the same open repository. `native::nearest_repo` finds the nearest `.jj` directory or `.git` entry, jj on a tie; a `.git` git cannot open is `NotARepository`, never a climb to an outer repository. A `Handoff` carries the repository to a second window, such as from the stack window to a merge window. `repository::Discovery` is how a run finds its repositories: a front end builds it once from the run's `Env` (`Discovery::from_env`), and every repository of the run, the windows' later ones included, comes from its constructors, so jj's snapshots, writes and revsets read the user's jj config. `RunRepository::discovery` hands it to the next window.
 
-`diff_tool` holds the two-way diff's file rules: `read_pair` reads the sides of `diff LEFT RIGHT` and opens the working-copy file for jj's right-side copy (spec §7.1); `save` writes a diff window's sides and snapshots the jj working copy.
+`diff_tool` holds the two-way diff's file rules: `read_pair` reads the sides of `diff LEFT RIGHT` and opens the working-copy file for jj's right-side copy (spec §7.1); `save` writes a diff window's sides and snapshots the jj working copy. `diff_session::DiffSession` is one open two-way diff: the `DiffDocument`, each side's file and encoding, its unsaved edits and its own writes (`own_writes`), and the saves that write it. The diff window drives it.
 
 ### 8.2 Choosing how to merge
 
@@ -312,7 +312,7 @@ The top panes are rows, not editors: `pane_scroll`, `row_wrap` and `sideways` sc
 - Chrome: `toolbar`, `menu_button`, `button`, `tooltip`, `status_bar`, `alert`, `settings_banner`, `elevation`, `corners`, after Zed's components and `docs/STYLE.md`.
 - Panes: `ruler`, `scrollbars`, `wrap`, `origin_column`, `move_pill`, `blink`, `go_to_line`, `tones` (region colours from the settings).
 - Syntax: `syntax` and `editor_syntax` colour the top panes and editors, parsing off the UI thread; `syntax_colours` adjusts the light theme for contrast.
-- Files: `file_watch` and `output_watch` notice changes another program makes; `own_writes` tells the window's own writes apart.
+- Files: `file_watch` and `output_watch` notice changes another program makes; `merge_session::diff_session` tells the diff window's own writes apart.
 - Text: `strings` holds every string a window shows, each a Fluent message from `locales/` formatted by `i18n`; `error_text` names each error in the run's language.
 - `keys` turns `merge-config`'s `KeyBindings` into GPUI's.
 - `choice`: the ways to fill a region from the two sides, for the result pane's right-click menu.

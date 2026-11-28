@@ -34,7 +34,7 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, Subscription, Task, TestSupportExt as _, Window,
     WindowOptions, canvas, div, point, prelude::FluentBuilder as _, px,
 };
-use merge_config::settings::{Colours, DEFAULT_COLOURS, DiffLayout, Scrollbars};
+use merge_config::settings::{Collapsing, Colours, DEFAULT_COLOURS, DiffLayout, Scrollbars};
 use merge_core::diff::DiffOptions;
 use merge_core::diff2::{DiffDocument, Edited, Kind2, Marking, Region2, Side};
 use merge_core::edit::TextPatch;
@@ -44,7 +44,7 @@ use merge_core::merge3::Source;
 use merge_core::patch::{DEFAULT_CONTEXT, Scope, Titles};
 use merge_core::text::{Encoding, Text, share_fallback, windows_1252_offset};
 use merge_session::SessionError;
-use merge_session::diff_tool::{self, Saved, SideSave};
+use merge_session::diff_session::{DiffSaved, DiffSession, DiffSide, SaveReport};
 use merge_session::origin::carry;
 use merge_session::repository::{Handoff, WorkingCopy};
 use merge_syntax::language::Language;
@@ -52,7 +52,7 @@ use merge_view::diff::{
     self, MOVE_MARK, Pin, differences, first_change, held_region, move_ends, move_target,
     next_change, previous_change, region_bytes, spacers, spacers_by, tone,
 };
-use merge_view::fold::{self, Fold, FoldRow, LineEdit, Opened};
+use merge_view::fold::{self, Fold, FoldRow, Opened};
 use merge_view::scroll::{Follow, ScrollSync, TopAnchor};
 use vcs::{Annotation, IdKind, RepoKind, VcsError};
 
@@ -63,7 +63,6 @@ use crate::move_pill::{MOVE_PILL_INSET, move_pill};
 use crate::origin_column::{
     Annotated, Described, HeadingText, OriginCell, OriginColumn, Visibility,
 };
-use crate::own_writes::OwnWrites;
 use crate::recorder::Recorded;
 use crate::ruler;
 use crate::scrollbars;
@@ -309,7 +308,6 @@ const CLOSING: [Closing; 3] = [Closing::Save, Closing::Discard, Closing::KeepEdi
 
 struct Pane {
     origin: Origin,
-    encoding: Encoding,
     editor: Entity<EditorState>,
     recorded: Recorded,
     bands: RangeDecorationCollection,
@@ -322,14 +320,6 @@ struct Pane {
     /// The steps the pane's search takes.
     steps: SearchSteps,
     read_only: bool,
-    /// Edited since it was opened or last saved.
-    modified: bool,
-    /// Counts the edits and reloads, so a save that lands knows whether the text it wrote is
-    /// still the pane's.
-    changes: u64,
-    /// The texts the window wrote or is writing to the file. A change on disk that reads back
-    /// as one is the window's own save.
-    writes: OwnWrites,
     /// A prompt about a change on disk is open.
     asking: bool,
     /// The read of the file running after a change on disk, and what follows it.
@@ -344,13 +334,6 @@ struct Pane {
 enum AfterSave {
     Stay,
     Exit,
-}
-
-/// One side's text on its way to its file, off the UI thread.
-struct SideWrite {
-    side: Side,
-    /// The pane's change count when the text was taken.
-    changes: u64,
 }
 
 /// What follows a read of a pane's file after a change on disk.
@@ -419,7 +402,8 @@ pub struct DiffWindow {
     menu_bar: crate::menu_bar::WindowMenu,
     /// Keeps the window at `window_size` across a frame triad draws.
     fit: crate::decorations::Fit,
-    doc: DiffDocument,
+    /// The document, each side's file and its unsaved edits: the source of truth.
+    session: DiffSession,
     /// Whether the panes colour a chunk at a time, past `syntax-whole-file-max-lines`.
     chunked: bool,
     palette: Palette,
@@ -431,8 +415,6 @@ pub struct DiffWindow {
     /// The latest save. Each save waits for the one before, so writes to a file land in the
     /// order asked.
     saving: Option<Task<()>>,
-    /// Whether the last save to land failed to write a side.
-    save_failed: bool,
     /// Whether the recompute task has taken its snapshot and is diffing it.
     computing: bool,
     /// Navigations and patch copies asked for while the regions lag the text, in order. Each
@@ -454,8 +436,6 @@ pub struct DiffWindow {
     found: Flash<(Side, usize, usize)>,
     /// Why edits here do not last, when they do not.
     banner: Option<SharedString>,
-    /// The jj working copy each save snapshots; none outside triad's own jj runs.
-    working_copy: Option<WorkingCopy>,
     /// Why jj did not snapshot the last save, until a save it snapshots.
     snapshot_failed: Option<SharedString>,
     /// The config file's bad lines, which the settings banner shows.
@@ -494,21 +474,6 @@ pub struct DiffWindow {
     _subscriptions: Vec<Subscription>,
 }
 
-/// How the diff window collapses unchanged regions when it opens (spec §5, §6.4).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Collapsing {
-    /// The window opens with its unchanged regions collapsed.
-    pub on: bool,
-    /// The lines a collapsed region keeps at each end that faces a change.
-    pub context_lines: usize,
-}
-
-impl Default for Collapsing {
-    fn default() -> Self {
-        Self { on: false, context_lines: merge_config::settings::DEFAULT_CONTEXT_LINES }
-    }
-}
-
 /// The diff window's collapsed unchanged regions (spec §5).
 struct Collapse {
     on: bool,
@@ -533,31 +498,17 @@ impl Collapse {
         }
     }
 
-    /// Move the opened regions past `patches` to `side`, and open the folds they touch.
-    /// `line_start` gives the line of a byte of the text the patches apply to and the byte
-    /// where that line starts; `slice` gives a run of its bytes.
-    fn note_edits(
+    /// Open the folds `patches` to `side` touch, and move the opened regions past them, as
+    /// [`Opened::note_patches`] does.
+    fn note_edits<S: AsRef<str>>(
         &mut self,
         side: Side,
         patches: &[TextPatch],
         line_start: impl Fn(usize) -> (usize, usize),
-        slice: impl Fn(Range<usize>) -> String,
+        slice: impl Fn(Range<usize>) -> S,
     ) {
-        if !self.on {
-            return;
-        }
-        // The last patch first, so the lines of the ones before it stay put.
-        for patch in patches.iter().rev() {
-            let (line, head) = line_start(patch.range.start);
-            // A copy of the patched lines, from the start of the first, to find the lines
-            // that differ: a replace-all patches the whole text at once.
-            let old = slice(head..patch.range.end);
-            let new = [&old[..patch.range.start - head], patch.text.as_str()].concat();
-            let edit = LineEdit::new(&old, &new, line);
-            for touched in fold::folds_over(&self.folds, side, edit.lines.clone()) {
-                self.opened.open(touched);
-            }
-            self.opened.shift(side, &edit);
+        if self.on {
+            self.opened.note_patches(&self.folds, side, patches, line_start, slice);
         }
     }
 }
@@ -658,7 +609,7 @@ impl DiffWindow {
         let [left, right] = &mut files;
         share_fallback(&mut [&mut left.text, &mut right.text]);
         let [left, right] = &files;
-        let mut doc = DiffDocument::new(&left.text, &right.text, settings.options.clone());
+        let doc = DiffDocument::new(&left.text, &right.text, settings.options.clone());
         Self::load_marks(doc.marking(), window, cx);
         if let Some(lookup) = settings.origins.clone() {
             // Texts share their content, so the copies are O(1).
@@ -685,9 +636,13 @@ impl DiffWindow {
             chunked: colouring.chunked_factory(left.text.line_count().max(right.text.line_count())),
         };
         let mut subscriptions = Vec::with_capacity(SIDES.len());
+        let sides = files.each_ref().map(|file| DiffSide {
+            path: file.origin.path().map(Path::to_path_buf),
+            encoding: file.text.encoding(),
+            read_only: file.read_only,
+        });
         let [left, right] = files;
         let panes = [(Side::Left, left), (Side::Right, right)].map(|(side, file)| {
-            doc.set_read_only(side, file.read_only);
             let pane = new_pane(&doc, side, file, &look, window, cx);
             subscriptions.extend(Self::subscribe_pane(&pane.editor, side, window, cx));
             pane
@@ -712,12 +667,11 @@ impl DiffWindow {
             chunked: look.chunked.is_some(),
             status: strings::diff_status(settings.repo, differences(&doc), &comparison).into(),
             repo: settings.repo,
-            doc,
+            session: DiffSession::new(doc, sides, settings.working_copy.clone()),
             panes,
             comparison,
             recompute: None,
             saving: None,
-            save_failed: false,
             computing: false,
             waiting: Vec::new(),
             layout: settings.layout,
@@ -727,7 +681,6 @@ impl DiffWindow {
             flash: Flash::default(),
             found: Flash::default(),
             banner,
-            working_copy: settings.working_copy.clone(),
             snapshot_failed: None,
             settings_errors: None,
             synced: [Pixels::ZERO; 2],
@@ -757,7 +710,7 @@ impl DiffWindow {
 
     #[must_use]
     pub fn document(&self) -> &DiffDocument {
-        &self.doc
+        self.session.document()
     }
 
     /// Whether the panes colour a chunk at a time, past `syntax-whole-file-max-lines`.
@@ -931,7 +884,7 @@ impl DiffWindow {
     /// Send the edits `side`'s editor made to the core.
     fn send_edits(&mut self, side: Side, window: &mut Window, cx: &mut Context<Self>) {
         let pane = self.pane(side);
-        let text = self.doc.text(side);
+        let text = self.session.document().text(side);
         let Some(batch) = editor_sync::take_batch(&pane.editor, &pane.recorded, &text, cx) else {
             return;
         };
@@ -942,10 +895,10 @@ impl DiffWindow {
                 let line = text.byte_to_line(byte);
                 (line, text.line_to_byte(line))
             },
-            |bytes| text.byte_slice(bytes).to_string(),
+            |bytes| Cow::from(text.byte_slice(bytes)),
         );
-        let before = self.doc.version();
-        match self.doc.edit(side, batch) {
+        let before = self.session.document().version();
+        match self.session.edit(side, batch) {
             Ok(edited) => self.follow(before, &edited, Caret::Follow, window, cx),
             Err(error) => {
                 tracing::error!(%error, ?side, "the core refused an edit; reloading the pane");
@@ -974,7 +927,7 @@ impl DiffWindow {
                 let line = text.offset_to_point(byte).row;
                 (line, text.line_start_offset(line))
             },
-            |bytes| text.slice(bytes).to_string(),
+            |bytes| Cow::from(text.slice(bytes)),
         );
         let pane = self.pane(side);
         editor_sync::apply_patches(
@@ -989,15 +942,14 @@ impl DiffWindow {
             self.pinned = None;
             self.held_top = None;
             self.waiting.clear();
-            self.pane_mut(side).changes += 1;
-            self.set_modified(side, true);
+            self.refresh_title(side);
             self.schedule_recompute(window, cx);
         }
         self.refresh_bands(side, cx);
     }
     /// Give `side`'s editor the core's text, with the caret at `caret`, cut to the text.
     fn reload(&mut self, side: Side, caret: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let text = self.doc.text(side).to_string();
+        let text = self.session.document().text(side).to_string();
         let pane = self.pane(side);
         pane.recorded.muted(|| {
             pane.editor.update(cx, |state, cx| {
@@ -1033,7 +985,7 @@ impl DiffWindow {
             }
             let Ok((job, origins)) = this.update(cx, |this, _| {
                 this.computing = true;
-                (this.doc.recompute(), this.carry_job())
+                (this.session.document().recompute(), this.carry_job())
             }) else {
                 return;
             };
@@ -1042,7 +994,7 @@ impl DiffWindow {
                 .await;
             ignore_closed_view(this.update_in(cx, |this, window, cx| {
                 this.computing = false;
-                if this.doc.install(diffed) {
+                if this.session.install(diffed) {
                     this.install_origins(carried);
                     this.refresh(cx);
                     if this.layout == DiffLayout::Unified {
@@ -1192,13 +1144,13 @@ impl DiffWindow {
     /// Bring the unified pane up to the current text and regions, or make it with the focus
     /// in it. While the regions lag the text, the recompute that catches up shows it.
     fn show_unified(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.doc.regions_current() {
+        if !self.session.document().regions_current() {
             self.start_recompute(None, window, cx);
             return;
         }
         let tones = *self.palette.tones(cx.theme().is_dark());
         if let Some(pane) = &mut self.unified {
-            pane.update(&self.doc, &tones, window, cx);
+            pane.update(self.session.document(), &tones, window, cx);
             return;
         }
         let look = UnifiedLook {
@@ -1209,7 +1161,7 @@ impl DiffWindow {
             tones: &tones,
             language: self.colouring.editor_language(),
         };
-        let pane = UnifiedPane::new(&self.doc, &look, window, cx);
+        let pane = UnifiedPane::new(self.session.document(), &look, window, cx);
         pane.editor().update(cx, |state, cx| state.focus(window, cx));
         self.unified = Some(pane);
         cx.notify();
@@ -1236,16 +1188,17 @@ impl DiffWindow {
             self.refresh_bands(side, cx);
             self.refresh_marks(side, cx);
         }
-        self.collapse.opened.renew(&self.doc);
+        self.collapse.opened.renew(self.session.document());
         self.set_spacers(cx);
-        if self.doc.regions_current()
+        if self.session.document().regions_current()
             && let Some(held) = &mut self.held_top
         {
             held.due = true;
             held.last = true;
         }
         self.status =
-            strings::diff_status(self.repo, differences(&self.doc), &self.comparison).into();
+            strings::diff_status(self.repo, differences(self.session.document()), &self.comparison)
+                .into();
         cx.notify();
     }
 
@@ -1255,9 +1208,9 @@ impl DiffWindow {
     /// regions lag the text, the folds stay as they are, as the spacers do.
     fn set_spacers(&mut self, cx: &mut Context<Self>) {
         self.wrap_fit = None;
-        if self.doc.regions_current() {
+        if self.session.document().regions_current() {
             self.collapse.folds = if self.collapse.on {
-                fold::folds(&self.doc, self.collapse.context, &self.collapse.opened)
+                fold::folds(self.session.document(), self.collapse.context, &self.collapse.opened)
             } else {
                 Vec::new()
             };
@@ -1270,9 +1223,9 @@ impl DiffWindow {
         let colour = cx.theme().muted_foreground;
         for side in SIDES {
             let rows: Vec<_> = if wrapped {
-                spacers_by(&self.doc, side, self.line_rows(cx)).collect()
+                spacers_by(self.session.document(), side, self.line_rows(cx)).collect()
             } else {
-                spacers(&self.doc, side).collect()
+                spacers(self.session.document(), side).collect()
             };
             let (rows, fold_rows) = fold::fold_spacers(rows, &self.collapse.folds, side);
             let notes = fold_notes(&fold_rows, colour);
@@ -1320,7 +1273,7 @@ impl DiffWindow {
     }
 
     fn refresh_bands(&self, side: Side, cx: &mut Context<Self>) {
-        let bands = bands(&self.doc, side, self.palette.tones(cx.theme().is_dark()));
+        let bands = bands(self.session.document(), side, self.palette.tones(cx.theme().is_dark()));
         let pane = self.pane(side);
         pane.bands.clear(cx);
         pane.bands.append(bands, cx);
@@ -1329,12 +1282,12 @@ impl DiffWindow {
     /// Fill the characters the core marks on `side`. While the regions lag the text, the
     /// editor carries the fills through the edits instead.
     fn refresh_marks(&self, side: Side, cx: &mut Context<Self>) {
-        if !self.doc.regions_current() {
+        if !self.session.document().regions_current() {
             return;
         }
         let colour =
             self.palette.tones(cx.theme().is_dark()).mark(tone(side)).opacity(INTRALINE_ALPHA);
-        let marks = self.doc.marks().side(side).iter().map(|bytes| {
+        let marks = self.session.document().marks().side(side).iter().map(|bytes| {
             RangeDecoration::new(bytes.clone())
                 .with_style(RangeDecorationStyle::Fill)
                 .with_color(colour)
@@ -1351,7 +1304,7 @@ impl DiffWindow {
         cx.spawn_in(window, async move |this, cx| {
             let (version, marks) = cx.background_spawn(async move { marking.run() }).await;
             ignore_closed_view(this.update(cx, |this, cx| {
-                if this.doc.install_marks(version, marks) {
+                if this.session.install_marks(version, marks) {
                     for side in SIDES {
                         this.refresh_marks(side, cx);
                     }
@@ -1361,9 +1314,10 @@ impl DiffWindow {
         .detach();
     }
 
-    fn set_modified(&mut self, side: Side, modified: bool) {
+    /// Give `side`'s heading its unsaved-edits marker, or take it away.
+    fn refresh_title(&mut self, side: Side) {
+        let modified = self.session.modified(side);
         let pane = self.pane_mut(side);
-        pane.modified = modified;
         pane.title = title(&pane.origin, modified);
     }
 
@@ -1392,8 +1346,8 @@ impl DiffWindow {
             return;
         };
         self.send_edits(side, window, cx);
-        let before = self.doc.version();
-        let edited = self.doc.undo(side);
+        let before = self.session.document().version();
+        let edited = self.session.undo(side);
         self.follow(before, &edited, Caret::AtChange, window, cx);
     }
 
@@ -1402,8 +1356,8 @@ impl DiffWindow {
             return;
         };
         self.send_edits(side, window, cx);
-        let before = self.doc.version();
-        let edited = self.doc.redo(side);
+        let before = self.session.document().version();
+        let edited = self.session.redo(side);
         self.follow(before, &edited, Caret::AtChange, window, cx);
     }
 
@@ -1416,7 +1370,7 @@ impl DiffWindow {
             return region;
         }
         let caret = self.pane(side).editor.read(cx).cursor();
-        held_region(&self.doc, self.pinned, side, caret)
+        held_region(self.session.document(), self.pinned, side, caret)
     }
 
     /// Move both carets to the start of the region `step` finds from the focused side's
@@ -1429,7 +1383,7 @@ impl DiffWindow {
         cx: &mut Context<Self>,
     ) {
         let navigation = Navigation { step, side: self.focused(window, cx).unwrap_or(Side::Left) };
-        if self.doc.regions_current() {
+        if self.session.document().regions_current() {
             self.step(navigation, window, cx);
             return;
         }
@@ -1448,7 +1402,7 @@ impl DiffWindow {
     /// Copy `target` as a patch from the focused pane, once the regions are current.
     fn ask_copy_patch(&mut self, target: PatchTarget, window: &mut Window, cx: &mut Context<Self>) {
         let side = self.focused(window, cx).unwrap_or(Side::Left);
-        if self.doc.regions_current() {
+        if self.session.document().regions_current() {
             self.copy_patch(target, side, window, cx);
         } else {
             self.wait_for_regions(Waiting::CopyPatch(target, side), window, cx);
@@ -1469,7 +1423,7 @@ impl DiffWindow {
             PatchTarget::File => Scope::File,
             PatchTarget::Difference => Scope::Region(self.current(side, cx)),
         };
-        let Some(patching) = self.doc.patching(scope) else {
+        let Some(patching) = self.session.document().patching(scope) else {
             return;
         };
         let [left, right] = SIDES.map(|side| self.pane(side).origin.name().into_owned());
@@ -1493,8 +1447,9 @@ impl DiffWindow {
     fn step(&mut self, navigation: Navigation, window: &mut Window, cx: &mut Context<Self>) {
         let Navigation { step, side } = navigation;
         let from = self.current(side, cx);
-        let to = step(&self.doc, from).or_else(|| {
-            self.doc
+        let to = step(self.session.document(), from).or_else(|| {
+            self.session
+                .document()
                 .regions()
                 .get(from.get())
                 .is_some_and(|region| region.kind == Kind2::Changed)
@@ -1516,14 +1471,14 @@ impl DiffWindow {
 
     /// Put both carets on the first difference, with the focus left where `open` set it.
     fn open_on_first_difference(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(region) = first_change(&self.doc) {
+        if let Some(region) = first_change(self.session.document()) {
             self.go_to(region, Side::Left, window, cx);
         }
     }
 
     /// Move both carets to the start of `region` and make it current, with the focus in `side`.
     fn go_to(&mut self, region: RegionIx, side: Side, window: &mut Window, cx: &mut Context<Self>) {
-        let at = region_bytes(&self.doc, side, region).start;
+        let at = region_bytes(self.session.document(), side, region).start;
         self.go_to_at(region, side, at, window, cx);
     }
     /// Goes to `region` as `go_to` does, with `side`'s caret at byte `at` inside it.
@@ -1535,7 +1490,7 @@ impl DiffWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let other = region_bytes(&self.doc, side.other(), region).start;
+        let other = region_bytes(self.session.document(), side.other(), region).start;
         // Moving a caret focuses its editor, so `side` goes last and keeps the focus.
         for (to, at) in [(side.other(), other), (side, at)] {
             self.pane(to).editor.update(cx, |state, cx| {
@@ -1558,7 +1513,7 @@ impl DiffWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(target) = move_target(&self.doc, side, line) {
+        if let Some(target) = move_target(self.session.document(), side, line) {
             self.go_to_at(target.region, side.other(), target.at, window, cx);
             self.start_flash(target.region, cx);
         }
@@ -1582,11 +1537,15 @@ impl DiffWindow {
 
     /// Frame the blinking region in both panes, on the blink's shown steps.
     fn paint_flash(&mut self, cx: &mut Context<Self>) {
-        let shown = self.flash.lit().filter(|region| region.get() < self.doc.regions().len());
+        let shown = self
+            .flash
+            .lit()
+            .filter(|region| region.get() < self.session.document().regions().len());
         let border = self.palette.tones(cx.theme().is_dark()).current();
         for side in SIDES {
-            let frame = shown
-                .map(|region| blink::region_frame(region_bytes(&self.doc, side, region), border));
+            let frame = shown.map(|region| {
+                blink::region_frame(region_bytes(self.session.document(), side, region), border)
+            });
             self.pane(side).flash.set(frame.into_iter().collect(), cx);
         }
         cx.notify();
@@ -1645,8 +1604,7 @@ impl DiffWindow {
     /// own save: one written, or one being written.
     #[must_use]
     pub fn is_own_write(&self, side: Side, text: &str) -> bool {
-        let pane = self.pane(side);
-        pane.writes.holds(text, pane.encoding)
+        self.session.is_own_write(side, text)
     }
 
     /// The byte ranges `side`'s pane frames now.
@@ -1664,47 +1622,17 @@ impl DiffWindow {
         for side in SIDES {
             self.send_edits(side, window, cx);
         }
-        let (writes, saves): (Vec<_>, Vec<_>) = self.side_writes().into_iter().unzip();
-        for (write, save) in writes.iter().zip(&saves) {
-            // A rope clone shares its chunks.
-            let text = save.text.clone();
-            self.pane_mut(write.side).writes.start(write.changes, text, save.encoding);
-        }
-        let working_copy = self.working_copy.clone();
+        let job = self.session.start_save();
         let before = self.saving.take();
         self.saving = Some(cx.spawn_in(window, async move |this, cx| {
             if let Some(before) = before {
                 before.await;
             }
-            let Saved { written, snapshot } = cx
-                .background_spawn(async move { diff_tool::save(&saves, working_copy.as_ref()) })
-                .await;
-            let written = writes.into_iter().zip(written).collect();
+            let saved = cx.background_spawn(async move { job.run() }).await;
             ignore_closed_view(this.update_in(cx, |this, window, cx| {
-                this.snapshotted(snapshot);
-                this.saved(written, after, window, cx);
+                this.saved(saved, after, window, cx);
             }));
         }));
-    }
-
-    /// What a save writes: each side with unsaved edits. A revision is read-only, so it is
-    /// never modified.
-    fn side_writes(&self) -> Vec<(SideWrite, SideSave)> {
-        SIDES
-            .into_iter()
-            .filter_map(|side| {
-                let pane = self.pane(side);
-                let (true, Some(path)) = (pane.modified, pane.origin.path()) else {
-                    return None;
-                };
-                let save = SideSave {
-                    path: path.to_path_buf(),
-                    encoding: pane.encoding,
-                    text: self.doc.snapshot(side),
-                };
-                Some((SideWrite { side, changes: pane.changes }, save))
-            })
-            .collect()
     }
 
     /// Take the outcome of a save's snapshot: none when it took none. jj snapshots the file
@@ -1721,48 +1649,37 @@ impl DiffWindow {
         }
     }
 
-    /// Take the results of a save's writes. A side edited while its write ran keeps its
-    /// marker.
+    /// Take the results of a save's writes: an alert for each side that failed, which keeps
+    /// its marker, as does a side edited while its write ran.
     fn saved(
         &mut self,
-        written: Vec<(SideWrite, Result<(), SessionError>)>,
+        saved: DiffSaved,
         after: AfterSave,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let mut all_saved = true;
-        for (write, result) in written {
-            match result {
-                Ok(()) => {
-                    let pane = self.pane_mut(write.side);
-                    let unchanged = pane.changes == write.changes;
-                    pane.writes.ended(write.changes, true);
-                    if unchanged {
-                        self.set_modified(write.side, false);
-                    }
-                }
-                Err(error) => {
-                    all_saved = false;
-                    self.pane_mut(write.side).writes.ended(write.changes, false);
-                    let detail = crate::error_text::describe(&error);
-                    let answer = window.prompt(
-                        PromptLevel::Critical,
-                        &prompt::cannot_save(),
-                        Some(&detail),
-                        &[prompt::ok_button()],
-                        cx,
-                    );
-                    cx.spawn(async move |_, _| {
-                        // The alert's one button only closes it.
-                        let _ = answer.await;
-                    })
-                    .detach();
-                }
-            }
+        let SaveReport { failed, snapshot } = self.session.saved(saved);
+        self.snapshotted(snapshot);
+        for side in SIDES {
+            self.refresh_title(side);
         }
-        self.save_failed = !all_saved;
+        for (_, error) in &failed {
+            let detail = crate::error_text::describe(error);
+            let answer = window.prompt(
+                PromptLevel::Critical,
+                &prompt::cannot_save(),
+                Some(&detail),
+                &[prompt::ok_button()],
+                cx,
+            );
+            cx.spawn(async move |_, _| {
+                // The alert's one button only closes it.
+                let _ = answer.await;
+            })
+            .detach();
+        }
         cx.notify();
-        if all_saved && after == AfterSave::Exit {
+        if failed.is_empty() && after == AfterSave::Exit {
             finish(ExitCode::Resolved, cx);
         }
     }
@@ -1778,7 +1695,7 @@ impl DiffWindow {
         cx.spawn_in(window, async move |this, cx| {
             saving.await;
             ignore_closed_view(this.update(cx, |this, cx| {
-                if !this.save_failed {
+                if !this.session.save_failed() {
                     finish(ExitCode::Resolved, cx);
                 }
             }));
@@ -1791,7 +1708,7 @@ impl DiffWindow {
         for side in SIDES {
             self.send_edits(side, window, cx);
         }
-        if !self.panes.iter().any(|p| p.modified) {
+        if !self.session.any_modified() {
             self.exit(window, cx);
             return;
         }
@@ -1841,7 +1758,7 @@ impl DiffWindow {
         let Some(path) = self.pane(side).origin.path().map(Path::to_path_buf) else {
             return;
         };
-        let before = self.doc.snapshot(side);
+        let before = self.session.document().snapshot(side);
         let task = cx.spawn_in(window, async move |this, cx| {
             let read = cx
                 .background_spawn(async move {
@@ -1870,11 +1787,11 @@ impl DiffWindow {
         cx: &mut Context<Self>,
     ) {
         self.pane_mut(side).reading = None;
-        let Some(text) = self.changed(side, read.text) else {
+        let Some(text) = self.session.disk_text(side, read.text) else {
             return;
         };
         let pane = self.pane(side);
-        if then == OnRead::Reload || !pane.modified {
+        if then == OnRead::Reload || !self.session.modified(side) {
             self.reload_from(side, &text, read.map.as_ref(), window, cx);
             return;
         }
@@ -1901,26 +1818,6 @@ impl DiffWindow {
         .detach();
     }
 
-    /// The text `read` from `side`'s file, unless the read failed or the text matches the
-    /// pane.
-    fn changed(&self, side: Side, read: Result<Text, SessionError>) -> Option<Text> {
-        let text = match read {
-            Ok(text) => text,
-            Err(error) => {
-                tracing::info!(%error, "cannot read a changed file; the pane keeps its text");
-                return None;
-            }
-        };
-        // A pane that reads one character per byte keeps the two sides' one fallback
-        // (spec §4.1).
-        let fallback = SIDES.iter().any(|&side| self.pane(side).encoding.one_byte_per_char());
-        let text = if fallback { text.to_windows_1252().unwrap_or(text) } else { text };
-        let pane = self.pane(side);
-        let same = text.encoding() == pane.encoding && self.doc.text(side) == text.content();
-        let own_save = pane.writes.holds(text.content(), text.encoding());
-        (!same && !own_save).then_some(text)
-    }
-
     /// Replace `side` with `text`, read from disk. The caret and the view's top move with
     /// their lines, through `map` from the pane's text to `text`.
     fn reload_from(
@@ -1933,16 +1830,13 @@ impl DiffWindow {
     ) {
         let caret = self.editor(side).read(cx).cursor();
         let top = self.top_anchor(side, cx);
-        let before = self.doc.snapshot(side);
-        self.doc.reload(side, text);
+        let before = self.session.document().snapshot(side);
+        self.session.reloaded(side, text);
         self.pinned = None;
         self.waiting.clear();
-        let pane = self.pane_mut(side);
-        pane.encoding = text.encoding();
-        pane.changes += 1;
-        pane.writes.reloaded();
-        let caret =
-            map.map_or(caret, |map| map.offset(before.slice(..), self.doc.text(side), caret));
+        let caret = map.map_or(caret, |map| {
+            map.offset(before.slice(..), self.session.document().text(side), caret)
+        });
         self.reload(side, caret, window, cx);
         if text.encoding() == Encoding::Windows1252 {
             self.read_bytewise(side.other(), window, cx);
@@ -1953,7 +1847,7 @@ impl DiffWindow {
             due: true,
             last: false,
         });
-        self.set_modified(side, false);
+        self.refresh_title(side);
         self.schedule_recompute(window, cx);
         self.refresh_bands(side, cx);
         tracing::info!(path = %self.pane(side).origin.name(), "reloaded");
@@ -1963,18 +1857,14 @@ impl DiffWindow {
     /// the other side's Windows-1252 text (spec §4.1). Its edits and the caret's place in the
     /// bytes stay; its undo history goes, as a reload's does.
     fn read_bytewise(&mut self, side: Side, window: &mut Window, cx: &mut Context<Self>) {
-        if self.pane(side).encoding != Encoding::Utf8 {
+        if self.session.encoding(side) != Encoding::Utf8 {
             return;
         }
-        let utf8 = self.doc.text(side).to_string();
+        let utf8 = self.session.document().text(side).to_string();
         let caret = windows_1252_offset(&utf8, self.editor(side).read(cx).cursor().min(utf8.len()));
-        let Some(text) = Text::from_utf8(utf8).to_windows_1252() else {
+        if !self.session.read_bytewise(side, utf8) {
             return;
-        };
-        self.doc.reload(side, &text);
-        let pane = self.pane_mut(side);
-        pane.encoding = text.encoding();
-        pane.changes += 1;
+        }
         self.reload(side, caret, window, cx);
         self.refresh_bands(side, cx);
     }
@@ -2054,7 +1944,7 @@ impl DiffWindow {
     /// layout; before the first layout it waits a frame.
     fn apply_reveal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // A recompute since `go_to` may have dropped the region.
-        let regions = self.doc.regions().len();
+        let regions = self.session.document().regions().len();
         let Some(region) = self.reveal.take().filter(|r| r.get() < regions) else {
             return;
         };
@@ -2123,8 +2013,8 @@ impl DiffWindow {
 
     /// Replace region `region`'s lines in `to` with the other side's (spec §4.6).
     fn copy(&mut self, region: RegionIx, to: Side, window: &mut Window, cx: &mut Context<Self>) {
-        let before = self.doc.version();
-        match self.doc.copy_region(region, to) {
+        let before = self.session.document().version();
+        match self.session.copy_region(region, to) {
             Ok(edited) => self.follow(before, &edited, Caret::AtChange, window, cx),
             Err(error) => tracing::error!(%error, %region, ?to, "the core refused a copy"),
         }
@@ -2144,7 +2034,7 @@ impl DiffWindow {
     /// The display rows `region` spans in either pane: from the row where it starts, as many
     /// as its taller side takes. Rows above it count fold rows and leave out folded lines.
     fn region_display_rows(&self, region: RegionIx, cx: &App) -> Range<usize> {
-        let region = &self.doc.regions()[region.get()];
+        let region = &self.session.document().regions()[region.get()];
         let rows = self.line_rows(cx);
         let start = self.region_row(region, cx);
         start
@@ -2170,8 +2060,9 @@ impl DiffWindow {
         let line_height = self.typography.line_height();
         let height = window.viewport_size().height;
         let writable = SIDES.map(|side| !self.pane(side).read_only);
-        let rows: Vec<_> = if self.doc.regions_current() {
-            self.doc
+        let rows: Vec<_> = if self.session.document().regions_current() {
+            self.session
+                .document()
                 .regions()
                 .iter()
                 .enumerate()
@@ -2248,8 +2139,8 @@ impl DiffWindow {
     /// The overview ruler beside the right pane, with the pane's vertical scrollbar thumb.
     fn render_ruler(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let shown = ruler::Strip {
-            marks: merge_view::ruler::diff_marks(&self.doc, Side::Right).collect(),
-            total: merge_view::ruler::diff_total(&self.doc, Side::Right),
+            marks: merge_view::ruler::diff_marks(self.session.document(), Side::Right).collect(),
+            total: merge_view::ruler::diff_total(self.session.document(), Side::Right),
             feed: self.ruler_feed.clone(),
         };
         let (this, scrolled) = (cx.entity().downgrade(), cx.entity().downgrade());
@@ -2304,7 +2195,7 @@ impl DiffWindow {
         let bounds = state.input_bounds();
         let scroll = state.scroll_offset().y;
         let map = state.display_map();
-        let shown: Vec<_> = move_ends(&self.doc, side)
+        let shown: Vec<_> = move_ends(self.session.document(), side)
             .into_iter()
             .filter_map(|end| {
                 let row = map.buffer_line_to_display_row(end.lines.start);
@@ -2510,7 +2401,6 @@ fn new_pane(
     Pane {
         title: title(&file.origin, false),
         origin: file.origin,
-        encoding: file.text.encoding(),
         editor,
         recorded,
         bands,
@@ -2519,10 +2409,7 @@ fn new_pane(
         found,
         steps: SearchSteps::default(),
         read_only: file.read_only,
-        modified: false,
         asking: false,
-        changes: 0,
-        writes: OwnWrites::default(),
         reading: None,
         annotated: None,
     }
